@@ -177,6 +177,11 @@ describe("repo context collector", () => {
       "src/blob.dat"
     ]);
 
+    expect(context.files.find((file) => file.path === tabbedPath)).toMatchObject({
+      additions: 4,
+      deletions: 0
+    });
+
     expect(context.files.find((file) => file.path === "assets/logo.png")).toMatchObject({
       status: "modified",
       binary: true,

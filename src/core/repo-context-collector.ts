@@ -129,7 +129,16 @@ function parseNumstat(numstat: string): Map<string, NumstatEntry> {
 
   for (let index = 0; index < fields.length; ) {
     const stats = fields[index++];
-    const [additions, deletions, pathInStats] = stats.split("\t");
+    const firstTab = stats.indexOf("\t");
+    const secondTab = firstTab === -1 ? -1 : stats.indexOf("\t", firstTab + 1);
+
+    if (firstTab === -1 || secondTab === -1) {
+      continue;
+    }
+
+    const additions = stats.slice(0, firstTab);
+    const deletions = stats.slice(firstTab + 1, secondTab);
+    const pathInStats = stats.slice(secondTab + 1);
     const path = pathInStats === "" ? fields[index + 1] : pathInStats;
 
     if (pathInStats === "") {
