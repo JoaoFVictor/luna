@@ -171,6 +171,7 @@ async function finalizeFailureWorkspace({
   if (
     workspaceRecord.reason === "success_cleanup" ||
     workspaceRecord.reason === "success_cleanup_failed" ||
+    workspaceRecord.reason === "success_preserved" ||
     workspaceRecord.reason === "failure_cleanup_failed" ||
     workspaceRecord.reason === "failure_preserved"
   ) {

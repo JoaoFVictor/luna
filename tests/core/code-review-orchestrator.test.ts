@@ -569,6 +569,34 @@ describe("code review orchestrator", () => {
     await expectBaseFailureArtifacts(harness.artifactRoot, "artifact_write_failed");
   });
 
+  it("keeps preserved workspace state if final report writing fails after success preservation", async () => {
+    class FinalReportFailingStore extends ArtifactStore {
+      override async writeJson(name: string, value: unknown): Promise<string> {
+        if (name === "final-report.json") {
+          throw codedError("artifact_write_failed");
+        }
+
+        return await super.writeJson(name, value);
+      }
+    }
+
+    const harness = await createHarness({
+      artifactStore: FinalReportFailingStore,
+      preserveOnSuccess: true
+    });
+
+    await expect(executeCodeReview(harness.options)).rejects.toMatchObject({
+      code: "artifact_write_failed"
+    });
+
+    expect(harness.cleanupWorktree).not.toHaveBeenCalled();
+    await expect(readJson(harness.artifactRoot, "workspace.json")).resolves.toMatchObject({
+      preserved: true,
+      reason: "success_preserved"
+    });
+    await expectBaseFailureArtifacts(harness.artifactRoot, "artifact_write_failed");
+  });
+
   it("does not pass an unpersisted workspace record to cleanup", async () => {
     class InitialWorkspaceFailingStore extends ArtifactStore {
       #workspaceWrites = 0;
