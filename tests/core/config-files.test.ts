@@ -76,11 +76,7 @@ function formatAjvErrors(errors: ErrorObject[] | null | undefined): string {
 }
 
 function createSchemaAjv(): Ajv {
-  return new Ajv({
-    allErrors: true,
-    strict: true,
-    keywords: ["x-runtime-invariants"]
-  });
+  return new Ajv({ allErrors: true, strict: true });
 }
 
 function assertLineFieldsUseIntegers(
@@ -120,44 +116,6 @@ function assertLineFieldsUseIntegers(
   for (const [key, value] of Object.entries(objectSchema)) {
     assertLineFieldsUseIntegers(value, `${path}/${key}`);
   }
-}
-
-function findEvidenceSchemasWithLineRanges(
-  schema: unknown,
-  matches: unknown[] = []
-): unknown[] {
-  if (schema === null || typeof schema !== "object") {
-    return matches;
-  }
-
-  if (Array.isArray(schema)) {
-    schema.forEach((item) => findEvidenceSchemasWithLineRanges(item, matches));
-    return matches;
-  }
-
-  const objectSchema = schema as Record<string, unknown>;
-  const properties = objectSchema.properties;
-
-  if (
-    properties !== null &&
-    typeof properties === "object" &&
-    !Array.isArray(properties)
-  ) {
-    const propertyNames = Object.keys(properties as Record<string, unknown>);
-
-    if (
-      propertyNames.includes("line_start") &&
-      propertyNames.includes("line_end")
-    ) {
-      matches.push(objectSchema);
-    }
-  }
-
-  for (const value of Object.values(objectSchema)) {
-    findEvidenceSchemasWithLineRanges(value, matches);
-  }
-
-  return matches;
 }
 
 describe("config definition files", () => {
@@ -233,26 +191,21 @@ describe("config definition files", () => {
     }
   });
 
-  it("documents runtime line range invariants in code review schemas", async () => {
+  it("keeps code review schemas compatible with strict draft-07 consumers", async () => {
     const files = [
       "agents/code-reviewer/output.schema.json",
       "workflows/code-review/output.schema.json"
     ];
 
     for (const file of files) {
+      const ajv = new Ajv({ allErrors: true, strict: true });
       const schema = await parseJsonFile(file);
-      const evidenceSchemas = findEvidenceSchemasWithLineRanges(schema);
+      const isValidSchema = ajv.validateSchema(schema as AnySchema);
 
-      expect(evidenceSchemas.length, file).toBeGreaterThan(0);
-      for (const evidenceSchema of evidenceSchemas) {
-        expect(evidenceSchema, file).toEqual(
-          expect.objectContaining({
-            "x-runtime-invariants": expect.arrayContaining([
-              "line_end >= line_start"
-            ])
-          })
-        );
-      }
+      expect(
+        isValidSchema,
+        `${file}: ${formatAjvErrors(ajv.errors)}`
+      ).toBe(true);
     }
   });
 

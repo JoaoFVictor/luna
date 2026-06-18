@@ -59,8 +59,7 @@
                 "quote": {
                   "type": "string"
                 }
-              },
-              "x-runtime-invariants": ["line_end >= line_start"]
+              }
             }
           },
           "recommendation": {
