@@ -39,17 +39,19 @@ export type Invocation = z.infer<typeof InvocationSchema>;
 
 export const RepositoryConfigSchema = z
   .object({
+    id: NonEmptyStringSchema,
+    provider: z.literal("github"),
     owner: NonEmptyStringSchema,
     name: NonEmptyStringSchema,
-    full_name: NonEmptyStringSchema.optional(),
-    default_branch: NonEmptyStringSchema.optional()
+    path: NonEmptyStringSchema,
+    remote: NonEmptyStringSchema
   })
   .strict();
 export type RepositoryConfig = z.infer<typeof RepositoryConfigSchema>;
 
 export const RepositoriesConfigSchema = z
   .object({
-    repositories: z.record(NonEmptyStringSchema, RepositoryConfigSchema)
+    repositories: z.array(RepositoryConfigSchema)
   })
   .strict();
 export type RepositoriesConfig = z.infer<typeof RepositoriesConfigSchema>;
@@ -64,34 +66,69 @@ export type ModelProfile = z.infer<typeof ModelProfileSchema>;
 
 export const ModelsConfigSchema = z
   .object({
-    profiles: z.record(NonEmptyStringSchema, ModelProfileSchema)
+    model_profiles: z.record(NonEmptyStringSchema, ModelProfileSchema)
   })
   .strict();
 export type ModelsConfig = z.infer<typeof ModelsConfigSchema>;
 
+export const RouteWhenSchema = z
+  .object({
+    has_target: z.boolean().optional(),
+    source: NonEmptyStringSchema.optional(),
+    event_in: z.array(NonEmptyStringSchema).optional()
+  })
+  .strict();
+export type RouteWhen = z.infer<typeof RouteWhenSchema>;
+
+export const RouteTargetSchema = z
+  .object({
+    type: z.literal("workflow"),
+    id: NonEmptyStringSchema
+  })
+  .strict();
+export type RouteTarget = z.infer<typeof RouteTargetSchema>;
+
 export const RouteSchema = z
   .object({
-    profile: NonEmptyStringSchema,
-    prompt: NonEmptyStringSchema.optional()
+    name: NonEmptyStringSchema,
+    when: RouteWhenSchema,
+    use_target_from_input: z.boolean().optional(),
+    target: RouteTargetSchema.optional()
   })
   .strict();
 export type Route = z.infer<typeof RouteSchema>;
 
 export const RoutingConfigSchema = z
   .object({
-    routes: z.record(NonEmptyStringSchema, RouteSchema)
+    routes: z.array(RouteSchema)
   })
   .strict();
 export type RoutingConfig = z.infer<typeof RoutingConfigSchema>;
 
 export const WorkspaceConfigSchema = z
   .object({
+    strategy: z.literal("git_worktree"),
     root: NonEmptyStringSchema,
-    runs_dir: NonEmptyStringSchema.optional(),
-    preserve: z.boolean().optional()
+    preserve_on_success: z.boolean(),
+    preserve_on_failure: z.boolean()
   })
   .strict();
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
+
+export const ArtifactsConfigSchema = z
+  .object({
+    root: NonEmptyStringSchema
+  })
+  .strict();
+export type ArtifactsConfig = z.infer<typeof ArtifactsConfigSchema>;
+
+export const AppConfigSchema = z
+  .object({
+    workspace: WorkspaceConfigSchema,
+    artifacts: ArtifactsConfigSchema
+  })
+  .strict();
+export type AppConfig = z.infer<typeof AppConfigSchema>;
 
 export const RunIdentitySchema = z
   .object({
@@ -118,7 +155,11 @@ export const FileExcerptSchema = z
     end_line: z.number().int().positive(),
     content: z.string()
   })
-  .strict();
+  .strict()
+  .refine((excerpt) => excerpt.end_line >= excerpt.start_line, {
+    message: "end_line must be greater than or equal to start_line",
+    path: ["end_line"]
+  });
 export type FileExcerpt = z.infer<typeof FileExcerptSchema>;
 
 export const ChangedFileSchema = z
@@ -170,7 +211,11 @@ export const EvidenceRefSchema = z
     line_end: z.number().int().positive(),
     quote: z.string().optional()
   })
-  .strict();
+  .strict()
+  .refine((evidence) => evidence.line_end >= evidence.line_start, {
+    message: "line_end must be greater than or equal to line_start",
+    path: ["line_end"]
+  });
 export type EvidenceRef = z.infer<typeof EvidenceRefSchema>;
 
 export const FindingSchema = z

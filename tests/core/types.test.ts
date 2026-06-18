@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 import * as v from "valibot";
 import {
   AcceptanceDecisionSchema,
+  AppConfigSchema,
   CodeReviewFindingsSchema,
+  EvidenceRefSchema,
+  FileExcerptSchema,
   InvocationSchema,
   ModelsConfigSchema,
+  RepositoriesConfigSchema,
   RepoContextSchema,
-  ReviewPlanSchema
+  ReviewPlanSchema,
+  RoutingConfigSchema
 } from "../../src/core/types.js";
 import {
   AcceptanceDecisionResult,
@@ -58,11 +63,59 @@ const validRepoContext = {
 };
 
 const validModelsConfig = {
-  profiles: {
+  model_profiles: {
     reviewer: {
       model: "gpt-5",
       reasoning_effort: "high"
     }
+  }
+};
+
+const plannedRepositoriesConfig = {
+  repositories: [
+    {
+      id: "example",
+      provider: "github",
+      owner: "org",
+      name: "repo",
+      path: "/tmp/luna-example-repo",
+      remote: "origin"
+    }
+  ]
+};
+
+const plannedRoutingConfig = {
+  routes: [
+    {
+      name: "explicit-target",
+      when: {
+        has_target: true
+      },
+      use_target_from_input: true
+    },
+    {
+      name: "github-pr-code-review",
+      when: {
+        source: "github",
+        event_in: ["pull_request.opened"]
+      },
+      target: {
+        type: "workflow",
+        id: "code-review"
+      }
+    }
+  ]
+};
+
+const plannedAppConfig = {
+  workspace: {
+    strategy: "git_worktree",
+    root: ".runs/workspaces",
+    preserve_on_success: false,
+    preserve_on_failure: true
+  },
+  artifacts: {
+    root: ".runs/code-review"
   }
 };
 
@@ -122,9 +175,40 @@ describe("core zod schemas", () => {
     expect(ModelsConfigSchema.parse(validModelsConfig)).toEqual(validModelsConfig);
   });
 
-  it("rejects a ModelsConfig profile that uses env", () => {
+  it("accepts the planned repositories config shape", () => {
+    expect(RepositoriesConfigSchema.parse(plannedRepositoriesConfig)).toEqual(
+      plannedRepositoriesConfig
+    );
+  });
+
+  it("accepts the planned models config shape and rejects profiles", () => {
+    expect(ModelsConfigSchema.parse(validModelsConfig)).toEqual(validModelsConfig);
+
     const invalidConfig = {
       profiles: {
+        reviewer: {
+          model: "gpt-5",
+          reasoning_effort: "high"
+        }
+      }
+    };
+
+    expect(() => ModelsConfigSchema.parse(invalidConfig)).toThrow();
+  });
+
+  it("accepts the planned routing config shape", () => {
+    expect(RoutingConfigSchema.parse(plannedRoutingConfig)).toEqual(
+      plannedRoutingConfig
+    );
+  });
+
+  it("accepts the planned app workspace config shape", () => {
+    expect(AppConfigSchema.parse(plannedAppConfig)).toEqual(plannedAppConfig);
+  });
+
+  it("rejects a ModelsConfig profile that uses env", () => {
+    const invalidConfig = {
+      model_profiles: {
         reviewer: {
           env: "OPENAI_MODEL",
           reasoning_effort: "high"
@@ -157,6 +241,26 @@ describe("core zod schemas", () => {
     expect(() => CodeReviewFindingsSchema.parse(invalidFindings)).toThrow();
   });
 
+  it("rejects a FileExcerpt range with end_line before start_line", () => {
+    expect(() =>
+      FileExcerptSchema.parse({
+        start_line: 20,
+        end_line: 19,
+        content: "const result = run();"
+      })
+    ).toThrow();
+  });
+
+  it("rejects an EvidenceRef range with line_end before line_start", () => {
+    expect(() =>
+      EvidenceRefSchema.parse({
+        path: "src/auth.ts",
+        line_start: 20,
+        line_end: 19
+      })
+    ).toThrow();
+  });
+
   it("accepts valid ReviewPlan, CodeReviewFindings, and AcceptanceDecision outputs", () => {
     expect(ReviewPlanSchema.parse(validReviewPlan)).toEqual(validReviewPlan);
     expect(CodeReviewFindingsSchema.parse(validCodeReviewFindings)).toEqual(
@@ -177,5 +281,28 @@ describe("flue valibot result schemas", () => {
     expect(v.parse(AcceptanceDecisionResult, validAcceptanceDecision)).toEqual(
       validAcceptanceDecision
     );
+  });
+
+  it("reject invalid evidence ranges", () => {
+    const invalidFindings = {
+      findings: [
+        {
+          title: "Missing authorization check",
+          severity: "high",
+          confidence: "high",
+          description: "The update path does not verify ownership.",
+          evidence: [
+            {
+              path: "src/auth.ts",
+              line_start: 20,
+              line_end: 19
+            }
+          ],
+          recommendation: "Verify the caller owns the user record before updating it."
+        }
+      ]
+    };
+
+    expect(() => v.parse(CodeReviewFindingsResult, invalidFindings)).toThrow();
   });
 });

@@ -9,12 +9,18 @@ export const ReviewPlanResult = v.strictObject({
   files_to_review: v.array(NonEmptyString)
 });
 
-const EvidenceRefResult = v.strictObject({
-  path: NonEmptyString,
-  line_start: PositiveInteger,
-  line_end: PositiveInteger,
-  quote: v.optional(v.string())
-});
+const EvidenceRefResult = v.pipe(
+  v.strictObject({
+    path: NonEmptyString,
+    line_start: PositiveInteger,
+    line_end: PositiveInteger,
+    quote: v.optional(v.string())
+  }),
+  v.check(
+    (evidence) => evidence.line_end >= evidence.line_start,
+    "line_end must be greater than or equal to line_start"
+  )
+);
 
 const FindingResult = v.strictObject({
   title: NonEmptyString,
