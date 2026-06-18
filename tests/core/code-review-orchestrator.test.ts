@@ -127,6 +127,20 @@ async function runArtifacts(root: string): Promise<string[]> {
   return (await readdir(path.join(root, runId))).sort();
 }
 
+async function expectBaseFailureArtifacts(root: string, code: string): Promise<void> {
+  await expect(readJson(root, "invocation.json")).resolves.toMatchObject({
+    owner: gitInvocation.owner,
+    repo: gitInvocation.repo,
+    pull_number: gitInvocation.pull_number
+  });
+  await expect(readJson(root, "run.json")).resolves.toMatchObject({
+    run_id: runId
+  });
+  await expect(readJson(root, "error.json")).resolves.toMatchObject({
+    code
+  });
+}
+
 async function createHarness(options: HarnessOptions = {}) {
   const artifactRoot = options.artifactRoot ?? (await tempRoot("luna-orch-artifacts-"));
   const workspaceRoot = options.workspaceRoot ?? (await tempRoot("luna-orch-workspaces-"));
@@ -251,8 +265,8 @@ describe("code review orchestrator", () => {
       "invocation.json",
       "run.json"
     ]);
+    await expectBaseFailureArtifacts(harness.artifactRoot, "no_route_matched");
     await expect(readJson(harness.artifactRoot, "error.json")).resolves.toMatchObject({
-      code: "no_route_matched",
       message: "No route matched invocation"
     });
   });
@@ -273,6 +287,10 @@ describe("code review orchestrator", () => {
       "invocation.json",
       "run.json"
     ]);
+    await expectBaseFailureArtifacts(
+      harness.artifactRoot,
+      "repository_not_configured"
+    );
   });
 
   it.each([
@@ -289,9 +307,7 @@ describe("code review orchestrator", () => {
       code
     });
 
-    await expect(readJson(harness.artifactRoot, "error.json")).resolves.toMatchObject({
-      code
-    });
+    await expectBaseFailureArtifacts(harness.artifactRoot, code);
   });
 
   it("writes preflight when git_fetch_failed occurs after preflight", async () => {
@@ -308,12 +324,10 @@ describe("code review orchestrator", () => {
     await expect(runArtifacts(harness.artifactRoot)).resolves.toContain(
       "preflight.json"
     );
-    await expect(readJson(harness.artifactRoot, "error.json")).resolves.toMatchObject({
-      code: "git_fetch_failed"
-    });
+    await expectBaseFailureArtifacts(harness.artifactRoot, "git_fetch_failed");
   });
 
-  it("writes preflight when worktree_create_failed occurs after preflight", async () => {
+  it("writes preflight and error when worktree_create_failed occurs after preflight", async () => {
     const harness = await createHarness({
       prepareWorktree: async () => {
         throw codedError("worktree_create_failed");
@@ -326,6 +340,10 @@ describe("code review orchestrator", () => {
 
     await expect(runArtifacts(harness.artifactRoot)).resolves.toContain(
       "preflight.json"
+    );
+    await expectBaseFailureArtifacts(
+      harness.artifactRoot,
+      "worktree_create_failed"
     );
   });
 
@@ -346,6 +364,7 @@ describe("code review orchestrator", () => {
       "preflight.json",
       "run.json"
     ]);
+    await expectBaseFailureArtifacts(harness.artifactRoot, "head_sha_mismatch");
   });
 
   it("writes workspace when head_sha_mismatch occurs after workspace creation", async () => {
@@ -362,6 +381,7 @@ describe("code review orchestrator", () => {
     await expect(runArtifacts(harness.artifactRoot)).resolves.toContain(
       "workspace.json"
     );
+    await expectBaseFailureArtifacts(harness.artifactRoot, "head_sha_mismatch");
   });
 
   it("writes error for path_security_violation and never writes outside artifact root", async () => {
@@ -383,9 +403,7 @@ describe("code review orchestrator", () => {
       code: "path_security_violation"
     });
 
-    await expect(readJson(artifactRoot, "error.json")).resolves.toMatchObject({
-      code: "path_security_violation"
-    });
+    await expectBaseFailureArtifacts(artifactRoot, "path_security_violation");
     await expect(readdir(outsideRoot)).resolves.toEqual([]);
   });
 
@@ -407,6 +425,10 @@ describe("code review orchestrator", () => {
       "run.json",
       "workspace.json"
     ]);
+    await expectBaseFailureArtifacts(
+      harness.artifactRoot,
+      "context_collection_failed"
+    );
   });
 
   it("writes invalid-output/<node>.json and error.json after invalid agent output", async () => {
@@ -424,9 +446,7 @@ describe("code review orchestrator", () => {
       node: "code-reviewer",
       attempts: 2
     });
-    await expect(readJson(harness.artifactRoot, "error.json")).resolves.toMatchObject({
-      code: "agent_output_invalid"
-    });
+    await expectBaseFailureArtifacts(harness.artifactRoot, "agent_output_invalid");
   });
 
   it("preserves workspace on context collection failure when preserve_on_failure is true", async () => {
