@@ -75,6 +75,10 @@ function formatAjvErrors(errors: ErrorObject[] | null | undefined): string {
     .join(", ");
 }
 
+function createSchemaAjv(): Ajv {
+  return new Ajv({ allErrors: true, strict: true, $data: true });
+}
+
 function assertLineFieldsUseIntegers(
   schema: unknown,
   path = "#"
@@ -135,7 +139,7 @@ describe("config definition files", () => {
 
   it("parses and validates every JSON Schema under agents and workflows", async () => {
     const files = await listFiles(jsonSchemaRoots, [".schema.json"]);
-    const ajv = new Ajv({ allErrors: true, strict: true });
+    const ajv = createSchemaAjv();
 
     expect(files).toEqual(
       expect.arrayContaining([
@@ -161,7 +165,7 @@ describe("config definition files", () => {
 
   it("keeps each agent YAML wired to existing instructions and JSON Schema files", async () => {
     const agentFiles = await listFiles(["agents"], ["agent.yaml"]);
-    const ajv = new Ajv({ allErrors: true, strict: true });
+    const ajv = createSchemaAjv();
 
     expect(agentFiles).toEqual([
       "agents/acceptance-reviewer/agent.yaml",
@@ -184,6 +188,75 @@ describe("config definition files", () => {
         ajv.validateSchema(schema as AnySchema),
         `${schemaPath}: ${formatAjvErrors(ajv.errors)}`
       ).toBe(true);
+    }
+  });
+
+  it("rejects evidence refs with line_end before line_start in code review schemas", async () => {
+    const cases: Array<{ file: string; data: unknown }> = [
+      {
+        file: "agents/code-reviewer/output.schema.json",
+        data: {
+          findings: [
+            {
+              title: "Finding",
+              severity: "medium",
+              confidence: "high",
+              description: "Description",
+              evidence: [
+                {
+                  path: "src/example.ts",
+                  line_start: 20,
+                  line_end: 19
+                }
+              ],
+              recommendation: "Recommendation"
+            }
+          ]
+        }
+      },
+      {
+        file: "workflows/code-review/output.schema.json",
+        data: {
+          status: "success",
+          run: {
+            run_id: "run-1",
+            target: "github_pr"
+          },
+          report: {
+            report_path: "reports/code-review.md",
+            acceptance: {
+              decision: "comment",
+              summary: "Summary",
+              blocking_findings: []
+            },
+            findings: [
+              {
+                title: "Finding",
+                severity: "medium",
+                confidence: "high",
+                description: "Description",
+                evidence: [
+                  {
+                    path: "src/example.ts",
+                    line_start: 20,
+                    line_end: 19
+                  }
+                ],
+                recommendation: "Recommendation"
+              }
+            ]
+          }
+        }
+      }
+    ];
+
+    for (const { file, data } of cases) {
+      const ajv = createSchemaAjv();
+      const schema = await parseJsonFile(file);
+      const validate = ajv.compile(schema as AnySchema);
+
+      expect(validate(data), file).toBe(false);
+      expect(formatAjvErrors(validate.errors), file).toContain("line_end");
     }
   });
 

@@ -162,7 +162,14 @@
         },
         "line_end": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "allOf": [
+            {
+              "minimum": {
+                "$data": "1/line_start"
+              }
+            }
+          ]
         },
         "quote": {
           "type": "string"
