@@ -14,38 +14,38 @@ describe("model config", () => {
           reasoning_effort: "medium"
         },
         reviewer: {
-          model: "gpt-5",
+          model: "openai/gpt-5",
           reasoning_effort: "high"
         }
       }
     };
 
     expect(
-      resolveModelProfiles(modelsConfig, { PLANNER_MODEL: "gpt-5-mini" })
+      resolveModelProfiles(modelsConfig, { PLANNER_MODEL: "openai/gpt-5-mini" })
     ).toEqual({
       planner: {
-        model: "gpt-5-mini",
+        model: "openai/gpt-5-mini",
         reasoning_effort: "medium"
       },
       reviewer: {
-        model: "gpt-5",
+        model: "openai/gpt-5",
         reasoning_effort: "high"
       }
     });
   });
 
-  it("accepts model: gpt-5-mini without environment lookup", () => {
+  it("accepts model: openai/gpt-5-mini without environment lookup", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
         planner: {
-          model: "gpt-5-mini",
+          model: "openai/gpt-5-mini",
           reasoning_effort: "medium"
         }
       }
     };
 
     expect(resolveModelProfiles(modelsConfig, {}).planner.model).toBe(
-      "gpt-5-mini"
+      "openai/gpt-5-mini"
     );
   });
 
@@ -60,9 +60,9 @@ describe("model config", () => {
     };
 
     expect(
-      resolveModelProfiles(modelsConfig, { REVIEWER_MODEL: "gpt-5" }).reviewer
+      resolveModelProfiles(modelsConfig, { REVIEWER_MODEL: "openai/gpt-5" }).reviewer
         .model
-    ).toBe("gpt-5");
+    ).toBe("openai/gpt-5");
   });
 
   it("throws model_env_missing for model: ${MISSING_MODEL}", () => {
@@ -95,6 +95,24 @@ describe("model config", () => {
     ).toThrow(expect.objectContaining({ code: "model_env_missing" }));
   });
 
+  it.each([
+    ["direct model", "gpt-5"],
+    ["environment model", "${REVIEWER_MODEL}"]
+  ])("throws model_spec_invalid for %s without provider prefix", (_case, model) => {
+    const modelsConfig: ModelsConfig = {
+      model_profiles: {
+        reviewer: {
+          model,
+          reasoning_effort: "high"
+        }
+      }
+    };
+
+    expect(() =>
+      resolveModelProfiles(modelsConfig, { REVIEWER_MODEL: "gpt-5" })
+    ).toThrow(expect.objectContaining({ code: "model_spec_invalid" }));
+  });
+
   it.each(["${PLANNER_MODEL }", "${planner_model}", "${PLANNER_MODEL"])(
     "throws model_placeholder_invalid for malformed placeholder %s",
     (model) => {
@@ -115,19 +133,19 @@ describe("model config", () => {
 
   it("maps reasoning_effort low to thinkingLevel low", () => {
     expect(
-      toFlueModelOptions({ model: "gpt-5-mini", reasoning_effort: "low" })
-    ).toEqual({ model: "gpt-5-mini", thinkingLevel: "low" });
+      toFlueModelOptions({ model: "openai/gpt-5-mini", reasoning_effort: "low" })
+    ).toEqual({ model: "openai/gpt-5-mini", thinkingLevel: "low" });
   });
 
   it("maps reasoning_effort medium to thinkingLevel medium", () => {
     expect(
-      toFlueModelOptions({ model: "gpt-5-mini", reasoning_effort: "medium" })
-    ).toEqual({ model: "gpt-5-mini", thinkingLevel: "medium" });
+      toFlueModelOptions({ model: "openai/gpt-5-mini", reasoning_effort: "medium" })
+    ).toEqual({ model: "openai/gpt-5-mini", thinkingLevel: "medium" });
   });
 
   it("maps reasoning_effort high to thinkingLevel high", () => {
     expect(
-      toFlueModelOptions({ model: "gpt-5", reasoning_effort: "high" })
-    ).toEqual({ model: "gpt-5", thinkingLevel: "high" });
+      toFlueModelOptions({ model: "openai/gpt-5", reasoning_effort: "high" })
+    ).toEqual({ model: "openai/gpt-5", thinkingLevel: "high" });
   });
 });

@@ -6,6 +6,7 @@ export type ResolvedModelProfiles = Record<string, ModelProfile>;
 
 const ENV_EXPRESSION = /^\$\{([A-Z0-9_]+)\}$/;
 const PLACEHOLDER_LIKE = /^\$\{|\}$/;
+const FLUE_MODEL_SPEC = /^[^/\s]+\/[^/\s]+$/;
 
 function errorWithCode(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };
@@ -49,6 +50,13 @@ export function resolveModelProfiles(
       }
 
       resolvedModel = modelFromEnv;
+    }
+
+    if (!FLUE_MODEL_SPEC.test(resolvedModel)) {
+      throw errorWithCode(
+        `Model profile ${name} must use provider/model format`,
+        "model_spec_invalid"
+      );
     }
 
     profiles[name] = {

@@ -174,11 +174,11 @@ describe("config loader", () => {
 
     expect(
       resolveModelProfiles(config, {
-        PLANNER_MODEL: "gpt-5-mini",
-        REVIEWER_MODEL: "gpt-5",
-        ACCEPTANCE_MODEL: "gpt-5-mini"
+        PLANNER_MODEL: "openai/gpt-5-mini",
+        REVIEWER_MODEL: "openai/gpt-5",
+        ACCEPTANCE_MODEL: "openai/gpt-5-mini"
       }).planner.model
-    ).toBe("gpt-5-mini");
+    ).toBe("openai/gpt-5-mini");
   });
 
   it("throws model_env_missing when a model environment variable is missing", () => {

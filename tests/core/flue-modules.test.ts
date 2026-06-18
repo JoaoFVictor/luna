@@ -171,10 +171,10 @@ describe("flue modules", () => {
       "    model: ${PLANNER_MODEL}",
       "    reasoning_effort: medium",
       "  reviewer:",
-      "    model: reviewer-model",
+      "    model: openai/reviewer-model",
       "    reasoning_effort: high",
       "  acceptance:",
-      "    model: acceptance-model",
+      "    model: openai/acceptance-model",
       "    reasoning_effort: medium",
       ""
     ].join("\n"));
@@ -197,10 +197,10 @@ describe("flue modules", () => {
     const configRoot = await writeConfigRoot([
       "model_profiles:",
       "  reviewer:",
-      "    model: reviewer-model",
+      "    model: openai/reviewer-model",
       "    reasoning_effort: high",
       "  acceptance:",
-      "    model: acceptance-model",
+      "    model: openai/acceptance-model",
       "    reasoning_effort: medium",
       ""
     ].join("\n"));
@@ -215,6 +215,34 @@ describe("flue modules", () => {
     ).rejects.toMatchObject({
       code: "model_profile_missing",
       message: "Model profile planner is not configured for code-review workflow"
+    });
+  });
+
+  it("rejects model specs that Flue cannot run", async () => {
+    const configRoot = await writeConfigRoot([
+      "model_profiles:",
+      "  planner:",
+      "    model: gpt-5",
+      "    reasoning_effort: medium",
+      "  reviewer:",
+      "    model: openai/reviewer-model",
+      "    reasoning_effort: high",
+      "  acceptance:",
+      "    model: openai/acceptance-model",
+      "    reasoning_effort: medium",
+      ""
+    ].join("\n"));
+    process.env.LUNA_CONFIG_ROOT = configRoot;
+
+    const workflow = await importWorkflowWithOrchestratorMock(async () => {
+      throw new Error("executeCodeReview should not run with invalid model specs");
+    });
+
+    await expect(
+      workflow.run({ payload: gitInvocation } as never)
+    ).rejects.toMatchObject({
+      code: "model_spec_invalid",
+      message: "Model profile planner must use provider/model format"
     });
   });
 

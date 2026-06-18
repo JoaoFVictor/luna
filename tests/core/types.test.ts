@@ -66,7 +66,7 @@ const validRepoContext = {
 const validModelsConfig = {
   model_profiles: {
     reviewer: {
-      model: "gpt-5",
+      model: "openai/gpt-5",
       reasoning_effort: "high"
     }
   }
@@ -194,7 +194,7 @@ describe("core zod schemas", () => {
     const invalidConfig = {
       profiles: {
         reviewer: {
-          model: "gpt-5",
+          model: "openai/gpt-5",
           reasoning_effort: "high"
         }
       }

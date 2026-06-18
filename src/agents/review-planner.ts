@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createAgent } from "@flue/runtime";
-import instructions from "../../agents/review-planner/instructions.md" with { type: "markdown" };
 import YAML from "yaml";
 import { z } from "zod";
 import { loadYamlFile, resolveConfigRoot } from "../core/config-loader.js";
@@ -30,11 +29,18 @@ function codedError(message: string, code: string): Error & { code: string } {
 
 async function loadAgentConfig() {
   const content = await readFile(
-    new URL("../../agents/review-planner/agent.yaml", import.meta.url),
+    path.join(process.cwd(), "agents/review-planner/agent.yaml"),
     "utf8"
   );
 
   return AgentConfigSchema.parse(YAML.parse(content));
+}
+
+async function loadInstructions(instructionsFile: string): Promise<string> {
+  return await readFile(
+    path.join(process.cwd(), "agents/review-planner", instructionsFile),
+    "utf8"
+  );
 }
 
 export default createAgent(async () => {
@@ -56,7 +62,7 @@ export default createAgent(async () => {
 
   return {
     description,
-    instructions,
+    instructions: await loadInstructions(agentConfig.instructions_file),
     ...toFlueModelOptions(profile)
   };
 });
