@@ -49,6 +49,10 @@ function evidenceLabel(evidence: Finding["evidence"][number]): string {
   return `${evidence.path}:${evidence.line_start}-${evidence.line_end}`;
 }
 
+function normalizeMarkdownText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 export function buildFinalReportMarkdown({
   invocation,
   findings,
@@ -74,11 +78,11 @@ export function buildFinalReportMarkdown({
   for (const finding of sortedFindings) {
     lines.push(
       "",
-      `### ${finding.severity}: ${finding.title}`,
+      `### ${finding.severity}: ${normalizeMarkdownText(finding.title)}`,
       "",
       `Confidence: ${finding.confidence}`,
       "",
-      finding.description,
+      normalizeMarkdownText(finding.description),
       "",
       "Evidence:"
     );
@@ -91,7 +95,7 @@ export function buildFinalReportMarkdown({
       }
     }
 
-    lines.push("", `Recommendation: ${finding.recommendation}`);
+    lines.push("", `Recommendation: ${normalizeMarkdownText(finding.recommendation)}`);
   }
 
   return `${lines.join("\n")}\n`;

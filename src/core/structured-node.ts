@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { ArtifactStore } from "./artifact-store.js";
+import { slugify } from "./path-security.js";
+
+const RAW_OUTPUT_MAX_BYTES = 8192;
 
 type StructuredNodeError = Error & {
   code: "agent_output_invalid";
@@ -15,6 +18,11 @@ type RunStructuredNodeOptions<T> = {
 type ValidationIssue = {
   path: string;
   message: string;
+};
+
+type StoredRawOutput = {
+  rawOutput: unknown;
+  truncated: boolean;
 };
 
 function agentOutputInvalid(message: string): StructuredNodeError {
@@ -66,6 +74,56 @@ function summarizeError(error: unknown): ValidationIssue[] {
   ];
 }
 
+function truncateUtf8(value: string, maxBytes: number): StoredRawOutput {
+  let byteLength = 0;
+  let output = "";
+
+  for (const codePoint of value) {
+    const codePointBytes = Buffer.byteLength(codePoint, "utf8");
+    if (byteLength + codePointBytes > maxBytes) {
+      return {
+        rawOutput: output,
+        truncated: true
+      };
+    }
+
+    output += codePoint;
+    byteLength += codePointBytes;
+  }
+
+  return {
+    rawOutput: output,
+    truncated: false
+  };
+}
+
+function redactRawString(value: string): string {
+  return value
+    .replace(
+      /("?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|password|token|secret)"?\s*:\s*)"(?:\\.|[^"\\])*"/gi,
+      "$1\"[REDACTED]\""
+    )
+    .replace(
+      /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|password|token|secret)\s*=\s*[^\s,"'}]+/gi,
+      "$1=[REDACTED]"
+    )
+    .replace(
+      /\b(authorization\s*:\s*)(?:Bearer\s+)?[^\s,"'}]+/gi,
+      "$1[REDACTED]"
+    );
+}
+
+function prepareRawOutputForArtifact(rawOutput: unknown): StoredRawOutput {
+  if (typeof rawOutput !== "string") {
+    return {
+      rawOutput,
+      truncated: false
+    };
+  }
+
+  return truncateUtf8(redactRawString(rawOutput), RAW_OUTPUT_MAX_BYTES);
+}
+
 export async function runStructuredNode<T>({
   nodeName,
   schema,
@@ -86,10 +144,13 @@ export async function runStructuredNode<T>({
     }
   }
 
-  await artifactStore.writeJsonInDirectory("invalid-output", `${nodeName}.json`, {
+  const storedRawOutput = prepareRawOutputForArtifact(lastRawOutput);
+
+  await artifactStore.writeJsonInDirectory("invalid-output", `${slugify(nodeName)}.json`, {
     node: nodeName,
     attempts: 2,
-    raw_output: lastRawOutput,
+    raw_output: storedRawOutput.rawOutput,
+    raw_output_truncated: storedRawOutput.truncated,
     issues: lastIssues.slice(0, 20)
   });
 

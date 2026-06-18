@@ -98,6 +98,24 @@ describe("evidence validation", () => {
     expect(validated.confidence).toBe("low");
   });
 
+  it("removes evidence when its quote exists outside the cited line range", () => {
+    const [validated] = validateFindingEvidence(repoContext, [
+      finding({
+        evidence: [
+          {
+            path: "src/auth.ts",
+            line_start: 12,
+            line_end: 12,
+            quote: "updateUser(request.body)"
+          }
+        ]
+      })
+    ]);
+
+    expect(validated.evidence).toEqual([]);
+    expect(validated.confidence).toBe("low");
+  });
+
   it("downgrades a high-confidence finding with no valid evidence to low", () => {
     const [validated] = validateFindingEvidence(repoContext, [
       finding({ confidence: "high", evidence: [] })

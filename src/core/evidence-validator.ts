@@ -19,12 +19,30 @@ function hasValidEvidence(
 
   if (
     evidence.quote !== undefined &&
-    !changedFile.excerpt.content.includes(evidence.quote)
+    !excerptLineRangeContent(
+      changedFile.excerpt.content,
+      changedFile.excerpt.start_line,
+      evidence.line_start,
+      evidence.line_end
+    ).includes(evidence.quote)
   ) {
     return false;
   }
 
   return true;
+}
+
+function excerptLineRangeContent(
+  content: string,
+  excerptStartLine: number,
+  lineStart: number,
+  lineEnd: number
+): string {
+  const lines = content.split("\n");
+  const startIndex = lineStart - excerptStartLine;
+  const endIndex = lineEnd - excerptStartLine;
+
+  return lines.slice(startIndex, endIndex + 1).join("\n");
 }
 
 export function validateFindingEvidence(

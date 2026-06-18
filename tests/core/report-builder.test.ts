@@ -136,4 +136,27 @@ describe("final report builder", () => {
     expect(json.workspace).toEqual(workspace);
     expect(json.workspace?.preserved).toBe(true);
   });
+
+  it("normalizes model-controlled Markdown so fields cannot create fake structure", () => {
+    const markdown = buildFinalReportMarkdown({
+      invocation,
+      findings: [
+        {
+          ...finding("Injected\n## Fake Heading", "high"),
+          description: "First line\n### Fake description heading\n- fake list item",
+          recommendation: "Fix it\n## Fake recommendation heading\n- fake action"
+        }
+      ],
+      acceptance
+    });
+
+    expect(markdown).not.toContain("\n## Fake Heading");
+    expect(markdown).not.toContain("\n### Fake description heading");
+    expect(markdown).not.toContain("\n## Fake recommendation heading");
+    expect(markdown).not.toContain("\n- fake list item");
+    expect(markdown).not.toContain("\n- fake action");
+    expect(markdown).toContain("Injected ## Fake Heading");
+    expect(markdown).toContain("First line ### Fake description heading - fake list item");
+    expect(markdown).toContain("Fix it ## Fake recommendation heading - fake action");
+  });
 });
