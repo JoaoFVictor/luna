@@ -1,0 +1,22 @@
+{
+  "target": "github_pr",
+  "owner": "octo-org",
+  "repo": "hello-world",
+  "pull_number": 42,
+  "base_ref": "main",
+  "base_repository": {
+    "owner": "octo-org",
+    "name": "hello-world",
+    "full_name": "octo-org/hello-world"
+  },
+  "head_repository": {
+    "owner": "contributor",
+    "name": "hello-world",
+    "full_name": "contributor/hello-world",
+    "fork": true
+  },
+  "references": {
+    "base_sha": "abc123",
+    "head_sha": "def456"
+  }
+}
