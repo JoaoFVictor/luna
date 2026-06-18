@@ -264,4 +264,54 @@ describe("repo context collector", () => {
       excerpt: null
     });
   });
+
+  it("enforces UTF-8 byte budgets for patches and excerpts", async () => {
+    const context = await collectRepoContext({
+      invocation: gitInvocation,
+      repository: gitRepository,
+      maxDiffBytes: 5,
+      maxExcerptBytes: 5,
+      runGit: async (_cwd, args) => {
+        if (args.join(" ") === `merge-base ${baseSha} ${headSha}`) {
+          return "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
+        }
+
+        if (args.join(" ") === "status --short") {
+          return "";
+        }
+
+        if (args.join(" ") === `diff --raw ${baseSha} ${headSha}`) {
+          return ":100644 100644 aaaaaaa bbbbbbb M\tsrc/unicode.ts\n";
+        }
+
+        if (args.join(" ") === `diff --numstat ${baseSha} ${headSha}`) {
+          return "1\t0\tsrc/unicode.ts\n";
+        }
+
+        if (args.join(" ") === `diff --name-status ${baseSha} ${headSha}`) {
+          return "M\tsrc/unicode.ts\n";
+        }
+
+        if (args.join(" ") === `diff ${baseSha} ${headSha} -- src/unicode.ts`) {
+          return "界".repeat(10);
+        }
+
+        if (args.join(" ") === `show ${headSha}:src/unicode.ts`) {
+          return "界".repeat(10);
+        }
+
+        throw new Error(`Unexpected git command: ${args.join(" ")}`);
+      }
+    });
+
+    const file = context.files[0];
+    const patchBytes = Buffer.byteLength(file.patch ?? "", "utf8");
+    const excerptContent = file.excerpt?.content ?? "";
+    const excerptBytes = Buffer.byteLength(excerptContent, "utf8");
+
+    expect(patchBytes).toBeLessThanOrEqual(5);
+    expect(excerptBytes).toBeLessThanOrEqual(5);
+    expect(file.excerpt).toMatchObject({ truncated: true });
+    expect(excerptContent).not.toContain("\uFFFD");
+  });
 });

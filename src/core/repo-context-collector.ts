@@ -154,9 +154,31 @@ function lineCount(content: string): number {
   return content.split("\n").length;
 }
 
+function truncateUtf8ToBytes(content: string, maxBytes: number): string {
+  if (maxBytes <= 0) {
+    return "";
+  }
+
+  let bytesUsed = 0;
+  let truncated = "";
+
+  for (const character of content) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+
+    if (bytesUsed + characterBytes > maxBytes) {
+      break;
+    }
+
+    truncated += character;
+    bytesUsed += characterBytes;
+  }
+
+  return truncated;
+}
+
 function excerptForContent(content: string, maxBytes: number): FileExcerpt {
   const truncated = Buffer.byteLength(content, "utf8") > maxBytes;
-  const excerptContent = truncated ? content.slice(0, maxBytes) : content;
+  const excerptContent = truncated ? truncateUtf8ToBytes(content, maxBytes) : content;
 
   return {
     start_line: 1,
@@ -175,7 +197,7 @@ function patchWithinBudget(patch: string, remainingBytes: number): string | null
     return patch;
   }
 
-  return patch.slice(0, remainingBytes);
+  return truncateUtf8ToBytes(patch, remainingBytes);
 }
 
 export async function collectRepoContext({
@@ -236,7 +258,10 @@ export async function collectRepoContext({
       const fullPatch = await runGit(cwd, ["diff", baseSha, headSha, "--", entry.path]);
       const patch = patchWithinBudget(fullPatch, remainingDiffBytes);
       file.patch = patch;
-      remainingDiffBytes -= Buffer.byteLength(patch ?? "", "utf8");
+      remainingDiffBytes = Math.max(
+        0,
+        remainingDiffBytes - Buffer.byteLength(patch ?? "", "utf8")
+      );
     }
 
     if (canReadHead) {
