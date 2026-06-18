@@ -542,6 +542,65 @@ describe("code review orchestrator", () => {
     });
   });
 
+  it("keeps cleaned workspace state if final report writing fails after cleanup", async () => {
+    class FinalReportFailingStore extends ArtifactStore {
+      override async writeJson(name: string, value: unknown): Promise<string> {
+        if (name === "final-report.json") {
+          throw codedError("artifact_write_failed");
+        }
+
+        return await super.writeJson(name, value);
+      }
+    }
+
+    const harness = await createHarness({
+      artifactStore: FinalReportFailingStore
+    });
+
+    await expect(executeCodeReview(harness.options)).rejects.toMatchObject({
+      code: "artifact_write_failed"
+    });
+
+    expect(harness.cleanupWorktree).toHaveBeenCalledTimes(1);
+    await expect(readJson(harness.artifactRoot, "workspace.json")).resolves.toMatchObject({
+      preserved: false,
+      reason: "success_cleanup"
+    });
+    await expectBaseFailureArtifacts(harness.artifactRoot, "artifact_write_failed");
+  });
+
+  it("does not pass an unpersisted workspace record to cleanup", async () => {
+    class InitialWorkspaceFailingStore extends ArtifactStore {
+      #workspaceWrites = 0;
+
+      override async writeJson(name: string, value: unknown): Promise<string> {
+        if (name === "workspace.json") {
+          this.#workspaceWrites += 1;
+          if (this.#workspaceWrites === 1) {
+            throw codedError("artifact_write_failed");
+          }
+        }
+
+        return await super.writeJson(name, value);
+      }
+    }
+
+    const harness = await createHarness({
+      artifactStore: InitialWorkspaceFailingStore
+    });
+
+    await expect(executeCodeReview(harness.options)).rejects.toMatchObject({
+      code: "artifact_write_failed"
+    });
+
+    expect(harness.cleanupWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceRecord,
+        persistedWorkspaceRecord: undefined
+      })
+    );
+  });
+
   it("keeps the original thrown error if error artifact writing fails", async () => {
     class ErrorArtifactFailingStore {
       constructor(

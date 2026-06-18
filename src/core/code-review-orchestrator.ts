@@ -168,7 +168,12 @@ async function finalizeFailureWorkspace({
 
   let finalWorkspace = workspaceRecord;
 
-  if (workspaceRecord.reason === "success_cleanup_failed") {
+  if (
+    workspaceRecord.reason === "success_cleanup" ||
+    workspaceRecord.reason === "success_cleanup_failed" ||
+    workspaceRecord.reason === "failure_cleanup_failed" ||
+    workspaceRecord.reason === "failure_preserved"
+  ) {
     finalWorkspace = workspaceRecord;
   } else if (workspaceConfig.preserve_on_failure) {
     finalWorkspace = {
@@ -246,8 +251,8 @@ export async function executeCodeReview({
       workspaceRoot: configs.app.workspace.root,
       runId: run.run_id
     });
-    persistedWorkspaceRecord = workspaceRecord;
     await artifactStore.writeJson("workspace.json", workspaceRecord);
+    persistedWorkspaceRecord = workspaceRecord;
 
     const workspaceRepository = {
       ...repository,
@@ -320,6 +325,7 @@ export async function executeCodeReview({
     }
 
     await artifactStore.writeJson("workspace.json", finalWorkspace);
+    workspaceRecord = finalWorkspace;
 
     const markdown = markdownReport({
       invocation,
