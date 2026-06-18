@@ -154,7 +154,8 @@ export const FileExcerptSchema = z
   .object({
     start_line: z.number().int().positive(),
     end_line: z.number().int().positive(),
-    content: z.string()
+    content: z.string(),
+    truncated: z.boolean().optional()
   })
   .strict()
   .refine((excerpt) => excerpt.end_line >= excerpt.start_line, {
@@ -179,6 +180,9 @@ export const ChangedFileSchema = z
     additions: z.number().int().nonnegative(),
     deletions: z.number().int().nonnegative(),
     binary: z.boolean().optional(),
+    is_large: z.boolean().optional(),
+    is_lfs_pointer: z.boolean().optional(),
+    is_submodule: z.boolean().optional(),
     previous_path: NonEmptyStringSchema.optional(),
     patch: z.string().nullable(),
     excerpt: FileExcerptSchema.nullable()
@@ -191,7 +195,19 @@ export const RepoContextSchema = z
     repository: RepositoryRefSchema,
     base_sha: NonEmptyStringSchema,
     head_sha: NonEmptyStringSchema,
-    files: z.array(ChangedFileSchema)
+    files: z.array(ChangedFileSchema),
+    merge_base: NonEmptyStringSchema.optional(),
+    changed_files_truncated: z.boolean().optional(),
+    total_changed_files: z.number().int().nonnegative().optional(),
+    changed_file_limit: z.number().int().positive().optional(),
+    file_excerpts_truncated: z.array(NonEmptyStringSchema).optional(),
+    git: z
+      .object({
+        merge_base: NonEmptyStringSchema,
+        status_short: z.array(z.string())
+      })
+      .strict()
+      .optional()
   })
   .strict();
 export type RepoContext = z.infer<typeof RepoContextSchema>;
