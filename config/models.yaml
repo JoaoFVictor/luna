@@ -1,0 +1,10 @@
+model_profiles:
+  planner:
+    model: ${PLANNER_MODEL}
+    reasoning_effort: medium
+  reviewer:
+    model: ${REVIEWER_MODEL}
+    reasoning_effort: high
+  acceptance:
+    model: ${ACCEPTANCE_MODEL}
+    reasoning_effort: medium

@@ -1,0 +1,7 @@
+repositories:
+  - id: example
+    provider: github
+    owner: org
+    name: repo
+    path: /tmp/luna-example-repo
+    remote: origin
