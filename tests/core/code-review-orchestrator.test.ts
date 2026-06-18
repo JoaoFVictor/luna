@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { ArtifactStore } from "../../src/core/artifact-store.js";
 import { executeCodeReview } from "../../src/core/code-review-orchestrator.js";
 import type { PreflightResult } from "../../src/core/preflight.js";
 import type {
@@ -31,6 +32,7 @@ type HarnessOptions = {
   cleanupWorktree?: (
     options: Record<string, unknown>
   ) => Promise<WorkspaceRecord>;
+  artifactStore?: typeof ArtifactStore;
   plannerOutput?: unknown;
   reviewerOutput?: unknown;
   acceptanceOutput?: unknown;
@@ -177,12 +179,14 @@ async function createHarness(options: HarnessOptions = {}) {
   const collectRepoContext = vi.fn(
     options.collectRepoContext ?? (async () => repoContext)
   );
+  const resolveRepository = vi.fn(options.resolveRepository ?? (() => gitRepository));
 
   return {
     artifactRoot,
     workspaceRoot,
     cleanupWorktree,
     route,
+    resolveRepository,
     runPreflight,
     prepareWorktree,
     collectRepoContext,
@@ -219,11 +223,14 @@ async function createHarness(options: HarnessOptions = {}) {
           started_at: "2026-06-18T12:00:00.000Z"
         }),
         routeInvocation: route,
-        resolveRepository: vi.fn(options.resolveRepository ?? (() => gitRepository)),
+        resolveRepository,
         runPreflight,
         prepareWorktree,
         cleanupWorktree,
-        collectRepoContext
+        collectRepoContext,
+        ...(options.artifactStore === undefined
+          ? {}
+          : { ArtifactStore: options.artifactStore })
       }
     }
   };
@@ -291,6 +298,21 @@ describe("code review orchestrator", () => {
       harness.artifactRoot,
       "repository_not_configured"
     );
+  });
+
+  it("rejects a routed workflow other than code-review before downstream work", async () => {
+    const harness = await createHarness({
+      route: () => ({ type: "workflow", id: "manual-review" })
+    });
+
+    await expect(executeCodeReview(harness.options)).rejects.toMatchObject({
+      code: "wrong_workflow_target"
+    });
+
+    await expectBaseFailureArtifacts(harness.artifactRoot, "wrong_workflow_target");
+    expect(harness.resolveRepository).not.toHaveBeenCalled();
+    expect(harness.runPreflight).not.toHaveBeenCalled();
+    expect(harness.prepareWorktree).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -471,7 +493,7 @@ describe("code review orchestrator", () => {
   it("cleans successful workspace when preserve_on_success is false and writes preserved false", async () => {
     const harness = await createHarness({ preserveOnSuccess: false });
 
-    await executeCodeReview(harness.options);
+    const result = await executeCodeReview(harness.options);
 
     expect(harness.cleanupWorktree).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -482,6 +504,100 @@ describe("code review orchestrator", () => {
     await expect(readJson(harness.artifactRoot, "workspace.json")).resolves.toMatchObject({
       preserved: false,
       reason: "success_cleanup"
+    });
+    await expect(readJson(harness.artifactRoot, "final-report.json")).resolves.toMatchObject({
+      workspace: {
+        preserved: false,
+        reason: "success_cleanup"
+      }
+    });
+    expect(result.workspace).toMatchObject({
+      preserved: false,
+      reason: "success_cleanup"
+    });
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.report.workspace).toEqual(result.workspace);
+    }
+  });
+
+  it("treats success cleanup failure as a failed run before writing final reports", async () => {
+    const harness = await createHarness({
+      cleanupWorktree: async () => {
+        throw codedError("workspace_record_missing");
+      }
+    });
+
+    await expect(executeCodeReview(harness.options)).rejects.toMatchObject({
+      code: "success_cleanup_failed"
+    });
+
+    await expectBaseFailureArtifacts(harness.artifactRoot, "success_cleanup_failed");
+    await expect(runArtifacts(harness.artifactRoot)).resolves.not.toContain(
+      "final-report.json"
+    );
+    await expect(readJson(harness.artifactRoot, "workspace.json")).resolves.toMatchObject({
+      preserved: true,
+      reason: "success_cleanup_failed"
+    });
+  });
+
+  it("keeps the original thrown error if error artifact writing fails", async () => {
+    class ErrorArtifactFailingStore {
+      constructor(
+        readonly artifactRoot: string,
+        readonly runId: string
+      ) {}
+
+      async writeJson(name: string, _value: unknown): Promise<string> {
+        if (name === "error.json") {
+          throw codedError("artifact_write_failed");
+        }
+
+        return path.join(this.artifactRoot, this.runId, name);
+      }
+
+      async writeJsonInDirectory(
+        directory: string,
+        name: string,
+        _value: unknown
+      ): Promise<string> {
+        return path.join(this.artifactRoot, this.runId, directory, name);
+      }
+
+      async writeMarkdown(name: string, _value: string): Promise<string> {
+        return path.join(this.artifactRoot, this.runId, name);
+      }
+    }
+
+    const throwingHarness = await createHarness({
+      artifactStore: ErrorArtifactFailingStore as unknown as typeof ArtifactStore,
+      resolveRepository: () => {
+        throw codedError("repository_not_configured");
+      }
+    });
+
+    await expect(executeCodeReview(throwingHarness.options)).rejects.toMatchObject({
+      code: "repository_not_configured"
+    });
+
+    const returningHarness = await createHarness({
+      artifactStore: ErrorArtifactFailingStore as unknown as typeof ArtifactStore,
+      resolveRepository: () => {
+        throw codedError("repository_not_configured");
+      }
+    });
+
+    await expect(
+      executeCodeReview({
+        ...returningHarness.options,
+        throwOnError: false
+      })
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: {
+        code: "repository_not_configured"
+      }
     });
   });
 

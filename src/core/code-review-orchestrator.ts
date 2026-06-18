@@ -25,6 +25,7 @@ import {
   type RepositoriesConfig,
   type RepositoryConfig,
   type ReviewPlan,
+  type RouteTarget,
   type RoutingConfig,
   type RunIdentity,
   type WorkspaceRecord
@@ -114,6 +115,38 @@ function errorArtifact(runId: string, error: unknown): ErrorArtifact {
   };
 }
 
+function codedError(
+  message: string,
+  code: string,
+  cause?: unknown
+): Error & { code: string } {
+  const error = new Error(message, { cause }) as Error & { code: string };
+  error.code = code;
+  return error;
+}
+
+function assertCodeReviewWorkflow(target: RouteTarget): void {
+  if (target.type !== "workflow" || target.id !== "code-review") {
+    throw codedError(
+      `Unsupported workflow target: ${target.type}/${target.id}`,
+      "wrong_workflow_target"
+    );
+  }
+}
+
+async function writeJsonBestEffort(
+  artifactStore: ArtifactStore,
+  name: string,
+  value: unknown
+): Promise<unknown> {
+  try {
+    await artifactStore.writeJson(name, value);
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
 async function finalizeFailureWorkspace({
   artifactStore,
   workspaceRecord,
@@ -135,7 +168,9 @@ async function finalizeFailureWorkspace({
 
   let finalWorkspace = workspaceRecord;
 
-  if (workspaceConfig.preserve_on_failure) {
+  if (workspaceRecord.reason === "success_cleanup_failed") {
+    finalWorkspace = workspaceRecord;
+  } else if (workspaceConfig.preserve_on_failure) {
     finalWorkspace = {
       ...workspaceRecord,
       preserved: true,
@@ -195,7 +230,8 @@ export async function executeCodeReview({
   await artifactStore.writeJson("run.json", run);
 
   try {
-    route(invocation, configs.routing);
+    const routeTarget = route(invocation, configs.routing);
+    assertCodeReviewWorkflow(routeTarget);
     repository = resolveRepo(invocation, configs.repositories.repositories);
 
     const preflightResult = (await preflight({
@@ -254,6 +290,37 @@ export async function executeCodeReview({
     })) as AcceptanceDecision;
     await artifactStore.writeJson("acceptance-review.json", acceptance);
 
+    let finalWorkspace = workspaceRecord;
+    if (!configs.app.workspace.preserve_on_success) {
+      try {
+        finalWorkspace = await cleanupWorktree({
+          repositoryPath: repository.path,
+          workspaceRoot: configs.app.workspace.root,
+          workspaceRecord,
+          persistedWorkspaceRecord
+        });
+      } catch (cause) {
+        workspaceRecord = {
+          ...workspaceRecord,
+          preserved: true,
+          reason: "success_cleanup_failed"
+        };
+        throw codedError(
+          "Successful review workspace cleanup failed",
+          "success_cleanup_failed",
+          cause
+        );
+      }
+    } else {
+      finalWorkspace = {
+        ...workspaceRecord,
+        preserved: true,
+        reason: "success_preserved"
+      };
+    }
+
+    await artifactStore.writeJson("workspace.json", finalWorkspace);
+
     const markdown = markdownReport({
       invocation,
       findings: codeReviewFindings.findings,
@@ -267,27 +334,9 @@ export async function executeCodeReview({
       acceptance,
       findings: codeReviewFindings.findings,
       reportPath,
-      workspace: workspaceRecord
+      workspace: finalWorkspace
     });
     await artifactStore.writeJson("final-report.json", report);
-
-    let finalWorkspace = workspaceRecord;
-    if (!configs.app.workspace.preserve_on_success) {
-      finalWorkspace = await cleanupWorktree({
-        repositoryPath: repository.path,
-        workspaceRoot: configs.app.workspace.root,
-        workspaceRecord,
-        persistedWorkspaceRecord
-      });
-    } else {
-      finalWorkspace = {
-        ...workspaceRecord,
-        preserved: true,
-        reason: "success_preserved"
-      };
-    }
-
-    await artifactStore.writeJson("workspace.json", finalWorkspace);
 
     return {
       status: "success",
@@ -297,18 +346,41 @@ export async function executeCodeReview({
     };
   } catch (error) {
     const artifact = errorArtifact(run.run_id, error);
-    await artifactStore.writeJson("error.json", artifact);
-    const finalWorkspace = await finalizeFailureWorkspace({
+    const artifactWriteError = await writeJsonBestEffort(
       artifactStore,
-      workspaceRecord,
-      persistedWorkspaceRecord,
-      repository,
-      workspaceConfig: configs.app.workspace,
-      cleanupWorktree
-    });
+      "error.json",
+      artifact
+    );
+    let finalWorkspace: WorkspaceRecord | undefined;
+    const workspaceWriteError = await (async () => {
+      try {
+        finalWorkspace = await finalizeFailureWorkspace({
+          artifactStore,
+          workspaceRecord,
+          persistedWorkspaceRecord,
+          repository,
+          workspaceConfig: configs.app.workspace,
+          cleanupWorktree
+        });
+        return undefined;
+      } catch (cause) {
+        return cause;
+      }
+    })();
 
     if (throwOnError) {
       throw error;
+    }
+
+    if (artifactWriteError !== undefined || workspaceWriteError !== undefined) {
+      artifact.details = {
+        ...(artifactWriteError === undefined
+          ? {}
+          : { error_artifact_write_failed: errorMessage(artifactWriteError) }),
+        ...(workspaceWriteError === undefined
+          ? {}
+          : { workspace_artifact_write_failed: errorMessage(workspaceWriteError) })
+      };
     }
 
     return {
