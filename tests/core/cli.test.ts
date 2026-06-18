@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Invocation } from "../../src/core/types.js";
 import {
   buildFlueRunCommand,
+  childProcessExitCode,
   childProcessFailureExitCode,
   findProjectRoot,
   loadInvocationFromFile,
@@ -166,6 +167,7 @@ describe("flue local CLI wrapper", () => {
   });
 
   it("maps child process signal termination to conventional exit code", () => {
+    expect(childProcessExitCode(null, "SIGTERM")).toBe(143);
     expect(childProcessFailureExitCode({ signal: "SIGTERM" })).toBe(143);
   });
 });

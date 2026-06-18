@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
@@ -163,22 +163,15 @@ export async function buildFlueRunCommand(
 
 async function executeFile(command: string, args: string[]): Promise<number> {
   return await new Promise((resolve, reject) => {
-    const child = execFile(command, args, (error) => {
-      if (error) {
-        const exitCode = childProcessFailureExitCode(error);
-        if (exitCode !== undefined) {
-          resolve(exitCode);
-          return;
-        }
-        reject(error);
-        return;
-      }
+    const child = spawn(command, args, { stdio: "inherit" });
 
-      resolve(0);
+    child.on("error", (error) => {
+      reject(error);
     });
 
-    child.stdout?.pipe(process.stdout);
-    child.stderr?.pipe(process.stderr);
+    child.on("close", (code, signal) => {
+      resolve(childProcessExitCode(code, signal));
+    });
   });
 }
 
@@ -197,6 +190,21 @@ export function childProcessFailureExitCode(error: unknown): number | undefined 
   }
 
   return undefined;
+}
+
+export function childProcessExitCode(
+  code: number | null,
+  signal: NodeJS.Signals | null
+): number {
+  if (typeof code === "number") {
+    return code;
+  }
+
+  if (signal !== null) {
+    return 128 + signalNumber(signal);
+  }
+
+  return 1;
 }
 
 function signalNumber(signal: string): number {
