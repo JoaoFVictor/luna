@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createAgent } from "@flue/runtime";
+import instructions from "../../agents/code-reviewer/instructions.md" with { type: "markdown" };
 import YAML from "yaml";
 import { z } from "zod";
 import { loadYamlFile, resolveConfigRoot } from "../core/config-loader.js";
@@ -36,13 +37,6 @@ async function loadAgentConfig() {
   return AgentConfigSchema.parse(YAML.parse(content));
 }
 
-async function loadInstructions(instructionsFile: string): Promise<string> {
-  return await readFile(
-    new URL(`../../agents/code-reviewer/${instructionsFile}`, import.meta.url),
-    "utf8"
-  );
-}
-
 export default createAgent(async () => {
   const agentConfig = await loadAgentConfig();
   const configRoot = resolveConfigRoot(process.env);
@@ -62,7 +56,7 @@ export default createAgent(async () => {
 
   return {
     description,
-    instructions: await loadInstructions(agentConfig.instructions_file),
+    instructions,
     ...toFlueModelOptions(profile)
   };
 });

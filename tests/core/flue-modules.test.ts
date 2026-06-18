@@ -16,6 +16,11 @@ type PromptCall = {
   options: Record<string, unknown>;
 };
 
+type InitCall = {
+  agent: CreatedAgent;
+  options?: { name?: string };
+};
+
 const originalEnv = { ...process.env };
 
 async function writeConfigRoot(modelsYaml: string): Promise<string> {
@@ -188,9 +193,34 @@ describe("flue modules", () => {
     });
   });
 
+  it("reports missing required workflow model profiles before prompting", async () => {
+    const configRoot = await writeConfigRoot([
+      "model_profiles:",
+      "  reviewer:",
+      "    model: reviewer-model",
+      "    reasoning_effort: high",
+      "  acceptance:",
+      "    model: acceptance-model",
+      "    reasoning_effort: medium",
+      ""
+    ].join("\n"));
+    process.env.LUNA_CONFIG_ROOT = configRoot;
+
+    const workflow = await importWorkflowWithOrchestratorMock(async () => {
+      throw new Error("executeCodeReview should not run without model profiles");
+    });
+
+    await expect(
+      workflow.run({ payload: gitInvocation } as never)
+    ).rejects.toMatchObject({
+      code: "model_profile_missing",
+      message: "Model profile planner is not configured for code-review workflow"
+    });
+  });
+
   it("passes resolved model profiles to Flue prompts", async () => {
     const promptCalls: PromptCall[] = [];
-    const agents: CreatedAgent[] = [];
+    const initCalls: InitCall[] = [];
     const configRoot = await writeConfigRoot([
       "model_profiles:",
       "  planner:",
@@ -248,8 +278,8 @@ describe("flue modules", () => {
 
     const result = await workflow.run({
       payload: gitInvocation,
-      init: vi.fn(async (agent: CreatedAgent) => {
-        agents.push(agent);
+      init: vi.fn(async (agent: CreatedAgent, options?: { name?: string }) => {
+        initCalls.push({ agent, options });
         const initialized = await agent.initialize({
           id: "test-run",
           payload: gitInvocation,
@@ -294,7 +324,11 @@ describe("flue modules", () => {
     } as never);
 
     expect(result).toMatchObject({ status: "success" });
-    expect(agents).toHaveLength(3);
+    expect(initCalls.map((call) => call.options?.name)).toEqual([
+      "review-planner",
+      "code-reviewer",
+      "acceptance-reviewer"
+    ]);
     expect(promptCalls.map((call) => call.options)).toEqual([
       expect.objectContaining({
         model: "openai/planner-test",

@@ -26,6 +26,7 @@ import {
   type AppConfig,
   type CodeReviewFindings,
   type Invocation,
+  type ModelProfile,
   type RepoContext,
   type RepositoriesConfig,
   type ReviewPlan,
@@ -121,6 +122,22 @@ function fakeNodes() {
   };
 }
 
+function requiredModelProfile(
+  modelProfiles: Record<string, ModelProfile>,
+  profileName: string
+): ModelProfile {
+  const profile = modelProfiles[profileName];
+
+  if (profile === undefined) {
+    throw codedError(
+      `Model profile ${profileName} is not configured for code-review workflow`,
+      "model_profile_missing"
+    );
+  }
+
+  return profile;
+}
+
 export async function run(
   ctx: FlueContext<Invocation>
 ): Promise<CodeReviewResult> {
@@ -131,9 +148,15 @@ export async function run(
     ModelsConfigSchema
   );
   const modelProfiles = resolveModelProfiles(modelsConfig, process.env);
-  const plannerModel = toFlueModelOptions(modelProfiles.planner);
-  const reviewerModel = toFlueModelOptions(modelProfiles.reviewer);
-  const acceptanceModel = toFlueModelOptions(modelProfiles.acceptance);
+  const plannerModel = toFlueModelOptions(
+    requiredModelProfile(modelProfiles, "planner")
+  );
+  const reviewerModel = toFlueModelOptions(
+    requiredModelProfile(modelProfiles, "reviewer")
+  );
+  const acceptanceModel = toFlueModelOptions(
+    requiredModelProfile(modelProfiles, "acceptance")
+  );
 
   let repoContext: RepoContext | undefined;
   let reviewPlan: ReviewPlan | undefined;
@@ -163,7 +186,9 @@ export async function run(
       : {
           reviewPlanner: {
             execute: async () => {
-              const harness = await ctx.init(reviewPlanner);
+              const harness = await ctx.init(reviewPlanner, {
+                name: "review-planner"
+              });
               const session = await harness.session();
               const response = await session.prompt(
                 [
@@ -181,7 +206,9 @@ export async function run(
           },
           codeReviewer: {
             execute: async () => {
-              const harness = await ctx.init(codeReviewer);
+              const harness = await ctx.init(codeReviewer, {
+                name: "code-reviewer"
+              });
               const session = await harness.session();
               const response = await session.prompt(
                 [
@@ -200,7 +227,9 @@ export async function run(
           },
           acceptanceReviewer: {
             execute: async () => {
-              const harness = await ctx.init(acceptanceReviewer);
+              const harness = await ctx.init(acceptanceReviewer, {
+                name: "acceptance-reviewer"
+              });
               const session = await harness.session();
               const response = await session.prompt(
                 [
