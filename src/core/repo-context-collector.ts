@@ -42,6 +42,11 @@ type NameStatusEntry = {
   status: FileStatus;
 };
 
+type PatchBudgetResult = {
+  patch: string | null;
+  truncated: boolean;
+};
+
 const DEFAULT_MAX_CHANGED_FILES = 100;
 const DEFAULT_MAX_DIFF_BYTES = 200_000;
 const DEFAULT_MAX_EXCERPT_BYTES = 8_000;
@@ -68,21 +73,34 @@ function statusFromCode(code: string): FileStatus {
   }
 }
 
+function nulFields(output: string): string[] {
+  const fields = output.split("\0");
+
+  if (fields.at(-1) === "") {
+    fields.pop();
+  }
+
+  return fields;
+}
+
 function parseRaw(raw: string): Map<string, RawEntry> {
   const entries = new Map<string, RawEntry>();
+  const fields = nulFields(raw);
 
-  for (const line of raw.split("\n").filter((value) => value.length > 0)) {
-    const [metadata, ...paths] = line.split("\t");
+  for (let index = 0; index < fields.length; ) {
+    const metadata = fields[index++];
     const [, oldMode, newMode, , , statusCode] =
       metadata.match(/^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/) ?? [];
 
-    if (!oldMode || !newMode || !statusCode || paths.length === 0) {
+    if (!oldMode || !newMode || !statusCode) {
       continue;
     }
 
     const status = statusFromCode(statusCode);
-    const path = status === "renamed" || status === "copied" ? paths[1] : paths[0];
-    const previousPath = status === "renamed" ? paths[0] : undefined;
+    const firstPath = fields[index++];
+    const secondPath = status === "renamed" || status === "copied" ? fields[index++] : undefined;
+    const path = status === "renamed" || status === "copied" ? secondPath : firstPath;
+    const previousPath = status === "renamed" ? firstPath : undefined;
 
     if (!path) {
       continue;
@@ -107,10 +125,16 @@ function parseCount(value: string): number {
 
 function parseNumstat(numstat: string): Map<string, NumstatEntry> {
   const entries = new Map<string, NumstatEntry>();
+  const fields = nulFields(numstat);
 
-  for (const line of numstat.split("\n").filter((value) => value.length > 0)) {
-    const [additions, deletions, firstPath, secondPath] = line.split("\t");
-    const path = secondPath ?? firstPath;
+  for (let index = 0; index < fields.length; ) {
+    const stats = fields[index++];
+    const [additions, deletions, pathInStats] = stats.split("\t");
+    const path = pathInStats === "" ? fields[index + 1] : pathInStats;
+
+    if (pathInStats === "") {
+      index += 2;
+    }
 
     if (!additions || !deletions || !path) {
       continue;
@@ -129,10 +153,13 @@ function parseNumstat(numstat: string): Map<string, NumstatEntry> {
 
 function parseNameStatus(nameStatus: string): NameStatusEntry[] {
   const entries: NameStatusEntry[] = [];
+  const fields = nulFields(nameStatus);
 
-  for (const line of nameStatus.split("\n").filter((value) => value.length > 0)) {
-    const [statusCode, firstPath, secondPath] = line.split("\t");
+  for (let index = 0; index < fields.length; ) {
+    const statusCode = fields[index++];
     const status = statusFromCode(statusCode);
+    const firstPath = fields[index++];
+    const secondPath = status === "renamed" || status === "copied" ? fields[index++] : undefined;
     const path = status === "renamed" || status === "copied" ? secondPath : firstPath;
     const previousPath = status === "renamed" ? firstPath : undefined;
 
@@ -188,16 +215,16 @@ function excerptForContent(content: string, maxBytes: number): FileExcerpt {
   };
 }
 
-function patchWithinBudget(patch: string, remainingBytes: number): string | null {
+function patchWithinBudget(patch: string, remainingBytes: number): PatchBudgetResult {
   if (remainingBytes <= 0) {
-    return null;
+    return { patch: null, truncated: false };
   }
 
   if (Buffer.byteLength(patch, "utf8") <= remainingBytes) {
-    return patch;
+    return { patch, truncated: false };
   }
 
-  return truncateUtf8ToBytes(patch, remainingBytes);
+  return { patch: truncateUtf8ToBytes(patch, remainingBytes), truncated: true };
 }
 
 export async function collectRepoContext({
@@ -216,12 +243,12 @@ export async function collectRepoContext({
   const statusShort = (await runGit(cwd, ["status", "--short"]))
     .split("\n")
     .filter((line) => line.length > 0);
-  const rawEntries = parseRaw(await runGit(cwd, ["diff", "--raw", baseSha, headSha]));
+  const rawEntries = parseRaw(await runGit(cwd, ["diff", "--raw", "-z", baseSha, headSha]));
   const numstatEntries = parseNumstat(
-    await runGit(cwd, ["diff", "--numstat", baseSha, headSha])
+    await runGit(cwd, ["diff", "--numstat", "-z", baseSha, headSha])
   );
   const nameStatusEntries = parseNameStatus(
-    await runGit(cwd, ["diff", "--name-status", baseSha, headSha])
+    await runGit(cwd, ["diff", "--name-status", "-z", baseSha, headSha])
   );
 
   const totalChangedFiles = nameStatusEntries.length;
@@ -254,10 +281,24 @@ export async function collectRepoContext({
 
     const canReadHead = !binary && status !== "deleted" && !isSubmodule;
 
-    if (!binary && status !== "deleted" && !isSubmodule) {
+    if (binary) {
+      file.patch_omitted_reason = "binary";
+    } else if (status === "deleted") {
+      file.patch_omitted_reason = "deleted";
+    } else if (isSubmodule) {
+      file.patch_omitted_reason = "submodule";
+    } else if (remainingDiffBytes <= 0) {
+      file.patch_omitted_reason = "diff_budget_exhausted";
+    } else {
       const fullPatch = await runGit(cwd, ["diff", baseSha, headSha, "--", entry.path]);
-      const patch = patchWithinBudget(fullPatch, remainingDiffBytes);
+      const { patch, truncated } = patchWithinBudget(fullPatch, remainingDiffBytes);
+
       file.patch = patch;
+
+      if (truncated) {
+        file.patch_truncated = true;
+      }
+
       remainingDiffBytes = Math.max(
         0,
         remainingDiffBytes - Buffer.byteLength(patch ?? "", "utf8")

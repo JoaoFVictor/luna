@@ -9,6 +9,11 @@ type FakeGitCall = {
 
 const baseSha = gitInvocation.references.base_sha;
 const headSha = gitInvocation.references.head_sha;
+const tabbedPath = "src/tab\tpath.ts";
+
+function nul(...fields: string[]): string {
+  return `${fields.join("\0")}\0`;
+}
 
 function gitOutputFor(args: readonly string[]): string {
   if (args.join(" ") === `merge-base ${baseSha} ${headSha}`) {
@@ -19,51 +24,76 @@ function gitOutputFor(args: readonly string[]): string {
     return " M local-change.ts\n?? scratch.txt\n";
   }
 
-  if (args.join(" ") === `diff --raw ${baseSha} ${headSha}`) {
-    return [
-      ":100644 100644 aaaaaaa bbbbbbb M\tsrc/alpha.ts",
-      ":100644 100644 aaaaaaa bbbbbbb M\tsrc/beta.ts",
-      ":100644 100644 aaaaaaa bbbbbbb M\tassets/logo.png",
-      ":100644 000000 aaaaaaa 0000000 D\tsrc/old.ts",
-      ":100644 100644 aaaaaaa bbbbbbb R100\tsrc/name-old.ts\tsrc/name-new.ts",
-      ":100644 100644 aaaaaaa bbbbbbb M\tsrc/large.ts",
-      ":100644 100644 aaaaaaa bbbbbbb M\tsrc/blob.dat",
-      ":160000 160000 aaaaaaa bbbbbbb M\tvendor/lib"
-    ].join("\n");
+  if (args.join(" ") === `diff --raw -z ${baseSha} ${headSha}`) {
+    return nul(
+      ":100644 100644 aaaaaaa bbbbbbb M",
+      "src/alpha.ts",
+      ":100644 100644 aaaaaaa bbbbbbb M",
+      tabbedPath,
+      ":100644 100644 aaaaaaa bbbbbbb M",
+      "assets/logo.png",
+      ":100644 000000 aaaaaaa 0000000 D",
+      "src/old.ts",
+      ":100644 100644 aaaaaaa bbbbbbb R100",
+      "src/name-old.ts",
+      "src/name-new.ts",
+      ":100644 100644 aaaaaaa bbbbbbb M",
+      "src/large.ts",
+      ":100644 100644 aaaaaaa bbbbbbb M",
+      "src/blob.dat",
+      ":160000 160000 aaaaaaa bbbbbbb M",
+      "vendor/lib"
+    );
   }
 
-  if (args.join(" ") === `diff --numstat ${baseSha} ${headSha}`) {
+  if (args.join(" ") === `diff --numstat -z ${baseSha} ${headSha}`) {
     return [
-      "3\t1\tsrc/alpha.ts",
-      "4\t0\tsrc/beta.ts",
-      "-\t-\tassets/logo.png",
-      "0\t8\tsrc/old.ts",
-      "1\t1\tsrc/name-old.ts\tsrc/name-new.ts",
-      "200\t0\tsrc/large.ts",
-      "2\t0\tsrc/blob.dat",
-      "1\t1\tvendor/lib"
-    ].join("\n");
+      `3\t1\tsrc/alpha.ts\0`,
+      `4\t0\t${tabbedPath}\0`,
+      "-\t-\tassets/logo.png\0",
+      "0\t8\tsrc/old.ts\0",
+      "1\t1\t\0src/name-old.ts\0src/name-new.ts\0",
+      "200\t0\tsrc/large.ts\0",
+      "2\t0\tsrc/blob.dat\0",
+      "1\t1\tvendor/lib\0"
+    ].join("");
   }
 
-  if (args.join(" ") === `diff --name-status ${baseSha} ${headSha}`) {
-    return [
-      "M\tsrc/alpha.ts",
-      "M\tsrc/beta.ts",
-      "M\tassets/logo.png",
-      "D\tsrc/old.ts",
-      "R100\tsrc/name-old.ts\tsrc/name-new.ts",
-      "M\tsrc/large.ts",
-      "M\tsrc/blob.dat",
-      "M\tvendor/lib"
-    ].join("\n");
+  if (args.join(" ") === `diff --name-status -z ${baseSha} ${headSha}`) {
+    return nul(
+      "M",
+      "src/alpha.ts",
+      "M",
+      tabbedPath,
+      "M",
+      "assets/logo.png",
+      "D",
+      "src/old.ts",
+      "R100",
+      "src/name-old.ts",
+      "src/name-new.ts",
+      "M",
+      "src/large.ts",
+      "M",
+      "src/blob.dat",
+      "M",
+      "vendor/lib"
+    );
   }
 
   if (args.join(" ") === `diff ${baseSha} ${headSha} -- src/alpha.ts`) {
     return "diff --git a/src/alpha.ts b/src/alpha.ts\n+alpha line one\n+alpha line two\n";
   }
 
-  if (args.join(" ") === `diff ${baseSha} ${headSha} -- src/beta.ts`) {
-    return "diff --git a/src/beta.ts b/src/beta.ts\n+beta line one\n+beta line two\n";
+  if (
+    args.length === 5 &&
+    args[0] === "diff" &&
+    args[1] === baseSha &&
+    args[2] === headSha &&
+    args[3] === "--" &&
+    args[4] === tabbedPath
+  ) {
+    return "diff --git a/src/tab\tpath.ts b/src/tab\tpath.ts\n+tabbed path\n";
   }
 
   if (args.join(" ") === `diff ${baseSha} ${headSha} -- src/name-new.ts`) {
@@ -86,8 +116,8 @@ function gitOutputFor(args: readonly string[]): string {
     ].join("\n");
   }
 
-  if (args.join(" ") === `show ${headSha}:src/beta.ts`) {
-    return "beta\n";
+  if (args.length === 2 && args[0] === "show" && args[1] === `${headSha}:${tabbedPath}`) {
+    return "tabbed path\n";
   }
 
   if (args.join(" ") === `show ${headSha}:src/name-new.ts`) {
@@ -139,7 +169,7 @@ describe("repo context collector", () => {
 
     expect(context.files.map((file) => file.path)).toEqual([
       "src/alpha.ts",
-      "src/beta.ts",
+      tabbedPath,
       "assets/logo.png",
       "src/old.ts",
       "src/name-new.ts",
@@ -193,19 +223,11 @@ describe("repo context collector", () => {
       },
       {
         cwd: gitRepository.path,
-        args: ["diff", baseSha, headSha, "--", "src/beta.ts"]
+        args: ["diff", baseSha, headSha, "--", tabbedPath]
       },
       {
         cwd: gitRepository.path,
         args: ["diff", baseSha, headSha, "--", "src/name-new.ts"]
-      },
-      {
-        cwd: gitRepository.path,
-        args: ["diff", baseSha, headSha, "--", "src/large.ts"]
-      },
-      {
-        cwd: gitRepository.path,
-        args: ["diff", baseSha, headSha, "--", "src/blob.dat"]
       }
     ]);
     expect(
@@ -220,18 +242,21 @@ describe("repo context collector", () => {
     expect(calls.map((call) => call.args)).toContainEqual([
       "diff",
       "--raw",
+      "-z",
       baseSha,
       headSha
     ]);
     expect(calls.map((call) => call.args)).toContainEqual([
       "diff",
       "--numstat",
+      "-z",
       baseSha,
       headSha
     ]);
     expect(calls.map((call) => call.args)).toContainEqual([
       "diff",
       "--name-status",
+      "-z",
       baseSha,
       headSha
     ]);
@@ -246,6 +271,10 @@ describe("repo context collector", () => {
     expect(calls.map((call) => call.args)).not.toContainEqual([
       "show",
       `${headSha}:vendor/lib`
+    ]);
+    expect(calls.map((call) => call.args)).toContainEqual([
+      "show",
+      `${headSha}:${tabbedPath}`
     ]);
   });
 
@@ -280,16 +309,16 @@ describe("repo context collector", () => {
           return "";
         }
 
-        if (args.join(" ") === `diff --raw ${baseSha} ${headSha}`) {
-          return ":100644 100644 aaaaaaa bbbbbbb M\tsrc/unicode.ts\n";
+        if (args.join(" ") === `diff --raw -z ${baseSha} ${headSha}`) {
+          return nul(":100644 100644 aaaaaaa bbbbbbb M", "src/unicode.ts");
         }
 
-        if (args.join(" ") === `diff --numstat ${baseSha} ${headSha}`) {
-          return "1\t0\tsrc/unicode.ts\n";
+        if (args.join(" ") === `diff --numstat -z ${baseSha} ${headSha}`) {
+          return "1\t0\tsrc/unicode.ts\0";
         }
 
-        if (args.join(" ") === `diff --name-status ${baseSha} ${headSha}`) {
-          return "M\tsrc/unicode.ts\n";
+        if (args.join(" ") === `diff --name-status -z ${baseSha} ${headSha}`) {
+          return nul("M", "src/unicode.ts");
         }
 
         if (args.join(" ") === `diff ${baseSha} ${headSha} -- src/unicode.ts`) {
@@ -313,5 +342,37 @@ describe("repo context collector", () => {
     expect(excerptBytes).toBeLessThanOrEqual(5);
     expect(file.excerpt).toMatchObject({ truncated: true });
     expect(excerptContent).not.toContain("\uFFFD");
+  });
+
+  it("records patch omission reasons and partial truncation metadata", async () => {
+    const context = await collectRepoContext({
+      invocation: gitInvocation,
+      repository: gitRepository,
+      maxChangedFiles: 8,
+      maxDiffBytes: 150,
+      runGit: async (_cwd, args) => gitOutputFor(args)
+    });
+
+    expect(context.files.find((file) => file.path === "assets/logo.png")).toMatchObject({
+      patch: null,
+      patch_omitted_reason: "binary"
+    });
+    expect(context.files.find((file) => file.path === "src/old.ts")).toMatchObject({
+      patch: null,
+      patch_omitted_reason: "deleted"
+    });
+    expect(context.files.find((file) => file.path === "vendor/lib")).toMatchObject({
+      patch: null,
+      patch_omitted_reason: "submodule"
+    });
+    expect(context.files.find((file) => file.path === "src/name-new.ts")).toMatchObject({
+      additions: 1,
+      deletions: 1,
+      patch_truncated: true
+    });
+    expect(context.files.find((file) => file.path === "src/large.ts")).toMatchObject({
+      patch: null,
+      patch_omitted_reason: "diff_budget_exhausted"
+    });
   });
 });

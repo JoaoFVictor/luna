@@ -184,6 +184,10 @@ export const ChangedFileSchema = z
     is_lfs_pointer: z.boolean().optional(),
     is_submodule: z.boolean().optional(),
     previous_path: NonEmptyStringSchema.optional(),
+    patch_truncated: z.boolean().optional(),
+    patch_omitted_reason: z
+      .enum(["binary", "deleted", "submodule", "diff_budget_exhausted"])
+      .optional(),
     patch: z.string().nullable(),
     excerpt: FileExcerptSchema.nullable()
   })
