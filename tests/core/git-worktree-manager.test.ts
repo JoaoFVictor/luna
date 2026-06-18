@@ -86,7 +86,12 @@ describe("git worktree manager", () => {
         },
         {
           cwd: gitRepository.path,
-          args: ["worktree", "add", expectedWorktreePath, gitInvocation.references.head_sha]
+          args: [
+            "worktree",
+            "add",
+            expectedWorktreePath,
+            `refs/remotes/${gitRepository.remote}/pull/${gitInvocation.pull_number}/head`
+          ]
         },
         {
           cwd: expectedWorktreePath,

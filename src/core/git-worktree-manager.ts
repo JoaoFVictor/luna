@@ -35,6 +35,10 @@ function pullHeadRef(invocation: Invocation, remote: string): string {
   return `+refs/pull/${invocation.pull_number}/head:refs/remotes/${remote}/pull/${invocation.pull_number}/head`;
 }
 
+function fetchedPullHeadRef(invocation: Invocation, remote: string): string {
+  return `refs/remotes/${remote}/pull/${invocation.pull_number}/head`;
+}
+
 function assertWorkspaceRecordMatches(
   workspaceRecord: WorkspaceRecord,
   persistedWorkspaceRecord?: WorkspaceRecord
@@ -138,7 +142,7 @@ export async function prepare({
     "worktree",
     "add",
     worktreePath,
-    invocation.references.head_sha
+    fetchedPullHeadRef(invocation, repository.remote)
   ]);
 
   const actualHead = (await runGit(worktreePath, ["rev-parse", "HEAD"])).trim();
