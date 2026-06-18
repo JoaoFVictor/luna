@@ -2,13 +2,35 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeJoin } from "./path-security.js";
 
-const SECRET_KEYS = new Set([
-  "authorization",
-  "token",
-  "api_key",
-  "password",
-  "secret"
-]);
+function keyWords(key: string): string[] {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== "");
+}
+
+function isSecretKey(key: string): boolean {
+  const words = keyWords(key);
+
+  if (words.includes("count")) {
+    return false;
+  }
+
+  if (words.includes("secret") || words.includes("password")) {
+    return true;
+  }
+
+  if (words.includes("authorization")) {
+    return true;
+  }
+
+  if (words.includes("token")) {
+    return true;
+  }
+
+  return words.includes("key") && words.some((word) => word !== "key");
+}
 
 function redact(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -19,7 +41,7 @@ function redact(value: unknown): unknown {
     const redacted: Record<string, unknown> = {};
 
     for (const [key, nestedValue] of Object.entries(value)) {
-      redacted[key] = SECRET_KEYS.has(key.toLowerCase())
+      redacted[key] = isSecretKey(key)
         ? "[REDACTED]"
         : redact(nestedValue);
     }

@@ -38,6 +38,10 @@ export function createRunIdentity(
   attempt: number,
   date = new Date()
 ): RunIdentity {
+  if (!Number.isSafeInteger(attempt) || attempt < 1) {
+    throw runIdentityError("Run attempt must be a positive integer");
+  }
+
   const run_id = `${slugTimestamp(date)}-${invocationSlug(invocation)}-a${attempt}`;
 
   if (!/^[a-z0-9._-]+$/.test(run_id)) {

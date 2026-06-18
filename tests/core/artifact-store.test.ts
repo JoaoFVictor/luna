@@ -62,6 +62,49 @@ describe("artifact store", () => {
     expect(written.nested.values[0].public).toBe("visible");
   });
 
+  it("redacts common secret key variants without hiding unrelated fields", async () => {
+    const root = await tempRoot();
+    const store = new ArtifactStore(root, "run-a1");
+
+    const artifactPath = await store.writeJson("invocation.json", {
+      apiKey: "api-key-value",
+      OPENAI_API_KEY: "openai-key-value",
+      access_token: "access-token-value",
+      refreshToken: "refresh-token-value",
+      client_secret: "client-secret-value",
+      privateKey: "private-key-value",
+      githubToken: "github-token-value",
+      nested: [
+        {
+          "api-key": "kebab-api-key-value",
+          accessToken: "camel-access-token-value",
+          refresh_token: "snake-refresh-token-value",
+          "client-secret": "kebab-client-secret-value",
+          private_key: "snake-private-key-value",
+          public_token_count: 3,
+          secretariat: "visible"
+        }
+      ]
+    });
+
+    const written = JSON.parse(await readFile(artifactPath, "utf8"));
+
+    expect(written.apiKey).toBe("[REDACTED]");
+    expect(written.OPENAI_API_KEY).toBe("[REDACTED]");
+    expect(written.access_token).toBe("[REDACTED]");
+    expect(written.refreshToken).toBe("[REDACTED]");
+    expect(written.client_secret).toBe("[REDACTED]");
+    expect(written.privateKey).toBe("[REDACTED]");
+    expect(written.githubToken).toBe("[REDACTED]");
+    expect(written.nested[0]["api-key"]).toBe("[REDACTED]");
+    expect(written.nested[0].accessToken).toBe("[REDACTED]");
+    expect(written.nested[0].refresh_token).toBe("[REDACTED]");
+    expect(written.nested[0]["client-secret"]).toBe("[REDACTED]");
+    expect(written.nested[0].private_key).toBe("[REDACTED]");
+    expect(written.nested[0].public_token_count).toBe(3);
+    expect(written.nested[0].secretariat).toBe("visible");
+  });
+
   it("uses safe path joining for artifact writes", async () => {
     const root = await tempRoot();
     const store = new ArtifactStore(root, "../escape");

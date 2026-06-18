@@ -69,4 +69,22 @@ describe("run identity", () => {
     expect(createRunIdentity(invocation, 2, fixedDate).run_id).toMatch(/-a2$/);
     expect(createRunIdentity(invocation, 12, fixedDate).run_id).toMatch(/-a12$/);
   });
+
+  it("rejects non-positive and non-integer attempts", () => {
+    for (const attempt of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => createRunIdentity(invocation, attempt, fixedDate)).toThrow(
+        expect.objectContaining({ code: "invalid_run_id" })
+      );
+    }
+  });
+
+  it("keeps the exact run_id shape and relies on attempt increments for same-second uniqueness", () => {
+    const first = createRunIdentity(invocation, 1, fixedDate);
+    const sameAttempt = createRunIdentity(invocation, 1, fixedDate);
+    const retry = createRunIdentity(invocation, 2, fixedDate);
+
+    expect(first.run_id).toBe(sameAttempt.run_id);
+    expect(retry.run_id).toBe("20260618t150405z-octo-org-hello-world-pr-123-a2");
+    expect(retry.run_id).not.toBe(first.run_id);
+  });
 });
