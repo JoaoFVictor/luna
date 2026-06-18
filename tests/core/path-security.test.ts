@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, symlink } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -52,6 +52,19 @@ describe("path security", () => {
     const siblingReal = resolve("/tmp/root2");
 
     expect(isInsideRoot(rootReal, siblingReal)).toBe(false);
+  });
+
+  it("accepts paths inside the root", () => {
+    const rootReal = resolve("/tmp/root");
+    const childReal = resolve("/tmp/root/child/file.txt");
+
+    expect(isInsideRoot(rootReal, childReal)).toBe(true);
+  });
+
+  it("does not use startsWith for containment checks", async () => {
+    const source = await readFile("src/core/path-security.ts", "utf8");
+
+    expect(source).not.toContain("startsWith");
   });
 
   it("rejects absolute provider-derived segments", () => {

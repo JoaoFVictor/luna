@@ -44,8 +44,9 @@ export function assertSafeSegment(segment: string): void {
 
 export function isInsideRoot(rootReal: string, candidateReal: string): boolean {
   const relative = path.relative(rootReal, candidateReal);
+  const [firstSegment] = relative.split(path.sep);
 
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return relative === "" || (firstSegment !== ".." && !path.isAbsolute(relative));
 }
 
 async function realpathNearestExisting(

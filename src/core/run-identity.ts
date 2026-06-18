@@ -20,7 +20,7 @@ export function slugTimestamp(date: Date): string {
   const minute = date.getUTCMinutes().toString().padStart(2, "0");
   const second = date.getUTCSeconds().toString().padStart(2, "0");
 
-  return `${year}${month}${day}T${hour}${minute}${second}Z`;
+  return `${year}${month}${day}t${hour}${minute}${second}z`;
 }
 
 function invocationSlug(invocation: InvocationWithOptionalId): string {
@@ -40,7 +40,7 @@ export function createRunIdentity(
 ): RunIdentity {
   const run_id = `${slugTimestamp(date)}-${invocationSlug(invocation)}-a${attempt}`;
 
-  if (!/^[a-z0-9._-]+$/i.test(run_id)) {
+  if (!/^[a-z0-9._-]+$/.test(run_id)) {
     throw runIdentityError("Run id contains unsafe characters");
   }
 

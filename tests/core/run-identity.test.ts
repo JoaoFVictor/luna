@@ -28,17 +28,18 @@ const invocation: Invocation = {
 
 describe("run identity", () => {
   it("formats timestamps as compact UTC slugs", () => {
-    expect(slugTimestamp(fixedDate)).toBe("20260618T150405Z");
+    expect(slugTimestamp(fixedDate)).toBe("20260618t150405z");
   });
 
   it("creates a run_id from timestamp, derived invocation slug, and attempt", () => {
     const identity = createRunIdentity(invocation, 1, fixedDate);
 
     expect(identity).toEqual({
-      run_id: "20260618T150405Z-octo-org-hello-world-pr-123-a1",
+      run_id: "20260618t150405z-octo-org-hello-world-pr-123-a1",
       target: "github_pr",
       started_at: fixedDate.toISOString()
     });
+    expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
   });
 
   it("uses invocation_id when present and sanitizes provider-derived text", () => {
@@ -50,9 +51,10 @@ describe("run identity", () => {
     const identity = createRunIdentity(unsafeInvocation, 1, fixedDate);
 
     expect(identity.run_id).toBe(
-      "20260618T150405Z-gh-repo-name-touch-pwned-a1"
+      "20260618t150405z-gh-repo-name-touch-pwned-a1"
     );
-    expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/i);
+    expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
+    expect(identity.run_id).not.toMatch(/[A-Z]/);
     expect(identity.run_id).not.toContain("/");
     expect(identity.run_id).not.toContain("..");
     expect(identity.run_id).not.toContain(" ");
