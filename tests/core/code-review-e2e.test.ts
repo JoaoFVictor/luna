@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { executeCodeReview } from "../../src/core/code-review-orchestrator.js";
 import { runGit } from "../../src/core/git.js";
+import { collectRepoContext } from "../../src/core/repo-context-collector.js";
 import type {
   AcceptanceDecision,
   AppConfig,
@@ -102,6 +103,7 @@ describe("code review end-to-end with real Git", () => {
         root: artifactRoot
       }
     };
+    const collectedRepositoryPaths: string[] = [];
 
     const result = await executeCodeReview({
       invocation: fixture.invocation,
@@ -128,7 +130,11 @@ describe("code review end-to-end with real Git", () => {
           run_id: runId,
           target: "github_pr",
           started_at: "2026-06-18T12:00:00.000Z"
-        })
+        }),
+        collectRepoContext: async (options) => {
+          collectedRepositoryPaths.push(options.repository.path);
+          return await collectRepoContext(options);
+        }
       }
     });
 
@@ -156,6 +162,8 @@ describe("code review end-to-end with real Git", () => {
       true
     );
     expect(workspace.path).toContain(path.join(workspaceRoot, fixture.repository.id));
+    expect(collectedRepositoryPaths).toEqual([workspace.path]);
+    expect(collectedRepositoryPaths[0]).not.toBe(fixture.repository.path);
     expect(workspace).toMatchObject({
       preserved: false,
       reason: "success_cleanup"

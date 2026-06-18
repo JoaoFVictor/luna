@@ -24,11 +24,34 @@ type WorktreeError = Error & {
   code: WorktreeErrorCode;
 };
 
+type ChildProcessFailure = {
+  code?: unknown;
+  killed?: unknown;
+  signal?: unknown;
+  stderr?: unknown;
+};
+
 function worktreeError(message: string, code: WorktreeErrorCode): WorktreeError {
   const error = new Error(message) as WorktreeError;
   error.code = code;
 
   return error;
+}
+
+function isMissingCommitError(cause: unknown): boolean {
+  const childProcessFailure = (cause as { cause?: ChildProcessFailure }).cause;
+  const stderr =
+    typeof childProcessFailure?.stderr === "string"
+      ? childProcessFailure.stderr
+      : "";
+
+  return (
+    (childProcessFailure?.code === 1 ||
+      (childProcessFailure?.code === 128 &&
+        stderr.includes("Not a valid object name"))) &&
+    childProcessFailure.killed !== true &&
+    childProcessFailure.signal === null
+  );
 }
 
 function pullHeadRef(invocation: Invocation, remote: string): string {
@@ -140,6 +163,10 @@ export async function prepare({
       `${invocation.references.head_sha}^{commit}`
     ]);
   } catch (cause) {
+    if (!isMissingCommitError(cause)) {
+      throw cause;
+    }
+
     const error = worktreeError(
       `Expected head commit is missing: ${invocation.references.head_sha}`,
       "head_sha_mismatch"

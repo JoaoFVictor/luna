@@ -105,6 +105,15 @@ describe("git worktree manager", () => {
 
   it("reports head_sha_mismatch when the expected head commit is missing", async () => {
     const workspaceRoot = await tempRoot();
+    const missingCommit = Object.assign(new Error("missing head"), {
+      code: "git_command_failed",
+      cause: {
+        code: 128,
+        killed: false,
+        signal: null,
+        stderr: `fatal: Not a valid object name ${gitInvocation.references.head_sha}^{commit}\n`
+      }
+    });
 
     try {
       await expect(
@@ -118,7 +127,7 @@ describe("git worktree manager", () => {
               args[0] === "cat-file" &&
               args.at(-1) === `${gitInvocation.references.head_sha}^{commit}`
             ) {
-              throw new Error("missing head");
+              throw missingCommit;
             }
 
             return "";
@@ -126,6 +135,40 @@ describe("git worktree manager", () => {
           mkdir: async () => {}
         })
       ).rejects.toMatchObject({ code: "head_sha_mismatch" });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves operational Git failures while checking the expected head commit", async () => {
+    const workspaceRoot = await tempRoot();
+    const operationalFailure = Object.assign(new Error("git is unavailable"), {
+      code: "git_command_failed",
+      cause: {
+        code: "EACCES"
+      }
+    });
+
+    try {
+      await expect(
+        prepare({
+          invocation: gitInvocation,
+          repository: gitRepository,
+          workspaceRoot,
+          runId: "run-a1",
+          runGit: async (_cwd, args) => {
+            if (
+              args[0] === "cat-file" &&
+              args.at(-1) === `${gitInvocation.references.head_sha}^{commit}`
+            ) {
+              throw operationalFailure;
+            }
+
+            return "";
+          },
+          mkdir: async () => {}
+        })
+      ).rejects.toBe(operationalFailure);
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
