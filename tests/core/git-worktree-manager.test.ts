@@ -103,6 +103,34 @@ describe("git worktree manager", () => {
     }
   });
 
+  it("reports head_sha_mismatch when the expected head commit is missing", async () => {
+    const workspaceRoot = await tempRoot();
+
+    try {
+      await expect(
+        prepare({
+          invocation: gitInvocation,
+          repository: gitRepository,
+          workspaceRoot,
+          runId: "run-a1",
+          runGit: async (_cwd, args) => {
+            if (
+              args[0] === "cat-file" &&
+              args.at(-1) === `${gitInvocation.references.head_sha}^{commit}`
+            ) {
+              throw new Error("missing head");
+            }
+
+            return "";
+          },
+          mkdir: async () => {}
+        })
+      ).rejects.toMatchObject({ code: "head_sha_mismatch" });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
   it("fetches a non-main base_ref from the invocation", async () => {
     const workspaceRoot = await tempRoot();
     const calls: GitCall[] = [];

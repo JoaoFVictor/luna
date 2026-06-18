@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,9 +11,13 @@ import {
 
 describe("repo context collector with real Git", () => {
   const fixtures: RealGitReviewFixture[] = [];
+  const tempRoots: string[] = [];
 
   afterEach(async () => {
     await Promise.all(fixtures.splice(0).map((fixture) => fixture.cleanup()));
+    await Promise.all(
+      tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    );
   });
 
   async function fixture(): Promise<RealGitReviewFixture> {
@@ -25,6 +29,7 @@ describe("repo context collector with real Git", () => {
   it("fetches fork-shaped PR refs from the configured base repository remote", async () => {
     const created = await fixture();
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), "luna-real-worktrees-"));
+    tempRoots.push(workspaceRoot);
 
     const workspace = await prepare({
       invocation: created.invocation,
@@ -53,6 +58,7 @@ describe("repo context collector with real Git", () => {
   it("throws head_sha_mismatch when the fetched PR head differs from the invocation head", async () => {
     const created = await fixture();
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), "luna-real-worktrees-"));
+    tempRoots.push(workspaceRoot);
 
     await expect(
       prepare({
@@ -60,6 +66,29 @@ describe("repo context collector with real Git", () => {
         repository: created.repository,
         workspaceRoot,
         runId: "real-git-head-mismatch"
+      })
+    ).rejects.toMatchObject({
+      code: "head_sha_mismatch"
+    });
+  });
+
+  it("throws head_sha_mismatch when the expected head commit is absent locally", async () => {
+    const created = await fixture();
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), "luna-real-worktrees-"));
+    tempRoots.push(workspaceRoot);
+
+    await expect(
+      prepare({
+        invocation: {
+          ...created.invocation,
+          references: {
+            ...created.invocation.references,
+            head_sha: "9999999999999999999999999999999999999999"
+          }
+        },
+        repository: created.repository,
+        workspaceRoot,
+        runId: "real-git-head-missing"
       })
     ).rejects.toMatchObject({
       code: "head_sha_mismatch"

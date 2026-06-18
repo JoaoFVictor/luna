@@ -133,11 +133,20 @@ export async function prepare({
     "-e",
     `${invocation.references.base_sha}^{commit}`
   ]);
-  await runGit(repository.path, [
-    "cat-file",
-    "-e",
-    `${invocation.references.head_sha}^{commit}`
-  ]);
+  try {
+    await runGit(repository.path, [
+      "cat-file",
+      "-e",
+      `${invocation.references.head_sha}^{commit}`
+    ]);
+  } catch (cause) {
+    const error = worktreeError(
+      `Expected head commit is missing: ${invocation.references.head_sha}`,
+      "head_sha_mismatch"
+    );
+    error.cause = cause;
+    throw error;
+  }
   await runGit(repository.path, [
     "worktree",
     "add",

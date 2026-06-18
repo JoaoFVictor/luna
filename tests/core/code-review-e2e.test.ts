@@ -1,8 +1,9 @@
-import { access, mkdtemp, readFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { executeCodeReview } from "../../src/core/code-review-orchestrator.js";
+import { runGit } from "../../src/core/git.js";
 import type {
   AcceptanceDecision,
   AppConfig,
@@ -75,9 +76,13 @@ async function pathExists(filePath: string): Promise<boolean> {
 
 describe("code review end-to-end with real Git", () => {
   const fixtures: RealGitReviewFixture[] = [];
+  const tempRoots: string[] = [];
 
   afterEach(async () => {
     await Promise.all(fixtures.splice(0).map((fixture) => fixture.cleanup()));
+    await Promise.all(
+      tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    );
   });
 
   it("creates a worktree, writes repo context and final artifacts, then cleans up on success", async () => {
@@ -85,6 +90,7 @@ describe("code review end-to-end with real Git", () => {
     fixtures.push(fixture);
     const artifactRoot = await mkdtemp(path.join(tmpdir(), "luna-e2e-artifacts-"));
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), "luna-e2e-worktrees-"));
+    tempRoots.push(artifactRoot, workspaceRoot);
     const app: AppConfig = {
       workspace: {
         strategy: "git_worktree",
@@ -155,5 +161,8 @@ describe("code review end-to-end with real Git", () => {
       reason: "success_cleanup"
     });
     await expect(pathExists(workspace.path)).resolves.toBe(false);
+    await expect(
+      runGit(fixture.repository.path, ["worktree", "list", "--porcelain"])
+    ).resolves.not.toContain(workspace.path);
   });
 });
