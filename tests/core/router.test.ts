@@ -32,7 +32,34 @@ describe("router", () => {
       id: "manual-review"
     };
 
-    expect(routeInvocation({ target }, routingConfig)).toEqual(target);
+    expect(
+      routeInvocation(
+        { source: "manual", event: "dispatch", target },
+        routingConfig
+      )
+    ).toEqual(target);
+  });
+
+  it("throws invalid_invocation for incomplete invocations with explicit target", () => {
+    expect(() =>
+      routeInvocation(
+        { target: { type: "workflow", id: "manual-review" } },
+        routingConfig
+      )
+    ).toThrow(expect.objectContaining({ code: "invalid_invocation" }));
+  });
+
+  it("throws invalid_target for invalid explicit targets", () => {
+    expect(() =>
+      routeInvocation(
+        {
+          source: "manual",
+          event: "dispatch",
+          target: { type: "agent", id: "manual-review" }
+        },
+        routingConfig
+      )
+    ).toThrow(expect.objectContaining({ code: "invalid_target" }));
   });
 
   it("routes GitHub pull_request.opened to workflow code-review", () => {

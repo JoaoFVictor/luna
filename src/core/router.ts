@@ -1,4 +1,9 @@
-import { RouteTargetSchema, type RouteTarget, type RoutingConfig } from "./types.js";
+import { z } from "zod";
+import {
+  RouteTargetSchema,
+  type RouteTarget,
+  type RoutingConfig
+} from "./types.js";
 
 type InvocationLike = Record<string, unknown>;
 
@@ -7,6 +12,27 @@ function errorWithCode(message: string, code: string): Error & { code: string } 
   error.code = code;
 
   return error;
+}
+
+function hasNormalizedRoutingShape(invocation: InvocationLike): boolean {
+  return (
+    typeof invocation.source === "string" &&
+    invocation.source !== "" &&
+    typeof invocation.event === "string" &&
+    invocation.event !== ""
+  );
+}
+
+function parseInputTarget(target: unknown): RouteTarget {
+  try {
+    return RouteTargetSchema.parse(target);
+  } catch (cause) {
+    if (cause instanceof z.ZodError) {
+      throw errorWithCode("Invalid invocation target", "invalid_target");
+    }
+
+    throw cause;
+  }
 }
 
 export function routeInvocation(
@@ -21,7 +47,14 @@ export function routeInvocation(
       hasInputTarget &&
       route.use_target_from_input === true
     ) {
-      return RouteTargetSchema.parse(invocation.target);
+      if (!hasNormalizedRoutingShape(invocation)) {
+        throw errorWithCode(
+          "Invalid invocation for routing",
+          "invalid_invocation"
+        );
+      }
+
+      return parseInputTarget(invocation.target);
     }
 
     const sourceMatches =

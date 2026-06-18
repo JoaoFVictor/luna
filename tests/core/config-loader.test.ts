@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z, ZodError } from "zod";
 import {
+  loadJsonFile,
   loadYamlFile,
   resolveConfigRoot
 } from "../../src/core/config-loader.js";
@@ -44,7 +45,7 @@ describe("config loader", () => {
     }
   });
 
-  it("fails invalid YAML shape with a Zod error", async () => {
+  it("fails invalid YAML shape with config_schema_invalid", async () => {
     const root = await mkdtemp(join(tmpdir(), "luna-config-"));
     const filePath = join(root, "invalid.yaml");
 
@@ -56,12 +57,54 @@ describe("config loader", () => {
         count: z.number()
       });
 
-      await expect(loadYamlFile(filePath, schema)).rejects.toBeInstanceOf(
-        ZodError
-      );
+      await expect(loadYamlFile(filePath, schema)).rejects.toMatchObject({
+        code: "config_schema_invalid",
+        path: filePath
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  it("fails invalid JSON parse with config_parse_failed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "luna-config-"));
+    const filePath = join(root, "invalid.json");
+
+    try {
+      await writeFile(filePath, "{ nope", "utf8");
+
+      await expect(loadJsonFile(filePath, z.object({}))).rejects.toMatchObject({
+        code: "config_parse_failed",
+        path: filePath
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("fails invalid YAML parse with config_parse_failed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "luna-config-"));
+    const filePath = join(root, "invalid.yaml");
+
+    try {
+      await writeFile(filePath, "name: [unterminated\n", "utf8");
+
+      await expect(loadYamlFile(filePath, z.object({}))).rejects.toMatchObject({
+        code: "config_parse_failed",
+        path: filePath
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("fails config read errors with config_read_failed", async () => {
+    const filePath = join(tmpdir(), "luna-missing-config.yaml");
+
+    await expect(loadYamlFile(filePath, z.object({}))).rejects.toMatchObject({
+      code: "config_read_failed",
+      path: filePath
+    });
   });
 
   it("uses config as the default config root", () => {
@@ -72,6 +115,10 @@ describe("config loader", () => {
     expect(resolveConfigRoot({ LUNA_CONFIG_ROOT: "/tmp/luna-config" })).toBe(
       "/tmp/luna-config"
     );
+  });
+
+  it("uses default config root for whitespace-only LUNA_CONFIG_ROOT", () => {
+    expect(resolveConfigRoot({ LUNA_CONFIG_ROOT: "   " })).toBe("config");
   });
 
   it("parses every YAML file in the committed config directory", async () => {

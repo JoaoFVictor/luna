@@ -80,6 +80,39 @@ describe("model config", () => {
     );
   });
 
+  it("throws model_env_missing for whitespace-only environment values", () => {
+    const modelsConfig: ModelsConfig = {
+      model_profiles: {
+        planner: {
+          model: "${PLANNER_MODEL}",
+          reasoning_effort: "medium"
+        }
+      }
+    };
+
+    expect(() =>
+      resolveModelProfiles(modelsConfig, { PLANNER_MODEL: "   " })
+    ).toThrow(expect.objectContaining({ code: "model_env_missing" }));
+  });
+
+  it.each(["${PLANNER_MODEL }", "${planner_model}", "${PLANNER_MODEL"])(
+    "throws model_placeholder_invalid for malformed placeholder %s",
+    (model) => {
+      const modelsConfig: ModelsConfig = {
+        model_profiles: {
+          planner: {
+            model,
+            reasoning_effort: "medium"
+          }
+        }
+      };
+
+      expect(() => resolveModelProfiles(modelsConfig, {})).toThrow(
+        expect.objectContaining({ code: "model_placeholder_invalid" })
+      );
+    }
+  );
+
   it("maps reasoning_effort low to thinkingLevel low", () => {
     expect(
       toFlueModelOptions({ model: "gpt-5-mini", reasoning_effort: "low" })
