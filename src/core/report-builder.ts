@@ -64,7 +64,7 @@ export function buildFinalReportMarkdown({
     `PR: ${invocation.owner}/${invocation.repo}#${invocation.pull_number}`,
     `Acceptance: ${acceptance.decision}`,
     "",
-    acceptance.summary,
+    normalizeMarkdownText(acceptance.summary),
     "",
     "## Findings"
   ];

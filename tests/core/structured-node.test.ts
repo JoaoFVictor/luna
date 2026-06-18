@@ -128,4 +128,57 @@ describe("structured node execution", () => {
 
     expect(artifact.node).toBe("../Reviewer Node\\final");
   });
+
+  it("serializes and truncates large invalid object output in invalid artifacts", async () => {
+    const root = await tempRoot();
+    const artifactStore = new ArtifactStore(root, "run-a1");
+
+    await expect(
+      runStructuredNode({
+        nodeName: "reviewer",
+        schema: OutputSchema,
+        artifactStore,
+        execute: async () => ({
+          ok: 123,
+          message: false,
+          details: "x".repeat(9000)
+        })
+      })
+    ).rejects.toThrow(expect.objectContaining({ code: "agent_output_invalid" }));
+
+    const artifact = JSON.parse(
+      await readFile(join(root, "run-a1", "invalid-output", "reviewer.json"), "utf8")
+    );
+
+    expect(typeof artifact.raw_output).toBe("string");
+    expect(artifact.raw_output.length).toBeLessThanOrEqual(8192);
+    expect(artifact.raw_output_truncated).toBe(true);
+  });
+
+  it("redacts secret-like text inside ordinary object values", async () => {
+    const root = await tempRoot();
+    const artifactStore = new ArtifactStore(root, "run-a1");
+
+    await expect(
+      runStructuredNode({
+        nodeName: "reviewer",
+        schema: OutputSchema,
+        artifactStore,
+        execute: async () => ({
+          ok: "no",
+          message: "token=ordinary-value password: leaked authorization: Bearer xyz"
+        })
+      })
+    ).rejects.toThrow(expect.objectContaining({ code: "agent_output_invalid" }));
+
+    const artifact = JSON.parse(
+      await readFile(join(root, "run-a1", "invalid-output", "reviewer.json"), "utf8")
+    );
+
+    expect(typeof artifact.raw_output).toBe("string");
+    expect(artifact.raw_output).not.toContain("ordinary-value");
+    expect(artifact.raw_output).not.toContain("leaked");
+    expect(artifact.raw_output).not.toContain("Bearer xyz");
+    expect(artifact.raw_output).toContain("[REDACTED]");
+  });
 });

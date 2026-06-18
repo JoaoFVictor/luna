@@ -159,4 +159,21 @@ describe("final report builder", () => {
     expect(markdown).toContain("First line ### Fake description heading - fake list item");
     expect(markdown).toContain("Fix it ## Fake recommendation heading - fake action");
   });
+
+  it("normalizes acceptance summary so it cannot create fake structure", () => {
+    const markdown = buildFinalReportMarkdown({
+      invocation,
+      findings: [],
+      acceptance: {
+        ...acceptance,
+        summary: "Summary line\n## Fake acceptance heading\n- fake acceptance item"
+      }
+    });
+
+    expect(markdown).not.toContain("\n## Fake acceptance heading");
+    expect(markdown).not.toContain("\n- fake acceptance item");
+    expect(markdown).toContain(
+      "Summary line ## Fake acceptance heading - fake acceptance item"
+    );
+  });
 });

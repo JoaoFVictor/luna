@@ -21,7 +21,7 @@ type ValidationIssue = {
 };
 
 type StoredRawOutput = {
-  rawOutput: unknown;
+  rawOutput: string;
   truncated: boolean;
 };
 
@@ -108,20 +108,32 @@ function redactRawString(value: string): string {
       "$1=[REDACTED]"
     )
     .replace(
+      /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|password|token|secret)\s*:\s*(?:Bearer\s+)?[^\s,"'}]+/gi,
+      "$1: [REDACTED]"
+    )
+    .replace(
       /\b(authorization\s*:\s*)(?:Bearer\s+)?[^\s,"'}]+/gi,
       "$1[REDACTED]"
     );
 }
 
-function prepareRawOutputForArtifact(rawOutput: unknown): StoredRawOutput {
-  if (typeof rawOutput !== "string") {
-    return {
-      rawOutput,
-      truncated: false
-    };
+function stringifyRawOutput(rawOutput: unknown): string {
+  if (typeof rawOutput === "string") {
+    return rawOutput;
   }
 
-  return truncateUtf8(redactRawString(rawOutput), RAW_OUTPUT_MAX_BYTES);
+  try {
+    return JSON.stringify(rawOutput, null, 2);
+  } catch {
+    return String(rawOutput);
+  }
+}
+
+function prepareRawOutputForArtifact(rawOutput: unknown): StoredRawOutput {
+  return truncateUtf8(
+    redactRawString(stringifyRawOutput(rawOutput)),
+    RAW_OUTPUT_MAX_BYTES
+  );
 }
 
 export async function runStructuredNode<T>({
