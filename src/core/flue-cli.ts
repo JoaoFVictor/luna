@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { constants as osConstants } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { InvocationSchema, type Invocation } from "./types.js";
 
 export type CliArgs = {
@@ -43,8 +43,38 @@ function cliError(code: string, message: string): CliError {
   return new CliError(code, message);
 }
 
-function packageRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function findProjectRoot(startPath = process.cwd()): Promise<string> {
+  let current = path.resolve(startPath);
+
+  while (true) {
+    const hasPackageJson = await pathExists(path.join(current, "package.json"));
+    const hasFlueCliPackage = await pathExists(
+      path.join(current, "node_modules", "@flue", "cli", "package.json")
+    );
+
+    if (hasPackageJson && hasFlueCliPackage) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      throw cliError(
+        "project_root_not_found",
+        `Could not find project root from ${startPath}`
+      );
+    }
+
+    current = parent;
+  }
 }
 
 export function parseCliArgs(args: string[]): CliArgs {
@@ -114,7 +144,7 @@ export async function buildFlueRunCommand(
   invocation: Invocation,
   options: BuildFlueRunCommandOptions = {}
 ): Promise<FlueRunCommand> {
-  const projectRoot = options.projectRoot ?? packageRoot();
+  const projectRoot = options.projectRoot ?? (await findProjectRoot());
   const flueCliBin = await resolveFlueCliBin(projectRoot);
 
   return {
@@ -135,9 +165,9 @@ async function executeFile(command: string, args: string[]): Promise<number> {
   return await new Promise((resolve, reject) => {
     const child = execFile(command, args, (error) => {
       if (error) {
-        const nodeError = error as NodeJS.ErrnoException & { code?: string | number };
-        if (typeof nodeError.code === "number") {
-          resolve(nodeError.code);
+        const exitCode = childProcessFailureExitCode(error);
+        if (exitCode !== undefined) {
+          resolve(exitCode);
           return;
         }
         reject(error);
@@ -150,6 +180,31 @@ async function executeFile(command: string, args: string[]): Promise<number> {
     child.stdout?.pipe(process.stdout);
     child.stderr?.pipe(process.stderr);
   });
+}
+
+export function childProcessFailureExitCode(error: unknown): number | undefined {
+  const nodeError = error as {
+    code?: string | number | null;
+    signal?: string | null;
+  };
+
+  if (typeof nodeError.code === "number") {
+    return nodeError.code;
+  }
+
+  if (typeof nodeError.signal === "string") {
+    return 128 + signalNumber(nodeError.signal);
+  }
+
+  return undefined;
+}
+
+function signalNumber(signal: string): number {
+  const signalValue = osConstants.signals[
+    signal as keyof typeof osConstants.signals
+  ];
+
+  return signalValue ?? 1;
 }
 
 export async function main(

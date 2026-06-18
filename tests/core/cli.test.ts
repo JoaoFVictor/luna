@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Invocation } from "../../src/core/types.js";
 import {
   buildFlueRunCommand,
+  childProcessFailureExitCode,
+  findProjectRoot,
   loadInvocationFromFile,
   main,
   parseCliArgs,
@@ -61,6 +63,23 @@ describe("flue local CLI wrapper", () => {
     await expect(resolveFlueCliBin(projectRoot)).resolves.toBe(
       path.join(projectRoot, "node_modules", "@flue", "cli", "dist", "index.js")
     );
+  });
+
+  it("finds the project root from compiled dist paths", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-root-"));
+    const nestedStart = path.join(projectRoot, "dist", "src", "core");
+
+    await mkdir(nestedStart, { recursive: true });
+    await mkdir(path.join(projectRoot, "node_modules", "@flue", "cli"), {
+      recursive: true
+    });
+    await writeFile(path.join(projectRoot, "package.json"), "{}");
+    await writeFile(
+      path.join(projectRoot, "node_modules", "@flue", "cli", "package.json"),
+      JSON.stringify({ bin: { flue: "bin/flue.mjs" } })
+    );
+
+    await expect(findProjectRoot(nestedStart)).resolves.toBe(projectRoot);
   });
 
   it("builds a node command that runs local Flue with the invocation payload", async () => {
@@ -135,5 +154,9 @@ describe("flue local CLI wrapper", () => {
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
     vi.doUnmock("../../src/workflows/code-review.js");
     vi.resetModules();
+  });
+
+  it("maps child process signal termination to conventional exit code", () => {
+    expect(childProcessFailureExitCode({ signal: "SIGTERM" })).toBe(143);
   });
 });
