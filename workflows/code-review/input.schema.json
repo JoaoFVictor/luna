@@ -37,19 +37,7 @@
       "$ref": "#/definitions/repository"
     },
     "head_repository": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/repository"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "fork": {
-              "type": "boolean"
-            }
-          }
-        }
-      ]
+      "$ref": "#/definitions/head_repository"
     },
     "references": {
       "type": "object",
@@ -84,6 +72,28 @@
         "full_name": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "head_repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "name", "full_name"],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "full_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fork": {
+          "type": "boolean"
         }
       }
     }

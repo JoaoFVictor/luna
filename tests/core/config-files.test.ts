@@ -260,6 +260,37 @@ describe("config definition files", () => {
     }
   });
 
+  it("accepts fork metadata in code review workflow input head repository", async () => {
+    const ajv = createSchemaAjv();
+    const schema = await parseJsonFile("workflows/code-review/input.schema.json");
+    const validate = ajv.compile(schema as AnySchema);
+
+    const input = {
+      target: "github_pr",
+      owner: "octo-org",
+      repo: "hello-world",
+      pull_number: 42,
+      base_ref: "main",
+      base_repository: {
+        owner: "octo-org",
+        name: "hello-world",
+        full_name: "octo-org/hello-world"
+      },
+      head_repository: {
+        owner: "contributor",
+        name: "hello-world",
+        full_name: "contributor/hello-world",
+        fork: true
+      },
+      references: {
+        base_sha: "base-sha",
+        head_sha: "head-sha"
+      }
+    };
+
+    expect(validate(input), formatAjvErrors(validate.errors)).toBe(true);
+  });
+
   it("references existing agents from the code review workflow graph", async () => {
     const graph = (await parseYamlFile(
       "workflows/code-review/graph.yaml"
