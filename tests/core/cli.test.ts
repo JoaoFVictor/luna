@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -37,6 +37,15 @@ const validInvocation: Invocation = {
 };
 
 describe("flue local CLI wrapper", () => {
+  it("keeps the package bin pointed at the emitted CLI path", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+      bin?: { luna?: unknown };
+    };
+
+    expect(packageJson.bin?.luna).toBe("./dist/src/cli.js");
+    await expect(access("src/cli.ts")).resolves.toBeUndefined();
+  });
+
   it("parses run input arguments", () => {
     expect(parseCliArgs(["run", "--input", "example.json"])).toEqual({
       command: "run",
