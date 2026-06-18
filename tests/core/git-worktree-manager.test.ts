@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -98,8 +98,45 @@ describe("git worktree manager", () => {
     }
   });
 
-  it("throws head_sha_mismatch when the created worktree HEAD differs from the expected SHA", async () => {
+  it("fetches a non-main base_ref from the invocation", async () => {
     const workspaceRoot = await tempRoot();
+    const calls: GitCall[] = [];
+
+    try {
+      await prepare({
+        invocation: {
+          ...gitInvocation,
+          base_ref: "release/1.2"
+        },
+        repository: gitRepository,
+        workspaceRoot,
+        runId: "run-a1",
+        runGit: async (cwd, args) => {
+          calls.push({ cwd, args });
+
+          if (args[0] === "rev-parse" && args[1] === "HEAD") {
+            return `${gitInvocation.references.head_sha}\n`;
+          }
+
+          return "";
+        },
+        mkdir: async () => {}
+      });
+
+      expect(calls[0]).toEqual({
+        cwd: gitRepository.path,
+        args: ["fetch", gitRepository.remote, "release/1.2"]
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("removes the created worktree before throwing when HEAD differs from the expected SHA", async () => {
+    const workspaceRoot = await tempRoot();
+    const calls: GitCall[] = [];
+    const runId = "run-a1";
+    const expectedWorktreePath = path.join(workspaceRoot, gitRepository.id, runId);
 
     try {
       await expect(
@@ -107,8 +144,10 @@ describe("git worktree manager", () => {
           invocation: gitInvocation,
           repository: gitRepository,
           workspaceRoot,
-          runId: "run-a1",
-          runGit: async (_cwd, args) => {
+          runId,
+          runGit: async (cwd, args) => {
+            calls.push({ cwd, args });
+
             if (args[0] === "rev-parse" && args[1] === "HEAD") {
               return "3333333333333333333333333333333333333333\n";
             }
@@ -118,6 +157,10 @@ describe("git worktree manager", () => {
           mkdir: async () => {}
         })
       ).rejects.toMatchObject({ code: "head_sha_mismatch" });
+      expect(calls).toContainEqual({
+        cwd: gitRepository.path,
+        args: ["worktree", "remove", expectedWorktreePath]
+      });
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
@@ -145,6 +188,42 @@ describe("git worktree manager", () => {
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
+  });
+
+  it("refuses cleanup when a workspace path resolves outside the workspace root", async () => {
+    const workspaceRoot = "/tmp/luna-workspaces";
+    const workspaceRecord: WorkspaceRecord = {
+      run_id: "run-a1",
+      path: "/tmp/luna-workspaces/link/run-a1",
+      preserved: true,
+      reason: "created"
+    };
+    const calls: GitCall[] = [];
+
+    await expect(
+      cleanup({
+        repositoryPath: gitRepository.path,
+        workspaceRoot,
+        workspaceRecord,
+        persistedWorkspaceRecord: workspaceRecord,
+        realpath: async (targetPath) => {
+          if (targetPath === workspaceRoot) {
+            return "/tmp/luna-workspaces-real";
+          }
+
+          if (targetPath === workspaceRecord.path) {
+            return "/tmp/outside/run-a1";
+          }
+
+          return targetPath;
+        },
+        runGit: async (cwd, args) => {
+          calls.push({ cwd, args });
+          return `worktree ${workspaceRecord.path}\n`;
+        }
+      })
+    ).rejects.toMatchObject({ code: "path_security_violation" });
+    expect(calls).toEqual([]);
   });
 
   it("refuses cleanup when the persisted workspace.json record is missing", async () => {
@@ -233,6 +312,33 @@ describe("git worktree manager", () => {
     }
   });
 
+  it("refuses cleanup when persisted workspace.json reason differs from memory", async () => {
+    const workspaceRoot = await tempRoot();
+    const workspaceRecord: WorkspaceRecord = {
+      run_id: "run-a1",
+      path: path.join(workspaceRoot, "run-a1"),
+      preserved: true,
+      reason: "created"
+    };
+
+    try {
+      await expect(
+        cleanup({
+          repositoryPath: gitRepository.path,
+          workspaceRoot,
+          workspaceRecord,
+          persistedWorkspaceRecord: {
+            ...workspaceRecord,
+            reason: "different"
+          },
+          runGit: async () => ""
+        })
+      ).rejects.toMatchObject({ code: "workspace_record_mismatch" });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
   it("only removes a registered Git worktree and marks cleanup successful", async () => {
     const workspaceRoot = await tempRoot();
     const workspaceRecord: WorkspaceRecord = {
@@ -244,6 +350,8 @@ describe("git worktree manager", () => {
     const calls: GitCall[] = [];
 
     try {
+      await mkdir(workspaceRecord.path, { recursive: true });
+
       const updated = await cleanup({
         repositoryPath: gitRepository.path,
         workspaceRoot,
@@ -290,6 +398,8 @@ describe("git worktree manager", () => {
     };
 
     try {
+      await mkdir(workspaceRecord.path, { recursive: true });
+
       await expect(
         cleanup({
           repositoryPath: gitRepository.path,

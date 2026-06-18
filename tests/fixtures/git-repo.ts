@@ -9,7 +9,7 @@ export const gitRepository: RepositoryConfig = {
   remote: "origin"
 };
 
-export const gitInvocation: Invocation & { base_ref: string } = {
+export const gitInvocation: Invocation = {
   target: "github_pr",
   owner: "octo-org",
   repo: "hello-world",

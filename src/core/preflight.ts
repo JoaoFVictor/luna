@@ -24,6 +24,7 @@ export type PreflightResult = {
     remote_url: string;
   };
   expected: {
+    base_ref: string;
     base_sha: string;
     head_sha: string;
   };
@@ -47,6 +48,8 @@ function validateInvocation(invocation: Invocation): void {
     invocation.pull_number < 1 ||
     invocation.base_repository.owner === "" ||
     invocation.base_repository.name === "" ||
+    typeof invocation.base_ref !== "string" ||
+    invocation.base_ref === "" ||
     invocation.head_repository.owner === "" ||
     invocation.head_repository.name === "" ||
     invocation.references.base_sha === "" ||
@@ -109,6 +112,7 @@ export async function runPreflight({
       remote_url: remoteUrl
     },
     expected: {
+      base_ref: invocation.base_ref,
       base_sha: invocation.references.base_sha,
       head_sha: invocation.references.head_sha
     }

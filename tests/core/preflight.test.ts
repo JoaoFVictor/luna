@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runPreflight } from "../../src/core/preflight.js";
+import type { Invocation } from "../../src/core/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 type FakeGitCall = {
@@ -79,6 +80,19 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "invalid_invocation" });
   });
 
+  it("throws invalid_invocation when base_ref is missing", async () => {
+    const { base_ref: _baseRef, ...invalidInvocation } = gitInvocation;
+
+    await expect(
+      runPreflight({
+        invocation: invalidInvocation as Invocation,
+        repository: gitRepository,
+        runGit: async () => "",
+        stat: async () => ({ isDirectory: () => true })
+      })
+    ).rejects.toMatchObject({ code: "invalid_invocation" });
+  });
+
   it("returns a preflight.json shaped object for a valid repository", async () => {
     const calls: FakeGitCall[] = [];
 
@@ -116,7 +130,8 @@ describe("preflight", () => {
       },
       expected: {
         base_sha: gitInvocation.references.base_sha,
-        head_sha: gitInvocation.references.head_sha
+        head_sha: gitInvocation.references.head_sha,
+        base_ref: gitInvocation.base_ref
       }
     });
   });

@@ -25,6 +25,7 @@ export const InvocationSchema = z
     owner: NonEmptyStringSchema,
     repo: NonEmptyStringSchema,
     pull_number: z.number().int().positive(),
+    base_ref: NonEmptyStringSchema,
     base_repository: RepositoryRefSchema,
     head_repository: HeadRepositoryRefSchema,
     references: z

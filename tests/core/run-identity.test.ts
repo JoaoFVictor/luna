@@ -9,6 +9,7 @@ const invocation: Invocation = {
   owner: "Octo Org",
   repo: "Hello/World",
   pull_number: 123,
+  base_ref: "main",
   base_repository: {
     owner: "Octo Org",
     name: "Hello/World",

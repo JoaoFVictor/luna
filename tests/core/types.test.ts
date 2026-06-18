@@ -24,6 +24,7 @@ const validInvocation = {
   owner: "octo-org",
   repo: "hello-world",
   pull_number: 42,
+  base_ref: "main",
   base_repository: {
     owner: "octo-org",
     name: "hello-world",
@@ -163,6 +164,12 @@ describe("core zod schemas", () => {
         base_sha: "abc123"
       }
     };
+
+    expect(() => InvocationSchema.parse(invalidInvocation)).toThrow();
+  });
+
+  it("rejects a GitHub PR invocation when base_ref is missing", () => {
+    const { base_ref: _baseRef, ...invalidInvocation } = validInvocation;
 
     expect(() => InvocationSchema.parse(invalidInvocation)).toThrow();
   });

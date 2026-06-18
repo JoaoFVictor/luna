@@ -1,7 +1,10 @@
-import { mkdir as fsMkdir } from "node:fs/promises";
+import {
+  mkdir as fsMkdir,
+  realpath as fsRealpath
+} from "node:fs/promises";
 import path from "node:path";
 import { runGit as defaultRunGit } from "./git.js";
-import { safeJoin } from "./path-security.js";
+import { isInsideRoot, safeJoin } from "./path-security.js";
 import type { Invocation, RepositoryConfig, WorkspaceRecord } from "./types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
@@ -9,6 +12,7 @@ type Mkdir = (
   path: string,
   options: { recursive: boolean; mode: number }
 ) => Promise<unknown>;
+type Realpath = (path: string) => Promise<string>;
 
 type WorktreeErrorCode =
   | "head_sha_mismatch"
@@ -20,10 +24,6 @@ type WorktreeError = Error & {
   code: WorktreeErrorCode;
 };
 
-type InvocationWithBaseRef = Invocation & {
-  base_ref?: unknown;
-};
-
 function worktreeError(message: string, code: WorktreeErrorCode): WorktreeError {
   const error = new Error(message) as WorktreeError;
   error.code = code;
@@ -31,23 +31,8 @@ function worktreeError(message: string, code: WorktreeErrorCode): WorktreeError 
   return error;
 }
 
-function baseRef(invocation: InvocationWithBaseRef): string {
-  if (typeof invocation.base_ref === "string" && invocation.base_ref !== "") {
-    return invocation.base_ref;
-  }
-
-  return "main";
-}
-
 function pullHeadRef(invocation: Invocation, remote: string): string {
   return `+refs/pull/${invocation.pull_number}/head:refs/remotes/${remote}/pull/${invocation.pull_number}/head`;
-}
-
-function isPathInsideRoot(root: string, candidate: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  const [firstSegment] = relative.split(path.sep);
-
-  return relative === "" || (firstSegment !== ".." && !path.isAbsolute(relative));
 }
 
 function assertWorkspaceRecordMatches(
@@ -64,11 +49,35 @@ function assertWorkspaceRecordMatches(
   if (
     persistedWorkspaceRecord.path !== workspaceRecord.path ||
     persistedWorkspaceRecord.run_id !== workspaceRecord.run_id ||
-    persistedWorkspaceRecord.preserved !== workspaceRecord.preserved
+    persistedWorkspaceRecord.preserved !== workspaceRecord.preserved ||
+    persistedWorkspaceRecord.reason !== workspaceRecord.reason
   ) {
     throw worktreeError(
       "Persisted workspace record does not match in-memory workspace record",
       "workspace_record_mismatch"
+    );
+  }
+}
+
+async function assertWorkspacePathInsideRoot(
+  workspaceRoot: string,
+  workspacePath: string,
+  realpath: Realpath
+): Promise<void> {
+  if (!isInsideRoot(path.resolve(workspaceRoot), path.resolve(workspacePath))) {
+    throw worktreeError(
+      `Workspace path is outside workspace root: ${workspacePath}`,
+      "path_security_violation"
+    );
+  }
+
+  const rootReal = await realpath(workspaceRoot);
+  const workspaceReal = await realpath(workspacePath);
+
+  if (!isInsideRoot(rootReal, workspaceReal)) {
+    throw worktreeError(
+      `Workspace path is outside workspace root: ${workspacePath}`,
+      "path_security_violation"
     );
   }
 }
@@ -99,7 +108,7 @@ export async function prepare({
   runGit = defaultRunGit,
   mkdir = fsMkdir
 }: {
-  invocation: InvocationWithBaseRef;
+  invocation: Invocation;
   repository: RepositoryConfig;
   workspaceRoot: string;
   runId: string;
@@ -109,7 +118,7 @@ export async function prepare({
   const worktreePath = await safeJoin(workspaceRoot, [repository.id, runId]);
 
   await mkdir(path.dirname(worktreePath), { recursive: true, mode: 0o700 });
-  await runGit(repository.path, ["fetch", repository.remote, baseRef(invocation)]);
+  await runGit(repository.path, ["fetch", repository.remote, invocation.base_ref]);
   await runGit(repository.path, [
     "fetch",
     repository.remote,
@@ -134,10 +143,24 @@ export async function prepare({
 
   const actualHead = (await runGit(worktreePath, ["rev-parse", "HEAD"])).trim();
   if (actualHead !== invocation.references.head_sha) {
-    throw worktreeError(
-      `Worktree HEAD ${actualHead} did not match expected ${invocation.references.head_sha}`,
-      "head_sha_mismatch"
-    );
+    let cleanupCause: unknown;
+
+    try {
+      await runGit(repository.path, ["worktree", "remove", worktreePath]);
+    } catch (cause) {
+      cleanupCause = cause;
+    }
+
+    const message =
+      cleanupCause === undefined
+        ? `Worktree HEAD ${actualHead} did not match expected ${invocation.references.head_sha}`
+        : `Worktree HEAD ${actualHead} did not match expected ${invocation.references.head_sha}; cleanup failed`;
+    const error = worktreeError(message, "head_sha_mismatch");
+    if (cleanupCause !== undefined) {
+      error.cause = cleanupCause;
+    }
+
+    throw error;
   }
 
   return {
@@ -153,22 +176,18 @@ export async function cleanup({
   workspaceRoot,
   workspaceRecord,
   persistedWorkspaceRecord,
-  runGit = defaultRunGit
+  runGit = defaultRunGit,
+  realpath = fsRealpath
 }: {
   repositoryPath: string;
   workspaceRoot: string;
   workspaceRecord: WorkspaceRecord;
   persistedWorkspaceRecord?: WorkspaceRecord;
   runGit?: RunGit;
+  realpath?: Realpath;
 }): Promise<WorkspaceRecord> {
   assertWorkspaceRecordMatches(workspaceRecord, persistedWorkspaceRecord);
-
-  if (!isPathInsideRoot(workspaceRoot, workspaceRecord.path)) {
-    throw worktreeError(
-      `Workspace path is outside workspace root: ${workspaceRecord.path}`,
-      "path_security_violation"
-    );
-  }
+  await assertWorkspacePathInsideRoot(workspaceRoot, workspaceRecord.path, realpath);
 
   const worktreeList = await runGit(repositoryPath, [
     "worktree",
