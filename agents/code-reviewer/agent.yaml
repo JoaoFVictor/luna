@@ -1,0 +1,6 @@
+id: code-reviewer
+description: Reviews pull request code for concrete defects using verified repository evidence.
+model_profile: reviewer
+mode: read_only
+instructions_file: instructions.md
+output_schema: output.schema.json

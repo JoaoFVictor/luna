@@ -1,0 +1,12 @@
+nodes:
+  - id: review-planner
+    agent: review-planner
+  - id: code-reviewer
+    agent: code-reviewer
+  - id: acceptance-reviewer
+    agent: acceptance-reviewer
+edges:
+  - from: review-planner
+    to: code-reviewer
+  - from: code-reviewer
+    to: acceptance-reviewer

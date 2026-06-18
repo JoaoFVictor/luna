@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "run", "report"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "success"
+        },
+        "run": {
+          "$ref": "#/definitions/run_identity"
+        },
+        "report": {
+          "$ref": "#/definitions/final_report"
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspace"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "run", "error"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "failed"
+        },
+        "run": {
+          "$ref": "#/definitions/run_identity"
+        },
+        "error": {
+          "$ref": "#/definitions/error_artifact"
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspace"
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "run_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "target"],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "const": "github_pr"
+        },
+        "started_at": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "final_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_path", "acceptance", "findings"],
+      "properties": {
+        "report_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acceptance": {
+          "$ref": "#/definitions/acceptance"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/finding"
+          }
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspace"
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "summary", "blocking_findings"],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": ["approve", "comment", "request_changes"]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blocking_findings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "severity",
+        "confidence",
+        "description",
+        "evidence",
+        "recommendation"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "info"]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/evidence"
+          }
+        },
+        "recommendation": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "line_start", "line_end"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line_start": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "line_end": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "quote": {
+          "type": "string"
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "path", "preserved", "reason"],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preserved": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "error_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

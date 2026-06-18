@@ -1,0 +1,6 @@
+id: acceptance-reviewer
+description: Decides whether reviewed changes satisfy the claimed pull request intent without blocking on nonessential issues.
+model_profile: acceptance
+mode: read_only
+instructions_file: instructions.md
+output_schema: output.schema.json
