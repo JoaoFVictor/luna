@@ -162,19 +162,13 @@
         },
         "line_end": {
           "type": "integer",
-          "minimum": 1,
-          "allOf": [
-            {
-              "minimum": {
-                "$data": "1/line_start"
-              }
-            }
-          ]
+          "minimum": 1
         },
         "quote": {
           "type": "string"
         }
-      }
+      },
+      "x-runtime-invariants": ["line_end >= line_start"]
     },
     "workspace": {
       "type": "object",

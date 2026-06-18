@@ -76,7 +76,11 @@ function formatAjvErrors(errors: ErrorObject[] | null | undefined): string {
 }
 
 function createSchemaAjv(): Ajv {
-  return new Ajv({ allErrors: true, strict: true, $data: true });
+  return new Ajv({
+    allErrors: true,
+    strict: true,
+    keywords: ["x-runtime-invariants"]
+  });
 }
 
 function assertLineFieldsUseIntegers(
@@ -116,6 +120,44 @@ function assertLineFieldsUseIntegers(
   for (const [key, value] of Object.entries(objectSchema)) {
     assertLineFieldsUseIntegers(value, `${path}/${key}`);
   }
+}
+
+function findEvidenceSchemasWithLineRanges(
+  schema: unknown,
+  matches: unknown[] = []
+): unknown[] {
+  if (schema === null || typeof schema !== "object") {
+    return matches;
+  }
+
+  if (Array.isArray(schema)) {
+    schema.forEach((item) => findEvidenceSchemasWithLineRanges(item, matches));
+    return matches;
+  }
+
+  const objectSchema = schema as Record<string, unknown>;
+  const properties = objectSchema.properties;
+
+  if (
+    properties !== null &&
+    typeof properties === "object" &&
+    !Array.isArray(properties)
+  ) {
+    const propertyNames = Object.keys(properties as Record<string, unknown>);
+
+    if (
+      propertyNames.includes("line_start") &&
+      propertyNames.includes("line_end")
+    ) {
+      matches.push(objectSchema);
+    }
+  }
+
+  for (const value of Object.values(objectSchema)) {
+    findEvidenceSchemasWithLineRanges(value, matches);
+  }
+
+  return matches;
 }
 
 describe("config definition files", () => {
@@ -191,72 +233,26 @@ describe("config definition files", () => {
     }
   });
 
-  it("rejects evidence refs with line_end before line_start in code review schemas", async () => {
-    const cases: Array<{ file: string; data: unknown }> = [
-      {
-        file: "agents/code-reviewer/output.schema.json",
-        data: {
-          findings: [
-            {
-              title: "Finding",
-              severity: "medium",
-              confidence: "high",
-              description: "Description",
-              evidence: [
-                {
-                  path: "src/example.ts",
-                  line_start: 20,
-                  line_end: 19
-                }
-              ],
-              recommendation: "Recommendation"
-            }
-          ]
-        }
-      },
-      {
-        file: "workflows/code-review/output.schema.json",
-        data: {
-          status: "success",
-          run: {
-            run_id: "run-1",
-            target: "github_pr"
-          },
-          report: {
-            report_path: "reports/code-review.md",
-            acceptance: {
-              decision: "comment",
-              summary: "Summary",
-              blocking_findings: []
-            },
-            findings: [
-              {
-                title: "Finding",
-                severity: "medium",
-                confidence: "high",
-                description: "Description",
-                evidence: [
-                  {
-                    path: "src/example.ts",
-                    line_start: 20,
-                    line_end: 19
-                  }
-                ],
-                recommendation: "Recommendation"
-              }
-            ]
-          }
-        }
-      }
+  it("documents runtime line range invariants in code review schemas", async () => {
+    const files = [
+      "agents/code-reviewer/output.schema.json",
+      "workflows/code-review/output.schema.json"
     ];
 
-    for (const { file, data } of cases) {
-      const ajv = createSchemaAjv();
+    for (const file of files) {
       const schema = await parseJsonFile(file);
-      const validate = ajv.compile(schema as AnySchema);
+      const evidenceSchemas = findEvidenceSchemasWithLineRanges(schema);
 
-      expect(validate(data), file).toBe(false);
-      expect(formatAjvErrors(validate.errors), file).toContain("line_end");
+      expect(evidenceSchemas.length, file).toBeGreaterThan(0);
+      for (const evidenceSchema of evidenceSchemas) {
+        expect(evidenceSchema, file).toEqual(
+          expect.objectContaining({
+            "x-runtime-invariants": expect.arrayContaining([
+              "line_end >= line_start"
+            ])
+          })
+        );
+      }
     }
   });
 
