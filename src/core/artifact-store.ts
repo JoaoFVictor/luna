@@ -102,6 +102,26 @@ export class ArtifactStore {
     return artifactPath;
   }
 
+  async writeJsonInDirectory(
+    directory: string,
+    name: string,
+    value: unknown
+  ): Promise<string> {
+    const runDirectory = await this.runDirectory();
+    const artifactDirectory = await safeJoin(runDirectory, [directory]);
+
+    await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
+    await chmod(artifactDirectory, 0o700);
+
+    const artifactPath = await safeJoin(runDirectory, [directory, name]);
+    const content = `${JSON.stringify(redact(value), null, 2)}\n`;
+
+    await writeFile(artifactPath, content, { encoding: "utf8", mode: 0o600 });
+    await chmod(artifactPath, 0o600);
+
+    return artifactPath;
+  }
+
   async writeMarkdown(name: string, value: string): Promise<string> {
     const artifactPath = await this.artifactPath(name);
 
