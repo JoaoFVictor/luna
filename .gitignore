@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.output/
+
+# Local runtime artifacts
+.runs/
+docs/
+*.log
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Coverage and caches
+coverage/
+.nyc_output/
+.cache/
+.turbo/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
