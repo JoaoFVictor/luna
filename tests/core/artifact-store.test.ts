@@ -105,6 +105,77 @@ describe("artifact store", () => {
     expect(written.nested[0].secretariat).toBe("visible");
   });
 
+  it("redacts token patterns in JSON command logs", async () => {
+    const root = await tempRoot();
+    const store = new ArtifactStore(root, "run-a1");
+
+    const artifactPath = await store.writeJson("validation.json", {
+      stdout:
+        "curl -H 'Authorization: Bearer token-value' https://example.test",
+      stderr:
+        "remote: token ghp_1234567890abcdefghijklmnopqrstuvwxyzABC rejected"
+    });
+
+    const written = JSON.parse(await readFile(artifactPath, "utf8"));
+
+    expect(written.stdout).toBe(
+      "curl -H 'Authorization: Bearer [REDACTED]' https://example.test"
+    );
+    expect(written.stderr).toBe("remote: token [REDACTED] rejected");
+  });
+
+  it("redacts token patterns in directory JSON artifacts", async () => {
+    const root = await tempRoot();
+    const store = new ArtifactStore(root, "run-a1");
+
+    const artifactPath = await store.writeJsonInDirectory(
+      "attempts",
+      "validation.json",
+      {
+        stdout: "JIRA_API_TOKEN=token-from-env"
+      }
+    );
+
+    const written = JSON.parse(await readFile(artifactPath, "utf8"));
+
+    expect(written.stdout).toBe("JIRA_API_TOKEN=[REDACTED]");
+  });
+
+  it("redacts token patterns in error artifacts", async () => {
+    const root = await tempRoot();
+    const store = new ArtifactStore(root, "run-a1");
+
+    const artifactPath = await store.writeError(
+      new Error("Authorization: Bearer token-value")
+    );
+
+    const written = JSON.parse(await readFile(artifactPath, "utf8"));
+
+    expect(written.message).toBe("Authorization: Bearer [REDACTED]");
+  });
+
+  it("redacts secrets in markdown reports", async () => {
+    const root = await tempRoot();
+    const store = new ArtifactStore(root, "run-a1");
+
+    const artifactPath = await store.writeMarkdown(
+      "report.md",
+      [
+        "# Report",
+        "Authorization: Basic dXNlckBleGFtcGxlLmNvbTp0b2tlbg==",
+        "JIRA_API_TOKEN=token-from-env"
+      ].join("\n")
+    );
+
+    await expect(readFile(artifactPath, "utf8")).resolves.toBe(
+      [
+        "# Report",
+        "Authorization: Basic [REDACTED]",
+        "JIRA_API_TOKEN=[REDACTED]"
+      ].join("\n")
+    );
+  });
+
   it("uses safe path joining for artifact writes", async () => {
     const root = await tempRoot();
     const store = new ArtifactStore(root, "../escape");
