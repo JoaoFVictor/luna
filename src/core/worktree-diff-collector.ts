@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runGit as defaultRunGit } from "./git.js";
 
@@ -28,6 +28,9 @@ export type UntrackedFileSummary = {
   truncated: boolean;
   bytes: number;
   max_bytes: number;
+  symlink?: boolean;
+  omitted?: boolean;
+  omitted_reason?: "symlink";
 };
 
 export type WorktreeDiffFile = {
@@ -267,9 +270,26 @@ async function summarizeUntrackedFile(
   maxBytes: number
 ): Promise<UntrackedFileSummary> {
   let content = "";
+  const emptyExcerpt = excerptForContent("", maxBytes);
+  const fullPath = join(cwd, path);
 
   try {
-    content = await readFile(join(cwd, path), "utf8");
+    const stats = await lstat(fullPath);
+
+    if (stats.isSymbolicLink()) {
+      return {
+        path,
+        excerpt: emptyExcerpt,
+        truncated: false,
+        bytes: 0,
+        max_bytes: maxBytes,
+        symlink: true,
+        omitted: true,
+        omitted_reason: "symlink"
+      };
+    }
+
+    content = await readFile(fullPath, "utf8");
   } catch {
     content = "";
   }

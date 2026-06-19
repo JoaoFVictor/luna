@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import type {
   ValidationCommand,
   ValidationCommandResult,
@@ -10,6 +10,7 @@ export type ProcessRunRequest = {
   args: readonly string[];
   cwd: string;
   timeoutMs?: number;
+  maxOutputBytes?: number;
 };
 
 export type ProcessRunResult = {
@@ -44,69 +45,109 @@ function truncateBytes(
   };
 }
 
-function errorExitCode(error: unknown): number | null {
-  const code = (error as { code?: unknown }).code;
-
-  return typeof code === "number" ? code : null;
-}
-
-function errorOutput(error: unknown, stream: "stdout" | "stderr"): string {
-  const output = (error as { [key in typeof stream]?: unknown })[stream];
-
-  return typeof output === "string" ? output : "";
-}
-
-function errorTimedOut(error: unknown): boolean {
-  const maybeError = error as { killed?: unknown; signal?: unknown };
-
-  return maybeError.killed === true && maybeError.signal === "SIGTERM";
-}
-
 export const defaultProcessRunner: ProcessRunner = async ({
   cmd,
   args,
   cwd,
-  timeoutMs
+  timeoutMs,
+  maxOutputBytes
 }) => {
   const start = Date.now();
+  const captureLimitBytes =
+    maxOutputBytes === undefined ? undefined : Math.max(0, maxOutputBytes + 1);
 
-  try {
-    const result = await new Promise<{
-      stdout: string;
-      stderr: string;
-    }>((resolve, reject) => {
-      execFile(
-        cmd,
-        [...args],
-        { cwd, timeout: timeoutMs, encoding: "utf8" },
-        (error, stdout, stderr) => {
-          if (error !== null) {
-            Object.assign(error, { stdout, stderr });
-            reject(error);
-            return;
-          }
+  function createCollector(): {
+    collect: (chunk: Buffer) => void;
+    value: () => string;
+  } {
+    const chunks: Buffer[] = [];
+    let capturedBytes = 0;
 
-          resolve({ stdout, stderr });
+    return {
+      collect: (chunk) => {
+        const remaining =
+          captureLimitBytes === undefined
+            ? chunk.byteLength
+            : captureLimitBytes - capturedBytes;
+
+        if (remaining <= 0) {
+          return;
         }
-      );
-    });
 
-    return {
-      exitCode: 0,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      timedOut: false,
-      durationMs: Date.now() - start
-    };
-  } catch (error) {
-    return {
-      exitCode: errorExitCode(error),
-      stdout: errorOutput(error, "stdout"),
-      stderr: errorOutput(error, "stderr"),
-      timedOut: errorTimedOut(error),
-      durationMs: Date.now() - start
+        const captured =
+          chunk.byteLength <= remaining ? chunk : chunk.subarray(0, remaining);
+        chunks.push(captured);
+        capturedBytes += captured.byteLength;
+      },
+      value: () => Buffer.concat(chunks).toString("utf8")
     };
   }
+
+  const stdout = createCollector();
+  const stderr = createCollector();
+
+  return await new Promise<ProcessRunResult>((resolve) => {
+    let timedOut = false;
+    let settled = false;
+    let stdoutEnded = false;
+    let stderrEnded = false;
+    let closeCode: number | null | undefined;
+    const child = spawn(cmd, [...args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const timeout =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGTERM");
+          }, timeoutMs);
+
+    const finish = (exitCode: number | null) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+
+      resolve({
+        exitCode,
+        stdout: stdout.value(),
+        stderr: stderr.value(),
+        timedOut,
+        durationMs: Date.now() - start
+      });
+    };
+
+    const finishIfComplete = () => {
+      if (
+        closeCode !== undefined &&
+        stdoutEnded &&
+        stderrEnded
+      ) {
+        finish(closeCode);
+      }
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => stdout.collect(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.collect(chunk));
+    child.stdout.on("end", () => {
+      stdoutEnded = true;
+      finishIfComplete();
+    });
+    child.stderr.on("end", () => {
+      stderrEnded = true;
+      finishIfComplete();
+    });
+
+    child.on("error", () => finish(null));
+    child.on("close", (code) => {
+      closeCode = code;
+      finishIfComplete();
+    });
+  });
 };
 
 export async function runValidationCommands({
@@ -128,7 +169,8 @@ export async function runValidationCommands({
       cmd: command.cmd,
       args,
       cwd,
-      timeoutMs: command.timeout_ms
+      timeoutMs: command.timeout_ms,
+      maxOutputBytes
     });
     const stdout = truncateBytes(result.stdout, maxOutputBytes);
     const stderr = truncateBytes(result.stderr, maxOutputBytes);

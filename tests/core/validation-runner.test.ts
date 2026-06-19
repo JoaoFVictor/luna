@@ -68,6 +68,32 @@ describe("validation runner", () => {
     });
   });
 
+  it("captures output larger than execFile's default buffer and applies truncation metadata", async () => {
+    const result = await runValidationCommands({
+      cwd: process.cwd(),
+      commands: [
+        {
+          cmd: process.execPath,
+          args: [
+            "-e",
+            "require('node:fs').writeSync(1, 'a'.repeat(1024 * 1024 + 1))"
+          ]
+        }
+      ],
+      maxOutputBytes: 32
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.commands[0]).toMatchObject({
+      exit_code: 0,
+      stdout: "a".repeat(32),
+      stderr: "",
+      stdout_truncated: true,
+      stderr_truncated: false,
+      timed_out: false
+    });
+  });
+
   it("passes structured argv to the process runner without a shell command string", async () => {
     const calls: unknown[] = [];
 
@@ -93,6 +119,7 @@ describe("validation runner", () => {
         cmd: "npm",
         args: ["run", "typecheck"],
         cwd: "/repo",
+        maxOutputBytes: 1000,
         timeoutMs: undefined
       }
     ]);

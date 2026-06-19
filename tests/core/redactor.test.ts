@@ -38,6 +38,26 @@ describe("redactor", () => {
     `);
   });
 
+  it("redacts markdown strings containing colon-form secret fields", () => {
+    expect(
+      redactString(
+        [
+          "# Report",
+          "api_token: jira-api-token-value",
+          "password: hunter2",
+          "- clientSecret: quoted-secret",
+          "public_count: 2"
+        ].join("\n")
+      )
+    ).toMatchInlineSnapshot(`
+      "# Report
+      api_token: [REDACTED]
+      password: [REDACTED]
+      - clientSecret: [REDACTED]
+      public_count: 2"
+    `);
+  });
+
   it("redacts command logs with GitHub tokens and inline bearer headers", () => {
     expect(
       redactString(

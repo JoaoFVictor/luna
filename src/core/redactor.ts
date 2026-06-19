@@ -48,6 +48,19 @@ export function redactString(value: string): string {
     .replace(
       /(^|\n)([A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)[A-Za-z0-9_]*=)([^\r\n]*)/gi,
       (_match, lineStart: string, key: string) => `${lineStart}${key}${REDACTED}`
+    )
+    .replace(
+      /(^|\n)(\s*(?:[-*]\s*)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*:\s*)([^\r\n]*)/g,
+      (
+        match: string,
+        lineStart: string,
+        prefix: string,
+        key: string,
+        separator: string
+      ) =>
+        key.toLowerCase() !== "authorization" && isSecretKey(key)
+          ? `${lineStart}${prefix}${key}${separator}${REDACTED}`
+          : match
     );
 }
 

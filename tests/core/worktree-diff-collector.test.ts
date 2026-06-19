@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -233,6 +233,51 @@ describe("worktree diff collector", () => {
       );
     } finally {
       await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not read untracked symlink targets when building excerpts", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "worktree-diff-"));
+    const outside = await mkdtemp(join(tmpdir(), "worktree-outside-"));
+
+    try {
+      await writeFile(join(outside, "secret.txt"), "outside secret target");
+      await symlink(join(outside, "secret.txt"), join(cwd, "linked-secret.txt"));
+
+      const result = await collectWorktreeDiff({
+        cwd,
+        maxDiffBytes: 1000,
+        runGit: async (_cwd, args) => {
+          if (args[0] === "status") {
+            return ["?? linked-secret.txt", ""].join("\0");
+          }
+
+          return "";
+        }
+      });
+
+      expect(result.untracked_summaries).toEqual([
+        {
+          path: "linked-secret.txt",
+          excerpt: {
+            start_line: 1,
+            end_line: 1,
+            content: ""
+          },
+          truncated: false,
+          bytes: 0,
+          max_bytes: 1000,
+          symlink: true,
+          omitted: true,
+          omitted_reason: "symlink"
+        }
+      ]);
+      expect(result.files[0]?.untracked_summary).toEqual(
+        result.untracked_summaries[0]
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 
