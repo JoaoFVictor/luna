@@ -182,6 +182,69 @@ async function writeToyWorkflow(root: string): Promise<void> {
   );
 }
 
+async function writeConfigInputWorkflow(root: string): Promise<void> {
+  await mkdir(path.join(root, "workflows", "config-input-review"), {
+    recursive: true
+  });
+  await writeFile(
+    path.join(root, "workflows", "config-input-review", "workflow.yaml"),
+    [
+      "id: config-input-review",
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "config-input-review", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: config_probe",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifact: config-probe.json",
+      "    input:",
+      "      commands: $.config.implementation.validation.commands",
+      ""
+    ].join("\n")
+  );
+}
+
+async function writeImplementationConfig(root: string): Promise<void> {
+  await writeFile(
+    path.join(root, "implementation.yaml"),
+    [
+      "implementation:",
+      "  branch_pattern: feature/{slug}",
+      "  commit:",
+      "    enabled: false",
+      "    co_author: false",
+      "  push:",
+      "    enabled: false",
+      "    remote: origin",
+      "  pull_request:",
+      "    enabled: false",
+      "    provider: github",
+      "    draft: true",
+      "    base_ref: main",
+      "  sandbox:",
+      "    type: trusted_host_local",
+      "    env_allowlist: []",
+      "  validation:",
+      "    repair_attempts: 1",
+      "    max_output_bytes: 200000",
+      "    commands:",
+      "      - cmd: npm",
+      "        args: [\"test\"]",
+      "        timeout_ms: 120000",
+      ""
+    ].join("\n")
+  );
+}
+
 async function writeFullCodeReviewWorkflow(root: string): Promise<void> {
   await writeFile(
     path.join(root, "workflows", "code-review", "workflow.yaml"),
@@ -335,6 +398,42 @@ async function pathExists(filePath: string): Promise<boolean> {
 }
 
 describe("configured workflow runner", () => {
+  it("passes flattened implementation config references to built-in node input", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "config-input-review");
+      await writeConfigInputWorkflow(root);
+      await writeImplementationConfig(root);
+
+      const runBuiltInStep = vi.fn(async () => ({ status: "ok" }));
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(runBuiltInStep).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: {
+            commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }]
+          }
+        })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("preserves code-review artifacts for the configured graph", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 

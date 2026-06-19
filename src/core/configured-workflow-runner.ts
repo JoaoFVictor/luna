@@ -29,6 +29,8 @@ import { resolveWorkflowInput, type WorkflowState } from "./workflow-state.js";
 import { resolveRepository as defaultResolveRepository } from "./workspace-resolver.js";
 import {
   AppConfigSchema,
+  ImplementationConfigSchema,
+  JiraConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RoutingConfigSchema,
@@ -39,6 +41,7 @@ import {
   type RepositoriesConfig,
   type RepositoryConfig,
   type RouteTarget,
+  type RuntimeConfigState,
   type RoutingConfig,
   type RunIdentity,
   type WorkspaceRecord
@@ -141,6 +144,7 @@ async function loadConfigs(configRoot: string): Promise<{
   repositories: RepositoriesConfig;
   routing: RoutingConfig;
   models: ModelsConfig;
+  runtimeConfig: RuntimeConfigState;
 }> {
   const app = await loadYamlFile(
     path.join(configRoot, "app.yaml"),
@@ -158,8 +162,38 @@ async function loadConfigs(configRoot: string): Promise<{
     path.join(configRoot, "models.yaml"),
     ModelsConfigSchema
   );
+  const runtimeConfig = await loadRuntimeConfig(configRoot);
 
-  return { app, repositories, routing, models };
+  return { app, repositories, routing, models, runtimeConfig };
+}
+
+async function loadRuntimeConfig(
+  configRoot: string
+): Promise<RuntimeConfigState> {
+  const jiraPath = path.join(configRoot, "jira.yaml");
+  const implementationPath = path.join(configRoot, "implementation.yaml");
+  const [jira, implementation] = await Promise.all([
+    loadOptionalYamlFile(jiraPath, JiraConfigSchema),
+    loadOptionalYamlFile(implementationPath, ImplementationConfigSchema)
+  ]);
+
+  return {
+    ...(jira === undefined ? {} : { jira }),
+    ...(implementation === undefined
+      ? {}
+      : { implementation: implementation.implementation })
+  };
+}
+
+async function loadOptionalYamlFile<T>(
+  filePath: string,
+  schema: { parse(value: unknown): T }
+): Promise<T | undefined> {
+  if (!(await pathExists(filePath))) {
+    return undefined;
+  }
+
+  return await loadYamlFile(filePath, schema);
 }
 
 function workflowIdFromRoute(
@@ -475,7 +509,10 @@ async function runWorkflowNode(
     return await runBuiltInStep({
       uses: node.uses,
       state,
-      input: node.input,
+      input:
+        node.input === undefined
+          ? undefined
+          : resolveWorkflowInput(node.input, state),
       dependencies: dependencies.builtInStepDependencies
     });
   }
@@ -559,6 +596,7 @@ export async function runConfiguredWorkflow({
     );
     const state: WorkflowState = {
       invocation,
+      config: configs.runtimeConfig,
       repository,
       run,
       workspaceRoot: configs.app.workspace.root,
