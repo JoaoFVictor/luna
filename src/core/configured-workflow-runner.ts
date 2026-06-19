@@ -45,6 +45,8 @@ import {
   type RuntimeConfigState,
   type RoutingConfig,
   type RunIdentity,
+  type ValidationCommand,
+  ValidationCommandSchema,
   type WorkspaceRecord
 } from "./types.js";
 
@@ -55,6 +57,37 @@ export type RunAgentStepOptions = {
   node: Extract<WorkflowNode, { type: "agent" }>;
   model: ReturnType<typeof toFlueModelOptions>;
   input: Record<string, unknown>;
+  state: WorkflowState;
+};
+
+type AgentLoopWorkflowNode = Extract<WorkflowNode, { type: "agent_loop" }>;
+
+type ResolvedAgentLoopNode = Omit<
+  AgentLoopWorkflowNode,
+  "sandbox" | "validation" | "repair"
+> & {
+  sandbox: {
+    type: "trusted_host_local";
+    cwd: string;
+    env_allowlist: string[];
+  };
+  validation: {
+    commands: ValidationCommand[];
+    max_output_bytes: number;
+  };
+  repair: {
+    attempts: number;
+  };
+};
+
+export type RunAgentLoopStepOptions = {
+  agent: AgentDefinition;
+  node: ResolvedAgentLoopNode;
+  model: ReturnType<typeof toFlueModelOptions>;
+  input: Record<string, unknown>;
+  sandbox: ResolvedAgentLoopNode["sandbox"];
+  validation: ResolvedAgentLoopNode["validation"];
+  repair: ResolvedAgentLoopNode["repair"];
   state: WorkflowState;
 };
 
@@ -71,6 +104,9 @@ export type ConfiguredWorkflowRunnerDependencies = {
   ) => RepositoryConfig;
   runBuiltInStep?: (options: RunBuiltInStepOptions) => MaybePromise<unknown>;
   runAgentStep?: (options: RunAgentStepOptions) => MaybePromise<unknown>;
+  runAgentLoopStep?: (
+    options: RunAgentLoopStepOptions
+  ) => MaybePromise<unknown>;
   cleanupWorktree?: typeof defaultCleanupWorktree;
   builtInStepDependencies?: BuiltInStepDependencies;
   ArtifactStore?: typeof ArtifactStore;
@@ -717,6 +753,93 @@ function resolveAgentModel(
   return toFlueModelOptions(profile);
 }
 
+function validateAgentLoopCommands(value: unknown): ValidationCommand[] {
+  const parsed = ValidationCommandSchema.array().safeParse(value);
+
+  if (!parsed.success) {
+    throw configuredWorkflowError(
+      "Agent loop validation.commands must resolve to structured validation commands",
+      "agent_loop_validation_commands_invalid",
+      parsed.error
+    );
+  }
+
+  return parsed.data;
+}
+
+function validatePositiveInteger(
+  value: unknown,
+  message: string,
+  code: string
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value <= 0
+  ) {
+    throw configuredWorkflowError(message, code);
+  }
+
+  return value;
+}
+
+function validateNonnegativeInteger(
+  value: unknown,
+  message: string,
+  code: string
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    throw configuredWorkflowError(message, code);
+  }
+
+  return value;
+}
+
+function resolveAgentLoopNode(
+  node: AgentLoopWorkflowNode,
+  state: WorkflowState
+): ResolvedAgentLoopNode {
+  const sandbox = resolveWorkflowInput(node.sandbox, state);
+  const validation = resolveWorkflowInput(node.validation, state);
+  const repair = resolveWorkflowInput(node.repair, state);
+  const cwd = sandbox.cwd;
+
+  if (typeof cwd !== "string" || cwd === "") {
+    throw configuredWorkflowError(
+      "Agent loop sandbox.cwd must resolve to a path",
+      "agent_loop_sandbox_cwd_invalid"
+    );
+  }
+
+  return {
+    ...node,
+    sandbox: {
+      type: "trusted_host_local",
+      cwd,
+      env_allowlist: node.sandbox.env_allowlist
+    },
+    validation: {
+      commands: validateAgentLoopCommands(validation.commands),
+      max_output_bytes: validatePositiveInteger(
+        validation.max_output_bytes,
+        "Agent loop validation.max_output_bytes must resolve to a number",
+        "agent_loop_validation_max_output_bytes_invalid"
+      )
+    },
+    repair: {
+      attempts: validateNonnegativeInteger(
+        repair.attempts,
+        "Agent loop repair.attempts must resolve to a number",
+        "agent_loop_repair_attempts_invalid"
+      )
+    }
+  };
+}
+
 async function runWorkflowNode(
   node: WorkflowNode,
   state: WorkflowState,
@@ -740,10 +863,26 @@ async function runWorkflowNode(
   }
 
   if (node.type === "agent_loop") {
-    throw configuredWorkflowError(
-      `No agent loop runner configured for node: ${node.id}`,
-      "agent_loop_runner_missing"
-    );
+    if (dependencies.runAgentLoopStep === undefined) {
+      throw configuredWorkflowError(
+        `No agent loop runner configured for node: ${node.id}`,
+        "agent_loop_runner_missing"
+      );
+    }
+
+    const agent = await loadAgentDefinition(agentsRoot, node.agent);
+    const resolvedNode = resolveAgentLoopNode(node, state);
+
+    return await dependencies.runAgentLoopStep({
+      agent,
+      node: resolvedNode,
+      model: resolveAgentModel(agent, modelProfiles),
+      input: resolveWorkflowInput(node.input, state),
+      sandbox: resolvedNode.sandbox,
+      validation: resolvedNode.validation,
+      repair: resolvedNode.repair,
+      state
+    });
   }
 
   if (dependencies.runAgentStep === undefined) {

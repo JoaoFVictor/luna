@@ -493,6 +493,32 @@ async function writeAgent(root: string, id: string): Promise<void> {
   );
 }
 
+async function writeTrustedWriteAgent(root: string, id: string): Promise<void> {
+  const agentRoot = path.join(root, "agents", id);
+  await mkdir(agentRoot, { recursive: true });
+
+  await writeFile(
+    path.join(agentRoot, "agent.yaml"),
+    [
+      `id: ${id}`,
+      `description: ${id}`,
+      "model_profile: default",
+      "mode: trusted_host_local_write",
+      "instructions_file: instructions.md",
+      "output_schema: output.schema.json",
+      ""
+    ].join("\n")
+  );
+  await writeFile(path.join(agentRoot, "instructions.md"), `${id}\n`);
+  await writeFile(
+    path.join(agentRoot, "output.schema.json"),
+    JSON.stringify({
+      type: "object",
+      additionalProperties: true
+    })
+  );
+}
+
 async function readJson(root: string, runId: string, name: string): Promise<unknown> {
   return JSON.parse(
     await readFile(path.join(root, "artifacts", runId, name), "utf8")
@@ -584,6 +610,88 @@ async function runImplementationLifecycleScenario({
   });
 
   return { result, cleanupWorktree };
+}
+
+async function writeAgentLoopWorkflow(
+  root: string,
+  options: {
+    commands?: string;
+    maxOutputBytes?: string;
+    repairAttempts?: string;
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(root, "workflows", "implementation"), {
+    recursive: true
+  });
+  await writeFile(
+    path.join(root, "routing.yaml"),
+    [
+      "routes:",
+      "  - name: implementation",
+      "    when:",
+      "      has_target: true",
+      "    use_target_from_input: true",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "implementation", "workflow.yaml"),
+    [
+      "id: implementation",
+      "type: workflow",
+      "mode: git_managed_write",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "implementation", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: preflight",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifact: preflight.json",
+      "  - id: workspace",
+      "    type: built_in",
+      "    uses: prepare_implementation_worktree",
+      "    artifact: workspace.json",
+      "    after:",
+      "      - preflight",
+      "  - id: implementation",
+      "    type: agent_loop",
+      "    agent: code-implementer",
+      "    output_schema: implementation_result",
+      "    artifact:",
+      "      attempts: implementation-attempts.json",
+      "      validation: validation.json",
+      "      result: implementation-result.json",
+      "    input:",
+      "      invocation: $.invocation",
+      "      workspace: $.workspace",
+      "      preflight: $.steps.preflight",
+      "    sandbox:",
+      "      type: trusted_host_local",
+      "      cwd: $.workspace.path",
+      "      env_allowlist: []",
+      "    validation:",
+      `      commands: ${options.commands ?? "$.config.implementation.validation.commands"}`,
+      `      max_output_bytes: ${options.maxOutputBytes ?? "$.config.implementation.validation.max_output_bytes"}`,
+      "    repair:",
+      `      attempts: ${options.repairAttempts ?? "$.config.implementation.validation.repair_attempts"}`,
+      "    after:",
+      "      - workspace",
+      "  - id: diff",
+      "    type: built_in",
+      "    uses: collect_worktree_diff",
+      "    artifact: diff.json",
+      "    after:",
+      "      - implementation",
+      ""
+    ].join("\n")
+  );
 }
 
 describe("configured workflow runner", () => {
@@ -717,6 +825,240 @@ describe("configured workflow runner", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("runs agent_loop with resolved inputs and writes mapped artifacts before later nodes", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "implementation");
+      await writeAgentLoopWorkflow(root);
+      await writeImplementationConfig(root);
+      await writeTrustedWriteAgent(root, "code-implementer");
+
+      const preparedWorkspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+      const calls: string[] = [];
+      const loopOutput = {
+        status: "failed",
+        attempts_exhausted: true,
+        attempts: [{ attempt: 1, phase: "initial" }],
+        validation: { passed: false },
+        final_validation: { passed: false },
+        result: { status: "failed" }
+      };
+      const runBuiltInStep = vi.fn(async ({ uses }: { uses: string }) => {
+        calls.push(uses);
+
+        if (uses === "preflight") {
+          return { status: "ok" };
+        }
+
+        if (uses === "prepare_implementation_worktree") {
+          return preparedWorkspace;
+        }
+
+        if (uses === "collect_worktree_diff") {
+          return { files: ["src/index.ts"] };
+        }
+
+        return {};
+      });
+      const runAgentLoopStep = vi.fn(async () => {
+        calls.push("agent_loop");
+        return loopOutput;
+      });
+
+      const result = await runConfiguredWorkflow({
+        invocation: jiraInvocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "jira_task",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep,
+          runAgentLoopStep,
+          cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
+            ...workspaceRecord,
+            preserved: false,
+            reason: "success_cleanup"
+          }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error("Expected success result");
+      }
+      expect(calls).toEqual([
+        "preflight",
+        "prepare_implementation_worktree",
+        "agent_loop",
+        "collect_worktree_diff"
+      ]);
+      expect(runAgentLoopStep).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: expect.objectContaining({
+            id: "code-implementer",
+            mode: "trusted_host_local_write"
+          }),
+          input: {
+            invocation: jiraInvocation,
+            workspace: preparedWorkspace,
+            preflight: { status: "ok" }
+          },
+          sandbox: {
+            type: "trusted_host_local",
+            cwd: preparedWorkspace.path,
+            env_allowlist: []
+          },
+          validation: {
+            commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
+            max_output_bytes: 200000
+          },
+          repair: {
+            attempts: 1
+          }
+        })
+      );
+      expect(result.steps.implementation).toBe(loopOutput);
+      expect(result.steps.diff).toEqual({ files: ["src/index.ts"] });
+      await expect(readJson(root, "run-1", "implementation-attempts.json")).resolves.toEqual(
+        loopOutput.attempts
+      );
+      await expect(readJson(root, "run-1", "validation.json")).resolves.toEqual(
+        loopOutput.validation
+      );
+      await expect(readJson(root, "run-1", "implementation-result.json")).resolves.toEqual(
+        loopOutput.result
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns agent_loop_runner_missing when an agent_loop dependency is not configured", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "implementation");
+      await writeAgentLoopWorkflow(root);
+      await writeImplementationConfig(root);
+      await writeTrustedWriteAgent(root, "code-implementer");
+
+      const result = await runConfiguredWorkflow({
+        invocation: jiraInvocation,
+        configRoot: root,
+        throwOnError: false,
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "jira_task",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
+            uses === "prepare_implementation_worktree"
+              ? {
+                  run_id: "run-1",
+                  path: path.join(root, "workspaces", "run-1"),
+                  preserved: true,
+                  reason: "prepared"
+                }
+              : { status: "ok" }
+          )
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") {
+        throw new Error("Expected failed result");
+      }
+      expect(result.error).toMatchObject({ code: "agent_loop_runner_missing" });
+      await expect(readJson(root, "run-1", "error.json")).resolves.toMatchObject({
+        code: "agent_loop_runner_missing"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      name: "unstructured commands",
+      workflowOptions: { commands: "$.steps.preflight.commands" },
+      preflight: { commands: ["npm test"] },
+      code: "agent_loop_validation_commands_invalid"
+    },
+    {
+      name: "max_output_bytes string",
+      workflowOptions: { maxOutputBytes: "$.steps.preflight.max_output_bytes" },
+      preflight: { max_output_bytes: "200000" },
+      code: "agent_loop_validation_max_output_bytes_invalid"
+    },
+    {
+      name: "repair attempts string",
+      workflowOptions: { repairAttempts: "$.steps.preflight.repair_attempts" },
+      preflight: { repair_attempts: "1" },
+      code: "agent_loop_repair_attempts_invalid"
+    }
+  ])(
+    "rejects invalid resolved agent_loop $name",
+    async ({ workflowOptions, preflight, code }) => {
+      const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+      try {
+        await writeBaseConfig(root, "implementation");
+        await writeAgentLoopWorkflow(root, workflowOptions);
+        await writeImplementationConfig(root);
+        await writeTrustedWriteAgent(root, "code-implementer");
+
+        const runAgentLoopStep = vi.fn();
+        const result = await runConfiguredWorkflow({
+          invocation: jiraInvocation,
+          configRoot: root,
+          throwOnError: false,
+          dependencies: {
+            createRunIdentity: () => ({
+              run_id: "run-1",
+              target: "jira_task",
+              started_at: "2026-06-19T00:00:00.000Z"
+            }),
+            runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
+              if (uses === "preflight") {
+                return preflight;
+              }
+
+              if (uses === "prepare_implementation_worktree") {
+                return {
+                  run_id: "run-1",
+                  path: path.join(root, "workspaces", "run-1"),
+                  preserved: true,
+                  reason: "prepared"
+                };
+              }
+
+              return { status: "ok" };
+            }),
+            runAgentLoopStep
+          }
+        });
+
+        expect(result.status).toBe("failed");
+        if (result.status !== "failed") {
+          throw new Error("Expected failed result");
+        }
+        expect(result.error).toMatchObject({ code });
+        expect(runAgentLoopStep).not.toHaveBeenCalled();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+  );
 
   it.each([
     {
