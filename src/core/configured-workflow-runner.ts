@@ -61,6 +61,8 @@ export type RunAgentStepOptions = {
   agent: AgentDefinition;
   node: Extract<WorkflowNode, { type: "agent" }>;
   model: ReturnType<typeof toFlueModelOptions>;
+  agentsRoot: string;
+  modelProfiles: ResolvedModelProfiles;
   input: Record<string, unknown>;
   state: WorkflowState;
   mcpConfig?: McpConfig;
@@ -90,6 +92,8 @@ export type RunAgentLoopStepOptions = {
   agent: AgentDefinition;
   node: ResolvedAgentLoopNode;
   model: ReturnType<typeof toFlueModelOptions>;
+  agentsRoot: string;
+  modelProfiles: ResolvedModelProfiles;
   input: Record<string, unknown>;
   sandbox: ResolvedAgentLoopNode["sandbox"];
   validation: ResolvedAgentLoopNode["validation"];
@@ -882,6 +886,8 @@ async function runWorkflowNode(
       agent,
       node: resolvedNode,
       model: resolveAgentModel(agent, modelProfiles),
+      agentsRoot,
+      modelProfiles,
       input: resolveWorkflowInput(node.input, state),
       sandbox: resolvedNode.sandbox,
       validation: resolvedNode.validation,
@@ -903,6 +909,8 @@ async function runWorkflowNode(
     agent,
     node,
     model: resolveAgentModel(agent, modelProfiles),
+    agentsRoot,
+    modelProfiles,
     input: resolveWorkflowInput(node.input, state),
     state
   });

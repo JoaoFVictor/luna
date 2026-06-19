@@ -68,6 +68,29 @@ async function writeCodeImplementerFixture(): Promise<{
   };
 }
 
+async function writeImplementationReviewerFixture(
+  root: string,
+  modelProfile = "deep"
+): Promise<void> {
+  const reviewerDir = path.join(root, "agents", "implementation-reviewer");
+  await mkdir(reviewerDir, { recursive: true });
+  await writeFile(
+    path.join(reviewerDir, "agent.yaml"),
+    [
+      "id: implementation-reviewer",
+      "description: Reviews implementation diffs",
+      `model_profile: ${modelProfile}`,
+      "mode: read_only",
+      "instructions_file: instructions.md",
+      "output_schema: output.schema.json",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(path.join(reviewerDir, "instructions.md"), "Review the diff.\n");
+  await writeFile(path.join(reviewerDir, "output.schema.json"), "{}\n");
+}
+
 describe("flue agent capabilities", () => {
   beforeEach(() => {
     vi.mocked(resolveFlueMcpTools).mockReset();
@@ -93,6 +116,36 @@ describe("flue agent capabilities", () => {
       });
       expect(capabilities.tools).toHaveLength(1);
       expect(capabilities.tools[0]?.name).toBe("repository_status");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves declared subagents into Flue agent profiles", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+
+    try {
+      await writeImplementationReviewerFixture(root);
+
+      const capabilities = await resolveFlueAgentCapabilities({
+        agent: { ...agent, subagents: ["implementation-reviewer"] },
+        cwd: "/repo/worktree",
+        agentsRoot: path.join(root, "agents"),
+        modelProfiles: {
+          deep: { model: "test/deep", reasoning_effort: "high" }
+        }
+      });
+
+      expect(capabilities.subagents).toHaveLength(1);
+      expect(capabilities.subagents[0]).toMatchObject({
+        name: "implementation-reviewer",
+        description: "Reviews implementation diffs",
+        model: "test/deep",
+        thinkingLevel: "high"
+      });
+      expect(String(capabilities.subagents[0]?.instructions)).toContain(
+        "Review the diff."
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -218,6 +271,101 @@ describe("flue agent capabilities", () => {
           cwd: "/repo/worktree"
         })
       ).rejects.toBe(error);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves subagent_context_missing when subagents are declared without context", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+
+    try {
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: { ...agent, subagents: ["implementation-reviewer"] },
+          cwd: "/repo/worktree"
+        })
+      ).rejects.toMatchObject({ code: "subagent_context_missing" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves subagent_model_profile_missing through the combined resolver", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+
+    try {
+      await writeImplementationReviewerFixture(root, "missing");
+
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: { ...agent, subagents: ["implementation-reviewer"] },
+          cwd: "/repo/worktree",
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles: {}
+        })
+      ).rejects.toMatchObject({ code: "subagent_model_profile_missing" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves subagent_self_reference through the combined resolver", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+
+    try {
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: { ...agent, subagents: [agent.id] },
+          cwd: "/repo/worktree",
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles: {
+            deep: { model: "test/deep", reasoning_effort: "high" }
+          }
+        })
+      ).rejects.toMatchObject({ code: "subagent_self_reference" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not open MCP connections when subagent resolution fails", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+
+    try {
+      await writeImplementationReviewerFixture(root, "missing");
+      const mcpConfig: McpConfig = {
+        mcp_servers: [
+          {
+            id: "github",
+            transport: "streamable-http",
+            url_env: "LUNA_MCP_GITHUB_URL",
+            headers: {},
+            allowed_tools: ["get_pull_request"],
+            allowed_agent_modes: ["read_only"],
+            timeout_ms: 30000
+          }
+        ]
+      };
+      const env = { LUNA_MCP_GITHUB_URL: "https://mcp.example.test" };
+
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: {
+            ...agent,
+            mode: "read_only",
+            subagents: ["implementation-reviewer"],
+            mcp_servers: ["github"]
+          },
+          cwd: "/repo/worktree",
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles: {},
+          mcpConfig,
+          env
+        })
+      ).rejects.toMatchObject({ code: "subagent_model_profile_missing" });
+
+      expect(resolveFlueMcpTools).not.toHaveBeenCalled();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

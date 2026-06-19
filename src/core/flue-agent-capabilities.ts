@@ -1,17 +1,20 @@
-import type { Skill, ToolDefinition } from "@flue/runtime";
+import type { AgentProfile, Skill, ToolDefinition } from "@flue/runtime";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
 import type { AgentDefinition } from "./agent-definition.js";
 import { resolveFlueMcpTools } from "./flue-mcp-capabilities.js";
+import { resolveFlueSubagentProfiles } from "./flue-subagent-profiles.js";
 import { resolveFlueTools } from "./flue-tool-registry.js";
 import type { McpConfig } from "./mcp-config.js";
+import type { ResolvedModelProfiles } from "./model-config.js";
 import { isInsideRoot } from "./path-security.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];
   tools: ToolDefinition[];
+  subagents: AgentProfile[];
   close(): Promise<void>;
 };
 
@@ -52,6 +55,26 @@ function isKnownMcpError(error: unknown): boolean {
     code === "mcp_env_missing" ||
     code === "mcp_server_connect_failed"
   );
+}
+
+function isKnownSubagentError(error: unknown): boolean {
+  const code = (error as { code?: unknown }).code;
+  return (
+    code === "subagent_self_reference" ||
+    code === "subagent_model_profile_missing" ||
+    code === "subagent_context_missing"
+  );
+}
+
+function subagentContextMissingError(
+  agentId: string
+): Error & { code: "subagent_context_missing" } {
+  const error = new Error(
+    `Agent ${agentId} declares subagents but agentsRoot and modelProfiles were not provided`
+  ) as Error & { code: "subagent_context_missing" };
+  error.code = "subagent_context_missing";
+
+  return error;
 }
 
 function parseSkillFrontmatter(
@@ -104,11 +127,15 @@ async function loadSkill(
 export async function resolveFlueAgentCapabilities({
   agent,
   cwd,
+  agentsRoot,
+  modelProfiles,
   mcpConfig,
   env
 }: {
   agent: AgentDefinition;
   cwd: string;
+  agentsRoot?: string;
+  modelProfiles?: ResolvedModelProfiles;
   mcpConfig?: McpConfig;
   env?: Record<string, string | undefined>;
 }): Promise<ResolvedFlueAgentCapabilities> {
@@ -119,6 +146,23 @@ export async function resolveFlueAgentCapabilities({
       )
     );
     const localTools = resolveFlueTools({ ids: agent.tools ?? [], cwd });
+    const subagentIds = agent.subagents ?? [];
+    const hasSubagents = subagentIds.length > 0;
+
+    let subagents: AgentProfile[] = [];
+
+    if (hasSubagents) {
+      if (agentsRoot === undefined || modelProfiles === undefined) {
+        throw subagentContextMissingError(agent.id);
+      }
+
+      subagents = await resolveFlueSubagentProfiles({
+        agentsRoot,
+        parentAgentId: agent.id,
+        ids: subagentIds,
+        modelProfiles
+      });
+    }
     const mcp = await resolveFlueMcpTools({
       ids: agent.mcp_servers ?? [],
       agentMode: agent.mode,
@@ -129,10 +173,15 @@ export async function resolveFlueAgentCapabilities({
     return {
       skills,
       tools: [...localTools, ...mcp.tools],
+      subagents,
       close: mcp.close
     };
   } catch (cause) {
-    if (isUnknownToolError(cause) || isKnownMcpError(cause)) {
+    if (
+      isUnknownToolError(cause) ||
+      isKnownMcpError(cause) ||
+      isKnownSubagentError(cause)
+    ) {
       throw cause;
     }
 
