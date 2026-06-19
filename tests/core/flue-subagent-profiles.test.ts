@@ -9,12 +9,12 @@ describe("flue subagent profiles", () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
 
     try {
-      const reviewerDir = path.join(root, "implementation-reviewer");
+      const reviewerDir = path.join(root, "change-reviewer");
       await mkdir(reviewerDir, { recursive: true });
       await writeFile(
         path.join(reviewerDir, "agent.yaml"),
         [
-          "id: implementation-reviewer",
+          "id: change-reviewer",
           "description: Reviews implementation diffs",
           "model_profile: deep",
           "mode: read_only",
@@ -31,7 +31,7 @@ describe("flue subagent profiles", () => {
 
       const profiles = await resolveFlueSubagentProfiles({
         agentsRoot: root,
-        ids: ["implementation-reviewer"],
+        ids: ["change-reviewer"],
         modelProfiles: {
           deep: { model: "test/deep", reasoning_effort: "high" }
         }
@@ -39,7 +39,7 @@ describe("flue subagent profiles", () => {
 
       expect(profiles).toHaveLength(1);
       expect(profiles[0]).toMatchObject({
-        name: "implementation-reviewer",
+        name: "change-reviewer",
         description: "Reviews implementation diffs",
         model: "test/deep",
         thinkingLevel: "high"
@@ -65,12 +65,12 @@ describe("flue subagent profiles", () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
 
     try {
-      const reviewerDir = path.join(root, "implementation-reviewer");
+      const reviewerDir = path.join(root, "change-reviewer");
       await mkdir(reviewerDir, { recursive: true });
       await writeFile(
         path.join(reviewerDir, "agent.yaml"),
         [
-          "id: implementation-reviewer",
+          "id: change-reviewer",
           "description: Reviews implementation diffs",
           "model_profile: missing",
           "mode: read_only",
@@ -88,7 +88,7 @@ describe("flue subagent profiles", () => {
       await expect(
         resolveFlueSubagentProfiles({
           agentsRoot: root,
-          ids: ["implementation-reviewer"],
+          ids: ["change-reviewer"],
           modelProfiles: {}
         })
       ).rejects.toMatchObject({ code: "subagent_model_profile_missing" });
@@ -101,12 +101,12 @@ describe("flue subagent profiles", () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
 
     try {
-      const reviewerDir = path.join(root, "implementation-reviewer");
+      const reviewerDir = path.join(root, "change-reviewer");
       await mkdir(reviewerDir, { recursive: true });
       await writeFile(
         path.join(reviewerDir, "agent.yaml"),
         [
-          "id: implementation-reviewer",
+          "id: change-reviewer",
           "description: Reviews implementation diffs",
           "model_profile: deep",
           "mode: read_only",
@@ -126,7 +126,7 @@ describe("flue subagent profiles", () => {
       await expect(
         resolveFlueSubagentProfiles({
           agentsRoot: root,
-          ids: ["implementation-reviewer"],
+          ids: ["change-reviewer"],
           modelProfiles: {
             deep: { model: "test/deep", reasoning_effort: "high" }
           }

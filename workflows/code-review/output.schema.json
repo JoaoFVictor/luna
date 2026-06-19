@@ -88,22 +88,33 @@
     "acceptance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["decision", "summary", "blocking_findings"],
+      "required": ["status", "summary", "blocking_reasons", "recommended_action"],
       "properties": {
-        "decision": {
+        "status": {
           "type": "string",
-          "enum": ["approve", "comment", "request_changes"]
+          "enum": ["accepted", "rejected", "needs_human_review"]
         },
         "summary": {
           "type": "string",
           "minLength": 1
         },
-        "blocking_findings": {
+        "blocking_reasons": {
           "type": "array",
           "items": {
             "type": "string",
             "minLength": 1
           }
+        },
+        "recommended_action": {
+          "type": "string",
+          "enum": [
+            "approve",
+            "comment",
+            "request_changes",
+            "continue",
+            "stop",
+            "human_review"
+          ]
         }
       }
     },

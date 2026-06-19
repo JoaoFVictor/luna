@@ -128,12 +128,10 @@ describe("config definition files", () => {
 
     expect(files).toEqual(
       expect.arrayContaining([
-        "agents/acceptance-reviewer/agent.yaml",
-        "agents/code-reviewer/agent.yaml",
+        "agents/change-acceptance-reviewer/agent.yaml",
+        "agents/change-reviewer/agent.yaml",
         "agents/code-implementer/agent.yaml",
-        "agents/implementation-acceptance-reviewer/agent.yaml",
         "agents/implementation-planner/agent.yaml",
-        "agents/implementation-reviewer/agent.yaml",
         "agents/review-planner/agent.yaml",
         "config/implementation.yaml",
         "config/jira.yaml",
@@ -155,12 +153,10 @@ describe("config definition files", () => {
 
     expect(files).toEqual(
       expect.arrayContaining([
-        "agents/acceptance-reviewer/output.schema.json",
-        "agents/code-reviewer/output.schema.json",
+        "agents/change-acceptance-reviewer/output.schema.json",
+        "agents/change-reviewer/output.schema.json",
         "agents/code-implementer/output.schema.json",
-        "agents/implementation-acceptance-reviewer/output.schema.json",
         "agents/implementation-planner/output.schema.json",
-        "agents/implementation-reviewer/output.schema.json",
         "agents/review-planner/output.schema.json",
         "workflows/code-review/input.schema.json",
         "workflows/code-review/output.schema.json",
@@ -186,12 +182,10 @@ describe("config definition files", () => {
     const ajv = createSchemaAjv();
 
     expect(agentFiles).toEqual([
-      "agents/acceptance-reviewer/agent.yaml",
+      "agents/change-acceptance-reviewer/agent.yaml",
+      "agents/change-reviewer/agent.yaml",
       "agents/code-implementer/agent.yaml",
-      "agents/code-reviewer/agent.yaml",
-      "agents/implementation-acceptance-reviewer/agent.yaml",
       "agents/implementation-planner/agent.yaml",
-      "agents/implementation-reviewer/agent.yaml",
       "agents/review-planner/agent.yaml"
     ]);
 
@@ -230,17 +224,17 @@ describe("config definition files", () => {
     ]);
   });
 
-  it("configures implementation reviewer as a code implementer subagent", async () => {
+  it("configures the shared change reviewer as a code implementer subagent", async () => {
     const config = (await parseYamlFile(
       "agents/code-implementer/agent.yaml"
     )) as { subagents?: string[] };
 
-    expect(config.subagents).toEqual(["implementation-reviewer"]);
+    expect(config.subagents).toEqual(["change-reviewer"]);
   });
 
-  it("defines the implementation reviewer subagent", async () => {
+  it("defines the shared change reviewer agent", async () => {
     const config = (await parseYamlFile(
-      "agents/implementation-reviewer/agent.yaml"
+      "agents/change-reviewer/agent.yaml"
     )) as {
       id?: string;
       mode?: string;
@@ -250,7 +244,7 @@ describe("config definition files", () => {
     };
 
     expect(config).toMatchObject({
-      id: "implementation-reviewer",
+      id: "change-reviewer",
       mode: "read_only",
       model_profile: "deep",
       instructions_file: "instructions.md",
@@ -260,7 +254,7 @@ describe("config definition files", () => {
 
   it("keeps code review schemas compatible with strict draft-07 consumers", async () => {
     const files = [
-      "agents/code-reviewer/output.schema.json",
+      "agents/change-reviewer/output.schema.json",
       "workflows/code-review/output.schema.json"
     ];
 

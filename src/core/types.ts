@@ -506,9 +506,17 @@ export type CodeReviewFindings = z.infer<typeof CodeReviewFindingsSchema>;
 
 export const AcceptanceDecisionSchema = z
   .object({
-    decision: z.enum(["approve", "comment", "request_changes"]),
+    status: z.enum(["accepted", "rejected", "needs_human_review"]),
     summary: NonEmptyStringSchema,
-    blocking_findings: z.array(NonEmptyStringSchema)
+    blocking_reasons: z.array(NonEmptyStringSchema),
+    recommended_action: z.enum([
+      "approve",
+      "comment",
+      "request_changes",
+      "continue",
+      "stop",
+      "human_review"
+    ])
   })
   .strict();
 export type AcceptanceDecision = z.infer<typeof AcceptanceDecisionSchema>;

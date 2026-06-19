@@ -133,14 +133,14 @@ describe("agent definition loader", () => {
 
   it("loads optional MCP server ids from agent.yaml", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-agent-definition-"));
-    const agentDir = path.join(root, "code-reviewer");
+    const agentDir = path.join(root, "change-reviewer");
 
     try {
       await mkdir(agentDir, { recursive: true });
       await writeFile(
         path.join(agentDir, "agent.yaml"),
         [
-          "id: code-reviewer",
+          "id: change-reviewer",
           "description: Reviews code",
           "model_profile: deep",
           "mode: read_only",
@@ -155,7 +155,7 @@ describe("agent definition loader", () => {
       await writeFile(path.join(agentDir, "instructions.md"), "Review.\n", "utf8");
       await writeFile(path.join(agentDir, "output.schema.json"), "{}\n", "utf8");
 
-      await expect(loadAgentDefinition(root, "code-reviewer")).resolves.toMatchObject({
+      await expect(loadAgentDefinition(root, "change-reviewer")).resolves.toMatchObject({
         mcp_servers: ["github"]
       });
     } finally {
@@ -179,7 +179,7 @@ describe("agent definition loader", () => {
           "instructions_file: instructions.md",
           "output_schema: output.schema.json",
           "subagents:",
-          "  - implementation-reviewer",
+          "  - change-reviewer",
           "  - security-reviewer",
           ""
         ].join("\n"),
@@ -189,7 +189,7 @@ describe("agent definition loader", () => {
       await writeFile(path.join(agentDir, "output.schema.json"), "{}\n", "utf8");
 
       await expect(loadAgentDefinition(root, "code-implementer")).resolves.toMatchObject({
-        subagents: ["implementation-reviewer", "security-reviewer"]
+        subagents: ["change-reviewer", "security-reviewer"]
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -330,7 +330,7 @@ describe("agent definition loader", () => {
     }
   });
 
-  it.each(["review-planner", "code-reviewer", "acceptance-reviewer"])(
+  it.each(["review-planner", "change-reviewer", "change-acceptance-reviewer"])(
     "loads the committed %s agent definition",
     async (agentId) => {
       await expect(loadAgentDefinition("agents", agentId)).resolves.toMatchObject({

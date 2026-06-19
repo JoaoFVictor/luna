@@ -53,6 +53,26 @@ function normalizeMarkdownText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function prActionFromAcceptance(acceptance: AcceptanceDecision): string {
+  if (
+    acceptance.recommended_action === "approve" ||
+    acceptance.recommended_action === "comment" ||
+    acceptance.recommended_action === "request_changes"
+  ) {
+    return acceptance.recommended_action;
+  }
+
+  if (acceptance.status === "accepted") {
+    return "approve";
+  }
+
+  if (acceptance.status === "needs_human_review") {
+    return "comment";
+  }
+
+  return "request_changes";
+}
+
 export function buildFinalReportMarkdown({
   invocation,
   findings,
@@ -62,7 +82,8 @@ export function buildFinalReportMarkdown({
     "# Luna Code Review",
     "",
     `PR: ${invocation.owner}/${invocation.repo}#${invocation.pull_number}`,
-    `Acceptance: ${acceptance.decision}`,
+    `Acceptance: ${prActionFromAcceptance(acceptance)}`,
+    `Gate status: ${acceptance.status}`,
     "",
     normalizeMarkdownText(acceptance.summary),
     "",

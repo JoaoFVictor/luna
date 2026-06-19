@@ -117,9 +117,10 @@ const finding: Finding = {
 };
 
 const acceptance: AcceptanceDecision = {
-  decision: "request_changes",
+  status: "rejected",
   summary: "One issue remains.",
-  blocking_findings: ["Issue"]
+  blocking_reasons: ["Issue"],
+  recommended_action: "request_changes"
 };
 
 const acceptedImplementation = {

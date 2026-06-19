@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "additionalProperties": false,
-  "required": ["status", "summary", "blocking_reasons"],
+  "required": ["status", "summary", "blocking_reasons", "recommended_action"],
   "properties": {
     "status": {
       "type": "string",
@@ -18,6 +18,17 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "recommended_action": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "comment",
+        "request_changes",
+        "continue",
+        "stop",
+        "human_review"
+      ]
     }
   }
 }

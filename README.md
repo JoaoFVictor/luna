@@ -152,7 +152,7 @@ Agents can declare other Luna agents as Flue subagents:
 
 ```yaml
 subagents:
-  - implementation-reviewer
+  - change-reviewer
 ```
 
 The referenced ID must resolve to a valid Luna agent directory under
@@ -263,12 +263,10 @@ Workflows:
 Agents:
 
 - `review-planner`
-- `code-reviewer`
-- `acceptance-reviewer`
+- `change-reviewer`
+- `change-acceptance-reviewer`
 - `implementation-planner`
 - `code-implementer`
-- `implementation-reviewer`
-- `implementation-acceptance-reviewer`
 
 Built-in steps:
 

@@ -232,18 +232,19 @@ function fakeAgentOutput(agentId: string): unknown {
     };
   }
 
-  if (agentId === "code-reviewer") {
+  if (agentId === "change-reviewer") {
     return {
       findings: [],
       summary: "No deterministic findings."
     };
   }
 
-  if (agentId === "acceptance-reviewer") {
+  if (agentId === "change-acceptance-reviewer") {
     return {
-      decision: "approve",
+      status: "accepted",
       summary: "Deterministic fake review passed.",
-      blocking_findings: []
+      blocking_reasons: [],
+      recommended_action: "approve"
     };
   }
 

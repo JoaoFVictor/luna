@@ -195,7 +195,7 @@ describe("flue modules", () => {
 
         const findings = await runAgentStep({
           agent: {
-            id: "code-reviewer",
+            id: "change-reviewer",
             description: "Review code",
             model_profile: "deep",
             mode: "read_only",
@@ -208,7 +208,7 @@ describe("flue modules", () => {
           node: {
             id: "code_review",
             type: "agent",
-            agent: "code-reviewer",
+            agent: "change-reviewer",
             output_schema: "code_review_findings",
             input: {},
             artifact: "code-review-findings.json"
@@ -227,7 +227,7 @@ describe("flue modules", () => {
 
         const acceptance = await runAgentStep({
           agent: {
-            id: "acceptance-reviewer",
+            id: "change-acceptance-reviewer",
             description: "Accept review",
             model_profile: "default",
             mode: "read_only",
@@ -240,7 +240,7 @@ describe("flue modules", () => {
           node: {
             id: "acceptance",
             type: "agent",
-            agent: "acceptance-reviewer",
+            agent: "change-acceptance-reviewer",
             output_schema: "acceptance_decision",
             input: {},
             artifact: "acceptance-review.json"
@@ -301,9 +301,10 @@ describe("flue modules", () => {
 
               return {
                 data: {
-                  decision: "approve",
+                  status: "accepted",
                   summary: "No blocking findings.",
-                  blocking_findings: []
+                  blocking_reasons: [],
+                  recommended_action: "approve"
                 }
               };
             })
@@ -315,8 +316,8 @@ describe("flue modules", () => {
     expect(result).toMatchObject({ status: "success" });
     expect(initCalls.map((call) => call.options?.name)).toEqual([
       "review-planner",
-      "code-reviewer",
-      "acceptance-reviewer"
+      "change-reviewer",
+      "change-acceptance-reviewer"
     ]);
     expect(promptCalls.map((call) => call.options)).toEqual([
       expect.objectContaining({
@@ -457,7 +458,7 @@ describe("flue modules", () => {
     const initCalls: InitCall[] = [];
     const subagents = [
       {
-        name: "implementation-reviewer",
+        name: "change-reviewer",
         description: "Reviews implementation diffs",
         instructions: "Review the diff.",
         model: "openai/reviewer-test",
@@ -501,7 +502,7 @@ describe("flue modules", () => {
             mode: "read_only",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
-            subagents: ["implementation-reviewer"],
+            subagents: ["change-reviewer"],
             directory: agentDir,
             instructionsPath,
             outputSchemaPath
@@ -974,7 +975,7 @@ describe("flue modules", () => {
   it("injects resolved subagents into trusted_host_local Flue agent loops", async () => {
     const subagents = [
       {
-        name: "implementation-reviewer",
+        name: "change-reviewer",
         description: "Reviews implementation diffs",
         instructions: "Review the diff.",
         model: "openai/reviewer-test",
@@ -1047,7 +1048,7 @@ describe("flue modules", () => {
             mode: "trusted_host_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
-            subagents: ["implementation-reviewer"],
+            subagents: ["change-reviewer"],
             directory: agentDir,
             instructionsPath,
             outputSchemaPath

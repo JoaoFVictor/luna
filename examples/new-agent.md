@@ -124,10 +124,10 @@ Reference another Luna agent by ID:
 
 ```yaml
 subagents:
-  - implementation-reviewer
+  - change-reviewer
 ```
 
-Create or reuse a valid `agents/implementation-reviewer/` directory with
+Create or reuse a valid `agents/change-reviewer/` directory with
 `agent.yaml`, `instructions_file`, `output_schema`, and a configured
 `model_profile`. No TypeScript is needed for each new subagent.
 
