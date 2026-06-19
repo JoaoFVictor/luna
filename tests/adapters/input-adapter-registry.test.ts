@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  defaultAdapterContext,
   defineInputAdapters,
+  executeJson,
+  inputAdapterRegistry,
   unknownAdapterError
 } from "../../src/adapters/registry.js";
 import type { InputAdapter } from "../../src/adapters/types.js";
@@ -46,5 +49,32 @@ describe("input adapter registry", () => {
     expect(error.message).toContain("github-pr-url");
     expect(error.message).toContain("jira-task-url");
     expect(() => registry.require("linear-task-url")).toThrow(error);
+  });
+
+  it("exports the default input adapters", () => {
+    expect(inputAdapterRegistry.ids()).toEqual([
+      "github-pr-url",
+      "jira-task-url"
+    ]);
+    expect(inputAdapterRegistry.require("github-pr-url").id).toBe("github-pr-url");
+    expect(inputAdapterRegistry.require("jira-task-url").id).toBe("jira-task-url");
+  });
+
+  it("builds the default adapter context", () => {
+    const context = defaultAdapterContext("/workspace/project", "/workspace/config");
+
+    expect(context).toMatchObject({
+      projectRoot: "/workspace/project",
+      configRoot: "/workspace/config",
+      env: process.env,
+      fetch
+    });
+    expect(context.executeJson).toBe(executeJson);
+  });
+
+  it("executes a command and parses JSON output", async () => {
+    await expect(
+      executeJson("echo", ['{"ok":true}'])
+    ).resolves.toEqual({ ok: true });
   });
 });

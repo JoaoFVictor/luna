@@ -249,7 +249,7 @@ async function fetchJiraTaskInvocation(
       name
     },
     subject: {
-      type: "issue",
+      type: "jira_issue",
       id: issue.key,
       url: canonicalUrl,
       title: summary
@@ -257,9 +257,6 @@ async function fetchJiraTaskInvocation(
     payload: {
       jira: {
         instance_id: instance.id,
-        issue_key: issue.key,
-        url: canonicalUrl,
-        summary,
         description: compactText(fields.description),
         acceptance_criteria: compactText(
           instance.acceptance_criteria_field === undefined

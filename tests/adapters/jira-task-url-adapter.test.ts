@@ -119,7 +119,7 @@ describe("jira-task-url adapter", () => {
         name: "swg-front-nuxt"
       },
       subject: {
-        type: "issue",
+        type: "jira_issue",
         id: "ABC-123",
         url: "https://company.atlassian.net/browse/ABC-123",
         title: "Fix checkout validation"
@@ -127,9 +127,6 @@ describe("jira-task-url adapter", () => {
       payload: {
         jira: {
           instance_id: "company",
-          issue_key: "ABC-123",
-          url: "https://company.atlassian.net/browse/ABC-123",
-          summary: "Fix checkout validation",
           description:
             "Checkout should reject orders without a customer document.",
           acceptance_criteria: "Validation rejects missing documents.",
