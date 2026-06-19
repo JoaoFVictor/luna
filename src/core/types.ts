@@ -236,6 +236,7 @@ export const AgentLoopAttemptSchema = z
       .strict()
       .optional(),
     validation: ValidationResultSchema.optional(),
+    diff_summary: z.unknown().optional(),
     duration_ms: z.number().int().nonnegative().optional(),
     truncated: z.boolean().optional()
   })

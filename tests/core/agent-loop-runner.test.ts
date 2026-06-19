@@ -28,18 +28,20 @@ describe("agent loop runner", () => {
 
     expect(output).toEqual({
       status: "passed",
+      attempts_exhausted: false,
       attempts: [
         {
           attempt: 1,
           phase: "initial",
           agent_output: { summary: "implemented" },
-          validation: passedValidation
+          validation: passedValidation,
+          diff_summary: { files: ["src/checkout.ts"] }
         }
       ],
       validation: passedValidation,
+      final_validation: passedValidation,
       result: {
         status: "passed",
-        attempts_exhausted: false,
         agent_output: { summary: "implemented" },
         diff_summary: { files: ["src/checkout.ts"] }
       }
@@ -66,7 +68,12 @@ describe("agent loop runner", () => {
       .fn()
       .mockResolvedValueOnce(failedValidation)
       .mockResolvedValueOnce(passedValidation);
-    const collectDiffSummary = vi.fn(async () => ({ files: ["src/fix.ts"] }));
+    const firstDiffSummary = { files: ["src/partial.ts"] };
+    const finalDiffSummary = { files: ["src/fix.ts"] };
+    const collectDiffSummary = vi
+      .fn()
+      .mockResolvedValueOnce(firstDiffSummary)
+      .mockResolvedValueOnce(finalDiffSummary);
 
     const output = await runAgentLoopStateMachine({
       cwd,
@@ -81,25 +88,28 @@ describe("agent loop runner", () => {
 
     expect(output.status).toBe("passed");
     expect(output.validation).toBe(passedValidation);
+    expect(output.final_validation).toBe(passedValidation);
+    expect(output.attempts_exhausted).toBe(false);
     expect(output.attempts).toEqual([
       {
         attempt: 1,
         phase: "initial",
         agent_output: { summary: "first pass" },
-        validation: failedValidation
+        validation: failedValidation,
+        diff_summary: firstDiffSummary
       },
       {
         attempt: 2,
         phase: "repair",
         agent_output: { summary: "repair pass" },
-        validation: passedValidation
+        validation: passedValidation,
+        diff_summary: finalDiffSummary
       }
     ]);
     expect(output.result).toMatchObject({
       status: "passed",
-      attempts_exhausted: false,
       agent_output: { summary: "repair pass" },
-      diff_summary: { files: ["src/fix.ts"] }
+      diff_summary: finalDiffSummary
     });
     expect(runWritableAgent).toHaveBeenLastCalledWith({
       cwd,
@@ -107,8 +117,10 @@ describe("agent loop runner", () => {
       attempt: 2,
       phase: "repair",
       previousValidation: failedValidation,
-      previousError: undefined
+      previousError: undefined,
+      diffSummary: firstDiffSummary
     });
+    expect(collectDiffSummary).toHaveBeenCalledTimes(2);
   });
 
   it("returns failed artifacts when attempts are exhausted", async () => {
@@ -131,18 +143,20 @@ describe("agent loop runner", () => {
 
     expect(output).toEqual({
       status: "failed",
+      attempts_exhausted: true,
       attempts: [
         {
           attempt: 1,
           phase: "initial",
           agent_output: { summary: "not enough" },
-          validation: failedValidation
+          validation: failedValidation,
+          diff_summary: { files: ["src/partial.ts"] }
         }
       ],
       validation: failedValidation,
+      final_validation: failedValidation,
       result: {
         status: "failed",
-        attempts_exhausted: true,
         agent_output: { summary: "not enough" },
         diff_summary: { files: ["src/partial.ts"] }
       }
@@ -173,13 +187,15 @@ describe("agent loop runner", () => {
       {
         attempt: 1,
         phase: "initial",
-        agent_error: { message: "agent crashed" }
+        agent_error: { message: "agent crashed" },
+        diff_summary: { files: [] }
       },
       {
         attempt: 2,
         phase: "repair",
         agent_output: { summary: "recovered" },
-        validation: passedValidation
+        validation: passedValidation,
+        diff_summary: { files: [] }
       }
     ]);
     expect(runWritableAgent).toHaveBeenLastCalledWith({
@@ -188,8 +204,37 @@ describe("agent loop runner", () => {
       attempt: 2,
       phase: "repair",
       previousValidation: undefined,
-      previousError: { message: "agent crashed" }
+      previousError: { message: "agent crashed" },
+      diffSummary: { files: [] }
     });
+  });
+
+  it("throws a coded infrastructure error when the final agent attempt fails", async () => {
+    const cause = new Error("agent crashed for good");
+    const runWritableAgent = vi.fn(async () => {
+      throw cause;
+    });
+    const runValidation = vi.fn(async () => passedValidation);
+    const collectDiffSummary = vi.fn(async () => ({ files: [] }));
+
+    await expect(
+      runAgentLoopStateMachine({
+        cwd,
+        prompt,
+        repairAttempts: 0,
+        dependencies: {
+          runWritableAgent,
+          runValidation,
+          collectDiffSummary
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "agent_loop_infrastructure_failure",
+      cause
+    });
+
+    expect(runValidation).not.toHaveBeenCalled();
+    expect(collectDiffSummary).toHaveBeenCalledTimes(1);
   });
 
   it("keeps artifact mapping keys at the top level", async () => {
@@ -206,14 +251,21 @@ describe("agent loop runner", () => {
 
     expect(output).toMatchObject({
       attempts: [],
+      attempts_exhausted: true,
       validation: { passed: false },
+      final_validation: { passed: false },
       result: {
-        status: "failed",
-        attempts_exhausted: true
+        status: "failed"
       }
     });
     expect(Object.keys(output)).toEqual(
-      expect.arrayContaining(["attempts", "validation", "result"])
+      expect.arrayContaining([
+        "attempts",
+        "attempts_exhausted",
+        "validation",
+        "final_validation",
+        "result"
+      ])
     );
   });
 });

@@ -17,6 +17,7 @@ export type RunWritableAgentInput = {
   phase: AgentLoopPhase;
   previousValidation?: ValidationResult;
   previousError?: AgentLoopAgentError;
+  diffSummary?: unknown;
 };
 
 export type RunAgentLoopStateMachineDependencies = {
@@ -34,11 +35,12 @@ export type RunAgentLoopStateMachineInput = {
 
 export type AgentLoopStateMachineOutput = {
   status: "passed" | "failed";
+  attempts_exhausted: boolean;
   attempts: AgentLoopAttempt[];
   validation: ValidationResult;
+  final_validation: ValidationResult;
   result: {
     status: "passed" | "failed";
-    attempts_exhausted: boolean;
     agent_output?: unknown;
     agent_error?: AgentLoopAgentError;
     diff_summary?: unknown;
@@ -76,14 +78,26 @@ function normalizeAgentError(error: unknown): AgentLoopAgentError {
   return { message: String(error || "Unknown agent error") };
 }
 
+function agentLoopInfrastructureFailure(cause: unknown): Error & { code: string } {
+  const error = new Error("Agent loop infrastructure failure", {
+    cause
+  }) as Error & { code: string; cause?: unknown };
+  error.code = "agent_loop_infrastructure_failure";
+  error.cause = cause;
+  return error;
+}
+
 function failedWithoutAttempt(): AgentLoopStateMachineOutput {
+  const finalValidation = { passed: false };
+
   return {
     status: "failed",
+    attempts_exhausted: true,
     attempts: [],
-    validation: { passed: false },
+    validation: finalValidation,
+    final_validation: finalValidation,
     result: {
-      status: "failed",
-      attempts_exhausted: true
+      status: "failed"
     }
   };
 }
@@ -103,9 +117,10 @@ export async function runAgentLoopStateMachine({
   const attempts: AgentLoopAttempt[] = [];
   let previousValidation: ValidationResult | undefined;
   let previousError: AgentLoopAgentError | undefined;
+  let previousDiffSummary: unknown;
   let finalValidation: ValidationResult = { passed: false };
   let finalAgentOutput: unknown;
-  let finalAgentError: AgentLoopAgentError | undefined;
+  let finalDiffSummary: unknown;
 
   for (let index = 0; index < maxAttempts; index += 1) {
     const attemptNumber = index + 1;
@@ -120,48 +135,57 @@ export async function runAgentLoopStateMachine({
         attempt: attemptNumber,
         phase,
         previousValidation,
-        previousError
+        previousError,
+        diffSummary: previousDiffSummary
       });
     } catch (error) {
       const agentError = normalizeAgentError(error);
+      const diffSummary = await dependencies.collectDiffSummary();
 
       attempts.push({
         attempt: attemptNumber,
         phase,
-        agent_error: agentError
+        agent_error: agentError,
+        diff_summary: diffSummary
       });
 
-      finalAgentError = agentError;
+      if (attemptNumber >= maxAttempts) {
+        throw agentLoopInfrastructureFailure(error);
+      }
+
       previousError = agentError;
       previousValidation = undefined;
+      previousDiffSummary = diffSummary;
       continue;
     }
 
     const validation = await dependencies.runValidation();
+    const diffSummary = await dependencies.collectDiffSummary();
 
     attempts.push({
       attempt: attemptNumber,
       phase,
       agent_output: agentOutput,
-      validation
+      validation,
+      diff_summary: diffSummary
     });
 
     finalAgentOutput = agentOutput;
-    finalAgentError = undefined;
     finalValidation = validation;
+    finalDiffSummary = diffSummary;
     previousValidation = validation;
     previousError = undefined;
+    previousDiffSummary = diffSummary;
 
     if (validation.passed) {
-      const diffSummary = await dependencies.collectDiffSummary();
-
       return {
         status: "passed",
+        attempts_exhausted: false,
         attempts,
         validation,
+        final_validation: validation,
         result: {
           status: "passed",
-          attempts_exhausted: false,
           agent_output: agentOutput,
           diff_summary: diffSummary
         }
@@ -169,18 +193,16 @@ export async function runAgentLoopStateMachine({
     }
   }
 
-  const diffSummary = await dependencies.collectDiffSummary();
-
   return {
     status: "failed",
+    attempts_exhausted: true,
     attempts,
     validation: finalValidation,
+    final_validation: finalValidation,
     result: {
       status: "failed",
-      attempts_exhausted: true,
       ...(finalAgentOutput === undefined ? {} : { agent_output: finalAgentOutput }),
-      ...(finalAgentError === undefined ? {} : { agent_error: finalAgentError }),
-      diff_summary: diffSummary
+      ...(finalDiffSummary === undefined ? {} : { diff_summary: finalDiffSummary })
     }
   };
 }
