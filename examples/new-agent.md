@@ -67,6 +67,23 @@ Put orchestration in `graph.yaml`, not inside every agent prompt.
 The supported schema subset covers objects, required properties, arrays,
 strings, numbers, integers, booleans, string enums, `minLength`, and `minimum`.
 
+## Add Skills And Tools
+
+Skills are markdown capabilities loaded through paths to `SKILL.md`:
+
+```yaml
+skills:
+  - ../../skills/implementation-safe-git/SKILL.md
+```
+
+Tools execute TypeScript and must exist in Luna's tool registry:
+
+```yaml
+tools:
+  - repository.status
+  - repository.diff-summary
+```
+
 ## 5. Use The Agent In A Workflow
 
 Add an agent node to a workflow `graph.yaml`:

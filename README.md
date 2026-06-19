@@ -113,6 +113,22 @@ There is one generic Flue workflow entrypoint: `luna`.
 Workflow selection happens through the invocation and routing config. You do not
 create a new TypeScript file under `src/workflows/` for every workflow.
 
+## Agent Capabilities
+
+Agents can declare Flue skills and local tools in `agent.yaml`:
+
+```yaml
+skills:
+  - ../../skills/implementation-safe-git/SKILL.md
+tools:
+  - repository.status
+  - repository.diff-summary
+```
+
+Skills are relative paths to `SKILL.md` files. Tools are IDs resolved through
+Luna's TypeScript registry. Workflows do not declare tools directly; the
+workflow chooses agents, and each agent brings its own capabilities.
+
 ## Project Structure
 
 ```text

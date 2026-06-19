@@ -154,6 +154,9 @@ model_profile: reviewer
 The same agent can be reused by multiple workflows as long as its input contract
 and instructions make sense in both places.
 
+Configured workflows do not attach tools directly. The graph picks agents; each
+agent declares its own skills and tools.
+
 ## Adding A Workflow
 
 Create:
