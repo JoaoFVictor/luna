@@ -2,47 +2,25 @@
 
 Local-first multi-agent workflow orchestration built on Flue.
 
-Luna is an experimental base repository for running configurable agent
-workflows locally. It uses Flue for the workflow and agent abstraction, while
-keeping routing, input adapters, repository access, workspaces, model profiles,
-and artifacts under your control.
+Luna is a base repository for running configurable agent workflows locally. It
+uses Flue for the workflow and agent abstraction, while keeping routing, input
+adapters, repository access, workspaces, model profiles, and artifacts under
+your control.
 
-The first bundled workflow is GitHub PR code review. The project is not meant to
-be only a code review tool; code review is the first concrete workflow used to
+The first bundled workflow is GitHub PR code review. Luna is not meant to be
+only a code review tool; code review is the first concrete workflow used to
 prove the architecture.
 
-## Why
+## What You Can Do Today
 
-- Run multi-agent workflows locally.
-- Keep workflow shape in YAML instead of workflow-specific TypeScript.
-- Add input sources through adapters instead of one-off CLI commands.
-- Reuse generic model profiles across agents.
-- Review GitHub PRs through local git worktrees.
-- Preserve auditable run artifacts for debugging and iteration.
-- Avoid depending on Cloudflare-hosted infrastructure.
-
-## Status
-
-Luna is early and intentionally small. The current focus is a local,
-read-only GitHub PR code review workflow.
-
-Current input adapter:
-
-- `github-pr-url`
-
-Current workflow:
-
-- `code-review`
-
-## How It Works
-
-```text
-input adapter -> normalized invocation -> router -> workflow YAML -> agents -> artifacts
-```
-
-There is one generic Flue workflow entrypoint: `luna`. Workflow selection happens
-through invocation data and routing, not by creating a new TypeScript entrypoint
-for each workflow.
+- Run the bundled `code-review` workflow against a GitHub PR URL.
+- Review private repositories through `gh` plus a local git clone.
+- Configure model profiles once and reuse them across agents.
+- Add new read-only agents with YAML, Markdown instructions, and JSON Schema.
+- Add new workflows with YAML graphs when they can reuse Luna's current
+  read-only git built-ins.
+- Add new input sources by implementing CLI adapters selected with `--from`.
+- Inspect every run through local artifacts under `.runs/`.
 
 ## Quick Start
 
@@ -52,25 +30,6 @@ Install dependencies:
 npm install
 ```
 
-Configure the local repository Luna can inspect:
-
-```yaml
-# config/repositories.yaml
-repositories:
-  - id: example
-    provider: github
-    owner: org
-    name: repo
-    path: /path/to/local/repo
-    remote: origin
-```
-
-Authenticate the GitHub CLI:
-
-```bash
-gh auth status
-```
-
 Authenticate Pi's OpenAI Codex provider with your ChatGPT Plus or Pro
 subscription:
 
@@ -78,20 +37,80 @@ subscription:
 npx @earendil-works/pi-ai login openai-codex
 ```
 
-This writes `auth.json` in the project directory. Luna reads that file at
-runtime, refreshes the OAuth token when needed, and registers the
-`openai-codex` provider with Flue before running agents. Do not commit
-`auth.json`.
+Authenticate GitHub CLI:
 
-Run the bundled code review workflow from a GitHub PR URL:
+```bash
+gh auth status
+```
+
+Clone the repository you want Luna to inspect:
+
+```bash
+git clone git@github.com:org/repo.git /path/to/local/repo
+```
+
+Configure the repository you want Luna to inspect in `config/repositories.yaml`:
+
+```yaml
+repositories:
+  - id: repo
+    provider: github
+    owner: org
+    name: repo
+    path: /path/to/local/repo
+    remote: origin
+```
+
+Run a PR review:
 
 ```bash
 LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
-The `github-pr-url` adapter fetches PR metadata through `gh api`, builds a
-normalized invocation, attaches `workflow: code-review`, and invokes the generic
-Flue workflow locally.
+Open the generated report:
+
+```text
+.runs/code-review/<run-id>/final-report.md
+```
+
+For the complete walkthrough, see
+[examples/review-pr.md](examples/review-pr.md).
+
+## Core Concepts
+
+- **Input adapter**: converts an external input, such as a GitHub PR URL, into
+  Luna's normalized invocation format.
+- **Invocation**: the normalized request Luna routes and passes into a workflow.
+- **Router**: chooses the workflow from `--workflow`, the invocation, or
+  `config/routing.yaml`.
+- **Workflow**: a YAML graph of ordered nodes under `workflows/<workflow-id>/`.
+- **Agent**: a configured Flue agent under `agents/<agent-id>/`, with YAML
+  metadata, Markdown instructions, and a JSON Schema output contract.
+- **Built-in step**: TypeScript runtime capability, such as preparing a git
+  worktree or collecting repository context, that a YAML workflow can call.
+- **Artifact**: a JSON or Markdown file written for a run under `.runs/`.
+
+## How Luna Works
+
+```text
+input adapter -> normalized invocation -> router -> workflow YAML -> agents -> artifacts
+```
+
+There is one generic Flue workflow entrypoint: `luna`.
+
+Workflow selection happens through the invocation and routing config. You do not
+create a new TypeScript file under `src/workflows/` for every workflow.
+
+## Project Structure
+
+```text
+agents/                 configured agent definitions
+config/                 runtime configuration
+examples/               usage examples and authoring guide
+src/core/               local runtime, routing, adapters, git, artifacts
+src/workflows/luna.ts   single generic Flue workflow entrypoint
+workflows/              YAML workflow definitions
+```
 
 ## Configuration
 
@@ -99,63 +118,84 @@ Core config lives in `config/`:
 
 - `app.yaml`: workspace and artifact locations.
 - `repositories.yaml`: local repositories Luna is allowed to inspect.
-- `routing.yaml`: default routing rules.
-- `models.yaml`: reusable model profiles such as `default`, `deep`, `fast`, and
-  `balanced`.
+- `routing.yaml`: deterministic routing rules.
+- `models.yaml`: reusable model profiles.
 
-By default, `config/models.yaml` uses Pi's `openai-codex/...` model provider,
-which authenticates through `auth.json` from `npx @earendil-works/pi-ai login
-openai-codex`. You can still override model profiles with environment variables
-such as `DEFAULT_MODEL`, `DEEP_MODEL`, `FAST_MODEL`, and `BALANCED_MODEL`.
+`config/models.yaml` uses generic model profiles such as `default`, `deep`,
+`fast`, and `balanced`. Agents reference these profiles by name.
 
-Agents live in `agents/<agent-id>/`:
+By default, Luna uses Pi's `openai-codex/...` provider. Running
+`npx @earendil-works/pi-ai login openai-codex` writes `auth.json` in the project
+directory. Luna reads that file at runtime and registers the provider with Flue.
+Do not commit `auth.json`.
 
-- `agent.yaml`: agent metadata and model profile.
-- `instructions.md`: agent instructions.
-- `output.schema.json`: structured output schema.
+## Current Inventory
 
-Workflows live in `workflows/<workflow-id>/`:
+Input adapters:
 
-- `workflow.yaml`: workflow metadata.
-- `graph.yaml`: nodes and dependencies.
-- `input.schema.json`: input contract.
-- `output.schema.json`: output contract.
+- `github-pr-url`
 
-## Project Structure
+Workflows:
 
-```text
-agents/                 configured agent definitions
-config/                 runtime configuration
-examples/               usage examples
-src/core/               local runtime, routing, adapters, git, artifacts
-src/workflows/luna.ts   single generic Flue workflow entrypoint
-workflows/              YAML workflow definitions
+- `code-review`
+
+Agents:
+
+- `review-planner`
+- `code-reviewer`
+- `acceptance-reviewer`
+
+Built-in steps:
+
+- `preflight`
+- `prepare_worktree`
+- `collect_repo_context`
+- `validate_code_review_findings`
+- `final_code_review_report`
+
+## Guides And Examples
+
+- [Run a GitHub PR review](examples/review-pr.md)
+- [Create a new agent](examples/new-agent.md)
+- [Create a new workflow](examples/new-workflow.md)
+- [Create a new input adapter](examples/new-adapter.md)
+- [Configured workflows reference](examples/configured-workflows.md)
+
+Use YAML/config for new agents, new workflow graphs using existing built-ins,
+new model profiles, local repository entries, and routing rules.
+
+Use TypeScript for new input adapters, new built-in steps, workspace/repository
+behavior, artifact behavior, or JSON Schema features outside Luna's current
+supported subset.
+
+## Troubleshooting
+
+`Repository is not configured: github/org/repo`
+
+The PR URL owner/name does not match `config/repositories.yaml`. Add a matching
+entry with `provider: github`, the exact `owner`, the exact `name`, and a valid
+local `path`.
+
+`gh` cannot read the PR
+
+Run `gh auth status`. For private repositories, the authenticated GitHub account
+needs access to the repo. If git fetch also fails, check SSH or HTTPS git auth
+for the local clone.
+
+`auth.json` is missing
+
+Run:
+
+```bash
+npx @earendil-works/pi-ai login openai-codex
 ```
 
-## Built-In Code Review Workflow
+Run it from the Luna project directory so `auth.json` is created where Luna
+expects it.
 
-The bundled `code-review` workflow is read-only and git-managed. It currently:
+`Unknown input adapter`
 
-1. Validates the invocation and configured repository.
-2. Prepares an isolated git worktree.
-3. Collects changed files and diff context.
-4. Asks a planning agent what to focus on.
-5. Asks a reviewer agent for findings.
-6. Validates evidence against collected code context.
-7. Asks an acceptance agent whether the result matches the requested review.
-8. Writes JSON and Markdown artifacts.
-
-Artifacts are written under the configured artifact root, currently
-`.runs/code-review`.
-
-## Adding Workflows
-
-For workflows that use existing Luna capabilities, add YAML under
-`workflows/<workflow-id>/` and agent definitions under `agents/<agent-id>/`.
-
-No new TypeScript workflow entrypoint is required. TypeScript is only needed when
-adding a new built-in capability, a new input adapter, or output schema behavior
-outside Luna's supported JSON Schema subset.
+The value passed to `--from` is not registered in `src/core/flue-cli.ts`.
 
 ## Development
 
