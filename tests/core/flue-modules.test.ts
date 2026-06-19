@@ -19,6 +19,11 @@ type InitCall = {
   options?: { name?: string };
 };
 
+type LocalCall = {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+};
+
 const originalEnv = { ...process.env };
 
 function resetEnv(): void {
@@ -127,6 +132,8 @@ describe("flue modules", () => {
   it("uses Flue context to execute configured agent steps", async () => {
     const promptCalls: PromptCall[] = [];
     const initCalls: InitCall[] = [];
+    const local = vi.fn();
+    vi.doMock("@flue/runtime/node", () => ({ local }));
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-"));
     const instructionsPath = path.join(root, "instructions.md");
     const outputSchemaPath = path.join(root, "output.schema.json");
@@ -314,5 +321,363 @@ describe("flue modules", () => {
     expect(promptCalls[0].text).toContain("repo_context");
     expect(promptCalls[1].text).toContain("review_plan");
     expect(promptCalls[2].text).toContain("findings");
+    expect(promptCalls[0].text).toContain(
+      "Use only the provided workflow input and return structured output matching the configured schema."
+    );
+    expect(local).not.toHaveBeenCalled();
+  });
+
+  it("runs trusted_host_local agent_loop steps with Flue local cwd and env allowlist", async () => {
+    process.env.LUNA_ALLOWED_TOKEN = "allowed-secret";
+    process.env.LUNA_SECOND_ALLOWED_TOKEN = "second-allowed-secret";
+    process.env.LUNA_UNLISTED_TOKEN = "unlisted-secret";
+    delete process.env.LUNA_MISSING_TOKEN;
+
+    const localCalls: LocalCall[] = [];
+    const promptCalls: PromptCall[] = [];
+    const initCalls: InitCall[] = [];
+    const validationResult = { passed: true, commands: [] };
+    const diffSummary = { files: [] };
+    const local = vi.fn((options?: LocalCall) => {
+      localCalls.push(options ?? {});
+      return { __flueLocalSandbox: true, options };
+    });
+    const runValidationCommands = vi.fn(async () => validationResult);
+    const collectWorktreeDiff = vi.fn(async () => diffSummary);
+
+    vi.doMock("@flue/runtime/node", () => ({ local }));
+    vi.doMock("../../src/core/validation-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/validation-runner.js")>()),
+      runValidationCommands
+    }));
+    vi.doMock("../../src/core/worktree-diff-collector.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/worktree-diff-collector.js")>()),
+      collectWorktreeDiff
+    }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const worktreePath = path.join(root, "worktree");
+    const instructionsPath = path.join(root, "instructions.md");
+    const outputSchemaPath = path.join(root, "output.schema.json");
+    await writeFile(instructionsPath, "Implement the requested change.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({
+        type: "object",
+        additionalProperties: true
+      })
+    );
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentLoopStep =
+          options.dependencies?.runAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+          >;
+
+        const output = await runAgentLoopStep({
+          agent: {
+            id: "code-implementer",
+            description: "Implement Jira tasks",
+            model_profile: "deep",
+            mode: "trusted_host_local_write",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "implementation",
+            type: "agent_loop",
+            agent: "code-implementer",
+            output_schema: "implementation_result",
+            input: {},
+            artifact: {
+              attempts: "implementation-attempts.json",
+              validation: "validation.json",
+              result: "implementation-result.json"
+            },
+            sandbox: {
+              type: "trusted_host_local",
+              cwd: worktreePath,
+              env_allowlist: [
+                "LUNA_ALLOWED_TOKEN",
+                "LUNA_SECOND_ALLOWED_TOKEN",
+                "LUNA_MISSING_TOKEN"
+              ]
+            },
+            validation: {
+              commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
+              max_output_bytes: 200000
+            },
+            repair: { attempts: 0 }
+          },
+          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          input: { task: "Fix checkout validation" },
+          sandbox: {
+            type: "trusted_host_local",
+            cwd: worktreePath,
+            env_allowlist: [
+              "LUNA_ALLOWED_TOKEN",
+              "LUNA_SECOND_ALLOWED_TOKEN",
+              "LUNA_MISSING_TOKEN"
+            ]
+          },
+          validation: {
+            commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
+            max_output_bytes: 200000
+          },
+          repair: { attempts: 0 },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+
+        return { status: "success", output };
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    const result = await workflow.run({
+      payload: gitInvocation,
+      init: vi.fn(async (agent: CreatedAgent, options?: { name?: string }) => {
+        initCalls.push({ agent, options });
+        const initialized = await agent.initialize({
+          id: "test-run",
+          payload: gitInvocation,
+          env: process.env
+        });
+
+        expect(initialized).toMatchObject({
+          model: "openai/implementer-test",
+          sandbox: { __flueLocalSandbox: true }
+        });
+
+        return {
+          session: vi.fn(async () => ({
+            prompt: vi.fn(async (text: string, options: Record<string, unknown>) => {
+              promptCalls.push({ text, options });
+
+              return {
+                data: {
+                  status: "implemented",
+                  summary: "Checkout validation fixed."
+                }
+              };
+            })
+          }))
+        };
+      })
+    } as never);
+
+    expect(result).toMatchObject({
+      status: "success",
+      output: {
+        status: "passed",
+        final_validation: validationResult,
+        result: {
+          status: "passed",
+          agent_output: {
+            status: "implemented",
+            summary: "Checkout validation fixed."
+          },
+          diff_summary: diffSummary
+        }
+      }
+    });
+    expect(initCalls.map((call) => call.options?.name)).toEqual([
+      "code-implementer"
+    ]);
+    expect(promptCalls).toHaveLength(1);
+    expect(promptCalls[0].options).toEqual(
+      expect.objectContaining({
+        model: "openai/implementer-test",
+        thinkingLevel: "high"
+      })
+    );
+    expect(promptCalls[0].text).toContain("Fix checkout validation");
+    expect(localCalls).toEqual([
+      {
+        cwd: worktreePath,
+        env: {
+          LUNA_ALLOWED_TOKEN: "allowed-secret",
+          LUNA_SECOND_ALLOWED_TOKEN: "second-allowed-secret"
+        }
+      }
+    ]);
+    expect(runValidationCommands).toHaveBeenCalledWith({
+      cwd: worktreePath,
+      commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
+      maxOutputBytes: 200000
+    });
+    expect(collectWorktreeDiff).toHaveBeenCalledWith({
+      cwd: worktreePath,
+      maxDiffBytes: 200000
+    });
+  });
+
+  it("rejects trusted_host_local agent_loop when the agent is not trusted_host_local_write", async () => {
+    const local = vi.fn();
+    vi.doMock("@flue/runtime/node", () => ({ local }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const instructionsPath = path.join(root, "instructions.md");
+    const outputSchemaPath = path.join(root, "output.schema.json");
+    await writeFile(instructionsPath, "Implement the requested change.\n");
+    await writeFile(outputSchemaPath, JSON.stringify({ type: "object" }));
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentLoopStep =
+          options.dependencies?.runAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+          >;
+
+        await runAgentLoopStep({
+          agent: {
+            id: "review-planner",
+            description: "Plan implementation",
+            model_profile: "default",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "implementation",
+            type: "agent_loop",
+            agent: "review-planner",
+            output_schema: "implementation_result",
+            input: {},
+            artifact: { result: "implementation-result.json" },
+            sandbox: {
+              type: "trusted_host_local",
+              cwd: root,
+              env_allowlist: []
+            },
+            validation: {
+              commands: [],
+              max_output_bytes: 200000
+            },
+            repair: { attempts: 0 }
+          },
+          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          input: {},
+          sandbox: {
+            type: "trusted_host_local",
+            cwd: root,
+            env_allowlist: []
+          },
+          validation: {
+            commands: [],
+            max_output_bytes: 200000
+          },
+          repair: { attempts: 0 },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    await expect(workflow.run({ payload: gitInvocation } as never)).rejects.toMatchObject({
+      code: "trusted_host_local_agent_mode_required"
+    });
+    expect(local).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported agent_loop sandbox types before Flue execution", async () => {
+    const local = vi.fn();
+    vi.doMock("@flue/runtime/node", () => ({ local }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const instructionsPath = path.join(root, "instructions.md");
+    const outputSchemaPath = path.join(root, "output.schema.json");
+    await writeFile(instructionsPath, "Implement the requested change.\n");
+    await writeFile(outputSchemaPath, JSON.stringify({ type: "object" }));
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentLoopStep =
+          options.dependencies?.runAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+          >;
+
+        await runAgentLoopStep({
+          agent: {
+            id: "code-implementer",
+            description: "Implement Jira tasks",
+            model_profile: "deep",
+            mode: "trusted_host_local_write",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "implementation",
+            type: "agent_loop",
+            agent: "code-implementer",
+            output_schema: "implementation_result",
+            input: {},
+            artifact: { result: "implementation-result.json" },
+            sandbox: {
+              type: "remote",
+              cwd: root,
+              env_allowlist: []
+            },
+            validation: {
+              commands: [],
+              max_output_bytes: 200000
+            },
+            repair: { attempts: 0 }
+          } as never,
+          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          input: {},
+          sandbox: {
+            type: "remote",
+            cwd: root,
+            env_allowlist: []
+          } as never,
+          validation: {
+            commands: [],
+            max_output_bytes: 200000
+          },
+          repair: { attempts: 0 },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    await expect(workflow.run({ payload: gitInvocation } as never)).rejects.toMatchObject({
+      code: "agent_loop_sandbox_unsupported"
+    });
+    expect(local).not.toHaveBeenCalled();
   });
 });
