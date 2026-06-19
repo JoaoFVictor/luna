@@ -130,7 +130,7 @@ async function writeConfigRoot({
   );
 }
 
-describe("code review end-to-end with real Git", () => {
+describe("configured code review workflow end-to-end with real Git", () => {
   const fixtures: RealGitReviewFixture[] = [];
   const tempRoots: string[] = [];
 
@@ -141,7 +141,7 @@ describe("code review end-to-end with real Git", () => {
     );
   });
 
-  it("creates a worktree, writes repo context and final artifacts, then cleans up on success", async () => {
+  it("runs the YAML workflow, writes repo context and final artifacts, then cleans up on success", async () => {
     const fixture = await createRealGitReviewFixture();
     fixtures.push(fixture);
     const configRoot = await mkdtemp(path.join(tmpdir(), "luna-e2e-config-"));
