@@ -247,8 +247,8 @@ export const AgentLoopResultSchema = z
     status: z.enum(["passed", "failed"]),
     attempts_exhausted: z.boolean(),
     attempts: z.array(AgentLoopAttemptSchema),
-    validation: ValidationResultSchema,
-    final_validation: ValidationResultSchema.optional(),
+    validation: ValidationResultSchema.optional(),
+    final_validation: ValidationResultSchema,
     result: z.record(z.unknown()).optional()
   })
   .strict();

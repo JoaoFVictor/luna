@@ -231,7 +231,7 @@ describe("core zod schemas", () => {
         status: "failed",
         attempts_exhausted: true,
         attempts: [],
-        validation: { passed: false },
+        final_validation: { passed: false },
         result: { summary: "Validation failed." }
       })
     ).toMatchObject({ status: "failed" });
@@ -243,6 +243,31 @@ describe("core zod schemas", () => {
         reason: "validation_failed"
       })
     ).toMatchObject({ skipped: true });
+  });
+
+  it("requires final_validation on agent loop result artifacts without requiring validation", () => {
+    expect(
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        final_validation: { passed: true },
+        result: { summary: "Validation passed." }
+      })
+    ).toMatchObject({
+      status: "passed",
+      final_validation: { passed: true }
+    });
+
+    expect(() =>
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        validation: { passed: true },
+        result: { summary: "Validation passed." }
+      })
+    ).toThrow();
   });
 
   it("rejects a GitHub PR invocation when head_sha is missing", () => {
