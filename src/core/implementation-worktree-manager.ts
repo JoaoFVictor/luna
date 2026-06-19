@@ -24,6 +24,7 @@ export type ImplementationWorktreeRecord = WorkspaceRecord & {
 
 type ImplementationWorktreeErrorCode =
   | "branch_mismatch"
+  | "invalid_base_ref"
   | "invalid_branch_pattern";
 
 type ImplementationWorktreeError = Error & {
@@ -32,9 +33,10 @@ type ImplementationWorktreeError = Error & {
 
 function implementationWorktreeError(
   message: string,
-  code: ImplementationWorktreeErrorCode
+  code: ImplementationWorktreeErrorCode,
+  cause?: unknown
 ): ImplementationWorktreeError {
-  const error = new Error(message) as ImplementationWorktreeError;
+  const error = new Error(message, { cause }) as ImplementationWorktreeError;
   error.code = code;
 
   return error;
@@ -144,7 +146,38 @@ async function branchExists({
     `refs/remotes/${repository.remote}/${branch}`
   ]);
 
-  return refs.trim() !== "";
+  if (refs.trim() !== "") {
+    return true;
+  }
+
+  const remoteRefs = await runGit(repository.path, [
+    "ls-remote",
+    "--heads",
+    repository.remote,
+    branch
+  ]);
+
+  return remoteRefs.trim() !== "";
+}
+
+async function validateBaseRef({
+  repository,
+  baseRef,
+  runGit
+}: {
+  repository: RepositoryConfig;
+  baseRef: string;
+  runGit: RunGit;
+}): Promise<void> {
+  try {
+    await runGit(repository.path, ["check-ref-format", "--branch", baseRef]);
+  } catch (cause) {
+    throw implementationWorktreeError(
+      `Invalid base ref: ${baseRef}`,
+      "invalid_base_ref",
+      cause
+    );
+  }
 }
 
 async function availableBranch({
@@ -203,6 +236,7 @@ export async function prepareImplementationWorktree({
 }): Promise<ImplementationWorktreeRecord> {
   const worktreePath = await safeJoin(workspaceRoot, [repository.id, runId]);
 
+  await validateBaseRef({ repository, baseRef, runGit });
   await mkdir(path.dirname(worktreePath), { recursive: true, mode: 0o700 });
   await runGit(repository.path, ["fetch", repository.remote, baseRef]);
   const baseSha = (
