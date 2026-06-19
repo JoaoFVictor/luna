@@ -9,3 +9,5 @@ skills:
 tools:
   - repository.status
   - repository.diff-summary
+subagents:
+  - implementation-reviewer

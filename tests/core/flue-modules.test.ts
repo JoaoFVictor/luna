@@ -25,6 +25,16 @@ type LocalCall = {
 };
 
 const originalEnv = { ...process.env };
+const modelProfiles = {
+  default: {
+    model: "openai-codex/gpt-5.4-mini",
+    reasoning_effort: "medium" as const
+  },
+  deep: {
+    model: "openai-codex/gpt-5.4-mini",
+    reasoning_effort: "high" as const
+  }
+};
 
 async function createImplementationSafeGitSkill(root: string): Promise<void> {
   const skillDir = path.join(root, "skills", "implementation-safe-git");
@@ -73,6 +83,7 @@ describe("flue modules", () => {
   afterEach(() => {
     vi.doUnmock("../../src/core/configured-workflow-runner.js");
     vi.doUnmock("../../src/core/flue-agent-capabilities.js");
+    vi.doUnmock("../../src/core/agent-loop-runner.js");
     vi.doUnmock("../../src/core/pi-auth.js");
     vi.resetModules();
     vi.restoreAllMocks();
@@ -171,6 +182,8 @@ describe("flue modules", () => {
             artifact: "review-plan.json"
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -201,6 +214,8 @@ describe("flue modules", () => {
             artifact: "code-review-findings.json"
           },
           model: { model: "openai/reviewer-test", thinkingLevel: "high" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { review_plan: reviewPlan },
           state: {
             invocation: gitInvocation,
@@ -231,6 +246,8 @@ describe("flue modules", () => {
             artifact: "acceptance-review.json"
           },
           model: { model: "openai/acceptance-test", thinkingLevel: "low" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { findings },
           state: {
             invocation: gitInvocation,
@@ -379,6 +396,8 @@ describe("flue modules", () => {
             artifact: "review-plan.json"
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -434,11 +453,129 @@ describe("flue modules", () => {
     expect(local).not.toHaveBeenCalled();
   });
 
+  it("injects resolved subagents into read-only Flue agent steps", async () => {
+    const initCalls: InitCall[] = [];
+    const subagents = [
+      {
+        name: "implementation-reviewer",
+        description: "Reviews implementation diffs",
+        instructions: "Review the diff.",
+        model: "openai/reviewer-test",
+        thinkingLevel: "high"
+      }
+    ];
+    const close = vi.fn(async () => {});
+    const resolveFlueAgentCapabilities = vi.fn(async () => ({
+      skills: [],
+      tools: [],
+      subagents,
+      close
+    }));
+    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+      resolveFlueAgentCapabilities
+    }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-subagents-"));
+    const agentDir = path.join(root, "agents", "review-planner");
+    await mkdir(agentDir, { recursive: true });
+    const instructionsPath = path.join(agentDir, "instructions.md");
+    const outputSchemaPath = path.join(agentDir, "output.schema.json");
+    await writeFile(instructionsPath, "Plan the review.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({ type: "object", additionalProperties: true })
+    );
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentStep =
+          options.dependencies?.runAgentStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentStep"]
+          >;
+
+        return await runAgentStep({
+          agent: {
+            id: "review-planner",
+            description: "Plan the review",
+            model_profile: "default",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            subagents: ["implementation-reviewer"],
+            directory: agentDir,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "review_plan",
+            type: "agent",
+            agent: "review-planner",
+            output_schema: "review_plan",
+            input: {},
+            artifact: "review-plan.json"
+          },
+          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
+          input: { repo_context: { files: [] } },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    await workflow.run({
+      payload: gitInvocation,
+      init: vi.fn(async (agent: CreatedAgent, options?: { name?: string }) => {
+        initCalls.push({ agent, options });
+        const initialized = await agent.initialize({
+          id: "test-run",
+          payload: gitInvocation,
+          env: process.env
+        });
+
+        expect(initialized.subagents).toBe(subagents);
+
+        return {
+          session: vi.fn(async () => ({
+            prompt: vi.fn(async () => ({
+              data: {
+                summary: "Review auth changes.",
+                focus_areas: ["auth"],
+                files_to_review: ["src/auth.ts"]
+              }
+            }))
+          }))
+        };
+      })
+    } as never);
+
+    expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith({
+      agent: expect.objectContaining({ id: "review-planner" }),
+      cwd: process.cwd(),
+      agentsRoot: path.join(root, "agents"),
+      modelProfiles,
+      mcpConfig: { mcp_servers: [] },
+      env: process.env
+    });
+    expect(initCalls).toHaveLength(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it("closes read-only agent capabilities after a successful prompt", async () => {
     const close = vi.fn(async () => {});
     const resolveFlueAgentCapabilities = vi.fn(async () => ({
       skills: [],
       tools: [],
+      subagents: [],
       close
     }));
     vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
@@ -485,6 +622,8 @@ describe("flue modules", () => {
             artifact: "review-plan.json"
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -520,6 +659,8 @@ describe("flue modules", () => {
     expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith({
       agent: expect.objectContaining({ id: "review-planner" }),
       cwd: process.cwd(),
+      agentsRoot: path.join(root, "agents"),
+      modelProfiles,
       mcpConfig: { mcp_servers: [] },
       env: process.env
     });
@@ -532,6 +673,7 @@ describe("flue modules", () => {
     const resolveFlueAgentCapabilities = vi.fn(async () => ({
       skills: [],
       tools: [],
+      subagents: [],
       close
     }));
     vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
@@ -578,6 +720,8 @@ describe("flue modules", () => {
             artifact: "review-plan.json"
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -704,6 +848,8 @@ describe("flue modules", () => {
             repair: { attempts: 0 }
           },
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { task: "Fix checkout validation" },
           sandbox: {
             type: "trusted_host_local",
@@ -825,6 +971,168 @@ describe("flue modules", () => {
     ]);
   });
 
+  it("injects resolved subagents into trusted_host_local Flue agent loops", async () => {
+    const subagents = [
+      {
+        name: "implementation-reviewer",
+        description: "Reviews implementation diffs",
+        instructions: "Review the diff.",
+        model: "openai/reviewer-test",
+        thinkingLevel: "high"
+      }
+    ];
+    const close = vi.fn(async () => {});
+    const resolveFlueAgentCapabilities = vi.fn(async () => ({
+      skills: [],
+      tools: [],
+      subagents,
+      close
+    }));
+    const runAgentLoopStateMachine = vi.fn(
+      async ({
+        dependencies
+      }: {
+        dependencies: { runWritableAgent(input: unknown): Promise<unknown> };
+      }) => {
+        await dependencies.runWritableAgent({
+          phase: "attempt",
+          attempt: 1,
+          previousValidation: undefined,
+          previousError: undefined,
+          diffSummary: undefined
+        });
+
+        return { status: "passed" };
+      }
+    );
+
+    vi.doMock("@flue/runtime/node", () => ({
+      local: vi.fn((options?: LocalCall) => ({
+        __flueLocalSandbox: true,
+        options
+      }))
+    }));
+    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+      resolveFlueAgentCapabilities
+    }));
+    vi.doMock("../../src/core/agent-loop-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/agent-loop-runner.js")>()),
+      runAgentLoopStateMachine
+    }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-subagents-"));
+    const worktreePath = path.join(root, "worktree");
+    const agentDir = path.join(root, "agents", "code-implementer");
+    await mkdir(agentDir, { recursive: true });
+    const instructionsPath = path.join(agentDir, "instructions.md");
+    const outputSchemaPath = path.join(agentDir, "output.schema.json");
+    await writeFile(instructionsPath, "Implement the requested change.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({ type: "object", additionalProperties: true })
+    );
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentLoopStep =
+          options.dependencies?.runAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+          >;
+
+        return await runAgentLoopStep({
+          agent: {
+            id: "code-implementer",
+            description: "Implement Jira tasks",
+            model_profile: "deep",
+            mode: "trusted_host_local_write",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            subagents: ["implementation-reviewer"],
+            directory: agentDir,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "implementation",
+            type: "agent_loop",
+            agent: "code-implementer",
+            output_schema: "implementation_result",
+            input: {},
+            artifact: { result: "implementation-result.json" },
+            sandbox: {
+              type: "trusted_host_local",
+              cwd: worktreePath,
+              env_allowlist: []
+            },
+            validation: {
+              commands: [],
+              max_output_bytes: 200000
+            },
+            repair: { attempts: 0 }
+          },
+          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
+          input: { task: "Fix checkout validation" },
+          sandbox: {
+            type: "trusted_host_local",
+            cwd: worktreePath,
+            env_allowlist: []
+          },
+          validation: {
+            commands: [],
+            max_output_bytes: 200000
+          },
+          repair: { attempts: 0 },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    await workflow.run({
+      payload: gitInvocation,
+      init: vi.fn(async (agent: CreatedAgent) => {
+        const initialized = await agent.initialize({
+          id: "test-run",
+          payload: gitInvocation,
+          env: process.env
+        });
+
+        expect(initialized.subagents).toBe(subagents);
+
+        return {
+          session: vi.fn(async () => ({
+            prompt: vi.fn(async () => ({
+              data: {
+                status: "implemented",
+                summary: "Checkout validation fixed."
+              }
+            }))
+          }))
+        };
+      })
+    } as never);
+
+    expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith({
+      agent: expect.objectContaining({ id: "code-implementer" }),
+      cwd: worktreePath,
+      agentsRoot: path.join(root, "agents"),
+      modelProfiles,
+      mcpConfig: { mcp_servers: [] },
+      env: process.env
+    });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it("resolves trusted_host_local agent_loop capabilities once across repair attempts and closes after completion", async () => {
     const initCalls: InitCall[] = [];
     const validationResults = [
@@ -857,6 +1165,7 @@ describe("flue modules", () => {
           execute: async () => ""
         }
       ],
+      subagents: [],
       close
     }));
 
@@ -929,6 +1238,8 @@ describe("flue modules", () => {
             repair: { attempts: 1 }
           },
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { task: "Fix checkout validation" },
           sandbox: {
             type: "trusted_host_local",
@@ -995,6 +1306,8 @@ describe("flue modules", () => {
     expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith({
       agent: expect.objectContaining({ id: "code-implementer" }),
       cwd: worktreePath,
+      agentsRoot: path.join(root, "agents"),
+      modelProfiles,
       mcpConfig: { mcp_servers: [] },
       env: process.env
     });
@@ -1007,6 +1320,7 @@ describe("flue modules", () => {
     const resolveFlueAgentCapabilities = vi.fn(async () => ({
       skills: [],
       tools: [],
+      subagents: [],
       close
     }));
     const runAgentLoopStateMachine = vi.fn(async () => {
@@ -1076,6 +1390,8 @@ describe("flue modules", () => {
             repair: { attempts: 0 }
           },
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: { task: "Fix checkout validation" },
           sandbox: {
             type: "trusted_host_local",
@@ -1158,6 +1474,8 @@ describe("flue modules", () => {
             repair: { attempts: 0 }
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: {},
           sandbox: {
             type: "trusted_host_local",
@@ -1237,6 +1555,8 @@ describe("flue modules", () => {
             repair: { attempts: 0 }
           } as never,
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
           input: {},
           sandbox: {
             type: "remote",

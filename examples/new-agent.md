@@ -118,6 +118,24 @@ mcp_servers:
     timeout_ms: 30000
 ```
 
+## Add Subagents
+
+Reference another Luna agent by ID:
+
+```yaml
+subagents:
+  - implementation-reviewer
+```
+
+Create or reuse a valid `agents/implementation-reviewer/` directory with
+`agent.yaml`, `instructions_file`, `output_schema`, and a configured
+`model_profile`. No TypeScript is needed for each new subagent.
+
+Subagents use only the referenced agent's description, instructions, and model
+profile. Do not put `skills`, `tools`, `mcp_servers`, or nested `subagents` on
+an agent you intend to call as a Flue subagent. Use a workflow graph node when
+the delegated work needs its own tools, MCP access, schema, artifact, or gate.
+
 ## 5. Use The Agent In A Workflow
 
 Add an agent node to a workflow `graph.yaml`:

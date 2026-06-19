@@ -157,6 +157,12 @@ and instructions make sense in both places.
 Configured workflows do not attach tools directly. The graph picks agents; each
 agent declares its own skills and tools.
 
+Subagents are agent capabilities, not graph nodes. In this phase they use only
+the referenced agent's description, instructions, and model profile. Use graph
+nodes when the result must have its own artifact, schema, workflow gate, tools,
+or MCP access. Use Flue subagents for lightweight internal delegation inside a
+parent agent.
+
 ## MCP Capabilities
 
 Agents can opt into configured MCP servers:

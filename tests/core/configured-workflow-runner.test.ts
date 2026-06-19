@@ -906,6 +906,13 @@ describe("configured workflow runner", () => {
             id: "code-implementer",
             mode: "trusted_host_local_write"
           }),
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles: {
+            default: {
+              model: "openai-codex/gpt-5.4-mini",
+              reasoning_effort: "medium"
+            }
+          },
           input: {
             invocation: jiraInvocation,
             workspace: preparedWorkspace,
@@ -1698,6 +1705,13 @@ describe("configured workflow runner", () => {
           model: {
             model: "openai-codex/gpt-5.4-mini",
             thinkingLevel: "medium"
+          },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles: {
+            default: {
+              model: "openai-codex/gpt-5.4-mini",
+              reasoning_effort: "medium"
+            }
           },
           input: {
             repo_context: repoContext

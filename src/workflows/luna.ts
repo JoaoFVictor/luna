@@ -265,6 +265,8 @@ async function runFlueAgentStep(
   const capabilities = await resolveFlueAgentCapabilities({
     agent: options.agent,
     cwd: capabilityCwd,
+    agentsRoot: options.agentsRoot,
+    modelProfiles: options.modelProfiles,
     mcpConfig: options.mcpConfig,
     env: process.env
   });
@@ -275,6 +277,7 @@ async function runFlueAgentStep(
       instructions: await readFile(options.agent.instructionsPath, "utf8"),
       skills: capabilities.skills,
       tools: capabilities.tools,
+      subagents: capabilities.subagents,
       ...options.model
     }));
     const harness = await ctx.init(agent, { name: options.agent.id });
@@ -326,6 +329,7 @@ async function runWritableAgent(
     instructions: await readFile(options.agent.instructionsPath, "utf8"),
     skills: capabilities.skills,
     tools: capabilities.tools,
+    subagents: capabilities.subagents,
     cwd: options.sandbox.cwd,
     sandbox: local({
       cwd: options.sandbox.cwd,
@@ -364,6 +368,8 @@ async function runFlueAgentLoopStep(
   const capabilities = await resolveFlueAgentCapabilities({
     agent: options.agent,
     cwd: options.sandbox.cwd,
+    agentsRoot: options.agentsRoot,
+    modelProfiles: options.modelProfiles,
     mcpConfig: options.mcpConfig,
     env: process.env
   });
