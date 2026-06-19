@@ -64,8 +64,7 @@ describe("github-pr-url adapter", () => {
       subject: {
         type: "pull_request",
         id: "123",
-        url: "https://github.com/withastro/luna/pull/123",
-        title: "withastro/luna#123"
+        url: "https://github.com/withastro/luna/pull/123"
       },
       references: {
         base_ref: "main",

@@ -156,8 +156,7 @@ async function fetchPullRequest(
     subject: {
       type: "pull_request",
       id: String(pullRequest.number),
-      url: canonicalUrl,
-      title: `${coordinates.owner}/${coordinates.repo}#${pullRequest.number}`
+      url: canonicalUrl
     },
     references: {
       base_ref: pullRequest.base.ref,
