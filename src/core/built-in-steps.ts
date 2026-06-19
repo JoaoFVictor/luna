@@ -12,6 +12,7 @@ import type {
   CodeReviewFindings,
   Finding,
   GithubPrInvocation,
+  ImplementationConfig,
   Invocation,
   RepoContext,
   RepositoryConfig,
@@ -37,8 +38,10 @@ type MaybePromise<T> = T | Promise<T>;
 
 export type BuiltInStepDependencies = {
   runPreflight?: (input: {
-    invocation: GithubPrInvocation;
+    invocation: Invocation;
     repository: RepositoryConfig;
+    workflow?: { mode: "git_managed_read_only" | "git_managed_write" };
+    implementation?: ImplementationConfig["implementation"];
   }) => MaybePromise<unknown>;
   prepareWorktree?: (input: {
     invocation: GithubPrInvocation;
@@ -130,6 +133,31 @@ function repositoryFrom(state: WorkflowState): RepositoryConfig {
   return requiredState(state.repository as RepositoryConfig | undefined, "repository");
 }
 
+function workflowFrom(
+  state: WorkflowState
+): { mode: "git_managed_read_only" | "git_managed_write" } | undefined {
+  const workflow = state.workflow as { mode?: unknown } | undefined;
+
+  if (
+    workflow?.mode === "git_managed_read_only" ||
+    workflow?.mode === "git_managed_write"
+  ) {
+    return { mode: workflow.mode };
+  }
+
+  return undefined;
+}
+
+function implementationFrom(
+  state: WorkflowState
+): ImplementationConfig["implementation"] | undefined {
+  return (
+    state.config as
+      | { implementation?: ImplementationConfig["implementation"] }
+      | undefined
+  )?.implementation;
+}
+
 function runIdFrom(state: WorkflowState): string {
   const run = asRecord(requiredState(state.run, "run"), "state.run", "built_in_state_missing");
   return requiredState(run.run_id as string | undefined, "run.run_id");
@@ -172,8 +200,13 @@ export async function runBuiltInStep({
     const runPreflight = dependencies.runPreflight ?? defaultRunPreflight;
 
     return await runPreflight({
-      invocation: githubPrInvocationFrom(state),
-      repository: repositoryFrom(state)
+      invocation: requiredState(
+        state.invocation as Invocation | undefined,
+        "invocation"
+      ),
+      repository: repositoryFrom(state),
+      workflow: workflowFrom(state),
+      implementation: implementationFrom(state)
     });
   }
 

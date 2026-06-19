@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { runPreflight } from "../../src/core/preflight.js";
-import type { GithubPrInvocation } from "../../src/core/types.js";
+import type {
+  GithubPrInvocation,
+  ImplementationConfig,
+  JiraTaskInvocation
+} from "../../src/core/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 type FakeGitCall = {
@@ -14,6 +18,44 @@ function codedError(code: string): Error & { code: string } {
 
   return error;
 }
+
+const jiraInvocation: JiraTaskInvocation = {
+  target: "jira_task",
+  workflow: "implementation",
+  jira: {
+    instance_id: "company",
+    issue_key: "ABC-123",
+    url: "https://company.atlassian.net/browse/ABC-123",
+    summary: "Fix checkout validation",
+    description: "Reject invalid checkout payloads.",
+    acceptance_criteria: "Invalid payloads fail validation.",
+    status: "To Do",
+    issue_type: "Task"
+  },
+  repository: {
+    provider: "github",
+    owner: "octo-org",
+    name: "hello-world"
+  }
+};
+
+const implementationConfig: ImplementationConfig["implementation"] = {
+  branch_pattern: "feature/{slug}",
+  commit: { enabled: true, co_author: false },
+  push: { enabled: true, remote: "origin" },
+  pull_request: {
+    enabled: true,
+    provider: "github",
+    draft: true,
+    base_ref: "main"
+  },
+  sandbox: { type: "trusted_host_local", env_allowlist: [] },
+  validation: {
+    repair_attempts: 1,
+    max_output_bytes: 200000,
+    commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }]
+  }
+};
 
 describe("preflight", () => {
   it("throws repository_path_missing when the repository path does not exist", async () => {
@@ -134,5 +176,114 @@ describe("preflight", () => {
         base_ref: gitInvocation.base_ref
       }
     });
+  });
+
+  it("supports jira_task preflight for git_managed_write when the remote URL is expected", async () => {
+    const result = await runPreflight({
+      invocation: jiraInvocation,
+      repository: {
+        ...gitRepository,
+        expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
+      },
+      workflow: { mode: "git_managed_write" },
+      implementation: implementationConfig,
+      runGit: async (_cwd, args) => {
+        if (args[0] === "remote") {
+          return "git@github.com:octo-org/hello-world.git\n";
+        }
+
+        return "true\n";
+      },
+      stat: async () => ({ isDirectory: () => true })
+    });
+
+    expect(result).toMatchObject({
+      repository: {
+        remote_url: "git@github.com:octo-org/hello-world.git"
+      }
+    });
+  });
+
+  it("throws expected_remote_urls_missing for git_managed_write without expected remote URLs", async () => {
+    await expect(
+      runPreflight({
+        invocation: jiraInvocation,
+        repository: gitRepository,
+        workflow: { mode: "git_managed_write" },
+        implementation: implementationConfig,
+        runGit: async (_cwd, args) =>
+          args[0] === "remote"
+            ? "git@github.com:octo-org/hello-world.git\n"
+            : "true\n",
+        stat: async () => ({ isDirectory: () => true })
+      })
+    ).rejects.toMatchObject({ code: "expected_remote_urls_missing" });
+  });
+
+  it("throws remote_url_mismatch when git_managed_write remote URL is not expected", async () => {
+    await expect(
+      runPreflight({
+        invocation: jiraInvocation,
+        repository: {
+          ...gitRepository,
+          expected_remote_urls: ["git@github.com:octo-org/other.git"]
+        },
+        workflow: { mode: "git_managed_write" },
+        implementation: implementationConfig,
+        runGit: async (_cwd, args) =>
+          args[0] === "remote"
+            ? "git@github.com:octo-org/hello-world.git\n"
+            : "true\n",
+        stat: async () => ({ isDirectory: () => true })
+      })
+    ).rejects.toMatchObject({ code: "remote_url_mismatch" });
+  });
+
+  it("throws push_requires_commit when push is enabled without commit", async () => {
+    await expect(
+      runPreflight({
+        invocation: jiraInvocation,
+        repository: {
+          ...gitRepository,
+          expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
+        },
+        workflow: { mode: "git_managed_write" },
+        implementation: {
+          ...implementationConfig,
+          commit: { enabled: false, co_author: false },
+          push: { enabled: true, remote: "origin" },
+          pull_request: { ...implementationConfig.pull_request, enabled: false }
+        },
+        runGit: async (_cwd, args) =>
+          args[0] === "remote"
+            ? "git@github.com:octo-org/hello-world.git\n"
+            : "true\n",
+        stat: async () => ({ isDirectory: () => true })
+      })
+    ).rejects.toMatchObject({ code: "push_requires_commit" });
+  });
+
+  it("throws pull_request_requires_push when PR is enabled without push", async () => {
+    await expect(
+      runPreflight({
+        invocation: jiraInvocation,
+        repository: {
+          ...gitRepository,
+          expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
+        },
+        workflow: { mode: "git_managed_write" },
+        implementation: {
+          ...implementationConfig,
+          commit: { enabled: true, co_author: false },
+          push: { enabled: false, remote: "origin" },
+          pull_request: { ...implementationConfig.pull_request, enabled: true }
+        },
+        runGit: async (_cwd, args) =>
+          args[0] === "remote"
+            ? "git@github.com:octo-org/hello-world.git\n"
+            : "true\n",
+        stat: async () => ({ isDirectory: () => true })
+      })
+    ).rejects.toMatchObject({ code: "pull_request_requires_push" });
   });
 });

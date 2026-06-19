@@ -21,6 +21,7 @@ import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import { createRunIdentity as defaultCreateRunIdentity } from "./run-identity.js";
 import { safeJoin } from "./path-security.js";
+import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
 import {
   loadWorkflowDefinition,
   type WorkflowNode
@@ -318,7 +319,11 @@ function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
 }
 
 function isFinalReportNode(node: WorkflowNode): boolean {
-  return node.type === "built_in" && node.uses === "final_code_review_report";
+  return (
+    node.type === "built_in" &&
+    (node.uses === "final_code_review_report" ||
+      node.uses === "final_implementation_report")
+  );
 }
 
 function finalReportFrom(output: unknown): FinalReportJson | undefined {
@@ -424,6 +429,9 @@ async function finalizeSuccessWorkspace({
   persistedWorkspaceRecord,
   repository,
   workspaceConfig,
+  workflowMode,
+  implementationConfig,
+  steps,
   cleanupWorktree
 }: {
   artifactStore: ArtifactStore;
@@ -431,10 +439,26 @@ async function finalizeSuccessWorkspace({
   persistedWorkspaceRecord?: WorkspaceRecord;
   repository?: RepositoryConfig;
   workspaceConfig: AppConfig["workspace"];
+  workflowMode: "git_managed_read_only" | "git_managed_write";
+  implementationConfig?: RuntimeConfigState["implementation"];
+  steps: Record<string, unknown>;
   cleanupWorktree: typeof defaultCleanupWorktree;
 }): Promise<WorkspaceRecord | undefined> {
   if (workspaceRecord === undefined) {
     return undefined;
+  }
+
+  if (workflowMode === "git_managed_write") {
+    return await finalizeWriteSuccessWorkspace({
+      artifactStore,
+      workspaceRecord,
+      persistedWorkspaceRecord,
+      repository,
+      workspaceConfig,
+      implementationConfig,
+      steps,
+      cleanupWorktree
+    });
   }
 
   let finalWorkspace: WorkspaceRecord;
@@ -477,6 +501,151 @@ async function finalizeSuccessWorkspace({
 
   await artifactStore.writeJson("workspace.json", finalWorkspace);
   return finalWorkspace;
+}
+
+async function finalizeWriteSuccessWorkspace({
+  artifactStore,
+  workspaceRecord,
+  persistedWorkspaceRecord,
+  repository,
+  workspaceConfig,
+  implementationConfig,
+  steps,
+  cleanupWorktree
+}: {
+  artifactStore: ArtifactStore;
+  workspaceRecord: WorkspaceRecord;
+  persistedWorkspaceRecord?: WorkspaceRecord;
+  repository?: RepositoryConfig;
+  workspaceConfig: AppConfig["workspace"];
+  implementationConfig?: RuntimeConfigState["implementation"];
+  steps: Record<string, unknown>;
+  cleanupWorktree: typeof defaultCleanupWorktree;
+}): Promise<WorkspaceRecord> {
+  const lifecycle = shouldPreserveWriteWorkspace({
+    commitEnabled: implementationConfig?.commit.enabled ?? false,
+    validationPassed: validationPassedFromSteps(steps),
+    acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
+    commitSkippedOrFailed: gateSkippedOrFailed(
+      implementationConfig?.commit.enabled ?? false,
+      steps.commit ?? steps.commit_changes
+    ),
+    pushSkippedOrFailed: gateSkippedOrFailed(
+      implementationConfig?.push.enabled ?? false,
+      steps.push ?? steps.push_branch
+    ),
+    pullRequestSkippedOrFailed: gateSkippedOrFailed(
+      implementationConfig?.pull_request.enabled ?? false,
+      steps.pull_request ?? steps.open_pull_request
+    )
+  });
+
+  if (lifecycle.preserve) {
+    const finalWorkspace = {
+      ...workspaceRecord,
+      preserved: true,
+      reason: lifecycle.reason
+    };
+    await artifactStore.writeJson("workspace.json", finalWorkspace);
+    return finalWorkspace;
+  }
+
+  if (repository === undefined) {
+    await artifactStore.writeJson("workspace.json", workspaceRecord);
+    return workspaceRecord;
+  }
+
+  try {
+    const finalWorkspace = await cleanupWorktree({
+      repositoryPath: repository.path,
+      workspaceRoot: workspaceConfig.root,
+      workspaceRecord,
+      persistedWorkspaceRecord
+    });
+    await artifactStore.writeJson("workspace.json", finalWorkspace);
+    return finalWorkspace;
+  } catch (cause) {
+    const failedWorkspace = {
+      ...workspaceRecord,
+      preserved: true,
+      reason: "success_cleanup_failed"
+    };
+    await artifactStore.writeJson("workspace.json", failedWorkspace);
+    const error = configuredWorkflowError(
+      "Successful implementation workspace cleanup failed",
+      "success_cleanup_failed",
+      cause
+    );
+    (error as Error & { workspaceRecord?: WorkspaceRecord }).workspaceRecord =
+      failedWorkspace;
+    throw error;
+  }
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function booleanAt(
+  value: unknown,
+  pathSegments: readonly string[]
+): boolean | undefined {
+  let current = value;
+
+  for (const segment of pathSegments) {
+    const record = recordValue(current);
+    if (record === undefined) {
+      return undefined;
+    }
+
+    current = record[segment];
+  }
+
+  return typeof current === "boolean" ? current : undefined;
+}
+
+function validationPassedFromSteps(steps: Record<string, unknown>): boolean {
+  for (const value of Object.values(steps)) {
+    const passed =
+      booleanAt(value, ["final_validation", "passed"]) ??
+      booleanAt(value, ["validation", "passed"]) ??
+      booleanAt(value, ["passed"]);
+
+    if (passed !== undefined) {
+      return passed;
+    }
+  }
+
+  return false;
+}
+
+function acceptanceAcceptedFromSteps(steps: Record<string, unknown>): boolean {
+  const acceptance = recordValue(
+    steps.acceptance ?? steps.implementation_acceptance
+  );
+
+  if (acceptance === undefined) {
+    return false;
+  }
+
+  return acceptance.status === "accepted" || acceptance.decision === "approve";
+}
+
+function gateSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
+  if (!gateEnabled) {
+    return false;
+  }
+
+  const record = recordValue(value);
+  if (record === undefined) {
+    return true;
+  }
+
+  return record.skipped === true || record.status === "failed";
 }
 
 function resolveAgentModel(
@@ -599,6 +768,10 @@ export async function runConfiguredWorkflow({
       config: configs.runtimeConfig,
       repository,
       run,
+      workflow: {
+        id: workflow.id,
+        mode: workflow.mode
+      },
       workspaceRoot: configs.app.workspace.root,
       steps: {}
     };
@@ -620,7 +793,11 @@ export async function runConfiguredWorkflow({
       );
 
       state.steps[node.id] = output;
-      if (node.type === "built_in" && node.uses === "prepare_worktree") {
+      if (
+        node.type === "built_in" &&
+        (node.uses === "prepare_worktree" ||
+          node.uses === "prepare_implementation_worktree")
+      ) {
         if (isWorkspaceRecord(output)) {
           state.workspace = output;
           workspaceRecord = output;
@@ -637,6 +814,9 @@ export async function runConfiguredWorkflow({
       persistedWorkspaceRecord,
       repository,
       workspaceConfig: configs.app.workspace,
+      workflowMode: workflow.mode,
+      implementationConfig: configs.runtimeConfig.implementation,
+      steps: state.steps,
       cleanupWorktree
     });
     if (finalWorkspace !== undefined) {

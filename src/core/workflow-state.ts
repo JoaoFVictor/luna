@@ -3,6 +3,7 @@ export type WorkflowState = {
   config?: unknown;
   repository?: unknown;
   run?: unknown;
+  workflow?: unknown;
   workspace?: unknown;
   workspaceRoot?: string;
   reportPath?: string;

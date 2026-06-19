@@ -1,15 +1,25 @@
 import { stat as fsStat } from "node:fs/promises";
 import { runGit as defaultRunGit } from "./git.js";
-import type { GithubPrInvocation, RepositoryConfig } from "./types.js";
+import type {
+  GithubPrInvocation,
+  ImplementationConfig,
+  Invocation,
+  RepositoryConfig
+} from "./types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Stat = (path: string) => Promise<{ isDirectory(): boolean }>;
+type WorkflowMode = "git_managed_read_only" | "git_managed_write";
 
 type PreflightErrorCode =
   | "invalid_invocation"
   | "repository_path_missing"
   | "not_git_repository"
-  | "git_remote_missing";
+  | "git_remote_missing"
+  | "expected_remote_urls_missing"
+  | "remote_url_mismatch"
+  | "push_requires_commit"
+  | "pull_request_requires_push";
 
 type PreflightError = Error & {
   code: PreflightErrorCode;
@@ -24,9 +34,9 @@ export type PreflightResult = {
     remote_url: string;
   };
   expected: {
-    base_ref: string;
-    base_sha: string;
-    head_sha: string;
+    base_ref?: string;
+    base_sha?: string;
+    head_sha?: string;
   };
 };
 
@@ -59,6 +69,21 @@ function validateInvocation(invocation: GithubPrInvocation): void {
   }
 }
 
+function validateWriteInvocation(invocation: Invocation): void {
+  if (
+    invocation.target !== "jira_task" ||
+    invocation.workflow === "" ||
+    invocation.jira.issue_key === "" ||
+    invocation.repository.owner === "" ||
+    invocation.repository.name === ""
+  ) {
+    throw preflightError(
+      "Invocation is missing required write-mode metadata",
+      "invalid_invocation"
+    );
+  }
+}
+
 async function assertRepositoryPathExists(
   repository: RepositoryConfig,
   stat: Stat
@@ -85,24 +110,90 @@ async function assertRepositoryPathExists(
   }
 }
 
+function assertWriteGateConsistency(
+  implementation: ImplementationConfig["implementation"] | undefined
+): void {
+  if (implementation === undefined) {
+    return;
+  }
+
+  if (implementation.push.enabled && !implementation.commit.enabled) {
+    throw preflightError(
+      "push.enabled requires commit.enabled",
+      "push_requires_commit"
+    );
+  }
+
+  if (implementation.pull_request.enabled && !implementation.push.enabled) {
+    throw preflightError(
+      "pull_request.enabled requires push.enabled",
+      "pull_request_requires_push"
+    );
+  }
+}
+
+function normalizeRemoteUrl(url: string): string {
+  return url.trim().replace(/\/$/, "");
+}
+
+function assertExpectedRemoteUrl(
+  repository: RepositoryConfig,
+  remoteUrl: string
+): void {
+  if (
+    repository.expected_remote_urls === undefined ||
+    repository.expected_remote_urls.length === 0
+  ) {
+    throw preflightError(
+      "Write-mode repositories require expected_remote_urls",
+      "expected_remote_urls_missing"
+    );
+  }
+
+  const actual = normalizeRemoteUrl(remoteUrl);
+  const expected = repository.expected_remote_urls.map(normalizeRemoteUrl);
+
+  if (!expected.includes(actual)) {
+    throw preflightError(
+      "Configured remote URL does not match expected_remote_urls",
+      "remote_url_mismatch"
+    );
+  }
+}
+
 export async function runPreflight({
   invocation,
   repository,
+  workflow,
+  implementation,
   runGit = defaultRunGit,
   stat = fsStat
 }: {
-  invocation: GithubPrInvocation;
+  invocation: Invocation;
   repository: RepositoryConfig;
+  workflow?: { mode: WorkflowMode };
+  implementation?: ImplementationConfig["implementation"];
   runGit?: RunGit;
   stat?: Stat;
 }): Promise<PreflightResult> {
-  validateInvocation(invocation);
+  const mode = workflow?.mode ?? "git_managed_read_only";
+  if (mode === "git_managed_write") {
+    validateWriteInvocation(invocation);
+    assertWriteGateConsistency(implementation);
+  } else {
+    validateInvocation(invocation as GithubPrInvocation);
+  }
+
   await assertRepositoryPathExists(repository, stat);
 
   await runGit(repository.path, ["rev-parse", "--is-inside-work-tree"]);
   const remoteUrl = (
     await runGit(repository.path, ["remote", "get-url", repository.remote])
   ).trim();
+
+  if (mode === "git_managed_write") {
+    assertExpectedRemoteUrl(repository, remoteUrl);
+  }
 
   return {
     repository: {
@@ -111,10 +202,13 @@ export async function runPreflight({
       remote: repository.remote,
       remote_url: remoteUrl
     },
-    expected: {
-      base_ref: invocation.base_ref,
-      base_sha: invocation.references.base_sha,
-      head_sha: invocation.references.head_sha
-    }
+    expected:
+      invocation.target === "github_pr"
+        ? {
+            base_ref: invocation.base_ref,
+            base_sha: invocation.references.base_sha,
+            head_sha: invocation.references.head_sha
+          }
+        : {}
   };
 }

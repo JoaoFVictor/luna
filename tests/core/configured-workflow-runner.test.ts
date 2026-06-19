@@ -16,6 +16,26 @@ const invocation: Invocation = {
   references: { base_sha: "base", head_sha: "head" }
 };
 
+const jiraInvocation: Invocation = {
+  target: "jira_task",
+  workflow: "implementation",
+  jira: {
+    instance_id: "company",
+    issue_key: "ABC-123",
+    url: "https://company.atlassian.net/browse/ABC-123",
+    summary: "Fix checkout validation",
+    description: "Reject invalid checkout payloads.",
+    acceptance_criteria: "Invalid payloads fail validation.",
+    status: "To Do",
+    issue_type: "Task"
+  },
+  repository: {
+    provider: "github",
+    owner: "octo",
+    name: "hello"
+  }
+};
+
 async function writeBaseConfig(
   root: string,
   workflowId = "code-review",
@@ -213,14 +233,17 @@ async function writeConfigInputWorkflow(root: string): Promise<void> {
   );
 }
 
-async function writeImplementationConfig(root: string): Promise<void> {
+async function writeImplementationConfig(
+  root: string,
+  options: { commitEnabled?: boolean } = {}
+): Promise<void> {
   await writeFile(
     path.join(root, "implementation.yaml"),
     [
       "implementation:",
       "  branch_pattern: feature/{slug}",
       "  commit:",
-      "    enabled: false",
+      `    enabled: ${options.commitEnabled === true ? "true" : "false"}`,
       "    co_author: false",
       "  push:",
       "    enabled: false",
@@ -240,6 +263,90 @@ async function writeImplementationConfig(root: string): Promise<void> {
       "      - cmd: npm",
       "        args: [\"test\"]",
       "        timeout_ms: 120000",
+      ""
+    ].join("\n")
+  );
+}
+
+async function writeImplementationWorkflow(root: string): Promise<void> {
+  await mkdir(path.join(root, "workflows", "implementation"), {
+    recursive: true
+  });
+  await writeFile(
+    path.join(root, "routing.yaml"),
+    [
+      "routes:",
+      "  - name: implementation",
+      "    when:",
+      "      has_target: true",
+      "    use_target_from_input: true",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "implementation", "workflow.yaml"),
+    [
+      "id: implementation",
+      "type: workflow",
+      "mode: git_managed_write",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "implementation", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: preflight",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifact: preflight.json",
+      "  - id: workspace",
+      "    type: built_in",
+      "    uses: prepare_implementation_worktree",
+      "    artifact: workspace.json",
+      "    after:",
+      "      - preflight",
+      "  - id: validation",
+      "    type: built_in",
+      "    uses: run_validation_commands",
+      "    artifact: validation.json",
+      "    after:",
+      "      - workspace",
+      "  - id: acceptance",
+      "    type: built_in",
+      "    uses: collect_task_context",
+      "    artifact: acceptance.json",
+      "    after:",
+      "      - validation",
+      "  - id: commit",
+      "    type: built_in",
+      "    uses: commit_changes",
+      "    artifact: commit.json",
+      "    after:",
+      "      - acceptance",
+      "  - id: push",
+      "    type: built_in",
+      "    uses: push_branch",
+      "    artifact: push.json",
+      "    after:",
+      "      - commit",
+      "  - id: pull_request",
+      "    type: built_in",
+      "    uses: open_pull_request",
+      "    artifact: pull-request.json",
+      "    after:",
+      "      - push",
+      "  - id: final_report",
+      "    type: built_in",
+      "    uses: final_implementation_report",
+      "    artifact:",
+      "      json: final-report.json",
+      "      markdown: final-report.md",
+      "    after:",
+      "      - pull_request",
       ""
     ].join("\n")
   );
@@ -429,6 +536,101 @@ describe("configured workflow runner", () => {
           }
         })
       );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("runs final_implementation_report after write-mode workspace lifecycle decision", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "implementation");
+      await writeImplementationWorkflow(root);
+      await writeImplementationConfig(root, { commitEnabled: true });
+
+      const preparedWorkspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+      const cleanedWorkspace: WorkspaceRecord = {
+        ...preparedWorkspace,
+        preserved: false,
+        reason: "success_cleanup"
+      };
+      const finalReportReasons: unknown[] = [];
+      const runBuiltInStep = vi.fn(
+        async ({
+          uses,
+          state
+        }: {
+          uses: string;
+          state: { workspace?: unknown };
+        }) => {
+          if (uses === "preflight") {
+            return { status: "ok" };
+          }
+
+          if (uses === "prepare_implementation_worktree") {
+            return preparedWorkspace;
+          }
+
+          if (uses === "run_validation_commands") {
+            return { passed: true };
+          }
+
+          if (uses === "collect_task_context") {
+            return { status: "accepted" };
+          }
+
+          if (uses === "commit_changes") {
+            return { enabled: true, skipped: false, commit_sha: "abc123" };
+          }
+
+          if (uses === "push_branch") {
+            return { enabled: false, skipped: true, reason: "disabled" };
+          }
+
+          if (uses === "open_pull_request") {
+            return { enabled: false, skipped: true, reason: "disabled" };
+          }
+
+          if (uses === "final_implementation_report") {
+            finalReportReasons.push(
+              (state.workspace as WorkspaceRecord | undefined)?.reason
+            );
+            return {
+              json: { workspace: state.workspace },
+              markdown: "# Implementation\n"
+            };
+          }
+
+          return {};
+        }
+      );
+
+      const result = await runConfiguredWorkflow({
+        invocation: jiraInvocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "jira_task",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep,
+          cleanupWorktree: vi.fn(async () => cleanedWorkspace)
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(result.workspace).toEqual(cleanedWorkspace);
+      expect(finalReportReasons).toEqual(["success_cleanup"]);
+      await expect(readJson(root, "run-1", "final-report.json")).resolves.toMatchObject({
+        workspace: cleanedWorkspace
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
