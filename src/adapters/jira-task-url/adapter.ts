@@ -25,7 +25,7 @@ export type JiraIssueRequest = {
 
 export type JiraAdapterError = Error & {
   code:
-    | "invalid_jira_task_url"
+    | "invalid_jira_issue_url"
     | "jira_instance_not_configured"
     | "jira_issue_fetch_failed"
     | "jira_issue_invalid_response"
@@ -53,7 +53,7 @@ function adapterError(
   return error;
 }
 
-function parseJiraTaskUrl(url: string): {
+function parseJiraIssueUrl(url: string): {
   parsed: URL;
   issueKey: string;
   canonicalUrl: string;
@@ -62,16 +62,16 @@ function parseJiraTaskUrl(url: string): {
   try {
     parsed = new URL(url);
   } catch (cause) {
-    throw adapterError("invalid_jira_task_url", `Invalid Jira task URL: ${url}`, cause);
+    throw adapterError("invalid_jira_issue_url", `Invalid Jira task URL: ${url}`, cause);
   }
 
   if (parsed.protocol !== "https:") {
-    throw adapterError("invalid_jira_task_url", `Expected HTTPS Jira task URL: ${url}`);
+    throw adapterError("invalid_jira_issue_url", `Expected HTTPS Jira task URL: ${url}`);
   }
 
   if (parsed.username.length > 0 || parsed.password.length > 0) {
     throw adapterError(
-      "invalid_jira_task_url",
+      "invalid_jira_issue_url",
       "Jira task URL must not include credentials"
     );
   }
@@ -83,7 +83,7 @@ function parseJiraTaskUrl(url: string): {
     extra.length > 0 ||
     !/^[A-Z][A-Z0-9]+-\d+$/.test(issueKey)
   ) {
-    throw adapterError("invalid_jira_task_url", `Expected Jira browse URL: ${url}`);
+    throw adapterError("invalid_jira_issue_url", `Expected Jira browse URL: ${url}`);
   }
 
   return {
@@ -205,11 +205,11 @@ async function defaultFetchIssue({
   return await response.json();
 }
 
-async function loadJiraTaskUrlInvocation(
+async function loadJiraIssueUrlInvocation(
   input: AdapterInput,
   context: Parameters<InputAdapter["load"]>[1]
 ): Promise<Invocation> {
-  const { parsed, issueKey, canonicalUrl } = parseJiraTaskUrl(input.value);
+  const { parsed, issueKey, canonicalUrl } = parseJiraIssueUrl(input.value);
   const jira = await loadYamlFile(
     path.join(context.configRoot, "jira.yaml"),
     JiraConfigSchema
@@ -274,6 +274,6 @@ export const jiraTaskUrlAdapter: InputAdapter = {
   id: "jira-task-url",
   description: "Load a Jira issue from a configured Jira browse URL.",
   async load(input, context) {
-    return await loadJiraTaskUrlInvocation(input, context);
+    return await loadJiraIssueUrlInvocation(input, context);
   }
 };

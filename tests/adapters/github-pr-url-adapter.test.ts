@@ -137,7 +137,7 @@ describe("github-pr-url adapter", () => {
         context(executeJson)
       )
     ).rejects.toThrow(
-      expect.objectContaining({ code: "github_pr_head_repo_missing" })
+      expect.objectContaining({ code: "github_pull_request_head_repo_missing" })
     );
   });
 });

@@ -35,15 +35,15 @@ export type GitHubPullRequestContext = {
   subject: InvocationSubject;
 };
 
-function githubPrContextInvalid(message: string): Error & { code: string } {
-  return codedError(message, "github_pr_context_invalid");
+function githubPullRequestContextInvalid(message: string): Error & { code: string } {
+  return codedError(message, "github_pull_request_context_invalid");
 }
 
 export function githubPullRequestContextFrom(
   invocation: NormalizedInvocation
 ): GitHubPullRequestContext {
   if (invocation.source !== "github" || invocation.event !== "pull_request") {
-    throw githubPrContextInvalid("Invocation is not a GitHub pull request event");
+    throw githubPullRequestContextInvalid("Invocation is not a GitHub pull request event");
   }
 
   const repository = requireRepository(invocation);
@@ -52,26 +52,26 @@ export function githubPullRequestContextFrom(
   const baseRef = invocation.references?.base_ref;
 
   if (baseRef === undefined || baseRef.length === 0) {
-    throw githubPrContextInvalid("GitHub PR base ref is required");
+    throw githubPullRequestContextInvalid("GitHub PR base ref is required");
   }
 
   const pullRequest = parsePayload(
     invocation,
     "pull_request",
     PullRequestPayloadSchema,
-    "github_pr_context_invalid"
+    "github_pull_request_context_invalid"
   );
   const baseRepository = parsePayload(
     invocation,
     "base_repository",
     RepositoryRefSchema,
-    "github_pr_context_invalid"
+    "github_pull_request_context_invalid"
   );
   const headRepository = parsePayload(
     invocation,
     "head_repository",
     HeadRepositoryRefSchema,
-    "github_pr_context_invalid"
+    "github_pull_request_context_invalid"
   );
 
   return {

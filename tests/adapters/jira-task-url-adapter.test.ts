@@ -162,7 +162,7 @@ describe("jira-task-url adapter", () => {
         adapterContext
       )
     ).rejects.toThrow(
-      expect.objectContaining({ code: "invalid_jira_task_url" })
+      expect.objectContaining({ code: "invalid_jira_issue_url" })
     );
   });
 

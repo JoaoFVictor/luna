@@ -40,21 +40,21 @@ export type PullRequestCoordinates = {
   pull_number: number;
 };
 
-export type GitHubPrAdapterError = Error & {
+export type GitHubPullRequestAdapterError = Error & {
   code:
     | "invalid_pr_url"
-    | "github_pr_fetch_failed"
-    | "github_pr_invalid_response"
-    | "github_pr_head_repo_missing";
+    | "github_pull_request_fetch_failed"
+    | "github_pull_request_invalid_response"
+    | "github_pull_request_head_repo_missing";
   cause?: unknown;
 };
 
 function adapterError(
-  code: GitHubPrAdapterError["code"],
+  code: GitHubPullRequestAdapterError["code"],
   message: string,
   cause?: unknown
-): GitHubPrAdapterError {
-  const error = new Error(message, { cause }) as GitHubPrAdapterError;
+): GitHubPullRequestAdapterError {
+  const error = new Error(message, { cause }) as GitHubPullRequestAdapterError;
   error.code = code;
   error.cause = cause;
 
@@ -122,7 +122,7 @@ async function fetchPullRequest(
     ]);
   } catch (cause) {
     throw adapterError(
-      "github_pr_fetch_failed",
+      "github_pull_request_fetch_failed",
       `Failed to load GitHub PR metadata with: gh api repos/${coordinates.owner}/${coordinates.repo}/pulls/${coordinates.pull_number}`,
       cause
     );
@@ -131,7 +131,7 @@ async function fetchPullRequest(
   const parsed = GitHubPullRequestSchema.safeParse(response);
   if (!parsed.success) {
     throw adapterError(
-      "github_pr_invalid_response",
+      "github_pull_request_invalid_response",
       parsed.error.message,
       parsed.error
     );
@@ -140,7 +140,7 @@ async function fetchPullRequest(
   const pullRequest = parsed.data;
   if (pullRequest.head.repo === null) {
     throw adapterError(
-      "github_pr_head_repo_missing",
+      "github_pull_request_head_repo_missing",
       "GitHub PR head repository is unavailable"
     );
   }
