@@ -69,7 +69,11 @@ function adapterError(
   return error;
 }
 
-function parseJiraTaskUrl(url: string): { parsed: URL; issueKey: string } {
+function parseJiraTaskUrl(url: string): {
+  parsed: URL;
+  issueKey: string;
+  canonicalUrl: string;
+} {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -79,6 +83,13 @@ function parseJiraTaskUrl(url: string): { parsed: URL; issueKey: string } {
 
   if (parsed.protocol !== "https:") {
     throw adapterError("invalid_jira_task_url", `Expected HTTPS Jira task URL: ${url}`);
+  }
+
+  if (parsed.username.length > 0 || parsed.password.length > 0) {
+    throw adapterError(
+      "invalid_jira_task_url",
+      "Jira task URL must not include credentials"
+    );
   }
 
   const [browse, issueKey, ...extra] = parsed.pathname.split("/").filter(Boolean);
@@ -91,7 +102,11 @@ function parseJiraTaskUrl(url: string): { parsed: URL; issueKey: string } {
     throw adapterError("invalid_jira_task_url", `Expected Jira browse URL: ${url}`);
   }
 
-  return { parsed, issueKey };
+  return {
+    parsed,
+    issueKey,
+    canonicalUrl: `${parsed.origin}/browse/${issueKey}`
+  };
 }
 
 function originOf(url: string): string {
@@ -172,7 +187,7 @@ function parseGithubFullName(value: unknown): { owner: string; name: string } {
   ) {
     throw adapterError(
       "jira_repository_field_invalid",
-      `Expected Jira repository field to be github_full_name: ${fullName}`
+      "Expected Jira repository field to be github_full_name"
     );
   }
 
@@ -247,7 +262,7 @@ export async function fetchJiraTaskInvocation(
 ): Promise<Invocation> {
   const projectRoot = options.projectRoot ?? process.cwd();
   const configRoot = options.configRoot ?? resolveConfigRoot();
-  const { parsed, issueKey } = parseJiraTaskUrl(url);
+  const { parsed, issueKey, canonicalUrl } = parseJiraTaskUrl(url);
   const configs = await (options.loadConfigs ??
     (() => loadDefaultConfigs(configRoot)))();
   const instance = findJiraInstance(configs.jira, parsed);
@@ -279,7 +294,7 @@ export async function fetchJiraTaskInvocation(
     jira: {
       instance_id: instance.id,
       issue_key: issue.key,
-      url: parsed.toString(),
+      url: canonicalUrl,
       summary: compactText(fields.summary),
       description: compactText(fields.description),
       acceptance_criteria: compactText(

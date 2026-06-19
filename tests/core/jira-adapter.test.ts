@@ -129,6 +129,34 @@ describe("Jira task input adapter", () => {
     });
   });
 
+  it("canonicalizes Jira task URLs without search or hash", async () => {
+    const options = adapterOptions();
+
+    await expect(
+      fetchJiraTaskInvocation(
+        "https://company.atlassian.net/browse/ABC-123?token=secret#details",
+        options
+      )
+    ).resolves.toMatchObject({
+      jira: {
+        url: "https://company.atlassian.net/browse/ABC-123"
+      }
+    });
+  });
+
+  it("rejects Jira task URLs containing credentials", async () => {
+    const options = adapterOptions();
+
+    await expect(
+      fetchJiraTaskInvocation(
+        "https://user:password@company.atlassian.net/browse/ABC-123",
+        options
+      )
+    ).rejects.toThrow(
+      expect.objectContaining({ code: "invalid_jira_task_url" })
+    );
+  });
+
   it("throws jira_instance_not_configured for a Jira URL outside configured instances", async () => {
     const options = adapterOptions();
 
@@ -182,6 +210,26 @@ describe("Jira task input adapter", () => {
     ).rejects.toThrow(
       expect.objectContaining({ code: "jira_repository_field_invalid" })
     );
+  });
+
+  it("redacts malformed github_full_name values from error messages", async () => {
+    const sensitiveRepositoryValue = "swinggo-dev/secret repo token";
+    const options = adapterOptions({
+      issue: {
+        ...jiraIssue,
+        fields: {
+          ...jiraIssue.fields,
+          customfield_12345: sensitiveRepositoryValue
+        }
+      }
+    });
+
+    await expect(
+      fetchJiraTaskInvocation(
+        "https://company.atlassian.net/browse/ABC-123",
+        options
+      )
+    ).rejects.not.toThrow(sensitiveRepositoryValue);
   });
 
   it("throws repository_not_configured when the Jira repository is absent from repositories.yaml", async () => {
