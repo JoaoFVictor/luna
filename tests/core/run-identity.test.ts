@@ -43,6 +43,38 @@ describe("run identity", () => {
     expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
   });
 
+  it("creates stable run identity for jira_task invocations", () => {
+    const identity = createRunIdentity(
+      {
+        target: "jira_task",
+        workflow: "implementation",
+        jira: {
+          instance_id: "company",
+          issue_key: "ABC-123",
+          url: "https://company.atlassian.net/browse/ABC-123",
+          summary: "Fix checkout validation",
+          description: "Reject invalid checkout payloads.",
+          acceptance_criteria: "Invalid payloads fail validation.",
+          status: "To Do",
+          issue_type: "Task"
+        },
+        repository: {
+          provider: "github",
+          owner: "swinggo-dev",
+          name: "swg-front-nuxt"
+        }
+      },
+      1,
+      fixedDate
+    );
+
+    expect(identity.run_id).toBe(
+      "20260618t150405z-github-swinggo-dev-swg-front-nuxt-jira-abc-123-a1"
+    );
+    expect(identity.target).toBe("jira_task");
+    expect(identity.started_at).toBe(fixedDate.toISOString());
+  });
+
   it("uses invocation_id when present and sanitizes provider-derived text", () => {
     const unsafeInvocation = {
       ...invocation,

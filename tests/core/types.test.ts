@@ -5,6 +5,7 @@ import {
   CodeReviewFindingsSchema,
   EvidenceRefSchema,
   FileExcerptSchema,
+  ImplementationConfigSchema,
   InvocationSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
@@ -149,6 +150,57 @@ const validAcceptanceDecision = {
 describe("core zod schemas", () => {
   it("accepts a valid normalized GitHub PR invocation", () => {
     expect(InvocationSchema.parse(validInvocation)).toEqual(validInvocation);
+  });
+
+  it("accepts jira_task invocations", () => {
+    expect(
+      InvocationSchema.parse({
+        target: "jira_task",
+        workflow: "implementation",
+        jira: {
+          instance_id: "company",
+          issue_key: "ABC-123",
+          url: "https://company.atlassian.net/browse/ABC-123",
+          summary: "Fix checkout validation",
+          description: "Reject invalid checkout payloads.",
+          acceptance_criteria: "Invalid payloads fail validation.",
+          status: "To Do",
+          issue_type: "Task"
+        },
+        repository: {
+          provider: "github",
+          owner: "swinggo-dev",
+          name: "swg-front-nuxt"
+        }
+      })
+    ).toMatchObject({ target: "jira_task" });
+  });
+
+  it("accepts implementation config with structured validation commands", () => {
+    expect(
+      ImplementationConfigSchema.parse({
+        implementation: {
+          branch_pattern: "feature/{slug}",
+          commit: { enabled: false, co_author: false },
+          push: { enabled: false, remote: "origin" },
+          pull_request: {
+            enabled: false,
+            provider: "github",
+            draft: true,
+            base_ref: "main"
+          },
+          sandbox: { type: "trusted_host_local", env_allowlist: [] },
+          validation: {
+            repair_attempts: 1,
+            max_output_bytes: 200000,
+            commands: [
+              { cmd: "npm", args: ["test"], timeout_ms: 120000 },
+              { cmd: "npm", args: ["run", "typecheck"], timeout_ms: 120000 }
+            ]
+          }
+        }
+      })
+    ).toBeDefined();
   });
 
   it("rejects a GitHub PR invocation when head_sha is missing", () => {

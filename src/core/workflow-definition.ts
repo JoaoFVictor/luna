@@ -10,7 +10,7 @@ const WorkflowMetadataSchema = z
   .object({
     id: NonEmptyStringSchema,
     type: z.literal("workflow"),
-    mode: z.literal("git_managed_read_only"),
+    mode: z.enum(["git_managed_read_only", "git_managed_write"]),
     input_schema: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
     graph: NonEmptyStringSchema,
@@ -31,7 +31,15 @@ const BuiltInNodeSchema = z
       "prepare_worktree",
       "collect_repo_context",
       "validate_code_review_findings",
-      "final_code_review_report"
+      "final_code_review_report",
+      "prepare_implementation_worktree",
+      "collect_task_context",
+      "run_validation_commands",
+      "collect_worktree_diff",
+      "commit_changes",
+      "push_branch",
+      "open_pull_request",
+      "final_implementation_report"
     ]),
     artifact: z.union([NonEmptyStringSchema, z.record(NonEmptyStringSchema)]).optional(),
     input: z.record(z.unknown()).optional(),
@@ -51,9 +59,70 @@ const AgentNodeSchema = z
   })
   .strict();
 
+const ValidationCommandSchema = z
+  .object({
+    cmd: NonEmptyStringSchema,
+    args: z.array(z.string()).optional(),
+    timeout_ms: z.number().int().positive().optional()
+  })
+  .strict();
+
+const AgentLoopNodeSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    type: z.literal("agent_loop"),
+    agent: NonEmptyStringSchema,
+    output_schema: NonEmptyStringSchema,
+    artifact: z
+      .object({
+        attempts: NonEmptyStringSchema,
+        validation: NonEmptyStringSchema,
+        result: NonEmptyStringSchema
+      })
+      .strict(),
+    sandbox: z
+      .object({
+        type: z.literal("trusted_host_local"),
+        cwd: NonEmptyStringSchema,
+        env_allowlist: z.array(NonEmptyStringSchema)
+      })
+      .strict(),
+    validation: z
+      .object({
+        commands: z.union([
+          NonEmptyStringSchema,
+          z.array(ValidationCommandSchema)
+        ]),
+        max_output_bytes: z.union([
+          NonEmptyStringSchema,
+          z.number().int().positive()
+        ])
+      })
+      .strict(),
+    repair: z
+      .object({
+        attempts: z.union([
+          NonEmptyStringSchema,
+          z.number().int().nonnegative()
+        ])
+      })
+      .strict(),
+    input: z.record(z.unknown()).optional(),
+    after: z.array(NonEmptyStringSchema).optional()
+  })
+  .strict();
+
 const WorkflowGraphSchema = z
   .object({
-    nodes: z.array(z.discriminatedUnion("type", [BuiltInNodeSchema, AgentNodeSchema])).min(1)
+    nodes: z
+      .array(
+        z.discriminatedUnion("type", [
+          BuiltInNodeSchema,
+          AgentNodeSchema,
+          AgentLoopNodeSchema
+        ])
+      )
+      .min(1)
   })
   .strict();
 

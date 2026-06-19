@@ -11,7 +11,7 @@ const AgentMetadataSchema = z
     id: NonEmptyStringSchema,
     description: NonEmptyStringSchema,
     model_profile: NonEmptyStringSchema,
-    mode: z.literal("read_only"),
+    mode: z.enum(["read_only", "trusted_host_local_write"]),
     instructions_file: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema
   })
