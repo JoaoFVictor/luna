@@ -23,7 +23,7 @@ export function resolveRepository(
 
   const repository = repositories.find(
     (candidate) =>
-      candidate.provider === targetRepository.provider &&
+      candidate.provider.toLowerCase() === targetRepository.provider.toLowerCase() &&
       candidate.owner.toLowerCase() === targetRepository.owner.toLowerCase() &&
       candidate.name.toLowerCase() === targetRepository.name.toLowerCase()
   );

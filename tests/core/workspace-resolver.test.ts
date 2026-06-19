@@ -46,6 +46,21 @@ describe("workspace resolver", () => {
     expect(repository).toBe(gitRepository);
   });
 
+  it("matches repository provider case-insensitively", () => {
+    const repository = resolveRepository(
+      {
+        ...githubInvocation,
+        repository: {
+          ...githubInvocation.repository,
+          provider: "GitHub"
+        }
+      },
+      [gitRepository]
+    );
+
+    expect(repository).toBe(gitRepository);
+  });
+
   it("matches jira repositories by invocation repository owner and name", () => {
     const jiraRepository = {
       ...gitRepository,
