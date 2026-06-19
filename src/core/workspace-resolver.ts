@@ -15,14 +15,11 @@ export function resolveRepository(
   invocation: Invocation,
   repositories: readonly RepositoryConfig[]
 ): RepositoryConfig {
-  const targetRepository =
-    invocation.target === "github_pr"
-      ? {
-          provider: "github" as const,
-          owner: invocation.owner,
-          name: invocation.repo
-        }
-      : invocation.repository;
+  const targetRepository = invocation.repository;
+
+  if (targetRepository === undefined) {
+    throw resolverError("Invocation repository is not configured");
+  }
 
   const repository = repositories.find(
     (candidate) =>
