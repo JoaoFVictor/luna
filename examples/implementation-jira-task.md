@@ -1,0 +1,174 @@
+# Implement A Jira Task
+
+This recipe runs Luna's bundled `implementation` workflow against a Jira task.
+The workflow creates a writable git worktree, runs a trusted local implementer,
+validates the result, reviews it, and optionally commits, pushes, and opens a
+draft GitHub PR.
+
+## 1. Install Dependencies
+
+```bash
+npm install
+```
+
+## 2. Authenticate Models
+
+The default `config/models.yaml` uses Pi's `openai-codex/...` provider.
+
+```bash
+npx @earendil-works/pi-ai login openai-codex
+```
+
+This creates `auth.json` in the Luna project directory. Do not commit it.
+
+## 3. Configure Jira
+
+Edit `config/jira.yaml`:
+
+```yaml
+instances:
+  - id: company
+    base_url: https://company.atlassian.net
+    repository_field:
+      field_id: customfield_12345
+      format: github_full_name
+    acceptance_criteria_field:
+      field_id: customfield_67890
+      format: markdown
+```
+
+The repository field must resolve to `owner/repo` for the GitHub repository
+Luna should edit.
+
+Create `luna.auth.json` in the Luna project root:
+
+```json
+{
+  "providers": {
+    "jira": {
+      "company": {
+        "base_url": "https://company.atlassian.net",
+        "auth_type": "basic_api_token",
+        "email": "user@company.com",
+        "api_token": "secret-token"
+      }
+    }
+  }
+}
+```
+
+Do not commit `luna.auth.json`.
+
+## 4. Configure The Repository
+
+Clone the target repository locally:
+
+```bash
+git clone git@github.com:org/repo.git /path/to/local/repo
+```
+
+Edit `config/repositories.yaml`:
+
+```yaml
+repositories:
+  - id: repo
+    provider: github
+    owner: org
+    name: repo
+    path: /path/to/local/repo
+    remote: origin
+    expected_remote_urls:
+      - git@github.com:org/repo.git
+      - https://github.com/org/repo.git
+```
+
+`expected_remote_urls` is required for write-mode workflows. Luna checks the
+configured remote before creating the implementation worktree.
+
+## 5. Configure Implementation Gates
+
+Review `config/implementation.yaml`:
+
+```yaml
+implementation:
+  branch_pattern: feature/{slug}
+  commit:
+    enabled: false
+    co_author: false
+  push:
+    enabled: false
+    remote: origin
+  pull_request:
+    enabled: false
+    provider: github
+    draft: true
+    base_ref: main
+  sandbox:
+    type: trusted_host_local
+    env_allowlist: []
+  validation:
+    repair_attempts: 1
+    max_output_bytes: 200000
+    commands:
+      - cmd: npm
+        args: ["test"]
+        timeout_ms: 120000
+      - cmd: npm
+        args: ["run", "typecheck"]
+        timeout_ms: 120000
+```
+
+`trusted_host_local` is trusted-operator mode and can edit the local worktree.
+The implementer agent declares `trusted_host_local_write`.
+
+Commit, push, and draft PR creation are optional and disabled by default.
+Enabling push requires commit, and enabling a draft PR requires push. If commit
+is disabled, validation fails, acceptance rejects the change, or a publishing
+gate fails, Luna preserves the write worktree for inspection.
+
+## 6. Run The Workflow
+
+```bash
+LUNA_CONFIG_ROOT=config npm run dev -- run --workflow implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+```
+
+The `jira-task-url` adapter fetches the Jira issue, maps the configured
+repository field to a local repository entry, and runs the generic Luna Flue
+entrypoint with a `jira_task` invocation.
+
+## 7. Read The Result
+
+Artifacts are written under:
+
+```text
+.runs/implementation/<run-id>/
+```
+
+Important files:
+
+- `final-report.md`: human-readable implementation report.
+- `final-report.json`: structured final report.
+- `workspace.json`: write worktree path and preservation state.
+- `implementation-plan.json`: planner agent output.
+- `implementation-attempts.json`: implementer attempts and repair loop history.
+- `validation.json`: validation command output.
+- `worktree-diff.json`: collected diff after implementation.
+- `commit.json`, `push.json`, and `pull-request.json`: optional publishing
+  gate artifacts.
+
+## Troubleshooting
+
+`luna.auth.json` is missing
+
+Create `luna.auth.json` in the Luna project root with a Jira provider entry for
+the `config/jira.yaml` instance id.
+
+`Repository is not configured`
+
+The Jira repository field does not match a `provider: github` entry in
+`config/repositories.yaml`.
+
+`expected_remote_urls_missing`
+
+Add `expected_remote_urls` to the matching repository entry before running the
+write-mode `implementation` workflow.

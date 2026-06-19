@@ -6,6 +6,7 @@ created with configuration and what still requires TypeScript.
 For step-by-step recipes, see:
 
 - [Run a GitHub PR review](review-pr.md)
+- [Implement a Jira task](implementation-jira-task.md)
 - [Create a new agent](new-agent.md)
 - [Create a new workflow](new-workflow.md)
 - [Create a new input adapter](new-adapter.md)
@@ -13,6 +14,8 @@ For step-by-step recipes, see:
 Choose the guide by intent:
 
 - If you only want to use Luna, start with `review-pr.md`.
+- If you want Luna to implement a Jira task in a write worktree, start with
+  `implementation-jira-task.md`.
 - If you want a new role in an existing graph, start with `new-agent.md`.
 - If you want a new orchestration shape, start with `new-workflow.md`.
 - If you want Slack, API events, GitHub issues, or another input source, start
@@ -47,24 +50,32 @@ The lower-level JSON path is useful for tests and automation:
 LUNA_CONFIG_ROOT=config npm run dev -- run --workflow <workflow-id> --input path/to/invocation.json
 ```
 
-The current normalized invocation shape is GitHub PR focused. See
-`examples/github-pr-opened.invocation.json` for a valid example.
+The committed workflows currently use GitHub PR and Jira task invocation
+shapes. See `examples/github-pr-opened.invocation.json` for a GitHub PR
+example. The `jira-task-url` adapter builds a `jira_task` invocation by reading
+Jira issue fields and matching the referenced GitHub repository.
 
 ## Current Inventory
 
 Input adapters:
 
 - `github-pr-url`
+- `jira-task-url`
 
 Workflows:
 
 - `code-review`
+- `implementation`
 
 Agents:
 
 - `review-planner`
 - `code-reviewer`
 - `acceptance-reviewer`
+- `implementation-planner`
+- `code-implementer`
+- `implementation-reviewer`
+- `implementation-acceptance-reviewer`
 
 Built-in steps:
 
@@ -73,6 +84,13 @@ Built-in steps:
 - `collect_repo_context`
 - `validate_code_review_findings`
 - `final_code_review_report`
+- `prepare_implementation_worktree`
+- `collect_task_context`
+- `collect_worktree_diff`
+- `commit_changes`
+- `push_branch`
+- `open_pull_request`
+- `final_implementation_report`
 
 Model profiles:
 
@@ -102,6 +120,17 @@ mode: read_only
 instructions_file: instructions.md
 output_schema: output.schema.json
 ```
+
+Agents that write to a trusted local implementation worktree must explicitly
+declare:
+
+```yaml
+mode: trusted_host_local_write
+```
+
+This pairs with an `agent_loop` node whose sandbox is `trusted_host_local`.
+That mode can edit the configured worktree on the host. Treat it as a trusted
+operator setting, not as an isolation boundary.
 
 `instructions.md` should describe only that agent's role. Keep orchestration in
 the workflow graph, not inside every agent prompt.
@@ -146,6 +175,12 @@ mode: git_managed_read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
+```
+
+The write-mode implementation workflow uses:
+
+```yaml
+mode: git_managed_write
 ```
 
 Minimal `graph.yaml`:
@@ -213,6 +248,28 @@ Agent node:
     - repo_context
 ```
 
+Agent loop node:
+
+```yaml
+- id: implementation
+  type: agent_loop
+  agent: code-implementer
+  output_schema: implementation_result
+  artifact:
+    attempts: implementation-attempts.json
+    validation: validation.json
+    result: implementation-result.json
+  sandbox:
+    type: trusted_host_local
+    cwd: $.workspace.path
+    env_allowlist: []
+  validation:
+    commands: $.config.implementation.validation.commands
+    max_output_bytes: $.config.implementation.validation.max_output_bytes
+  repair:
+    attempts: $.config.implementation.validation.repair_attempts
+```
+
 `artifact` can be a string or, for built-ins that write multiple files, a map:
 
 ```yaml
@@ -229,6 +286,8 @@ Node `input` values can reference workflow state:
 - `$.repository`: matched repository config.
 - `$.run`: current run metadata.
 - `$.workspace`: git worktree metadata.
+- `$.config.implementation`: flattened implementation runtime config from
+  `config/implementation.yaml`.
 - `$.steps.<node-id>`: output from a previous node.
 
 Example:
@@ -251,6 +310,12 @@ The current adapter command is:
 
 ```bash
 LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --from github-pr-url https://github.com/org/repo/pull/123
+```
+
+The Jira implementation adapter command is:
+
+```bash
+LUNA_CONFIG_ROOT=config npm run dev -- run --workflow implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 To add a new adapter:
@@ -306,6 +371,9 @@ Use YAML/config for:
 - New model profiles.
 - New local repository entries.
 - New routing rules.
+- Jira instance mappings in `config/jira.yaml`.
+- Implementation validation and publishing gates in
+  `config/implementation.yaml`.
 
 Use TypeScript for:
 
@@ -342,6 +410,70 @@ npm test
 npm run typecheck
 npm run build
 npm run flue:build
+```
+
+## Write-Mode Configuration
+
+The `implementation` workflow is a `git_managed_write` workflow. It creates a
+writable worktree, runs `code-implementer` through `trusted_host_local`, validates
+the result, reviews it, and then optionally commits, pushes, and opens a draft
+GitHub PR.
+
+`config/implementation.yaml` controls:
+
+- `sandbox.type: trusted_host_local` for local host execution.
+- `validation.commands` for commands such as `npm test` and
+  `npm run typecheck`.
+- `validation.repair_attempts` for agent repair loops after failed validation.
+- `commit.enabled`, `push.enabled`, and `pull_request.enabled` for publishing.
+
+Publishing gates are ordered. Push requires commit, and draft PR creation
+requires push. If commit is disabled, validation fails, acceptance rejects the
+change, or a publishing gate is skipped or fails, Luna preserves the write
+worktree for inspection.
+
+Write-mode repository entries should include `expected_remote_urls`:
+
+```yaml
+repositories:
+  - id: repo
+    provider: github
+    owner: org
+    name: repo
+    path: /path/to/local/repo
+    remote: origin
+    expected_remote_urls:
+      - git@github.com:org/repo.git
+```
+
+The Jira adapter uses `config/jira.yaml` to map a Jira instance and repository
+field:
+
+```yaml
+instances:
+  - id: company
+    base_url: https://company.atlassian.net
+    repository_field:
+      field_id: customfield_12345
+      format: github_full_name
+```
+
+Jira secrets live in project-root `luna.auth.json`, keyed by the same instance
+id:
+
+```json
+{
+  "providers": {
+    "jira": {
+      "company": {
+        "base_url": "https://company.atlassian.net",
+        "auth_type": "basic_api_token",
+        "email": "user@company.com",
+        "api_token": "secret-token"
+      }
+    }
+  }
+}
 ```
 
 ## Real Review Checklist

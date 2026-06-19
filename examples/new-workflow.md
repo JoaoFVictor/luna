@@ -3,9 +3,10 @@
 Workflows are YAML graphs. If the workflow uses existing Luna built-ins and
 agents, no new TypeScript workflow entrypoint is required.
 
-This recipe assumes a read-only workflow that operates on a GitHub PR and local
-git repository context. That matches Luna's current built-ins. A workflow for a
-different domain may need a new input adapter, new built-in steps, or both.
+This recipe starts with a read-only workflow that operates on a GitHub PR and
+local git repository context. Luna also includes a write-mode implementation
+workflow for Jira tasks. A workflow for a different domain may need a new input
+adapter, new built-in steps, or both.
 
 ## 1. Create The Workflow Directory
 
@@ -31,8 +32,11 @@ graph: graph.yaml
 Rules:
 
 - The directory name and `id` must match.
-- `mode` currently supports `git_managed_read_only`.
+- `mode` supports `git_managed_read_only` and `git_managed_write`.
 - Schema and graph paths must stay inside the workflow directory.
+
+Use `git_managed_write` only for workflows that intentionally create a writable
+worktree and run trusted local write agents.
 
 ## 3. Add `graph.yaml`
 
@@ -84,11 +88,47 @@ Graph rules:
 - `collect_repo_context`
 - `validate_code_review_findings`
 - `final_code_review_report`
+- `prepare_implementation_worktree`
+- `collect_task_context`
+- `collect_worktree_diff`
+- `commit_changes`
+- `push_branch`
+- `open_pull_request`
+- `final_implementation_report`
 
-Some built-ins are currently code-review specific. If a workflow needs a new
-local capability, add a built-in in TypeScript and then reference it from YAML.
+Some built-ins are workflow-specific. If a workflow needs a new local
+capability, add a built-in in TypeScript and then reference it from YAML.
 
-## 5. Workflow Input References
+## 5. Write-Mode Agent Loop
+
+Write workflows can use an `agent_loop` node to run a trusted local implementer
+and repair failed validation:
+
+```yaml
+- id: implementation
+  type: agent_loop
+  agent: code-implementer
+  output_schema: implementation_result
+  artifact:
+    attempts: implementation-attempts.json
+    validation: validation.json
+    result: implementation-result.json
+  sandbox:
+    type: trusted_host_local
+    cwd: $.workspace.path
+    env_allowlist: []
+  validation:
+    commands: $.config.implementation.validation.commands
+    max_output_bytes: $.config.implementation.validation.max_output_bytes
+  repair:
+    attempts: $.config.implementation.validation.repair_attempts
+```
+
+The referenced agent must declare `mode: trusted_host_local_write` in
+`agent.yaml`. `trusted_host_local` runs on the host and can edit files in the
+worktree. Use it only for agents and repositories you trust.
+
+## 6. Workflow Input References
 
 Node `input` values can reference workflow state:
 
@@ -96,6 +136,8 @@ Node `input` values can reference workflow state:
 - `$.repository`: matched repository config.
 - `$.run`: current run metadata.
 - `$.workspace`: git worktree metadata.
+- `$.config.implementation`: flattened runtime config from
+  `config/implementation.yaml`.
 - `$.steps.<node-id>`: output from a previous node.
 
 Example:
@@ -110,7 +152,7 @@ input:
 References are whole-value references. Luna does not currently support nested
 paths like `$.steps.review_plan.summary`.
 
-## 6. Add Schemas
+## 7. Add Schemas
 
 `input.schema.json` documents the workflow input contract.
 
@@ -119,7 +161,7 @@ paths like `$.steps.review_plan.summary`.
 For agent structured output, each agent still owns its own
 `agents/<agent-id>/output.schema.json`.
 
-## 7. Run The Workflow
+## 8. Run The Workflow
 
 From an adapter:
 
@@ -136,7 +178,13 @@ From a normalized invocation file:
 LUNA_CONFIG_ROOT=config npm run dev -- run --workflow my-workflow --input path/to/invocation.json
 ```
 
-## 8. Test
+For the bundled Jira implementation workflow, the adapter command is:
+
+```bash
+LUNA_CONFIG_ROOT=config npm run dev -- run --workflow implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+```
+
+## 9. Test
 
 ```bash
 npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
