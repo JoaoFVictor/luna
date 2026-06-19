@@ -71,6 +71,25 @@ function hasDiff(diff: WorktreeDiff): boolean {
   );
 }
 
+function stageablePaths(diff: WorktreeDiff): string[] {
+  const paths: string[] = [];
+
+  for (const file of diff.files) {
+    if (file.status === "untracked") {
+      if (file.untracked_summary?.omitted_reason === "sensitive_path") {
+        continue;
+      }
+
+      paths.push(file.path);
+      continue;
+    }
+
+    paths.push(file.path);
+  }
+
+  return [...new Set(paths)];
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -197,7 +216,13 @@ export async function commitChanges({
     throw error;
   }
 
-  await runGit(cwd, ["add", "-A"]);
+  const paths = stageablePaths(diff);
+
+  if (paths.length === 0) {
+    return skipped(true, "sensitive_untracked_files");
+  }
+
+  await runGit(cwd, ["add", "-A", "--", ...paths]);
   await runGit(cwd, ["commit", "-m", message]);
 
   return {

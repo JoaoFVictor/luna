@@ -269,7 +269,7 @@ describe("implementation git actions", () => {
       expect(calls.map((call) => call.args[0])).not.toContain("commit");
     });
 
-    it("runs git add -A and git commit -m on success", async () => {
+    it("runs scoped git add and git commit -m on success", async () => {
       const { calls, runGit } = createRunGit();
 
       await expect(commitChanges(commitInput({ runGit }))).resolves.toEqual({
@@ -282,9 +282,68 @@ describe("implementation git actions", () => {
         { cwd, args: ["branch", "--show-current"] },
         { cwd, args: ["remote", "get-url", remote] },
         { cwd, args: ["merge-base", "--is-ancestor", baseSha, "HEAD"] },
-        { cwd, args: ["add", "-A"] },
+        { cwd, args: ["add", "-A", "--", "src/checkout.ts"] },
         { cwd, args: ["commit", "-m", commitMessage] },
         { cwd, args: ["rev-parse", "HEAD"] }
+      ]);
+    });
+
+    it("does not stage sensitive untracked files", async () => {
+      const { calls, runGit } = createRunGit();
+      const sensitiveOnlyDiff: WorktreeDiff = {
+        ...nonEmptyDiff,
+        files: [
+          {
+            path: ".env.local",
+            status: "untracked",
+            index_status: "?",
+            worktree_status: "?",
+            untracked_summary: {
+              path: ".env.local",
+              excerpt: {
+                start_line: 1,
+                end_line: 1,
+                content: ""
+              },
+              truncated: false,
+              bytes: 31,
+              max_bytes: 1000,
+              omitted: true,
+              omitted_reason: "sensitive_path"
+            }
+          }
+        ],
+        untracked_files: [".env.local"],
+        untracked_summaries: [
+          {
+            path: ".env.local",
+            excerpt: {
+              start_line: 1,
+              end_line: 1,
+              content: ""
+            },
+            truncated: false,
+            bytes: 31,
+            max_bytes: 1000,
+            omitted: true,
+            omitted_reason: "sensitive_path"
+          }
+        ],
+        staged_diff: "",
+        unstaged_diff: ""
+      };
+
+      await expect(
+        commitChanges(commitInput({ diff: sensitiveOnlyDiff, runGit }))
+      ).resolves.toEqual({
+        enabled: true,
+        skipped: true,
+        reason: "sensitive_untracked_files"
+      });
+      expect(calls).toEqual([
+        { cwd, args: ["branch", "--show-current"] },
+        { cwd, args: ["remote", "get-url", remote] },
+        { cwd, args: ["merge-base", "--is-ancestor", baseSha, "HEAD"] }
       ]);
     });
   });
