@@ -7,10 +7,13 @@ import { InvocationSchema, type Invocation } from "./types.js";
 
 export type CliArgs = {
   command: "run";
+  workflow?: string;
   input: string;
 } | {
-  command: "review-pr";
-  url: string;
+  command: "run";
+  workflow?: string;
+  from: string;
+  value: string;
 };
 
 export type FlueRunCommand = {
@@ -86,27 +89,39 @@ export function parseCliArgs(args: string[]): CliArgs {
   const [command, ...rest] = args;
 
   if (command === "run") {
+    const workflowFlagIndex = rest.indexOf("--workflow");
+    const workflow =
+      workflowFlagIndex >= 0 ? rest[workflowFlagIndex + 1] : undefined;
     const inputFlagIndex = rest.indexOf("--input");
     const input = inputFlagIndex >= 0 ? rest[inputFlagIndex + 1] : undefined;
+    const fromFlagIndex = rest.indexOf("--from");
+    const from = fromFlagIndex >= 0 ? rest[fromFlagIndex + 1] : undefined;
+    const value = fromFlagIndex >= 0 ? rest[fromFlagIndex + 2] : undefined;
+
+    if (workflowFlagIndex >= 0 && !workflow) {
+      throw cliError("missing_workflow", "Missing required --workflow <id>");
+    }
+
+    if (input && from) {
+      throw cliError("ambiguous_input", "Use either --input or --from, not both");
+    }
+
+    if (from) {
+      if (!value) {
+        throw cliError("missing_from_value", "Missing required adapter input value");
+      }
+
+      return { command, workflow, from, value };
+    }
 
     if (!input) {
       throw cliError("missing_input", "Missing required --input <path>");
     }
 
-    return { command, input };
+    return { command, workflow, input };
   }
 
-  if (command === "review-pr") {
-    const [url] = rest;
-
-    if (!url) {
-      throw cliError("missing_pr_url", "Missing required PR URL");
-    }
-
-    return { command, url };
-  }
-
-  throw cliError("unknown_command", "Expected command: run or review-pr");
+  throw cliError("unknown_command", "Expected command: run");
 }
 
 export async function loadInvocationFromFile(filePath: string): Promise<Invocation> {
@@ -235,12 +250,27 @@ export async function main(
   deps: MainDependencies = {}
 ): Promise<number> {
   const parsedArgs = parseCliArgs(args);
-  const invocation =
-    parsedArgs.command === "run"
-      ? await loadInvocationFromFile(parsedArgs.input)
-      : await (deps.loadPullRequestInvocation ?? fetchGitHubPullRequestInvocation)(
-          parsedArgs.url
-        );
+  let invocation: Invocation;
+
+  if ("input" in parsedArgs) {
+    invocation = await loadInvocationFromFile(parsedArgs.input);
+  } else if (parsedArgs.from === "github-pr-url") {
+    invocation = await (deps.loadPullRequestInvocation ??
+      fetchGitHubPullRequestInvocation)(parsedArgs.value);
+  } else {
+    throw cliError(
+      "unknown_input_adapter",
+      `Unknown input adapter: ${parsedArgs.from}`
+    );
+  }
+
+  if (parsedArgs.workflow !== undefined) {
+    invocation = {
+      ...invocation,
+      workflow: parsedArgs.workflow
+    };
+  }
+
   const buildCommand = deps.buildCommand ?? buildFlueRunCommand;
   const command = await buildCommand(invocation);
   const execute = deps.execute ?? executeFile;

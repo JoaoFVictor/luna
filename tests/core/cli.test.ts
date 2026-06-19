@@ -50,16 +50,26 @@ describe("flue local CLI wrapper", () => {
   it("parses run input arguments", () => {
     expect(parseCliArgs(["run", "--input", "example.json"])).toEqual({
       command: "run",
-      input: "example.json"
+      input: "example.json",
+      workflow: undefined
     });
   });
 
-  it("parses review-pr URL arguments", () => {
+  it("parses workflow input adapter arguments", () => {
     expect(
-      parseCliArgs(["review-pr", "https://github.com/withastro/luna/pull/123"])
+      parseCliArgs([
+        "run",
+        "--workflow",
+        "code-review",
+        "--from",
+        "github-pr-url",
+        "https://github.com/withastro/luna/pull/123"
+      ])
     ).toEqual({
-      command: "review-pr",
-      url: "https://github.com/withastro/luna/pull/123"
+      command: "run",
+      workflow: "code-review",
+      from: "github-pr-url",
+      value: "https://github.com/withastro/luna/pull/123"
     });
   });
 
@@ -69,9 +79,11 @@ describe("flue local CLI wrapper", () => {
     );
   });
 
-  it("throws missing_pr_url when review-pr URL is missing", () => {
-    expect(() => parseCliArgs(["review-pr"])).toThrow(
-      expect.objectContaining({ code: "missing_pr_url" })
+  it("throws missing_from_value when an input adapter value is missing", () => {
+    expect(() =>
+      parseCliArgs(["run", "--workflow", "code-review", "--from", "github-pr-url"])
+    ).toThrow(
+      expect.objectContaining({ code: "missing_from_value" })
     );
   });
 
@@ -155,7 +167,7 @@ describe("flue local CLI wrapper", () => {
     await expect(loadInvocationFromFile(invocationFile)).resolves.toEqual(validInvocation);
   });
 
-  it("loads a PR URL invocation through the GitHub adapter before invoking Flue", async () => {
+  it("loads an invocation through the selected input adapter before invoking Flue", async () => {
     const execute = vi.fn(async () => 0);
     const buildCommand = vi.fn(async () => ({
       command: process.execPath,
@@ -164,18 +176,37 @@ describe("flue local CLI wrapper", () => {
     const loadPullRequestInvocation = vi.fn(async () => validInvocation);
 
     await expect(
-      main(["review-pr", "https://github.com/octo-org/hello-world/pull/42"], {
-        execute,
-        buildCommand,
-        loadPullRequestInvocation
-      })
+      main(
+        [
+          "run",
+          "--workflow",
+          "code-review",
+          "--from",
+          "github-pr-url",
+          "https://github.com/octo-org/hello-world/pull/42"
+        ],
+        {
+          execute,
+          buildCommand,
+          loadPullRequestInvocation
+        }
+      )
     ).resolves.toBe(0);
 
     expect(loadPullRequestInvocation).toHaveBeenCalledWith(
       "https://github.com/octo-org/hello-world/pull/42"
     );
-    expect(buildCommand).toHaveBeenCalledWith(validInvocation);
+    expect(buildCommand).toHaveBeenCalledWith({
+      ...validInvocation,
+      workflow: "code-review"
+    });
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
+  });
+
+  it("does not keep workflow-specific commands in the public CLI", () => {
+    expect(() =>
+      parseCliArgs(["review-pr", "https://github.com/withastro/luna/pull/123"])
+    ).toThrow(expect.objectContaining({ code: "unknown_command" }));
   });
 
   it("does not import or call workflow modules directly", async () => {

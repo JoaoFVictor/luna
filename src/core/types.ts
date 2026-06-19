@@ -33,7 +33,8 @@ export const InvocationSchema = z
         base_sha: NonEmptyStringSchema,
         head_sha: NonEmptyStringSchema
       })
-      .strict()
+      .strict(),
+    workflow: NonEmptyStringSchema.optional()
   })
   .strict();
 export type Invocation = z.infer<typeof InvocationSchema>;

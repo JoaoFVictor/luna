@@ -2,17 +2,24 @@
 
 Luna exposes one generic Flue workflow entrypoint named `luna`.
 
-Review a GitHub pull request URL through the configured workflow selected by
-`config/routing.yaml`:
+Run a configured workflow from an input adapter:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- review-pr https://github.com/org/repo/pull/123
+LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 This adapter loads PR metadata through `gh api`, builds the normalized Luna
-invocation, validates it, and then invokes the generic Flue workflow. The lower
-level `run --input <path>` command still exists for tests and automation that
-already produce a normalized invocation file.
+invocation, attaches `workflow: code-review`, validates it, and then invokes the
+generic Flue workflow. New input sources should be added as adapters selected by
+`--from`, not as new workflow-specific CLI commands.
+
+The lower level `run --input <path>` command still exists for tests and
+automation that already produce a normalized invocation file. It can also
+receive an explicit workflow:
+
+```bash
+LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --input examples/github-pr-opened.invocation.json
+```
 
 To add a workflow that uses existing Luna capabilities, add YAML under
 `workflows/<workflow-id>/` and agents under `agents/<agent-id>/`. When

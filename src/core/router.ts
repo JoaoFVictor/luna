@@ -39,6 +39,13 @@ export function routeInvocation(
   invocation: InvocationLike,
   routingConfig: RoutingConfig
 ): RouteTarget {
+  if (typeof invocation.workflow === "string" && invocation.workflow !== "") {
+    return {
+      type: "workflow",
+      id: invocation.workflow
+    };
+  }
+
   for (const route of routingConfig.routes) {
     const hasInputTarget =
       typeof invocation.target === "object" &&

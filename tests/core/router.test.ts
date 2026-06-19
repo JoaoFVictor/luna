@@ -49,6 +49,23 @@ describe("router", () => {
     ).toThrow(expect.objectContaining({ code: "invalid_invocation" }));
   });
 
+  it("routes an explicit workflow id without replacing the domain target", () => {
+    expect(
+      routeInvocation(
+        {
+          target: "github_pr",
+          workflow: "code-review"
+        },
+        {
+          routes: []
+        }
+      )
+    ).toEqual({
+      type: "workflow",
+      id: "code-review"
+    });
+  });
+
   it("throws invalid_target for invalid explicit targets", () => {
     expect(() =>
       routeInvocation(
