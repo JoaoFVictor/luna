@@ -4,3 +4,8 @@ model_profile: deep
 mode: trusted_host_local_write
 instructions_file: instructions.md
 output_schema: output.schema.json
+skills:
+  - ../../skills/implementation-safe-git/SKILL.md
+tools:
+  - repository.status
+  - repository.diff-summary
