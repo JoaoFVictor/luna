@@ -84,16 +84,20 @@ export function parseGitHubPullRequestUrl(url: string): PullRequestCoordinates {
   const [owner, repo, kind, number, ...extra] = parsed.pathname
     .split("/")
     .filter(Boolean);
-  const pullNumber = Number(number);
 
   if (
     owner === undefined ||
     repo === undefined ||
     kind !== "pull" ||
+    number === undefined ||
     extra.length > 0 ||
-    !Number.isSafeInteger(pullNumber) ||
-    pullNumber < 1
+    !/^[1-9]\d*$/.test(number)
   ) {
+    throw adapterError("invalid_pr_url", `Expected GitHub PR URL: ${url}`);
+  }
+
+  const pullNumber = Number(number);
+  if (!Number.isSafeInteger(pullNumber)) {
     throw adapterError("invalid_pr_url", `Expected GitHub PR URL: ${url}`);
   }
 

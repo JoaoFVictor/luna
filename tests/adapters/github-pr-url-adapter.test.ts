@@ -104,6 +104,24 @@ describe("github-pr-url adapter", () => {
     ).rejects.toThrow(expect.objectContaining({ code: "invalid_pr_url" }));
   });
 
+  it.each(["1e2", "0x10", "1.0", "0", "abc"])(
+    "rejects non-decimal positive integer pull number %s",
+    async (pullNumber) => {
+      const executeJson = vi.fn(async () => githubPullResponse);
+
+      await expect(
+        githubPrUrlAdapter.load(
+          {
+            kind: "cli",
+            value: `https://github.com/withastro/luna/pull/${pullNumber}`
+          },
+          context(executeJson)
+        )
+      ).rejects.toThrow(expect.objectContaining({ code: "invalid_pr_url" }));
+      expect(executeJson).not.toHaveBeenCalled();
+    }
+  );
+
   it("throws when GitHub returns a PR without an available head repository", async () => {
     const executeJson = vi.fn(async () => ({
       ...githubPullResponse,
