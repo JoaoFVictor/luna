@@ -1,1 +1,1 @@
-export { githubPrUrlAdapter } from "./adapter.js";
+export { githubPrUrlAdapter, parseGitHubPullRequestUrl } from "./adapter.js";
