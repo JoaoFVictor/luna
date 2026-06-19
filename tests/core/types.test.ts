@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import * as v from "valibot";
 import {
   AcceptanceDecisionSchema,
   AppConfigSchema,
@@ -13,11 +12,6 @@ import {
   ReviewPlanSchema,
   RoutingConfigSchema
 } from "../../src/core/types.js";
-import {
-  AcceptanceDecisionResult,
-  CodeReviewFindingsResult,
-  ReviewPlanResult
-} from "../../src/core/flue-schemas.js";
 
 const validInvocation = {
   target: "github_pr",
@@ -276,40 +270,5 @@ describe("core zod schemas", () => {
     expect(AcceptanceDecisionSchema.parse(validAcceptanceDecision)).toEqual(
       validAcceptanceDecision
     );
-  });
-});
-
-describe("flue valibot result schemas", () => {
-  it("accept the same valid node outputs used by zod", () => {
-    expect(v.parse(ReviewPlanResult, validReviewPlan)).toEqual(validReviewPlan);
-    expect(v.parse(CodeReviewFindingsResult, validCodeReviewFindings)).toEqual(
-      validCodeReviewFindings
-    );
-    expect(v.parse(AcceptanceDecisionResult, validAcceptanceDecision)).toEqual(
-      validAcceptanceDecision
-    );
-  });
-
-  it("reject invalid evidence ranges", () => {
-    const invalidFindings = {
-      findings: [
-        {
-          title: "Missing authorization check",
-          severity: "high",
-          confidence: "high",
-          description: "The update path does not verify ownership.",
-          evidence: [
-            {
-              path: "src/auth.ts",
-              line_start: 20,
-              line_end: 19
-            }
-          ],
-          recommendation: "Verify the caller owns the user record before updating it."
-        }
-      ]
-    };
-
-    expect(() => v.parse(CodeReviewFindingsResult, invalidFindings)).toThrow();
   });
 });

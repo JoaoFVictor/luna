@@ -1,16 +1,14 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { executeCodeReview } from "../../src/core/code-review-orchestrator.js";
+import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
 import { runGit } from "../../src/core/git.js";
 import { collectRepoContext } from "../../src/core/repo-context-collector.js";
 import type {
   AcceptanceDecision,
-  AppConfig,
   CodeReviewFindings,
-  ReviewPlan,
-  RoutingConfig
+  ReviewPlan
 } from "../../src/core/types.js";
 import {
   createRealGitReviewFixture,
@@ -18,16 +16,6 @@ import {
 } from "../fixtures/git-repo.js";
 
 const runId = "20260618t120000z-octo-hello-pr-123-a1";
-
-const routing: RoutingConfig = {
-  routes: [
-    {
-      name: "github-pr",
-      when: {},
-      target: { type: "workflow", id: "code-review" }
-    }
-  ]
-};
 
 const reviewPlan: ReviewPlan = {
   summary: "Review a real Git fixture.",
@@ -75,6 +63,73 @@ async function pathExists(filePath: string): Promise<boolean> {
   }
 }
 
+async function writeConfigRoot({
+  configRoot,
+  artifactRoot,
+  workspaceRoot,
+  fixture
+}: {
+  configRoot: string;
+  artifactRoot: string;
+  workspaceRoot: string;
+  fixture: RealGitReviewFixture;
+}): Promise<void> {
+  await writeFile(
+    path.join(configRoot, "app.yaml"),
+    [
+      "workspace:",
+      "  strategy: git_worktree",
+      `  root: ${JSON.stringify(workspaceRoot)}`,
+      "  preserve_on_success: false",
+      "  preserve_on_failure: false",
+      "artifacts:",
+      `  root: ${JSON.stringify(artifactRoot)}`,
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(configRoot, "repositories.yaml"),
+    [
+      "repositories:",
+      `  - id: ${fixture.repository.id}`,
+      "    provider: github",
+      `    owner: ${fixture.repository.owner}`,
+      `    name: ${fixture.repository.name}`,
+      `    path: ${JSON.stringify(fixture.repository.path)}`,
+      `    remote: ${fixture.repository.remote}`,
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(configRoot, "routing.yaml"),
+    [
+      "routes:",
+      "  - name: code-review",
+      "    when: {}",
+      "    target:",
+      "      type: workflow",
+      "      id: code-review",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(configRoot, "models.yaml"),
+    [
+      "model_profiles:",
+      "  planner:",
+      "    model: test/planner",
+      "    reasoning_effort: medium",
+      "  reviewer:",
+      "    model: test/reviewer",
+      "    reasoning_effort: high",
+      "  acceptance:",
+      "    model: test/acceptance",
+      "    reasoning_effort: medium",
+      ""
+    ].join("\n")
+  );
+}
+
 describe("code review end-to-end with real Git", () => {
   const fixtures: RealGitReviewFixture[] = [];
   const tempRoots: string[] = [];
@@ -89,51 +144,40 @@ describe("code review end-to-end with real Git", () => {
   it("creates a worktree, writes repo context and final artifacts, then cleans up on success", async () => {
     const fixture = await createRealGitReviewFixture();
     fixtures.push(fixture);
+    const configRoot = await mkdtemp(path.join(tmpdir(), "luna-e2e-config-"));
     const artifactRoot = await mkdtemp(path.join(tmpdir(), "luna-e2e-artifacts-"));
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), "luna-e2e-worktrees-"));
-    tempRoots.push(artifactRoot, workspaceRoot);
-    const app: AppConfig = {
-      workspace: {
-        strategy: "git_worktree",
-        root: workspaceRoot,
-        preserve_on_success: false,
-        preserve_on_failure: false
-      },
-      artifacts: {
-        root: artifactRoot
-      }
-    };
+    tempRoots.push(configRoot, artifactRoot, workspaceRoot);
+    await writeConfigRoot({ configRoot, artifactRoot, workspaceRoot, fixture });
     const collectedRepositoryPaths: string[] = [];
 
-    const result = await executeCodeReview({
+    const result = await runConfiguredWorkflow({
       invocation: fixture.invocation,
-      configs: {
-        app,
-        repositories: {
-          repositories: [fixture.repository]
-        },
-        routing
-      },
-      nodes: {
-        reviewPlanner: {
-          execute: async () => reviewPlan
-        },
-        codeReviewer: {
-          execute: async () => findings
-        },
-        acceptanceReviewer: {
-          execute: async () => acceptance
-        }
-      },
+      configRoot,
+      workflowsRoot: "workflows",
+      agentsRoot: "agents",
       dependencies: {
         createRunIdentity: () => ({
           run_id: runId,
           target: "github_pr",
           started_at: "2026-06-18T12:00:00.000Z"
         }),
-        collectRepoContext: async (options) => {
-          collectedRepositoryPaths.push(options.repository.path);
-          return await collectRepoContext(options);
+        builtInStepDependencies: {
+          collectRepoContext: async (options) => {
+            collectedRepositoryPaths.push(options.repository.path);
+            return await collectRepoContext(options);
+          }
+        },
+        runAgentStep: async ({ agent }) => {
+          if (agent.id === "review-planner") {
+            return reviewPlan;
+          }
+
+          if (agent.id === "code-reviewer") {
+            return findings;
+          }
+
+          return acceptance;
         }
       }
     });
