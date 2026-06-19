@@ -68,13 +68,13 @@ repositories:
 Run a PR review:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --from github-pr-url https://github.com/org/repo/pull/123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 Run a Jira implementation task:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 Open the generated report:
@@ -91,8 +91,9 @@ For the complete walkthrough, see
 - **Input adapter**: converts an external input, such as a GitHub PR URL, into
   Luna's normalized invocation format.
 - **Invocation**: the normalized request Luna routes and passes into a workflow.
-- **Router**: chooses the workflow from `--workflow`, the invocation, or
-  `config/routing.yaml`.
+- **Router**: chooses the workflow from `--target workflow:<id>`, the
+  invocation `target`, or `config/routing.yaml`. `--workflow <id>` is an alias
+  for `--target workflow:<id>`.
 - **Workflow**: a YAML graph of ordered nodes under `workflows/<workflow-id>/`.
 - **Agent**: a configured Flue agent under `agents/<agent-id>/`, with YAML
   metadata, Markdown instructions, and a JSON Schema output contract.
@@ -111,8 +112,10 @@ input adapter -> normalized invocation -> router -> workflow YAML -> agents -> a
 
 There is one generic Flue workflow entrypoint: `luna`.
 
-Workflow selection happens through the invocation and routing config. You do not
-create a new TypeScript file under `src/workflows/` for every workflow.
+Workflow selection happens through `--target workflow:<id>`, an invocation
+`target`, or `config/routing.yaml`. URL adapters omit `target` unless the CLI
+override is used. You do not create a new TypeScript file under
+`src/workflows/` for every workflow.
 
 ## Agent Capabilities
 
@@ -174,6 +177,7 @@ agents/                 configured agent definitions
 config/                 runtime configuration
 examples/               usage examples and authoring guide
 src/core/               local runtime, routing, adapters, git, artifacts
+src/adapters/           input adapters and registry
 src/workflows/luna.ts   single generic Flue workflow entrypoint
 workflows/              YAML workflow definitions
 ```
@@ -337,7 +341,7 @@ The `implementation` workflow is a write-mode workflow. Add
 
 `Unknown input adapter`
 
-The value passed to `--from` is not registered in `src/core/flue-cli.ts`.
+The value passed to `--from` is not registered in `src/adapters/registry.ts`.
 
 ## Development
 

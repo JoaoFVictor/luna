@@ -70,11 +70,13 @@ name: swg-front-nuxt
 ## 6. Run The Review
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --from github-pr-url https://github.com/org/repo/pull/123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 The `github-pr-url` adapter calls `gh api`, builds a normalized Luna invocation,
-sets `workflow: code-review`, and runs the generic Flue workflow entrypoint.
+and runs the generic Flue workflow entrypoint. URL adapters omit `target`
+unless the CLI override is used; workflow selection comes from
+`--target workflow:<id>`, invocation `target`, or `config/routing.yaml`.
 
 ## 7. Read The Result
 

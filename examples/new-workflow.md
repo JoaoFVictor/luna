@@ -170,22 +170,22 @@ For agent structured output, each agent still owns its own
 From an adapter:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow my-workflow --from github-pr-url https://github.com/org/repo/pull/123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
-This works only if `my-workflow` accepts the GitHub PR invocation shape produced
-by `github-pr-url`.
+This works only if `my-workflow` accepts the normalized GitHub PR invocation
+produced by `github-pr-url`.
 
 From a normalized invocation file:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow my-workflow --input path/to/invocation.json
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --input path/to/invocation.json
 ```
 
 For the bundled Jira implementation workflow, the adapter command is:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 ## 9. Test

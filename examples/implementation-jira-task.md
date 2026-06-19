@@ -128,12 +128,14 @@ gate fails, Luna preserves the write worktree for inspection.
 ## 6. Run The Workflow
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 The `jira-task-url` adapter fetches the Jira issue, maps the configured
 repository field to a local repository entry, and runs the generic Luna Flue
-entrypoint with a `jira_task` invocation.
+entrypoint with a normalized Jira issue invocation. URL adapters omit `target`
+unless the CLI override is used; workflow selection comes from
+`--target workflow:<id>`, invocation `target`, or `config/routing.yaml`.
 
 ## 7. Read The Result
 
