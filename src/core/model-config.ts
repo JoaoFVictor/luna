@@ -5,6 +5,7 @@ type ModelEnv = Record<string, string | undefined>;
 export type ResolvedModelProfiles = Record<string, ModelProfile>;
 
 const ENV_EXPRESSION = /^\$\{([A-Z0-9_]+)\}$/;
+const ENV_FALLBACK_EXPRESSION = /^\$\{([A-Z0-9_]+):-([^}\s]+)\}$/;
 const PLACEHOLDER_LIKE = /^\$\{|\}$/;
 const FLUE_MODEL_SPEC = /^[^/\s]+\/[^/\s]+$/;
 
@@ -30,16 +31,27 @@ export function resolveModelProfiles(
     }
 
     const expression = ENV_EXPRESSION.exec(profile.model);
+    const fallbackExpression = ENV_FALLBACK_EXPRESSION.exec(profile.model);
     let resolvedModel = profile.model;
 
-    if (expression === null && PLACEHOLDER_LIKE.test(profile.model)) {
+    if (
+      expression === null &&
+      fallbackExpression === null &&
+      PLACEHOLDER_LIKE.test(profile.model)
+    ) {
       throw errorWithCode(
         `Invalid model placeholder in profile ${name}`,
         "model_placeholder_invalid"
       );
     }
 
-    if (expression) {
+    if (fallbackExpression) {
+      const modelFromEnv = env[fallbackExpression[1]];
+      resolvedModel =
+        typeof modelFromEnv === "string" && modelFromEnv.trim() !== ""
+          ? modelFromEnv
+          : fallbackExpression[2];
+    } else if (expression) {
       const modelFromEnv = env[expression[1]];
 
       if (typeof modelFromEnv !== "string" || modelFromEnv.trim() === "") {

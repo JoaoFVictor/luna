@@ -65,6 +65,37 @@ describe("model config", () => {
     ).toBe("openai/gpt-5");
   });
 
+  it("resolves model fallback placeholders from the environment when present", () => {
+    const modelsConfig: ModelsConfig = {
+      model_profiles: {
+        reviewer: {
+          model: "${REVIEWER_MODEL:-openai/gpt-5-mini}",
+          reasoning_effort: "high"
+        }
+      }
+    };
+
+    expect(
+      resolveModelProfiles(modelsConfig, { REVIEWER_MODEL: "openai/gpt-5" })
+        .reviewer.model
+    ).toBe("openai/gpt-5");
+  });
+
+  it("resolves model fallback placeholders to the configured default", () => {
+    const modelsConfig: ModelsConfig = {
+      model_profiles: {
+        planner: {
+          model: "${PLANNER_MODEL:-openai/gpt-5-mini}",
+          reasoning_effort: "medium"
+        }
+      }
+    };
+
+    expect(resolveModelProfiles(modelsConfig, {}).planner.model).toBe(
+      "openai/gpt-5-mini"
+    );
+  });
+
   it("throws model_env_missing for model: ${MISSING_MODEL}", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
@@ -77,6 +108,21 @@ describe("model config", () => {
 
     expect(() => resolveModelProfiles(modelsConfig, {})).toThrow(
       expect.objectContaining({ code: "model_env_missing" })
+    );
+  });
+
+  it("throws model_spec_invalid when a model fallback default lacks a provider", () => {
+    const modelsConfig: ModelsConfig = {
+      model_profiles: {
+        planner: {
+          model: "${PLANNER_MODEL:-gpt-5-mini}",
+          reasoning_effort: "medium"
+        }
+      }
+    };
+
+    expect(() => resolveModelProfiles(modelsConfig, {})).toThrow(
+      expect.objectContaining({ code: "model_spec_invalid" })
     );
   });
 
