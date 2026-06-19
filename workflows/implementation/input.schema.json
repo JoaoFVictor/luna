@@ -89,7 +89,7 @@
     "jira_issue_subject": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "title"],
+      "required": ["type", "id", "url", "title"],
       "properties": {
         "type": {
           "type": "string",
