@@ -511,6 +511,45 @@ describe("implementation git actions", () => {
       expect(calls).toEqual([{ cwd, args: ["auth", "status"] }]);
     });
 
+    it("throws a coded error when GitHub PR creation fails after authentication", async () => {
+      const cause = new Error("gh pr create failed");
+      const { input, calls } = prInput({
+        runGh: async (callCwd, args) => {
+          calls.push({ cwd: callCwd, args });
+
+          if (args[0] === "pr" && args[1] === "create") {
+            throw cause;
+          }
+
+          return "";
+        }
+      });
+
+      await expect(openPullRequest(input)).rejects.toMatchObject({
+        code: "pull_request_create_failed",
+        cause
+      });
+      expect(calls).toEqual([
+        { cwd, args: ["auth", "status"] },
+        {
+          cwd,
+          args: [
+            "pr",
+            "create",
+            "--draft",
+            "--base",
+            "main",
+            "--head",
+            branch,
+            "--title",
+            commitMessage,
+            "--body",
+            "Implements ABC-123."
+          ]
+        }
+      ]);
+    });
+
     it("creates a draft GitHub PR against the configured base ref", async () => {
       const { input, calls } = prInput();
 

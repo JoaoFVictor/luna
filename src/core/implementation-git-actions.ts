@@ -19,6 +19,10 @@ type ProcessFailure = {
   signal?: unknown;
   timedOut?: unknown;
 };
+type PullRequestError = Error & {
+  code: "pull_request_create_failed";
+  cause?: unknown;
+};
 
 type AcceptanceLike =
   | { status?: string; decision?: string; accepted?: boolean }
@@ -37,6 +41,13 @@ function skipped(
   reason: string
 ): { enabled: boolean; skipped: true; reason: string } {
   return { enabled, skipped: true, reason };
+}
+
+function pullRequestError(message: string, cause: unknown): PullRequestError {
+  const error = new Error(message, { cause }) as PullRequestError;
+  error.code = "pull_request_create_failed";
+
+  return error;
 }
 
 function isAccepted(acceptance: AcceptanceLike): boolean {
@@ -305,7 +316,12 @@ export async function openPullRequest({
     args.push("--body", body);
   }
 
-  const url = (await runGh(cwd, args)).trim();
+  let url: string;
+  try {
+    url = (await runGh(cwd, args)).trim();
+  } catch (cause) {
+    throw pullRequestError("Failed to create GitHub pull request", cause);
+  }
 
   return {
     enabled: true,
