@@ -1001,6 +1001,115 @@ describe("flue modules", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it("closes trusted_host_local agent_loop capabilities when the loop rejects", async () => {
+    const loopFailure = new Error("loop failed");
+    const close = vi.fn(async () => {});
+    const resolveFlueAgentCapabilities = vi.fn(async () => ({
+      skills: [],
+      tools: [],
+      close
+    }));
+    const runAgentLoopStateMachine = vi.fn(async () => {
+      throw loopFailure;
+    });
+
+    vi.doMock("@flue/runtime/node", () => ({ local: vi.fn() }));
+    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+      resolveFlueAgentCapabilities
+    }));
+    vi.doMock("../../src/core/agent-loop-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/agent-loop-runner.js")>()),
+      runAgentLoopStateMachine
+    }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const worktreePath = path.join(root, "worktree");
+    const agentDir = path.join(root, "agents", "code-implementer");
+    await mkdir(agentDir, { recursive: true });
+
+    const instructionsPath = path.join(agentDir, "instructions.md");
+    const outputSchemaPath = path.join(agentDir, "output.schema.json");
+    await writeFile(instructionsPath, "Implement the requested change.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({
+        type: "object",
+        additionalProperties: true
+      })
+    );
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentLoopStep =
+          options.dependencies?.runAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+          >;
+
+        return await runAgentLoopStep({
+          agent: {
+            id: "code-implementer",
+            description: "Implement Jira tasks",
+            model_profile: "deep",
+            mode: "trusted_host_local_write",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: agentDir,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "implementation",
+            type: "agent_loop",
+            agent: "code-implementer",
+            output_schema: "implementation_result",
+            input: {},
+            artifact: { result: "implementation-result.json" },
+            sandbox: {
+              type: "trusted_host_local",
+              cwd: worktreePath,
+              env_allowlist: []
+            },
+            validation: {
+              commands: [],
+              max_output_bytes: 200000
+            },
+            repair: { attempts: 0 }
+          },
+          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          input: { task: "Fix checkout validation" },
+          sandbox: {
+            type: "trusted_host_local",
+            cwd: worktreePath,
+            env_allowlist: []
+          },
+          validation: {
+            commands: [],
+            max_output_bytes: 200000
+          },
+          repair: { attempts: 0 },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    await expect(workflow.run({ payload: gitInvocation } as never)).rejects.toBe(
+      loopFailure
+    );
+
+    expect(runAgentLoopStateMachine).toHaveBeenCalledTimes(1);
+    expect(resolveFlueAgentCapabilities).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects trusted_host_local agent_loop when the agent is not trusted_host_local_write", async () => {
     const local = vi.fn();
     vi.doMock("@flue/runtime/node", () => ({ local }));

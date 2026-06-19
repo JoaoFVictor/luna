@@ -44,6 +44,16 @@ function isUnknownToolError(error: unknown): boolean {
   return (error as { code?: unknown }).code === "flue_tool_unknown";
 }
 
+function isKnownMcpError(error: unknown): boolean {
+  const code = (error as { code?: unknown }).code;
+  return (
+    code === "mcp_server_unknown" ||
+    code === "mcp_agent_mode_not_allowed" ||
+    code === "mcp_env_missing" ||
+    code === "mcp_server_connect_failed"
+  );
+}
+
 function parseSkillFrontmatter(
   content: string,
   skillPath: string
@@ -122,7 +132,7 @@ export async function resolveFlueAgentCapabilities({
       close: mcp.close
     };
   } catch (cause) {
-    if (isUnknownToolError(cause)) {
+    if (isUnknownToolError(cause) || isKnownMcpError(cause)) {
       throw cause;
     }
 

@@ -199,6 +199,30 @@ describe("flue agent capabilities", () => {
     }
   });
 
+  it("preserves known MCP resolver errors", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const error = new Error("Missing environment variable LUNA_MCP_GITHUB_URL") as Error & {
+      code: "mcp_env_missing";
+    };
+    error.code = "mcp_env_missing";
+
+    vi.mocked(resolveFlueMcpTools).mockRejectedValueOnce(error);
+
+    try {
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: {
+            ...agent,
+            mcp_servers: ["github"]
+          },
+          cwd: "/repo/worktree"
+        })
+      ).rejects.toBe(error);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects absolute skill paths", async () => {
     const { root, agent } = await writeCodeImplementerFixture();
 
