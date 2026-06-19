@@ -81,6 +81,7 @@ Open the generated report:
 
 ```text
 .runs/code-review/<run-id>/final-report.md
+.runs/implementation/<run-id>/final-report.md
 ```
 
 For the complete walkthrough, see

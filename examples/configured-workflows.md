@@ -368,12 +368,11 @@ To add a new adapter:
 
 1. Create a module under `src/adapters/<adapter-id>/adapter.ts`, for example
    `src/adapters/slack-message-url/adapter.ts`.
-2. Export a function that receives the external value and returns a normalized
-   invocation.
+2. Export an `InputAdapter` object with `id`, `description`, and
+   `load(input, context)`.
 3. Validate external input early.
 4. Fetch source metadata using the source's normal tool or API.
-5. Parse the result with Luna's `InvocationSchema` or return data that will pass
-   it in the CLI.
+5. Return a normalized invocation parsed with Luna's `InvocationSchema`.
 6. Register the adapter once in `src/adapters/registry.ts`.
 7. Add unit tests for the adapter.
 8. Add CLI tests proving `--from <adapter>` dispatches to it.
@@ -449,7 +448,7 @@ npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflo
 For a new adapter:
 
 ```bash
-npm test -- tests/core/cli.test.ts tests/core/github-pr-adapter.test.ts
+npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
 ```
 
 Before finishing a branch:
