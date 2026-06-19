@@ -15,11 +15,24 @@ const routingConfig: RoutingConfig = {
       name: "github-pr-code-review",
       when: {
         source: "github",
-        event_in: ["pull_request.opened"]
+        event: "pull_request",
+        action_in: ["selected", "opened", "synchronize", "reopened"]
       },
       target: {
         type: "workflow",
         id: "code-review"
+      }
+    },
+    {
+      name: "jira-issue-implementation",
+      when: {
+        source: "jira",
+        event: "issue",
+        action: "selected"
+      },
+      target: {
+        type: "workflow",
+        id: "implementation"
       }
     }
   ]
@@ -30,81 +43,62 @@ describe("router", () => {
     const target = {
       type: "workflow",
       id: "manual-review"
-    };
+    } as const;
 
     expect(
       routeInvocation(
-        { source: "manual", event: "dispatch", target },
+        { version: "2026-06", source: "manual", event: "dispatch", target },
         routingConfig
       )
     ).toEqual(target);
-  });
-
-  it("throws invalid_invocation for incomplete invocations with explicit target", () => {
-    expect(() =>
-      routeInvocation(
-        { target: { type: "workflow", id: "manual-review" } },
-        routingConfig
-      )
-    ).toThrow(expect.objectContaining({ code: "invalid_invocation" }));
-  });
-
-  it("routes an explicit workflow id without replacing the domain target", () => {
-    expect(
-      routeInvocation(
-        {
-          target: "github_pr",
-          workflow: "code-review"
-        },
-        {
-          routes: []
-        }
-      )
-    ).toEqual({
-      type: "workflow",
-      id: "code-review"
-    });
   });
 
   it("throws invalid_target for invalid explicit targets", () => {
     expect(() =>
       routeInvocation(
         {
+          version: "2026-06",
           source: "manual",
           event: "dispatch",
-          target: { type: "agent", id: "manual-review" }
+          target: { type: "agent", id: "manual-review" } as never
         },
         routingConfig
       )
     ).toThrow(expect.objectContaining({ code: "invalid_target" }));
   });
 
-  it("routes GitHub pull_request.opened to workflow code-review", () => {
-    expect(
-      routeInvocation(
-        { source: "github", event: "pull_request.opened" },
-        routingConfig
-      )
-    ).toEqual({ type: "workflow", id: "code-review" });
-  });
-
-  it("does not treat legacy string targets as explicit workflow targets", () => {
+  it("routes GitHub pull_request opened action to workflow code-review", () => {
     expect(
       routeInvocation(
         {
+          version: "2026-06",
           source: "github",
-          event: "pull_request.opened",
-          target: "github_pr"
+          event: "pull_request",
+          action: "opened"
         },
         routingConfig
       )
     ).toEqual({ type: "workflow", id: "code-review" });
   });
 
+  it("routes Jira issue selected action to workflow implementation", () => {
+    expect(
+      routeInvocation(
+        {
+          version: "2026-06",
+          source: "jira",
+          event: "issue",
+          action: "selected"
+        },
+        routingConfig
+      )
+    ).toEqual({ type: "workflow", id: "implementation" });
+  });
+
   it("throws no_route_matched for unmatched input", () => {
     expect(() =>
       routeInvocation(
-        { source: "github", event: "issues.opened" },
+        { version: "2026-06", source: "github", event: "issues" },
         routingConfig
       )
     ).toThrow(expect.objectContaining({ code: "no_route_matched" }));
@@ -116,10 +110,14 @@ describe("router", () => {
 
     const result = routeInvocation(
       {
+        version: "2026-06",
         source: "github",
-        event: "pull_request.opened",
-        modelCall,
-        asyncCallback
+        event: "pull_request",
+        action: "selected",
+        payload: {
+          modelCall,
+          asyncCallback
+        }
       },
       routingConfig
     );

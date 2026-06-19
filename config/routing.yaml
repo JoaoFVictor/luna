@@ -5,7 +5,19 @@ routes:
     use_target_from_input: true
 
   - name: github-pr-code-review
-    when: {}
+    when:
+      source: github
+      event: pull_request
+      action_in: [selected, opened, synchronize, reopened]
     target:
       type: workflow
       id: code-review
+
+  - name: jira-issue-implementation
+    when:
+      source: jira
+      event: issue
+      action: selected
+    target:
+      type: workflow
+      id: implementation
