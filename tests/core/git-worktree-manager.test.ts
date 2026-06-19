@@ -6,13 +6,15 @@ import {
   cleanup,
   prepare
 } from "../../src/core/git-worktree-manager.js";
+import { githubPullRequestContextFrom } from "../../src/core/github-pr-context.js";
 import type { WorkspaceRecord } from "../../src/core/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
-const pullNumber = 42;
-const baseRef = gitInvocation.references!.base_ref!;
-const baseSha = gitInvocation.references!.base_sha!;
-const headSha = gitInvocation.references!.head_sha!;
+const pullRequest = githubPullRequestContextFrom(gitInvocation);
+const pullNumber = pullRequest.pull_number;
+const baseRef = pullRequest.base_ref;
+const baseSha = pullRequest.references.base_sha;
+const headSha = pullRequest.references.head_sha;
 
 type GitCall = {
   cwd: string;
@@ -116,7 +118,7 @@ describe("git worktree manager", () => {
         code: 128,
         killed: false,
         signal: null,
-        stderr: `fatal: Not a valid object name ${gitInvocation.references.head_sha}^{commit}\n`
+        stderr: `fatal: Not a valid object name ${headSha}^{commit}\n`
       }
     });
 
@@ -188,7 +190,8 @@ describe("git worktree manager", () => {
         invocation: {
           ...gitInvocation,
           references: {
-            ...gitInvocation.references,
+            base_sha: baseSha,
+            head_sha: headSha,
             base_ref: "release/1.2"
           }
         },
@@ -445,7 +448,7 @@ describe("git worktree manager", () => {
           calls.push({ cwd, args });
 
           if (args[0] === "worktree" && args[1] === "list") {
-            return `worktree ${workspaceRecord.path}\nHEAD ${gitInvocation.references.head_sha}\nbranch refs/heads/main\n`;
+            return `worktree ${workspaceRecord.path}\nHEAD ${headSha}\nbranch refs/heads/main\n`;
           }
 
           return "";

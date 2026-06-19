@@ -126,16 +126,26 @@ export async function createRealGitReviewFixture(): Promise<RealGitReviewFixture
   const invocation: Invocation = {
     ...gitInvocation,
     subject: {
-      ...gitInvocation.subject,
+      type: "pull_request",
       id: "123",
       url: "https://github.com/octo-org/hello-world/pull/123"
     },
     payload: {
-      ...gitInvocation.payload,
-      pull_request: { number: 123 }
+      pull_request: { number: 123 },
+      base_repository: {
+        owner: "octo-org",
+        name: "hello-world",
+        full_name: "octo-org/hello-world"
+      },
+      head_repository: {
+        owner: "contributor",
+        name: "hello-world",
+        full_name: "contributor/hello-world",
+        fork: true
+      }
     },
     references: {
-      ...gitInvocation.references,
+      base_ref: "main",
       base_sha: baseSha,
       head_sha: headSha
     }

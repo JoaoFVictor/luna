@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { githubPullRequestContextFrom } from "../../src/core/github-pr-context.js";
 import { runPreflight } from "../../src/core/preflight.js";
 import type {
   ImplementationConfig,
@@ -6,7 +7,10 @@ import type {
 } from "../../src/core/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
-const baseRef = gitInvocation.references!.base_ref!;
+const pullRequest = githubPullRequestContextFrom(gitInvocation);
+const baseRef = pullRequest.base_ref;
+const baseSha = pullRequest.references.base_sha;
+const headSha = pullRequest.references.head_sha;
 
 type FakeGitCall = {
   cwd: string;
@@ -112,7 +116,8 @@ describe("preflight", () => {
         invocation: {
           ...gitInvocation,
           references: {
-            ...gitInvocation.references,
+            base_ref: baseRef,
+            base_sha: baseSha,
             head_sha: ""
           }
         },
@@ -129,8 +134,8 @@ describe("preflight", () => {
         invocation: {
           ...gitInvocation,
           references: {
-            base_sha: gitInvocation.references!.base_sha!,
-            head_sha: gitInvocation.references!.head_sha!
+            base_sha: baseSha,
+            head_sha: headSha
           }
         },
         repository: gitRepository,
@@ -176,8 +181,8 @@ describe("preflight", () => {
         remote_url: "git@github.com:octo-org/hello-world.git"
       },
       expected: {
-        base_sha: gitInvocation.references.base_sha,
-        head_sha: gitInvocation.references.head_sha,
+        base_sha: baseSha,
+        head_sha: headSha,
         base_ref: baseRef
       }
     });
