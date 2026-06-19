@@ -96,9 +96,7 @@ describe("flue modules", () => {
     expect(runConfiguredWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
         invocation: gitInvocation,
-        configRoot: "config",
-        workflowsRoot: "workflows",
-        agentsRoot: "agents"
+        configRoot: "config"
       })
     );
     const options = runConfiguredWorkflow.mock.calls[0]?.[0];
@@ -120,9 +118,7 @@ describe("flue modules", () => {
       expect.objectContaining({
         invocation: gitInvocation,
         defaultWorkflowId: "code-review",
-        configRoot: "config",
-        workflowsRoot: "workflows",
-        agentsRoot: "agents"
+        configRoot: "config"
       })
     );
   });
@@ -132,7 +128,15 @@ describe("flue modules", () => {
     const initCalls: InitCall[] = [];
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-"));
     const instructionsPath = path.join(root, "instructions.md");
+    const outputSchemaPath = path.join(root, "output.schema.json");
     await writeFile(instructionsPath, "Follow the configured instructions.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({
+        type: "object",
+        additionalProperties: true
+      })
+    );
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
@@ -151,7 +155,7 @@ describe("flue modules", () => {
             output_schema: "output.schema.json",
             directory: root,
             instructionsPath,
-            outputSchemaPath: path.join(root, "output.schema.json")
+            outputSchemaPath
           },
           node: {
             id: "review_plan",
@@ -181,7 +185,7 @@ describe("flue modules", () => {
             output_schema: "output.schema.json",
             directory: root,
             instructionsPath,
-            outputSchemaPath: path.join(root, "output.schema.json")
+            outputSchemaPath
           },
           node: {
             id: "code_review",
@@ -211,7 +215,7 @@ describe("flue modules", () => {
             output_schema: "output.schema.json",
             directory: root,
             instructionsPath,
-            outputSchemaPath: path.join(root, "output.schema.json")
+            outputSchemaPath
           },
           node: {
             id: "acceptance",

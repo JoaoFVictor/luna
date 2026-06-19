@@ -392,8 +392,6 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        workflowsRoot: path.join(root, "workflows"),
-        agentsRoot: path.join(root, "agents"),
         dependencies: {
           createRunIdentity: () => ({
             run_id: "run-1",
@@ -496,8 +494,6 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        workflowsRoot: path.join(root, "workflows"),
-        agentsRoot: path.join(root, "agents"),
         dependencies: {
           createRunIdentity: () => ({
             run_id: "run-1",
@@ -726,8 +722,6 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        workflowsRoot: path.join(root, "workflows"),
-        agentsRoot: path.join(root, "agents"),
         dependencies: {
           createRunIdentity: () => ({
             run_id: "run-1",
@@ -775,8 +769,6 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        workflowsRoot: path.join(root, "workflows"),
-        agentsRoot: path.join(root, "agents"),
         dependencies: {
           createRunIdentity: () => ({
             run_id: "run-1",

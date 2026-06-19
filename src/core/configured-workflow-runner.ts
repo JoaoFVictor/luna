@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import path from "node:path";
 import { ArtifactStore } from "./artifact-store.js";
 import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
@@ -202,6 +203,32 @@ async function loadConfiguredWorkflow(
       cause
     );
   }
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveConfiguredDirectoryRoot(
+  configRoot: string,
+  configuredRoot: string | undefined,
+  directoryName: "agents" | "workflows"
+): Promise<string> {
+  if (configuredRoot !== undefined) {
+    return configuredRoot;
+  }
+
+  const configRelativeRoot = path.join(configRoot, directoryName);
+  if (await pathExists(configRelativeRoot)) {
+    return configRelativeRoot;
+  }
+
+  return directoryName;
 }
 
 function topologicalNodes(nodes: WorkflowNode[]): WorkflowNode[] {
@@ -505,7 +532,16 @@ export async function runConfiguredWorkflow({
   const run = makeRunIdentity(invocation, attempt, dependencies.now?.());
   const artifactStore = new Store(configs.app.artifacts.root, run.run_id);
   const modelProfiles = resolveModelProfiles(configs.models);
-  const resolvedAgentsRoot = agentsRoot ?? path.join(configRoot, "agents");
+  const resolvedAgentsRoot = await resolveConfiguredDirectoryRoot(
+    configRoot,
+    agentsRoot,
+    "agents"
+  );
+  const resolvedWorkflowsRoot = await resolveConfiguredDirectoryRoot(
+    configRoot,
+    workflowsRoot,
+    "workflows"
+  );
   const resolveRepository =
     dependencies.resolveRepository ?? defaultResolveRepository;
   const cleanupWorktree =
@@ -530,7 +566,7 @@ export async function runConfiguredWorkflow({
       configs.repositories.repositories
     );
     const workflow = await loadConfiguredWorkflow(
-      workflowsRoot ?? path.join(configRoot, "workflows"),
+      resolvedWorkflowsRoot,
       workflowId
     );
     const state: WorkflowState = {

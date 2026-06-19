@@ -1,11 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createAgent, type FlueContext } from "@flue/runtime";
+import * as v from "valibot";
 import type { GenericSchema } from "valibot";
-import {
-  AcceptanceDecisionResult,
-  CodeReviewFindingsResult,
-  ReviewPlanResult
-} from "../core/flue-schemas.js";
 import {
   runConfiguredWorkflow,
   type ConfiguredWorkflowResult,
@@ -27,23 +23,143 @@ function promptBody(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function resultSchema(outputSchema: string): GenericSchema {
-  if (outputSchema === "review_plan") {
-    return ReviewPlanResult;
+type JsonSchema = {
+  type?: unknown;
+  enum?: unknown;
+  minLength?: unknown;
+  minimum?: unknown;
+  items?: unknown;
+  properties?: unknown;
+  required?: unknown;
+  additionalProperties?: unknown;
+};
+
+function jsonSchemaError(message: string): Error & { code: string } {
+  return codedError(message, "agent_output_schema_unsupported");
+}
+
+function requiredProperties(schema: JsonSchema): Set<string> {
+  if (schema.required === undefined) {
+    return new Set();
   }
 
-  if (outputSchema === "code_review_findings") {
-    return CodeReviewFindingsResult;
+  if (
+    !Array.isArray(schema.required) ||
+    !schema.required.every((item) => typeof item === "string")
+  ) {
+    throw jsonSchemaError("JSON Schema required must be a string array");
   }
 
-  if (outputSchema === "acceptance_decision") {
-    return AcceptanceDecisionResult;
+  return new Set(schema.required);
+}
+
+function enumSchema(values: unknown): GenericSchema | undefined {
+  if (values === undefined) {
+    return undefined;
   }
 
-  throw codedError(
-    `No Flue result schema is configured for ${outputSchema}`,
-    "agent_output_schema_missing"
-  );
+  if (
+    !Array.isArray(values) ||
+    values.length === 0 ||
+    !values.every((item) => typeof item === "string")
+  ) {
+    throw jsonSchemaError("Only non-empty string enum schemas are supported");
+  }
+
+  return v.picklist(values as [string, ...string[]]);
+}
+
+function stringSchema(schema: JsonSchema): GenericSchema {
+  const schemaEnum = enumSchema(schema.enum);
+  if (schemaEnum !== undefined) {
+    return schemaEnum;
+  }
+
+  const base = v.string();
+  if (typeof schema.minLength === "number") {
+    return v.pipe(base, v.minLength(schema.minLength));
+  }
+
+  return base;
+}
+
+function numberSchema(schema: JsonSchema, integer: boolean): GenericSchema {
+  const base = integer ? v.pipe(v.number(), v.integer()) : v.number();
+  if (typeof schema.minimum === "number") {
+    return v.pipe(base, v.minValue(schema.minimum));
+  }
+
+  return base;
+}
+
+function objectSchema(schema: JsonSchema): GenericSchema {
+  if (
+    schema.properties !== undefined &&
+    (typeof schema.properties !== "object" ||
+      schema.properties === null ||
+      Array.isArray(schema.properties))
+  ) {
+    throw jsonSchemaError("JSON Schema properties must be an object");
+  }
+
+  const required = requiredProperties(schema);
+  const entries: Record<string, GenericSchema> = {};
+
+  for (const [key, value] of Object.entries(
+    (schema.properties ?? {}) as Record<string, unknown>
+  )) {
+    const propertySchema = schemaFromJson(value);
+    entries[key] = required.has(key) ? propertySchema : v.optional(propertySchema);
+  }
+
+  return schema.additionalProperties === false
+    ? v.strictObject(entries)
+    : v.object(entries);
+}
+
+function schemaFromJson(value: unknown): GenericSchema {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw jsonSchemaError("JSON Schema must be an object");
+  }
+
+  const schema = value as JsonSchema;
+  if (schema.enum !== undefined) {
+    return enumSchema(schema.enum) as GenericSchema;
+  }
+
+  if (schema.type === "string") {
+    return stringSchema(schema);
+  }
+
+  if (schema.type === "number") {
+    return numberSchema(schema, false);
+  }
+
+  if (schema.type === "integer") {
+    return numberSchema(schema, true);
+  }
+
+  if (schema.type === "boolean") {
+    return v.boolean();
+  }
+
+  if (schema.type === "array") {
+    if (schema.items === undefined) {
+      throw jsonSchemaError("JSON Schema arrays must define items");
+    }
+
+    return v.array(schemaFromJson(schema.items));
+  }
+
+  if (schema.type === "object") {
+    return objectSchema(schema);
+  }
+
+  throw jsonSchemaError(`Unsupported JSON Schema type: ${String(schema.type)}`);
+}
+
+async function resultSchema(outputSchemaPath: string): Promise<GenericSchema> {
+  return schemaFromJson(JSON.parse(await readFile(outputSchemaPath, "utf8")));
 }
 
 function fakeAgentOutput(agentId: string): unknown {
@@ -98,7 +214,7 @@ async function runFlueAgentStep(
       promptBody(options.input)
     ].join("\n\n"),
     {
-      result: resultSchema(options.node.output_schema),
+      result: await resultSchema(options.agent.outputSchemaPath),
       ...options.model
     }
   );
@@ -113,8 +229,6 @@ export async function runWithFlue(
   return await runConfiguredWorkflow({
     invocation: ctx.payload,
     configRoot: process.env.LUNA_CONFIG_ROOT ?? "config",
-    workflowsRoot: "workflows",
-    agentsRoot: "agents",
     ...(options.defaultWorkflowId === undefined
       ? {}
       : { defaultWorkflowId: options.defaultWorkflowId }),
