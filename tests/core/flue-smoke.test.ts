@@ -99,7 +99,7 @@ async function runFlueSmoke(
       [
         flueCliBin,
         "run",
-        "code-review",
+        "luna",
         "--target",
         "node",
         "--output",
@@ -213,7 +213,7 @@ describe("Flue local run smoke", () => {
     );
   });
 
-  it("runs the code-review workflow through the local Flue CLI and writes final artifacts", async () => {
+  it("runs the luna workflow through the local Flue CLI and writes final artifacts", async () => {
     const fixture = await createRealGitReviewFixture();
     const configRoot = await mkdtemp(path.join(tmpdir(), "luna-flue-smoke-config-"));
     fixtures.push(fixture);
