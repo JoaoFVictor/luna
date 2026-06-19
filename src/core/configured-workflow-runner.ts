@@ -480,6 +480,13 @@ async function runWorkflowNode(
     });
   }
 
+  if (node.type === "agent_loop") {
+    throw configuredWorkflowError(
+      `No agent loop runner configured for node: ${node.id}`,
+      "agent_loop_runner_missing"
+    );
+  }
+
   if (dependencies.runAgentStep === undefined) {
     throw configuredWorkflowError(
       `No agent step runner configured for node: ${node.id}`,

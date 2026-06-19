@@ -1,6 +1,6 @@
 import { stat as fsStat } from "node:fs/promises";
 import { runGit as defaultRunGit } from "./git.js";
-import type { Invocation, RepositoryConfig } from "./types.js";
+import type { GithubPrInvocation, RepositoryConfig } from "./types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Stat = (path: string) => Promise<{ isDirectory(): boolean }>;
@@ -41,7 +41,7 @@ function preflightError(
   return error;
 }
 
-function validateInvocation(invocation: Invocation): void {
+function validateInvocation(invocation: GithubPrInvocation): void {
   if (
     invocation.target !== "github_pr" ||
     !Number.isSafeInteger(invocation.pull_number) ||
@@ -91,7 +91,7 @@ export async function runPreflight({
   runGit = defaultRunGit,
   stat = fsStat
 }: {
-  invocation: Invocation;
+  invocation: GithubPrInvocation;
   repository: RepositoryConfig;
   runGit?: RunGit;
   stat?: Stat;

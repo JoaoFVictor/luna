@@ -15,16 +15,24 @@ export function resolveRepository(
   invocation: Invocation,
   repositories: readonly RepositoryConfig[]
 ): RepositoryConfig {
+  if (invocation.target !== "github_pr") {
+    throw resolverError(
+      `Repository resolution is not implemented for target: ${invocation.target}`
+    );
+  }
+
+  const owner = invocation.owner;
+  const name = invocation.repo;
   const repository = repositories.find(
     (candidate) =>
       candidate.provider === "github" &&
-      candidate.owner.toLowerCase() === invocation.owner.toLowerCase() &&
-      candidate.name.toLowerCase() === invocation.repo.toLowerCase()
+      candidate.owner.toLowerCase() === owner.toLowerCase() &&
+      candidate.name.toLowerCase() === name.toLowerCase()
   );
 
   if (repository === undefined) {
     throw resolverError(
-      `Repository is not configured: github/${invocation.owner}/${invocation.repo}`
+      `Repository is not configured: github/${owner}/${name}`
     );
   }
 

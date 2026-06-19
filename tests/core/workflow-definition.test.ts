@@ -92,6 +92,7 @@ describe("workflow definition loader", () => {
           "      attempts: implementation-attempts.json",
           "      validation: validation.json",
           "      result: implementation-result.json",
+          "      diff: implementation-diff.json",
           "    sandbox:",
           "      type: trusted_host_local",
           "      cwd: $.workspace.path",
@@ -115,7 +116,8 @@ describe("workflow definition loader", () => {
               id: "implementation",
               type: "agent_loop",
               artifact: {
-                validation: "validation.json"
+                validation: "validation.json",
+                diff: "implementation-diff.json"
               }
             }
           ]

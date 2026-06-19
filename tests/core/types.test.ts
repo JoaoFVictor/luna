@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   AcceptanceDecisionSchema,
+  AgentLoopResultSchema,
   AppConfigSchema,
   CodeReviewFindingsSchema,
   EvidenceRefSchema,
   FileExcerptSchema,
+  GitGateArtifactSchema,
   ImplementationConfigSchema,
   InvocationSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RepoContextSchema,
   ReviewPlanSchema,
-  RoutingConfigSchema
+  RoutingConfigSchema,
+  ValidationResultSchema
 } from "../../src/core/types.js";
 
 const validInvocation = {
@@ -201,6 +204,45 @@ describe("core zod schemas", () => {
         }
       })
     ).toBeDefined();
+  });
+
+  it("accepts implementation runtime result artifacts", () => {
+    expect(
+      ValidationResultSchema.parse({
+        passed: false,
+        commands: [
+          {
+            cmd: "npm",
+            args: ["test"],
+            exit_code: 1,
+            stdout: "",
+            stderr: "failed",
+            stdout_truncated: false,
+            stderr_truncated: false,
+            duration_ms: 42,
+            timed_out: false
+          }
+        ]
+      })
+    ).toMatchObject({ passed: false });
+
+    expect(
+      AgentLoopResultSchema.parse({
+        status: "failed",
+        attempts_exhausted: true,
+        attempts: [],
+        validation: { passed: false },
+        result: { summary: "Validation failed." }
+      })
+    ).toMatchObject({ status: "failed" });
+
+    expect(
+      GitGateArtifactSchema.parse({
+        enabled: true,
+        skipped: true,
+        reason: "validation_failed"
+      })
+    ).toMatchObject({ skipped: true });
   });
 
   it("rejects a GitHub PR invocation when head_sha is missing", () => {

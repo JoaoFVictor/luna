@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runPreflight } from "../../src/core/preflight.js";
-import type { Invocation } from "../../src/core/types.js";
+import type { GithubPrInvocation } from "../../src/core/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 type FakeGitCall = {
@@ -85,7 +85,7 @@ describe("preflight", () => {
 
     await expect(
       runPreflight({
-        invocation: invalidInvocation as Invocation,
+        invocation: invalidInvocation as GithubPrInvocation,
         repository: gitRepository,
         runGit: async () => "",
         stat: async () => ({ isDirectory: () => true })

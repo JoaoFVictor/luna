@@ -11,6 +11,7 @@ import type {
   AcceptanceDecision,
   CodeReviewFindings,
   Finding,
+  GithubPrInvocation,
   Invocation,
   RepoContext,
   RepositoryConfig,
@@ -22,23 +23,31 @@ export type BuiltInStepName =
   | "prepare_worktree"
   | "collect_repo_context"
   | "validate_code_review_findings"
-  | "final_code_review_report";
+  | "final_code_review_report"
+  | "prepare_implementation_worktree"
+  | "collect_task_context"
+  | "run_validation_commands"
+  | "collect_worktree_diff"
+  | "commit_changes"
+  | "push_branch"
+  | "open_pull_request"
+  | "final_implementation_report";
 
 type MaybePromise<T> = T | Promise<T>;
 
 export type BuiltInStepDependencies = {
   runPreflight?: (input: {
-    invocation: Invocation;
+    invocation: GithubPrInvocation;
     repository: RepositoryConfig;
   }) => MaybePromise<unknown>;
   prepareWorktree?: (input: {
-    invocation: Invocation;
+    invocation: GithubPrInvocation;
     repository: RepositoryConfig;
     workspaceRoot: string;
     runId: string;
   }) => MaybePromise<WorkspaceRecord>;
   collectRepoContext?: (input: {
-    invocation: Invocation;
+    invocation: GithubPrInvocation;
     repository: RepositoryConfig;
   }) => MaybePromise<RepoContext>;
   validateFindingEvidence?: (
@@ -52,7 +61,7 @@ export type BuiltInStepDependencies = {
     workspace?: WorkspaceRecord;
   }) => unknown;
   buildFinalReportMarkdown?: (input: {
-    invocation: Invocation;
+    invocation: GithubPrInvocation;
     findings: readonly Finding[];
     acceptance: AcceptanceDecision;
   }) => string;
@@ -101,8 +110,20 @@ function asRecord(value: unknown, name: string, code: BuiltInErrorCode): Record<
   return value as Record<string, unknown>;
 }
 
-function invocationFrom(state: WorkflowState): Invocation {
-  return requiredState(state.invocation as Invocation | undefined, "invocation");
+function githubPrInvocationFrom(state: WorkflowState): GithubPrInvocation {
+  const invocation = requiredState(
+    state.invocation as Invocation | undefined,
+    "invocation"
+  );
+
+  if (invocation.target !== "github_pr") {
+    throw builtInError(
+      `Built-in step requires github_pr invocation: ${invocation.target}`,
+      "built_in_unsupported"
+    );
+  }
+
+  return invocation;
 }
 
 function repositoryFrom(state: WorkflowState): RepositoryConfig {
@@ -151,7 +172,7 @@ export async function runBuiltInStep({
     const runPreflight = dependencies.runPreflight ?? defaultRunPreflight;
 
     return await runPreflight({
-      invocation: invocationFrom(state),
+      invocation: githubPrInvocationFrom(state),
       repository: repositoryFrom(state)
     });
   }
@@ -161,7 +182,7 @@ export async function runBuiltInStep({
     const runId = runIdFrom(state);
 
     return await prepareWorktree({
-      invocation: invocationFrom(state),
+      invocation: githubPrInvocationFrom(state),
       repository: repositoryFrom(state),
       workspaceRoot: workspaceRootFrom(state),
       runId
@@ -173,7 +194,7 @@ export async function runBuiltInStep({
     const workspace = workspaceFrom(state);
 
     return await collectRepoContext({
-      invocation: invocationFrom(state),
+      invocation: githubPrInvocationFrom(state),
       repository: {
         ...repositoryFrom(state),
         path: workspace.path
@@ -224,7 +245,7 @@ export async function runBuiltInStep({
         workspace: state.workspace as WorkspaceRecord | undefined
       }),
       markdown: buildFinalReportMarkdown({
-        invocation: invocationFrom(state),
+        invocation: githubPrInvocationFrom(state),
         findings,
         acceptance
       })

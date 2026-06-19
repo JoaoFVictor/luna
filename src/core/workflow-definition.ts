@@ -74,12 +74,19 @@ const AgentLoopNodeSchema = z
     agent: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
     artifact: z
-      .object({
-        attempts: NonEmptyStringSchema,
-        validation: NonEmptyStringSchema,
-        result: NonEmptyStringSchema
+      .record(NonEmptyStringSchema)
+      .refine((artifact) => artifact.attempts !== undefined, {
+        message: "agent_loop artifact must include attempts",
+        path: ["attempts"]
       })
-      .strict(),
+      .refine((artifact) => artifact.validation !== undefined, {
+        message: "agent_loop artifact must include validation",
+        path: ["validation"]
+      })
+      .refine((artifact) => artifact.result !== undefined, {
+        message: "agent_loop artifact must include result",
+        path: ["result"]
+      }),
     sandbox: z
       .object({
         type: z.literal("trusted_host_local"),

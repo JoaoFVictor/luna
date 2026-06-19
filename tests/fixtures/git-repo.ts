@@ -2,7 +2,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runGit } from "../../src/core/git.js";
-import type { Invocation, RepositoryConfig } from "../../src/core/types.js";
+import type {
+  GithubPrInvocation,
+  RepositoryConfig
+} from "../../src/core/types.js";
 
 export const gitRepository: RepositoryConfig = {
   id: "octo-hello",
@@ -13,7 +16,7 @@ export const gitRepository: RepositoryConfig = {
   remote: "origin"
 };
 
-export const gitInvocation: Invocation = {
+export const gitInvocation: GithubPrInvocation = {
   target: "github_pr",
   owner: "octo-org",
   repo: "hello-world",
@@ -43,8 +46,8 @@ export type RealGitReviewFixture = {
   base_sha: string;
   head_sha: string;
   repository: RepositoryConfig;
-  invocation: Invocation;
-  headMismatchInvocation: Invocation;
+  invocation: GithubPrInvocation;
+  headMismatchInvocation: GithubPrInvocation;
   cleanup: () => Promise<void>;
 };
 
@@ -111,7 +114,7 @@ export async function createRealGitReviewFixture(): Promise<RealGitReviewFixture
     path: sourcePath,
     remote: "origin"
   };
-  const invocation: Invocation = {
+  const invocation: GithubPrInvocation = {
     ...gitInvocation,
     pull_number: 123,
     references: {
