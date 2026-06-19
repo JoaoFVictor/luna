@@ -282,10 +282,70 @@ describe("implementation git actions", () => {
         { cwd, args: ["branch", "--show-current"] },
         { cwd, args: ["remote", "get-url", remote] },
         { cwd, args: ["merge-base", "--is-ancestor", baseSha, "HEAD"] },
-        { cwd, args: ["add", "-A", "--", "src/checkout.ts"] },
+        { cwd, args: ["--literal-pathspecs", "add", "-A", "--", "src/checkout.ts"] },
         { cwd, args: ["commit", "-m", commitMessage] },
         { cwd, args: ["rev-parse", "HEAD"] }
       ]);
+    });
+
+    it("passes stage paths as literal pathspecs", async () => {
+      const { calls, runGit } = createRunGit();
+      const pathspecMagicDiff: WorktreeDiff = {
+        ...nonEmptyDiff,
+        files: [
+          {
+            path: ":(glob)*",
+            status: "untracked",
+            index_status: "?",
+            worktree_status: "?",
+            untracked_summary: {
+              path: ":(glob)*",
+              excerpt: {
+                start_line: 1,
+                end_line: 1,
+                content: "literal"
+              },
+              truncated: false,
+              bytes: 7,
+              max_bytes: 1000
+            }
+          },
+          {
+            path: ".env.local",
+            status: "untracked",
+            index_status: "?",
+            worktree_status: "?",
+            untracked_summary: {
+              path: ".env.local",
+              excerpt: {
+                start_line: 1,
+                end_line: 1,
+                content: ""
+              },
+              truncated: false,
+              bytes: 31,
+              max_bytes: 1000,
+              omitted: true,
+              omitted_reason: "sensitive_path"
+            }
+          }
+        ],
+        untracked_files: [":(glob)*", ".env.local"],
+        untracked_summaries: [],
+        staged_diff: "",
+        unstaged_diff: ""
+      };
+
+      await expect(
+        commitChanges(commitInput({ diff: pathspecMagicDiff, runGit }))
+      ).resolves.toMatchObject({
+        enabled: true,
+        skipped: false
+      });
+      expect(calls).toContainEqual({
+        cwd,
+        args: ["--literal-pathspecs", "add", "-A", "--", ":(glob)*"]
+      });
     });
 
     it("does not stage sensitive untracked files", async () => {

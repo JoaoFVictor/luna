@@ -222,7 +222,7 @@ export async function commitChanges({
     return skipped(true, "sensitive_untracked_files");
   }
 
-  await runGit(cwd, ["add", "-A", "--", ...paths]);
+  await runGit(cwd, ["--literal-pathspecs", "add", "-A", "--", ...paths]);
   await runGit(cwd, ["commit", "-m", message]);
 
   return {
