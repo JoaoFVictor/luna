@@ -125,6 +125,21 @@ describe("config loader", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("wraps optional YAML path access failures with config_read_failed", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-config-loader-"));
+    const parentFilePath = path.join(root, "not-a-directory");
+    const filePath = path.join(parentFilePath, "config.yaml");
+
+    await writeFile(parentFilePath, "not a directory\n", "utf8");
+
+    await expect(
+      loadOptionalYamlFile(filePath, z.object({ enabled: z.boolean() }))
+    ).rejects.toMatchObject({
+      code: "config_read_failed",
+      path: filePath
+    });
+  });
+
   it("uses config as the default config root", () => {
     expect(resolveConfigRoot({})).toBe("config");
   });

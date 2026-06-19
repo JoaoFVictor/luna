@@ -56,7 +56,12 @@ async function pathExists(path: string): Promise<boolean> {
       return false;
     }
 
-    throw cause;
+    throw configError(
+      `Failed to read config file: ${path}`,
+      "config_read_failed",
+      path,
+      cause
+    );
   }
 }
 
