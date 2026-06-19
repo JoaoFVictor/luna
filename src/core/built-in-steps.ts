@@ -23,6 +23,7 @@ import {
   buildImplementationReportMarkdown as defaultBuildImplementationReportMarkdown
 } from "./implementation-report-builder.js";
 import { githubPullRequestContextFrom } from "./github-pr-context.js";
+import { jiraIssueContextFrom } from "./jira-issue-context.js";
 import { runPreflight as defaultRunPreflight } from "./preflight.js";
 import { validateFindingEvidence as defaultValidateFindingEvidence } from "./evidence-validator.js";
 import { resolveWorkflowInput, type WorkflowState } from "./workflow-state.js";
@@ -33,7 +34,6 @@ import type {
   Finding,
   ImplementationConfig,
   Invocation,
-  JiraTaskInvocation,
   PullRequestArtifact,
   PushBranchArtifact,
   RepoContext,
@@ -92,7 +92,7 @@ export type BuiltInStepDependencies = {
     acceptance: AcceptanceDecision;
   }) => string;
   prepareImplementationWorktree?: (input: {
-    invocation: JiraTaskInvocation;
+    invocation: Invocation;
     repository: RepositoryConfig;
     workspaceRoot: string;
     runId: string;
@@ -141,7 +141,7 @@ export type BuiltInStepDependencies = {
     body?: string;
   }) => MaybePromise<PullRequestArtifact>;
   buildImplementationReportJson?: (input: {
-    invocation: JiraTaskInvocation;
+    invocation: Invocation;
     status: string;
     branch: string;
     worktree: {
@@ -156,7 +156,7 @@ export type BuiltInStepDependencies = {
     trustedHostLocal: boolean;
   }) => unknown;
   buildImplementationReportMarkdown?: (input: {
-    invocation: JiraTaskInvocation;
+    invocation: Invocation;
     status: string;
     branch: string;
     worktree: {
@@ -233,15 +233,17 @@ function githubPullRequestInvocationFrom(state: WorkflowState): Invocation {
   return invocation;
 }
 
-function jiraTaskInvocationFrom(state: WorkflowState): JiraTaskInvocation {
+function jiraIssueInvocationFrom(state: WorkflowState): Invocation {
   const invocation = requiredState(
     state.invocation as Invocation | undefined,
     "invocation"
   );
 
-  if (invocation.target !== "jira_task") {
+  try {
+    jiraIssueContextFrom(invocation);
+  } catch {
     throw builtInError(
-      `Built-in step requires jira_task invocation: ${invocation.target}`,
+      `Built-in step requires Jira issue invocation`,
       "built_in_unsupported"
     );
   }
@@ -383,8 +385,10 @@ function expectedRemoteUrlsFrom(repository: RepositoryConfig): readonly string[]
   );
 }
 
-function implementationTitle(invocation: JiraTaskInvocation): string {
-  return `${invocation.jira.issue_key}: ${invocation.jira.summary}`;
+function implementationTitle(invocation: Invocation): string {
+  const task = jiraIssueContextFrom(invocation);
+
+  return `${task.issueKey}: ${task.title ?? task.issueKey}`;
 }
 
 function implementationReportStatus({
@@ -511,7 +515,7 @@ export async function runBuiltInStep({
     const implementation = requiredImplementationFrom(state);
 
     return await prepareImplementationWorktree({
-      invocation: jiraTaskInvocationFrom(state),
+      invocation: jiraIssueInvocationFrom(state),
       repository: repositoryFrom(state),
       workspaceRoot: workspaceRootFrom(state),
       runId: runIdFrom(state),
@@ -521,16 +525,16 @@ export async function runBuiltInStep({
   }
 
   if (uses === "collect_task_context") {
-    const taskInvocation = jiraTaskInvocationFrom(state);
+    const task = jiraIssueContextFrom(jiraIssueInvocationFrom(state));
 
     return {
       jira: {
-        issue_key: taskInvocation.jira.issue_key,
-        summary: taskInvocation.jira.summary,
-        description: taskInvocation.jira.description,
-        acceptance_criteria: taskInvocation.jira.acceptance_criteria
+        issue_key: task.issueKey,
+        summary: task.title ?? "",
+        description: task.description,
+        acceptance_criteria: task.acceptanceCriteria
       },
-      repository: taskInvocation.repository
+      repository: task.repository
     };
   }
 
@@ -563,7 +567,7 @@ export async function runBuiltInStep({
     const implementation = requiredImplementationFrom(state);
     const repository = repositoryFrom(state);
     const workspace = implementationWorkspaceFrom(state);
-    const invocation = jiraTaskInvocationFrom(state);
+    const invocation = jiraIssueInvocationFrom(state);
 
     return await commitChanges({
       enabled: implementation.commit.enabled,
@@ -602,7 +606,8 @@ export async function runBuiltInStep({
     const resolved = resolvedInput(input, state);
     const implementation = requiredImplementationFrom(state);
     const workspace = implementationWorkspaceFrom(state);
-    const invocation = jiraTaskInvocationFrom(state);
+    const invocation = jiraIssueInvocationFrom(state);
+    const task = jiraIssueContextFrom(invocation);
 
     return await openPullRequest({
       enabled: implementation.pull_request.enabled,
@@ -613,7 +618,7 @@ export async function runBuiltInStep({
       baseRef: implementation.pull_request.base_ref,
       draft: implementation.pull_request.draft,
       title: implementationTitle(invocation),
-      body: invocation.jira.description
+      body: task.description
     });
   }
 
@@ -641,7 +646,7 @@ export async function runBuiltInStep({
       "pull_request"
     );
     const reportInput = {
-      invocation: jiraTaskInvocationFrom(state),
+      invocation: jiraIssueInvocationFrom(state),
       status: implementationReportStatus({
         validation,
         commit,

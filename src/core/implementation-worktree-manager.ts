@@ -1,9 +1,10 @@
 import { mkdir as fsMkdir } from "node:fs/promises";
 import path from "node:path";
 import { runGit as defaultRunGit } from "./git.js";
+import { jiraIssueContextFrom } from "./jira-issue-context.js";
 import { safeJoin } from "./path-security.js";
 import type {
-  JiraTaskInvocation,
+  Invocation,
   RepositoryConfig,
   WorkspaceRecord
 } from "./types.js";
@@ -181,13 +182,16 @@ async function validateBaseRef({
 }
 
 async function availableBranch({
-  invocation,
+  task,
   repository,
   branchPattern,
   maxBranchLength,
   runGit
 }: {
-  invocation: JiraTaskInvocation;
+  task: {
+    issueKey: string;
+    title?: string;
+  };
   repository: RepositoryConfig;
   branchPattern: string;
   maxBranchLength?: number;
@@ -198,8 +202,8 @@ async function availableBranch({
   while (true) {
     const suffix = attempt === 1 ? "" : `-${attempt}`;
     const branch = branchName({
-      issueKey: invocation.jira.issue_key,
-      summary: invocation.jira.summary,
+      issueKey: task.issueKey,
+      summary: task.title ?? task.issueKey,
       branchPattern,
       suffix,
       maxBranchLength
@@ -224,7 +228,7 @@ export async function prepareImplementationWorktree({
   runGit = defaultRunGit,
   mkdir = fsMkdir
 }: {
-  invocation: JiraTaskInvocation;
+  invocation: Invocation;
   repository: RepositoryConfig;
   workspaceRoot: string;
   runId: string;
@@ -234,6 +238,7 @@ export async function prepareImplementationWorktree({
   runGit?: RunGit;
   mkdir?: Mkdir;
 }): Promise<ImplementationWorktreeRecord> {
+  const task = jiraIssueContextFrom(invocation);
   const worktreePath = await safeJoin(workspaceRoot, [repository.id, runId]);
 
   await validateBaseRef({ repository, baseRef, runGit });
@@ -246,7 +251,7 @@ export async function prepareImplementationWorktree({
     ])
   ).trim();
   const branch = await availableBranch({
-    invocation,
+    task,
     repository,
     branchPattern,
     maxBranchLength,

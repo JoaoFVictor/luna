@@ -6,7 +6,6 @@ import type {
   Finding,
   ImplementationConfig,
   Invocation,
-  JiraTaskInvocation,
   PullRequestArtifact,
   PushBranchArtifact,
   RepoContext,
@@ -63,23 +62,30 @@ const repository: RepositoryConfig = {
   ]
 };
 
-const jiraInvocation: JiraTaskInvocation = {
-  target: "jira_task",
-  workflow: "implementation",
-  jira: {
-    instance_id: "company",
-    issue_key: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    summary: "Fix checkout validation",
-    description: "Reject invalid checkout payloads.",
-    acceptance_criteria: "Invalid payloads fail validation.",
-    status: "To Do",
-    issue_type: "Task"
-  },
+const jiraInvocation: Invocation = {
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  action: "selected",
   repository: {
     provider: "github",
     owner: "swinggo-dev",
     name: "swg-front-nuxt"
+  },
+  subject: {
+    type: "jira_issue",
+    id: "ABC-123",
+    url: "https://company.atlassian.net/browse/ABC-123",
+    title: "Fix checkout validation"
+  },
+  payload: {
+    jira: {
+      instance_id: "company",
+      description: "Reject invalid checkout payloads.",
+      acceptance_criteria: "Invalid payloads fail validation.",
+      status: "To Do",
+      issue_type: "Task"
+    }
   }
 };
 

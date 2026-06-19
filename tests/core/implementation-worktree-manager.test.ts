@@ -6,7 +6,7 @@ import {
   prepareImplementationWorktree
 } from "../../src/core/implementation-worktree-manager.js";
 import type {
-  JiraTaskInvocation,
+  Invocation,
   RepositoryConfig
 } from "../../src/core/types.js";
 
@@ -24,23 +24,30 @@ const repository: RepositoryConfig = {
   remote: "origin"
 };
 
-const invocation: JiraTaskInvocation = {
-  target: "jira_task",
-  workflow: "implementation",
-  jira: {
-    instance_id: "company",
-    issue_key: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    summary: "Fix checkout validation",
-    description: "Reject invalid checkout payloads.",
-    acceptance_criteria: "Invalid payloads fail validation.",
-    status: "To Do",
-    issue_type: "Task"
-  },
+const invocation: Invocation = {
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  action: "selected",
   repository: {
     provider: "github",
     owner: "swinggo-dev",
     name: "swg-front-nuxt"
+  },
+  subject: {
+    type: "jira_issue",
+    id: "ABC-123",
+    url: "https://company.atlassian.net/browse/ABC-123",
+    title: "Fix checkout validation"
+  },
+  payload: {
+    jira: {
+      instance_id: "company",
+      description: "Reject invalid checkout payloads.",
+      acceptance_criteria: "Invalid payloads fail validation.",
+      status: "To Do",
+      issue_type: "Task"
+    }
   }
 };
 
@@ -268,10 +275,10 @@ describe("implementation worktree manager", () => {
       const record = await prepareImplementationWorktree({
         invocation: {
           ...invocation,
-          jira: {
-            ...invocation.jira,
-            issue_key: "ABC-123",
-            summary: "Corrigir validação de checkout com documentos extras"
+          subject: {
+            ...invocation.subject!,
+            id: "ABC-123",
+            title: "Corrigir validação de checkout com documentos extras"
           }
         },
         repository,

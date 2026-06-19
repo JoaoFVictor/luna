@@ -4,6 +4,7 @@ import {
   githubPullRequestContextFrom,
   type GitHubPullRequestContext
 } from "./github-pr-context.js";
+import { jiraIssueContextFrom } from "./jira-issue-context.js";
 import { remoteUrlMatches } from "./remote-url.js";
 import type {
   ImplementationConfig,
@@ -69,16 +70,13 @@ function validateInvocation(invocation: Invocation): GitHubPullRequestContext {
 }
 
 function validateWriteInvocation(writeInvocation: Invocation): void {
-  if (
-    writeInvocation.target !== "jira_task" ||
-    writeInvocation.workflow === "" ||
-    writeInvocation.jira.issue_key === "" ||
-    writeInvocation.repository.owner === "" ||
-    writeInvocation.repository.name === ""
-  ) {
+  try {
+    jiraIssueContextFrom(writeInvocation);
+  } catch (cause) {
     throw preflightError(
       "Invocation is missing required write-mode metadata",
-      "invalid_invocation"
+      "invalid_invocation",
+      cause
     );
   }
 }
