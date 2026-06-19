@@ -1,8 +1,9 @@
 import { runGit as defaultRunGit } from "./git.js";
+import { githubPullRequestContextFrom } from "./github-pr-context.js";
 import type {
   ChangedFile,
   FileExcerpt,
-  GithubPrInvocation,
+  Invocation,
   RepoContext,
   RepositoryConfig
 } from "./types.js";
@@ -10,7 +11,7 @@ import type {
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
 type CollectRepoContextOptions = {
-  invocation: GithubPrInvocation;
+  invocation: Invocation;
   repository: RepositoryConfig;
   runGit?: RunGit;
   maxChangedFiles?: number;
@@ -244,8 +245,9 @@ export async function collectRepoContext({
   maxDiffBytes = DEFAULT_MAX_DIFF_BYTES,
   maxExcerptBytes = DEFAULT_MAX_EXCERPT_BYTES
 }: CollectRepoContextOptions): Promise<RepoContext> {
-  const baseSha = invocation.references.base_sha;
-  const headSha = invocation.references.head_sha;
+  const pullRequest = githubPullRequestContextFrom(invocation);
+  const baseSha = pullRequest.references.base_sha;
+  const headSha = pullRequest.references.head_sha;
   const cwd = repository.path;
 
   const mergeBase = (await runGit(cwd, ["merge-base", baseSha, headSha])).trim();

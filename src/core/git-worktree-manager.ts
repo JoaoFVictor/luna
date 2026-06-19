@@ -4,9 +4,10 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { runGit as defaultRunGit } from "./git.js";
+import { githubPullRequestContextFrom } from "./github-pr-context.js";
 import { isInsideRoot, safeJoin } from "./path-security.js";
 import type {
-  GithubPrInvocation,
+  Invocation,
   RepositoryConfig,
   WorkspaceRecord
 } from "./types.js";
@@ -58,12 +59,12 @@ function isMissingCommitError(cause: unknown): boolean {
   );
 }
 
-function pullHeadRef(invocation: GithubPrInvocation, remote: string): string {
-  return `+refs/pull/${invocation.pull_number}/head:refs/remotes/${remote}/pull/${invocation.pull_number}/head`;
+function pullHeadRef(pullNumber: number, remote: string): string {
+  return `+refs/pull/${pullNumber}/head:refs/remotes/${remote}/pull/${pullNumber}/head`;
 }
 
-function fetchedPullHeadRef(invocation: GithubPrInvocation, remote: string): string {
-  return `refs/remotes/${remote}/pull/${invocation.pull_number}/head`;
+function fetchedPullHeadRef(pullNumber: number, remote: string): string {
+  return `refs/remotes/${remote}/pull/${pullNumber}/head`;
 }
 
 function assertWorkspaceRecordMatches(
@@ -139,32 +140,34 @@ export async function prepare({
   runGit = defaultRunGit,
   mkdir = fsMkdir
 }: {
-  invocation: GithubPrInvocation;
+  invocation: Invocation;
   repository: RepositoryConfig;
   workspaceRoot: string;
   runId: string;
   runGit?: RunGit;
   mkdir?: Mkdir;
 }): Promise<WorkspaceRecord> {
+  const pullRequest = githubPullRequestContextFrom(invocation);
+  const { base_sha: baseSha, head_sha: headSha } = pullRequest.references;
   const worktreePath = await safeJoin(workspaceRoot, [repository.id, runId]);
 
   await mkdir(path.dirname(worktreePath), { recursive: true, mode: 0o700 });
-  await runGit(repository.path, ["fetch", repository.remote, invocation.base_ref]);
+  await runGit(repository.path, ["fetch", repository.remote, pullRequest.base_ref]);
   await runGit(repository.path, [
     "fetch",
     repository.remote,
-    pullHeadRef(invocation, repository.remote)
+    pullHeadRef(pullRequest.pull_number, repository.remote)
   ]);
   await runGit(repository.path, [
     "cat-file",
     "-e",
-    `${invocation.references.base_sha}^{commit}`
+    `${baseSha}^{commit}`
   ]);
   try {
     await runGit(repository.path, [
       "cat-file",
       "-e",
-      `${invocation.references.head_sha}^{commit}`
+      `${headSha}^{commit}`
     ]);
   } catch (cause) {
     if (!isMissingCommitError(cause)) {
@@ -172,7 +175,7 @@ export async function prepare({
     }
 
     const error = worktreeError(
-      `Expected head commit is missing: ${invocation.references.head_sha}`,
+      `Expected head commit is missing: ${headSha}`,
       "head_sha_mismatch"
     );
     error.cause = cause;
@@ -182,11 +185,11 @@ export async function prepare({
     "worktree",
     "add",
     worktreePath,
-    fetchedPullHeadRef(invocation, repository.remote)
+    fetchedPullHeadRef(pullRequest.pull_number, repository.remote)
   ]);
 
   const actualHead = (await runGit(worktreePath, ["rev-parse", "HEAD"])).trim();
-  if (actualHead !== invocation.references.head_sha) {
+  if (actualHead !== headSha) {
     let cleanupCause: unknown;
 
     try {
@@ -197,8 +200,8 @@ export async function prepare({
 
     const message =
       cleanupCause === undefined
-        ? `Worktree HEAD ${actualHead} did not match expected ${invocation.references.head_sha}`
-        : `Worktree HEAD ${actualHead} did not match expected ${invocation.references.head_sha}; cleanup failed`;
+        ? `Worktree HEAD ${actualHead} did not match expected ${headSha}`
+        : `Worktree HEAD ${actualHead} did not match expected ${headSha}; cleanup failed`;
     const error = worktreeError(message, "head_sha_mismatch");
     if (cleanupCause !== undefined) {
       error.cause = cleanupCause;

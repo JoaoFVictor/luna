@@ -22,6 +22,7 @@ import {
   buildImplementationReportJson as defaultBuildImplementationReportJson,
   buildImplementationReportMarkdown as defaultBuildImplementationReportMarkdown
 } from "./implementation-report-builder.js";
+import { githubPullRequestContextFrom } from "./github-pr-context.js";
 import { runPreflight as defaultRunPreflight } from "./preflight.js";
 import { validateFindingEvidence as defaultValidateFindingEvidence } from "./evidence-validator.js";
 import { resolveWorkflowInput, type WorkflowState } from "./workflow-state.js";
@@ -30,7 +31,6 @@ import type {
   CodeReviewFindings,
   CommitChangesArtifact,
   Finding,
-  GithubPrInvocation,
   ImplementationConfig,
   Invocation,
   JiraTaskInvocation,
@@ -67,13 +67,13 @@ export type BuiltInStepDependencies = {
     implementation?: ImplementationConfig["implementation"];
   }) => MaybePromise<unknown>;
   prepareWorktree?: (input: {
-    invocation: GithubPrInvocation;
+    invocation: Invocation;
     repository: RepositoryConfig;
     workspaceRoot: string;
     runId: string;
   }) => MaybePromise<WorkspaceRecord>;
   collectRepoContext?: (input: {
-    invocation: GithubPrInvocation;
+    invocation: Invocation;
     repository: RepositoryConfig;
   }) => MaybePromise<RepoContext>;
   validateFindingEvidence?: (
@@ -87,7 +87,7 @@ export type BuiltInStepDependencies = {
     workspace?: WorkspaceRecord;
   }) => unknown;
   buildFinalReportMarkdown?: (input: {
-    invocation: GithubPrInvocation;
+    invocation: Invocation;
     findings: readonly Finding[];
     acceptance: AcceptanceDecision;
   }) => string;
@@ -215,15 +215,17 @@ function asRecord(value: unknown, name: string, code: BuiltInErrorCode): Record<
   return value as Record<string, unknown>;
 }
 
-function githubPrInvocationFrom(state: WorkflowState): GithubPrInvocation {
+function githubPullRequestInvocationFrom(state: WorkflowState): Invocation {
   const invocation = requiredState(
     state.invocation as Invocation | undefined,
     "invocation"
   );
 
-  if (invocation.target !== "github_pr") {
+  try {
+    githubPullRequestContextFrom(invocation);
+  } catch {
     throw builtInError(
-      `Built-in step requires github_pr invocation: ${invocation.target}`,
+      `Built-in step requires GitHub pull request invocation`,
       "built_in_unsupported"
     );
   }
@@ -432,7 +434,7 @@ export async function runBuiltInStep({
     const runId = runIdFrom(state);
 
     return await prepareWorktree({
-      invocation: githubPrInvocationFrom(state),
+      invocation: githubPullRequestInvocationFrom(state),
       repository: repositoryFrom(state),
       workspaceRoot: workspaceRootFrom(state),
       runId
@@ -444,7 +446,7 @@ export async function runBuiltInStep({
     const workspace = workspaceFrom(state);
 
     return await collectRepoContext({
-      invocation: githubPrInvocationFrom(state),
+      invocation: githubPullRequestInvocationFrom(state),
       repository: {
         ...repositoryFrom(state),
         path: workspace.path
@@ -495,7 +497,7 @@ export async function runBuiltInStep({
         workspace: state.workspace as WorkspaceRecord | undefined
       }),
       markdown: buildFinalReportMarkdown({
-        invocation: githubPrInvocationFrom(state),
+        invocation: githubPullRequestInvocationFrom(state),
         findings,
         acceptance
       })
@@ -519,16 +521,16 @@ export async function runBuiltInStep({
   }
 
   if (uses === "collect_task_context") {
-    const invocation = jiraTaskInvocationFrom(state);
+    const taskInvocation = jiraTaskInvocationFrom(state);
 
     return {
       jira: {
-        issue_key: invocation.jira.issue_key,
-        summary: invocation.jira.summary,
-        description: invocation.jira.description,
-        acceptance_criteria: invocation.jira.acceptance_criteria
+        issue_key: taskInvocation.jira.issue_key,
+        summary: taskInvocation.jira.summary,
+        description: taskInvocation.jira.description,
+        acceptance_criteria: taskInvocation.jira.acceptance_criteria
       },
-      repository: invocation.repository
+      repository: taskInvocation.repository
     };
   }
 

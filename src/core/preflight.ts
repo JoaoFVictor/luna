@@ -1,8 +1,11 @@
 import { stat as fsStat } from "node:fs/promises";
 import { runGit as defaultRunGit } from "./git.js";
+import {
+  githubPullRequestContextFrom,
+  type GitHubPullRequestContext
+} from "./github-pr-context.js";
 import { remoteUrlMatches } from "./remote-url.js";
 import type {
-  GithubPrInvocation,
   ImplementationConfig,
   Invocation,
   RepositoryConfig
@@ -53,31 +56,25 @@ function preflightError(
   return error;
 }
 
-function validateInvocation(invocation: GithubPrInvocation): void {
-  if (
-    invocation.target !== "github_pr" ||
-    !Number.isSafeInteger(invocation.pull_number) ||
-    invocation.pull_number < 1 ||
-    invocation.base_repository.owner === "" ||
-    invocation.base_repository.name === "" ||
-    typeof invocation.base_ref !== "string" ||
-    invocation.base_ref === "" ||
-    invocation.head_repository.owner === "" ||
-    invocation.head_repository.name === "" ||
-    invocation.references.base_sha === "" ||
-    invocation.references.head_sha === ""
-  ) {
-    throw preflightError("Invocation is missing required PR metadata", "invalid_invocation");
+function validateInvocation(invocation: Invocation): GitHubPullRequestContext {
+  try {
+    return githubPullRequestContextFrom(invocation);
+  } catch (cause) {
+    throw preflightError(
+      "Invocation is missing required PR metadata",
+      "invalid_invocation",
+      cause
+    );
   }
 }
 
-function validateWriteInvocation(invocation: Invocation): void {
+function validateWriteInvocation(writeInvocation: Invocation): void {
   if (
-    invocation.target !== "jira_task" ||
-    invocation.workflow === "" ||
-    invocation.jira.issue_key === "" ||
-    invocation.repository.owner === "" ||
-    invocation.repository.name === ""
+    writeInvocation.target !== "jira_task" ||
+    writeInvocation.workflow === "" ||
+    writeInvocation.jira.issue_key === "" ||
+    writeInvocation.repository.owner === "" ||
+    writeInvocation.repository.name === ""
   ) {
     throw preflightError(
       "Invocation is missing required write-mode metadata",
@@ -175,11 +172,13 @@ export async function runPreflight({
   stat?: Stat;
 }): Promise<PreflightResult> {
   const mode = workflow?.mode ?? "git_managed_read_only";
+  let pullRequestContext: GitHubPullRequestContext | undefined;
+
   if (mode === "git_managed_write") {
     validateWriteInvocation(invocation);
     assertWriteGateConsistency(implementation);
   } else {
-    validateInvocation(invocation as GithubPrInvocation);
+    pullRequestContext = validateInvocation(invocation);
   }
 
   await assertRepositoryPathExists(repository, stat);
@@ -201,11 +200,11 @@ export async function runPreflight({
       remote_url: remoteUrl
     },
     expected:
-      invocation.target === "github_pr"
+      pullRequestContext !== undefined
         ? {
-            base_ref: invocation.base_ref,
-            base_sha: invocation.references.base_sha,
-            head_sha: invocation.references.head_sha
+            base_ref: pullRequestContext.base_ref,
+            base_sha: pullRequestContext.references.base_sha,
+            head_sha: pullRequestContext.references.head_sha
           }
         : {}
   };

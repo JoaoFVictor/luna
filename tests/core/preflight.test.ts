@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { runPreflight } from "../../src/core/preflight.js";
 import type {
-  GithubPrInvocation,
   ImplementationConfig,
   JiraTaskInvocation
 } from "../../src/core/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
+
+const baseRef = gitInvocation.references!.base_ref!;
 
 type FakeGitCall = {
   cwd: string;
@@ -123,11 +124,15 @@ describe("preflight", () => {
   });
 
   it("throws invalid_invocation when base_ref is missing", async () => {
-    const { base_ref: _baseRef, ...invalidInvocation } = gitInvocation;
-
     await expect(
       runPreflight({
-        invocation: invalidInvocation as GithubPrInvocation,
+        invocation: {
+          ...gitInvocation,
+          references: {
+            base_sha: gitInvocation.references!.base_sha!,
+            head_sha: gitInvocation.references!.head_sha!
+          }
+        },
         repository: gitRepository,
         runGit: async () => "",
         stat: async () => ({ isDirectory: () => true })
@@ -173,7 +178,7 @@ describe("preflight", () => {
       expected: {
         base_sha: gitInvocation.references.base_sha,
         head_sha: gitInvocation.references.head_sha,
-        base_ref: gitInvocation.base_ref
+        base_ref: baseRef
       }
     });
   });

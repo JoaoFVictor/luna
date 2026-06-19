@@ -1,7 +1,8 @@
+import { githubPullRequestContextFrom } from "./github-pr-context.js";
 import type {
   AcceptanceDecision,
   Finding,
-  GithubPrInvocation,
+  Invocation,
   WorkspaceRecord
 } from "./types.js";
 
@@ -14,7 +15,7 @@ const severityRank: Record<Finding["severity"], number> = {
 };
 
 type MarkdownOptions = {
-  invocation: GithubPrInvocation;
+  invocation: Invocation;
   findings: readonly Finding[];
   acceptance: AcceptanceDecision;
 };
@@ -78,10 +79,11 @@ export function buildFinalReportMarkdown({
   findings,
   acceptance
 }: MarkdownOptions): string {
+  const pullRequest = githubPullRequestContextFrom(invocation);
   const lines = [
     "# Luna Code Review",
     "",
-    `PR: ${invocation.owner}/${invocation.repo}#${invocation.pull_number}`,
+    `PR: ${pullRequest.owner}/${pullRequest.repo}#${pullRequest.pull_number}`,
     `Acceptance: ${prActionFromAcceptance(acceptance)}`,
     `Gate status: ${acceptance.status}`,
     "",

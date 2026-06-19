@@ -9,6 +9,11 @@ import {
 import type { WorkspaceRecord } from "../../src/core/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
+const pullNumber = 42;
+const baseRef = gitInvocation.references!.base_ref!;
+const baseSha = gitInvocation.references!.base_sha!;
+const headSha = gitInvocation.references!.head_sha!;
+
 type GitCall = {
   cwd: string;
   args: readonly string[];
@@ -41,7 +46,7 @@ describe("git worktree manager", () => {
           calls.push({ cwd, args });
 
           if (args[0] === "rev-parse" && args[1] === "HEAD") {
-            return `${gitInvocation.references.head_sha}\n`;
+            return `${headSha}\n`;
           }
 
           return "";
@@ -66,23 +71,23 @@ describe("git worktree manager", () => {
       expect(calls).toEqual([
         {
           cwd: gitRepository.path,
-          args: ["fetch", gitRepository.remote, gitInvocation.base_ref]
+          args: ["fetch", gitRepository.remote, baseRef]
         },
         {
           cwd: gitRepository.path,
           args: [
             "fetch",
             gitRepository.remote,
-            `+refs/pull/${gitInvocation.pull_number}/head:refs/remotes/${gitRepository.remote}/pull/${gitInvocation.pull_number}/head`
+            `+refs/pull/${pullNumber}/head:refs/remotes/${gitRepository.remote}/pull/${pullNumber}/head`
           ]
         },
         {
           cwd: gitRepository.path,
-          args: ["cat-file", "-e", `${gitInvocation.references.base_sha}^{commit}`]
+          args: ["cat-file", "-e", `${baseSha}^{commit}`]
         },
         {
           cwd: gitRepository.path,
-          args: ["cat-file", "-e", `${gitInvocation.references.head_sha}^{commit}`]
+          args: ["cat-file", "-e", `${headSha}^{commit}`]
         },
         {
           cwd: gitRepository.path,
@@ -90,7 +95,7 @@ describe("git worktree manager", () => {
             "worktree",
             "add",
             expectedWorktreePath,
-            `refs/remotes/${gitRepository.remote}/pull/${gitInvocation.pull_number}/head`
+            `refs/remotes/${gitRepository.remote}/pull/${pullNumber}/head`
           ]
         },
         {
@@ -125,7 +130,7 @@ describe("git worktree manager", () => {
           runGit: async (_cwd, args) => {
             if (
               args[0] === "cat-file" &&
-              args.at(-1) === `${gitInvocation.references.head_sha}^{commit}`
+              args.at(-1) === `${headSha}^{commit}`
             ) {
               throw missingCommit;
             }
@@ -159,7 +164,7 @@ describe("git worktree manager", () => {
           runGit: async (_cwd, args) => {
             if (
               args[0] === "cat-file" &&
-              args.at(-1) === `${gitInvocation.references.head_sha}^{commit}`
+              args.at(-1) === `${headSha}^{commit}`
             ) {
               throw operationalFailure;
             }
@@ -182,7 +187,10 @@ describe("git worktree manager", () => {
       await prepare({
         invocation: {
           ...gitInvocation,
-          base_ref: "release/1.2"
+          references: {
+            ...gitInvocation.references,
+            base_ref: "release/1.2"
+          }
         },
         repository: gitRepository,
         workspaceRoot,
@@ -191,7 +199,7 @@ describe("git worktree manager", () => {
           calls.push({ cwd, args });
 
           if (args[0] === "rev-parse" && args[1] === "HEAD") {
-            return `${gitInvocation.references.head_sha}\n`;
+            return `${headSha}\n`;
           }
 
           return "";
