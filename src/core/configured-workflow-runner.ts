@@ -47,7 +47,7 @@ type MaybePromise<T> = T | Promise<T>;
 
 export type RunAgentStepOptions = {
   agent: AgentDefinition;
-  node: WorkflowNode;
+  node: Extract<WorkflowNode, { type: "agent" }>;
   model: ReturnType<typeof toFlueModelOptions>;
   input: Record<string, unknown>;
   state: WorkflowState;

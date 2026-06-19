@@ -3,12 +3,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreatedAgent } from "@flue/runtime";
-import {
-  AcceptanceDecisionSchema,
-  CodeReviewFindingsSchema,
-  ReviewPlanSchema,
-  type RepoContext
-} from "../../src/core/types.js";
+import type {
+  ConfiguredWorkflowRunnerDependencies,
+  RunConfiguredWorkflowOptions
+} from "../../src/core/configured-workflow-runner.js";
 import { gitInvocation } from "../fixtures/git-repo.js";
 
 type PromptCall = {
@@ -23,104 +21,22 @@ type InitCall = {
 
 const originalEnv = { ...process.env };
 
-async function writeConfigRoot(modelsYaml: string): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "luna-flue-config-"));
-
-  await writeFile(
-    path.join(root, "app.yaml"),
-    [
-      "workspace:",
-      "  strategy: git_worktree",
-      "  root: /tmp/luna-flue-workspaces",
-      "  preserve_on_success: false",
-      "  preserve_on_failure: true",
-      "artifacts:",
-      "  root: /tmp/luna-flue-artifacts",
-      ""
-    ].join("\n")
-  );
-  await writeFile(
-    path.join(root, "routing.yaml"),
-    [
-      "routes:",
-      "  - name: explicit-target",
-      "    when:",
-      "      has_target: true",
-      "    use_target_from_input: true",
-      ""
-    ].join("\n")
-  );
-  await writeFile(
-    path.join(root, "repositories.yaml"),
-    [
-      "repositories:",
-      "  - id: octo-hello",
-      "    provider: github",
-      "    owner: octo-org",
-      "    name: hello-world",
-      "    path: /tmp/luna-flue-repo",
-      "    remote: origin",
-      ""
-    ].join("\n")
-  );
-  await writeFile(path.join(root, "models.yaml"), modelsYaml);
-
-  return root;
-}
-
 function resetEnv(): void {
   process.env = { ...originalEnv };
 }
 
-async function importWorkflowWithOrchestratorMock(
-  executeCodeReview: (options: {
-    dependencies?: {
-      collectRepoContext?: (options: unknown) => Promise<unknown>;
-      runStructuredNode?: (options: {
-        nodeName: string;
-        schema: unknown;
-        artifactStore: unknown;
-        execute: () => Promise<unknown>;
-      }) => Promise<unknown>;
-    };
-    nodes: {
-      reviewPlanner: { execute: () => Promise<unknown> };
-      codeReviewer: { execute: () => Promise<unknown> };
-      acceptanceReviewer: { execute: () => Promise<unknown> };
-    };
-  }) => Promise<unknown>
-): Promise<typeof import("../../src/workflows/code-review.js")> {
+async function importWorkflowWithRunnerMock(
+  modulePath: string,
+  runConfiguredWorkflow: (options: RunConfiguredWorkflowOptions) => Promise<unknown>
+): Promise<{ run: (ctx: never) => Promise<unknown> }> {
   vi.resetModules();
-  vi.doMock("../../src/core/code-review-orchestrator.js", () => ({
-    executeCodeReview
+  vi.doMock("../../src/core/configured-workflow-runner.js", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../../src/core/configured-workflow-runner.js")>()),
+    runConfiguredWorkflow
   }));
 
-  return await import("../../src/workflows/code-review.js");
+  return await import(modulePath) as { run: (ctx: never) => Promise<unknown> };
 }
-
-const repoContext: RepoContext = {
-  repository: {
-    owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
-  },
-  base_sha: gitInvocation.references.base_sha,
-  head_sha: gitInvocation.references.head_sha,
-  files: [
-    {
-      path: "src/auth.ts",
-      status: "modified",
-      additions: 1,
-      deletions: 0,
-      patch: "@@ -1 +1 @@\n+export const ok = true;\n",
-      excerpt: {
-        start_line: 1,
-        end_line: 1,
-        content: "export const ok = true;\n"
-      }
-    }
-  ]
-};
 
 describe("flue modules", () => {
   beforeEach(() => {
@@ -128,8 +44,7 @@ describe("flue modules", () => {
   });
 
   afterEach(() => {
-    vi.doUnmock("../../src/core/code-review-orchestrator.js");
-    vi.doUnmock("../../src/core/repo-context-collector.js");
+    vi.doUnmock("../../src/core/configured-workflow-runner.js");
     vi.resetModules();
     vi.restoreAllMocks();
     resetEnv();
@@ -156,153 +71,173 @@ describe("flue modules", () => {
     expect((mod.description as string).trim()).not.toBe("");
   });
 
-  it("exports a workflow run function", async () => {
-    const workflow = await importWorkflowWithOrchestratorMock(async () => ({
+  it.each([
+    ["luna", "../../src/workflows/luna.js"],
+    ["code-review", "../../src/workflows/code-review.js"]
+  ])("exports a %s workflow run function", async (_name, modulePath) => {
+    const workflow = await importWorkflowWithRunnerMock(modulePath, async () => ({
       status: "success"
     }));
 
     expect(typeof workflow.run).toBe("function");
   });
 
-  it("reports missing model env values during workflow startup", async () => {
-    const configRoot = await writeConfigRoot([
-      "model_profiles:",
-      "  planner:",
-      "    model: ${PLANNER_MODEL}",
-      "    reasoning_effort: medium",
-      "  reviewer:",
-      "    model: openai/reviewer-model",
-      "    reasoning_effort: high",
-      "  acceptance:",
-      "    model: openai/acceptance-model",
-      "    reasoning_effort: medium",
-      ""
-    ].join("\n"));
-    process.env.LUNA_CONFIG_ROOT = configRoot;
-    delete process.env.PLANNER_MODEL;
+  it("runs the generic luna workflow without a default workflow id", async () => {
+    const runConfiguredWorkflow = vi.fn(
+      async (_options: RunConfiguredWorkflowOptions) => ({ status: "success" })
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
 
-    const workflow = await importWorkflowWithOrchestratorMock(async () => {
-      throw new Error("executeCodeReview should not run without models");
-    });
+    await workflow.run({ payload: gitInvocation } as never);
 
-    await expect(
-      workflow.run({ payload: gitInvocation } as never)
-    ).rejects.toMatchObject({
-      code: "model_env_missing",
-      message: "Missing model environment variable PLANNER_MODEL"
-    });
+    expect(runConfiguredWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invocation: gitInvocation,
+        configRoot: "config",
+        workflowsRoot: "workflows",
+        agentsRoot: "agents"
+      })
+    );
+    const options = runConfiguredWorkflow.mock.calls[0]?.[0];
+    expect(options).not.toHaveProperty("defaultWorkflowId");
   });
 
-  it("reports missing required workflow model profiles before prompting", async () => {
-    const configRoot = await writeConfigRoot([
-      "model_profiles:",
-      "  reviewer:",
-      "    model: openai/reviewer-model",
-      "    reasoning_effort: high",
-      "  acceptance:",
-      "    model: openai/acceptance-model",
-      "    reasoning_effort: medium",
-      ""
-    ].join("\n"));
-    process.env.LUNA_CONFIG_ROOT = configRoot;
+  it("keeps code-review as a compatibility wrapper around the configured runner", async () => {
+    const runConfiguredWorkflow = vi.fn(
+      async (_options: RunConfiguredWorkflowOptions) => ({ status: "success" })
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/code-review.js",
+      runConfiguredWorkflow
+    );
 
-    const workflow = await importWorkflowWithOrchestratorMock(async () => {
-      throw new Error("executeCodeReview should not run without model profiles");
-    });
+    await workflow.run({ payload: gitInvocation } as never);
 
-    await expect(
-      workflow.run({ payload: gitInvocation } as never)
-    ).rejects.toMatchObject({
-      code: "model_profile_missing",
-      message: "Model profile planner is not configured for code-review workflow"
-    });
+    expect(runConfiguredWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invocation: gitInvocation,
+        defaultWorkflowId: "code-review",
+        configRoot: "config",
+        workflowsRoot: "workflows",
+        agentsRoot: "agents"
+      })
+    );
   });
 
-  it("rejects model specs that Flue cannot run", async () => {
-    const configRoot = await writeConfigRoot([
-      "model_profiles:",
-      "  planner:",
-      "    model: gpt-5",
-      "    reasoning_effort: medium",
-      "  reviewer:",
-      "    model: openai/reviewer-model",
-      "    reasoning_effort: high",
-      "  acceptance:",
-      "    model: openai/acceptance-model",
-      "    reasoning_effort: medium",
-      ""
-    ].join("\n"));
-    process.env.LUNA_CONFIG_ROOT = configRoot;
-
-    const workflow = await importWorkflowWithOrchestratorMock(async () => {
-      throw new Error("executeCodeReview should not run with invalid model specs");
-    });
-
-    await expect(
-      workflow.run({ payload: gitInvocation } as never)
-    ).rejects.toMatchObject({
-      code: "model_spec_invalid",
-      message: "Model profile planner must use provider/model format"
-    });
-  });
-
-  it("passes resolved model profiles to Flue prompts", async () => {
+  it("uses Flue context to execute configured agent steps", async () => {
     const promptCalls: PromptCall[] = [];
     const initCalls: InitCall[] = [];
-    const configRoot = await writeConfigRoot([
-      "model_profiles:",
-      "  planner:",
-      "    model: ${PLANNER_MODEL}",
-      "    reasoning_effort: medium",
-      "  reviewer:",
-      "    model: ${REVIEWER_MODEL}",
-      "    reasoning_effort: high",
-      "  acceptance:",
-      "    model: ${ACCEPTANCE_MODEL}",
-      "    reasoning_effort: low",
-      ""
-    ].join("\n"));
-    process.env.LUNA_CONFIG_ROOT = configRoot;
-    process.env.PLANNER_MODEL = "openai/planner-test";
-    process.env.REVIEWER_MODEL = "openai/reviewer-test";
-    process.env.ACCEPTANCE_MODEL = "openai/acceptance-test";
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-"));
+    const instructionsPath = path.join(root, "instructions.md");
+    await writeFile(instructionsPath, "Follow the configured instructions.\n");
 
-    vi.doMock("../../src/core/repo-context-collector.js", () => ({
-      collectRepoContext: async () => repoContext
-    }));
-    const workflow = await importWorkflowWithOrchestratorMock(async (options) => {
-      const { dependencies, nodes } = options;
-      const artifactStore = {
-        writeJsonInDirectory: vi.fn()
-      };
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentStep =
+          options.dependencies?.runAgentStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentStep"]
+          >;
 
-      await dependencies?.collectRepoContext?.({});
-      const reviewPlan = await dependencies?.runStructuredNode?.({
-        nodeName: "review-planner",
-        schema: ReviewPlanSchema,
-        artifactStore,
-        execute: nodes.reviewPlanner.execute
-      });
-      const findings = await dependencies?.runStructuredNode?.({
-        nodeName: "code-reviewer",
-        schema: CodeReviewFindingsSchema,
-        artifactStore,
-        execute: nodes.codeReviewer.execute
-      });
-      const acceptance = await dependencies?.runStructuredNode?.({
-        nodeName: "acceptance-reviewer",
-        schema: AcceptanceDecisionSchema,
-        artifactStore,
-        execute: nodes.acceptanceReviewer.execute
-      });
+        const reviewPlan = await runAgentStep({
+          agent: {
+            id: "review-planner",
+            description: "Plan the review",
+            model_profile: "planner",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath: path.join(root, "output.schema.json")
+          },
+          node: {
+            id: "review_plan",
+            type: "agent",
+            agent: "review-planner",
+            output_schema: "review_plan",
+            input: {},
+            artifact: "review-plan.json"
+          },
+          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          input: { repo_context: { files: [] } },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
 
-      return {
-        status: "success",
-        reviewPlan,
-        findings,
-        acceptance
-      };
-    });
+        const findings = await runAgentStep({
+          agent: {
+            id: "code-reviewer",
+            description: "Review code",
+            model_profile: "reviewer",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath: path.join(root, "output.schema.json")
+          },
+          node: {
+            id: "code_review",
+            type: "agent",
+            agent: "code-reviewer",
+            output_schema: "code_review_findings",
+            input: {},
+            artifact: "code-review-findings.json"
+          },
+          model: { model: "openai/reviewer-test", thinkingLevel: "high" },
+          input: { review_plan: reviewPlan },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: { review_plan: reviewPlan }
+          }
+        });
+
+        const acceptance = await runAgentStep({
+          agent: {
+            id: "acceptance-reviewer",
+            description: "Accept review",
+            model_profile: "acceptance",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath: path.join(root, "output.schema.json")
+          },
+          node: {
+            id: "acceptance",
+            type: "agent",
+            agent: "acceptance-reviewer",
+            output_schema: "acceptance_decision",
+            input: {},
+            artifact: "acceptance-review.json"
+          },
+          model: { model: "openai/acceptance-test", thinkingLevel: "low" },
+          input: { findings },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: { review_plan: reviewPlan, code_review: findings }
+          }
+        });
+
+        return { status: "success", reviewPlan, findings, acceptance };
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
 
     const result = await workflow.run({
       payload: gitInvocation,
@@ -371,5 +306,8 @@ describe("flue modules", () => {
         thinkingLevel: "low"
       })
     ]);
+    expect(promptCalls[0].text).toContain("repo_context");
+    expect(promptCalls[1].text).toContain("review_plan");
+    expect(promptCalls[2].text).toContain("findings");
   });
 });
