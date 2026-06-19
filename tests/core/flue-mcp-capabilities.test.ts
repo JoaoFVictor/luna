@@ -193,4 +193,38 @@ describe("flue mcp capabilities", () => {
 
     expect(close).toHaveBeenCalledTimes(1);
   });
+
+  it("wraps local tool filtering failures and closes the opened connection", async () => {
+    const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const filterFailure = new Error("tool name unavailable");
+    const throwingTool = Object.defineProperty({}, "name", {
+      get() {
+        throw filterFailure;
+      }
+    }) as ToolDefinition;
+    const connectMcpServer = vi.fn().mockResolvedValue({
+      name: "github",
+      tools: [throwingTool],
+      close
+    });
+
+    await expect(
+      resolveFlueMcpTools({
+        ids: ["github"],
+        agentMode: "read_only",
+        config,
+        env: {
+          LUNA_MCP_GITHUB_URL: "https://mcp.example.test",
+          LUNA_MCP_GITHUB_TOKEN: "token"
+        },
+        connectMcpServer
+      })
+    ).rejects.toMatchObject({
+      code: "mcp_server_connect_failed",
+      message: expect.stringContaining("github"),
+      cause: filterFailure
+    });
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
 });
