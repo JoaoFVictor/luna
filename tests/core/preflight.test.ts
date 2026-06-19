@@ -204,6 +204,49 @@ describe("preflight", () => {
     });
   });
 
+  it("matches git_managed_write SSH actual remote against HTTPS expected remote", async () => {
+    const result = await runPreflight({
+      invocation: jiraInvocation,
+      repository: {
+        ...gitRepository,
+        expected_remote_urls: ["https://github.com/octo-org/hello-world.git"]
+      },
+      workflow: { mode: "git_managed_write" },
+      implementation: implementationConfig,
+      runGit: async (_cwd, args) => {
+        if (args[0] === "remote") {
+          return "git@github.com:octo-org/hello-world.git\n";
+        }
+
+        return "true\n";
+      },
+      stat: async () => ({ isDirectory: () => true })
+    });
+
+    expect(result.repository.remote_url).toBe(
+      "git@github.com:octo-org/hello-world.git"
+    );
+  });
+
+  it("rejects unsafe git_managed_write actual remotes with userinfo, query, or hash", async () => {
+    await expect(
+      runPreflight({
+        invocation: jiraInvocation,
+        repository: {
+          ...gitRepository,
+          expected_remote_urls: ["https://github.com/octo-org/hello-world.git"]
+        },
+        workflow: { mode: "git_managed_write" },
+        implementation: implementationConfig,
+        runGit: async (_cwd, args) =>
+          args[0] === "remote"
+            ? "https://token@github.com/octo-org/hello-world.git?x=1#frag\n"
+            : "true\n",
+        stat: async () => ({ isDirectory: () => true })
+      })
+    ).rejects.toMatchObject({ code: "remote_url_mismatch" });
+  });
+
   it("throws expected_remote_urls_missing for git_managed_write without expected remote URLs", async () => {
     await expect(
       runPreflight({

@@ -526,15 +526,15 @@ async function finalizeWriteSuccessWorkspace({
     commitEnabled: implementationConfig?.commit.enabled ?? false,
     validationPassed: validationPassedFromSteps(steps),
     acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
-    commitSkippedOrFailed: gateSkippedOrFailed(
+    commitSkippedOrFailed: commitSkippedOrFailed(
       implementationConfig?.commit.enabled ?? false,
       steps.commit ?? steps.commit_changes
     ),
-    pushSkippedOrFailed: gateSkippedOrFailed(
+    pushSkippedOrFailed: pushSkippedOrFailed(
       implementationConfig?.push.enabled ?? false,
       steps.push ?? steps.push_branch
     ),
-    pullRequestSkippedOrFailed: gateSkippedOrFailed(
+    pullRequestSkippedOrFailed: pullRequestSkippedOrFailed(
       implementationConfig?.pull_request.enabled ?? false,
       steps.pull_request ?? steps.open_pull_request
     )
@@ -646,6 +646,59 @@ function gateSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
   }
 
   return record.skipped === true || record.status === "failed";
+}
+
+function nonEmptyString(value: unknown): boolean {
+  return typeof value === "string" && value !== "";
+}
+
+function positiveInteger(value: unknown): boolean {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function gateSkippedOrFailedWithoutEvidence(
+  gateEnabled: boolean,
+  value: unknown,
+  hasSuccessEvidence: (record: Record<string, unknown>) => boolean
+): boolean {
+  if (!gateEnabled) {
+    return false;
+  }
+
+  if (gateSkippedOrFailed(gateEnabled, value)) {
+    return true;
+  }
+
+  const record = recordValue(value);
+  return record === undefined || !hasSuccessEvidence(record);
+}
+
+function commitSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
+  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) =>
+    nonEmptyString(record.commit_sha)
+  );
+}
+
+function pushSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
+  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) => {
+    if (record.pushed === true) {
+      return true;
+    }
+
+    return (
+      nonEmptyString(record.remote) &&
+      (nonEmptyString(record.branch) || nonEmptyString(record.ref))
+    );
+  });
+}
+
+function pullRequestSkippedOrFailed(
+  gateEnabled: boolean,
+  value: unknown
+): boolean {
+  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) =>
+    nonEmptyString(record.url) || positiveInteger(record.number)
+  );
 }
 
 function resolveAgentModel(

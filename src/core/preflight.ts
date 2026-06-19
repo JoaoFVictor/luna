@@ -1,5 +1,6 @@
 import { stat as fsStat } from "node:fs/promises";
 import { runGit as defaultRunGit } from "./git.js";
+import { remoteUrlMatches } from "./remote-url.js";
 import type {
   GithubPrInvocation,
   ImplementationConfig,
@@ -132,10 +133,6 @@ function assertWriteGateConsistency(
   }
 }
 
-function normalizeRemoteUrl(url: string): string {
-  return url.trim().replace(/\/$/, "");
-}
-
 function assertExpectedRemoteUrl(
   repository: RepositoryConfig,
   remoteUrl: string
@@ -150,10 +147,7 @@ function assertExpectedRemoteUrl(
     );
   }
 
-  const actual = normalizeRemoteUrl(remoteUrl);
-  const expected = repository.expected_remote_urls.map(normalizeRemoteUrl);
-
-  if (!expected.includes(actual)) {
+  if (!remoteUrlMatches(remoteUrl, repository.expected_remote_urls)) {
     throw preflightError(
       "Configured remote URL does not match expected_remote_urls",
       "remote_url_mismatch"
