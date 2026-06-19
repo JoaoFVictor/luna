@@ -20,7 +20,7 @@ import {
 import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import { createRunIdentity as defaultCreateRunIdentity } from "./run-identity.js";
-import { safeJoin } from "./path-security.js";
+import { assertSafeSegment, safeJoin } from "./path-security.js";
 import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
 import {
   loadWorkflowDefinition,
@@ -388,6 +388,15 @@ async function markdownArtifactPath({
   }
 
   return await safeJoin(artifactRoot, [runId, node.artifact.markdown]);
+}
+
+function artifactRootForWorkflow(root: string, rootNamespace?: string): string {
+  if (rootNamespace === undefined) {
+    return root;
+  }
+
+  assertSafeSegment(rootNamespace);
+  return path.join(root, rootNamespace);
 }
 
 async function writeJsonBestEffort(
@@ -917,7 +926,7 @@ export async function runConfiguredWorkflow({
     dependencies.createRunIdentity ?? defaultCreateRunIdentity;
   const Store = dependencies.ArtifactStore ?? ArtifactStore;
   const run = makeRunIdentity(invocation, attempt, dependencies.now?.());
-  const artifactStore = new Store(configs.app.artifacts.root, run.run_id);
+  let artifactStore = new Store(configs.app.artifacts.root, run.run_id);
   const modelProfiles = resolveModelProfiles(configs.models);
   const resolvedAgentsRoot = await resolveConfiguredDirectoryRoot(
     configRoot,
@@ -938,9 +947,6 @@ export async function runConfiguredWorkflow({
   let workspaceRecord: WorkspaceRecord | undefined;
   let persistedWorkspaceRecord: WorkspaceRecord | undefined;
 
-  await artifactStore.writeJson("invocation.json", invocation);
-  await artifactStore.writeJson("run.json", run);
-
   try {
     workflowId = workflowIdFromRoute(
       invocation,
@@ -955,6 +961,16 @@ export async function runConfiguredWorkflow({
       resolvedWorkflowsRoot,
       workflowId
     );
+    artifactStore = new Store(
+      artifactRootForWorkflow(
+        configs.app.artifacts.root,
+        workflow.artifacts?.root_namespace
+      ),
+      run.run_id
+    );
+    await artifactStore.writeJson("invocation.json", invocation);
+    await artifactStore.writeJson("run.json", run);
+
     const state: WorkflowState = {
       invocation,
       config: configs.runtimeConfig,
@@ -1019,7 +1035,7 @@ export async function runConfiguredWorkflow({
     let report: FinalReportJson | undefined;
     for (const node of deferredFinalReportNodes) {
       const reportPath = await markdownArtifactPath({
-        artifactRoot: configs.app.artifacts.root,
+        artifactRoot: artifactStore.artifactRoot,
         runId: run.run_id,
         node
       });
@@ -1098,7 +1114,7 @@ export async function runConfiguredWorkflow({
       run,
       ...(workflowId === undefined ? {} : { workflow_id: workflowId }),
       error: artifact,
-      workspace: finalWorkspace
+      ...(finalWorkspace === undefined ? {} : { workspace: finalWorkspace })
     };
   }
 }

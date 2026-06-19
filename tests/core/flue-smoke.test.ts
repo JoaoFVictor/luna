@@ -139,7 +139,7 @@ async function writeSmokeConfig(
   fixture: RealGitReviewFixture
 ): Promise<void> {
   const workspaceRoot = path.join(root, ".runs", "workspaces");
-  const artifactRoot = path.join(root, ".runs", "code-review");
+  const artifactRoot = path.join(root, ".runs");
 
   await mkdir(root, { recursive: true });
   await writeFile(

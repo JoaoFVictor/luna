@@ -27,6 +27,8 @@ mode: git_managed_read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
+artifacts:
+  root_namespace: my-workflow
 ```
 
 Rules:
@@ -34,6 +36,8 @@ Rules:
 - The directory name and `id` must match.
 - `mode` supports `git_managed_read_only` and `git_managed_write`.
 - Schema and graph paths must stay inside the workflow directory.
+- `artifacts.root_namespace` writes outputs under
+  `.runs/<root_namespace>/<run-id>/`.
 
 Use `git_managed_write` only for workflows that intentionally create a writable
 worktree and run trusted local write agents.
@@ -149,8 +153,8 @@ input:
   findings: $.steps.validate_findings
 ```
 
-References are whole-value references. Luna does not currently support nested
-paths like `$.steps.review_plan.summary`.
+References support whole values and nested paths, such as
+`$.steps.review_plan.summary`.
 
 ## 7. Add Schemas
 

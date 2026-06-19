@@ -114,7 +114,7 @@ const plannedAppConfig = {
     preserve_on_failure: true
   },
   artifacts: {
-    root: ".runs/code-review"
+    root: ".runs"
   }
 };
 
@@ -184,7 +184,7 @@ describe("core zod schemas", () => {
       ImplementationConfigSchema.parse({
         implementation: {
           branch_pattern: "feature/{slug}",
-          commit: { enabled: false, co_author: false },
+          commit: { enabled: false },
           push: { enabled: false, remote: "origin" },
           pull_request: {
             enabled: false,

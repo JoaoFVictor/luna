@@ -293,8 +293,7 @@ export const ImplementationConfigSchema = z
         branch_pattern: NonEmptyStringSchema,
         commit: z
           .object({
-            enabled: z.boolean(),
-            co_author: z.boolean()
+            enabled: z.boolean()
           })
           .strict(),
         push: z

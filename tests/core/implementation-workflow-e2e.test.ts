@@ -91,7 +91,6 @@ async function writeTestConfig(root: string): Promise<void> {
       "  branch_pattern: feature/{slug}",
       "  commit:",
       "    enabled: false",
-      "    co_author: false",
       "  push:",
       "    enabled: false",
       "    remote: origin",
@@ -120,7 +119,7 @@ async function writeTestConfig(root: string): Promise<void> {
 
 async function readJson(root: string, name: string): Promise<unknown> {
   return JSON.parse(
-    await readFile(path.join(root, "artifacts", "run-1", name), "utf8")
+    await readFile(path.join(root, "artifacts", "implementation", "run-1", name), "utf8")
   ) as unknown;
 }
 

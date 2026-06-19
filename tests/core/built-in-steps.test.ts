@@ -203,8 +203,7 @@ const pullRequestArtifact: PullRequestArtifact = {
 const implementationConfig: ImplementationConfig["implementation"] = {
   branch_pattern: "feature/{slug}",
   commit: {
-    enabled: true,
-    co_author: false
+    enabled: true
   },
   push: {
     enabled: true,
@@ -466,8 +465,7 @@ describe("built-in steps", () => {
             implementation: {
               ...implementationConfig,
               commit: {
-                enabled: false,
-                co_author: false
+                enabled: false
               }
             }
           },

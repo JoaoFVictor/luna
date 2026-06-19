@@ -281,6 +281,45 @@ describe("worktree diff collector", () => {
     }
   });
 
+  it("omits sensitive untracked file contents from summaries", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "worktree-diff-"));
+
+    try {
+      await writeFile(join(cwd, ".env.local"), "DATABASE_URL=postgres://secret\n");
+
+      const result = await collectWorktreeDiff({
+        cwd,
+        maxDiffBytes: 1000,
+        runGit: async (_cwd, args) => {
+          if (args[0] === "status") {
+            return ["?? .env.local", ""].join("\0");
+          }
+
+          return "";
+        }
+      });
+
+      expect(result.untracked_summaries).toEqual([
+        {
+          path: ".env.local",
+          excerpt: {
+            start_line: 1,
+            end_line: 1,
+            content: ""
+          },
+          truncated: false,
+          bytes: 31,
+          max_bytes: 1000,
+          omitted: true,
+          omitted_reason: "sensitive_path"
+        }
+      ]);
+      expect(JSON.stringify(result)).not.toContain("postgres://secret");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("marks binary, submodule, and large changed files from git metadata", async () => {
     const result = await collectWorktreeDiff({
       cwd: "/repo/worktree",

@@ -4,14 +4,22 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "run", "report"],
+      "required": ["status", "run", "workflow_id", "steps", "report"],
       "properties": {
         "status": {
           "type": "string",
           "const": "success"
         },
+        "workflow_id": {
+          "type": "string",
+          "const": "implementation"
+        },
         "run": {
           "$ref": "#/definitions/run_identity"
+        },
+        "steps": {
+          "type": "object",
+          "additionalProperties": true
         },
         "report": {
           "$ref": "#/definitions/final_report"
@@ -32,6 +40,10 @@
         },
         "run": {
           "$ref": "#/definitions/run_identity"
+        },
+        "workflow_id": {
+          "type": "string",
+          "const": "implementation"
         },
         "error": {
           "$ref": "#/definitions/error_artifact"

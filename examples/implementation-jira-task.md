@@ -94,7 +94,6 @@ implementation:
   branch_pattern: feature/{slug}
   commit:
     enabled: false
-    co_author: false
   push:
     enabled: false
     remote: origin

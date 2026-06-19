@@ -1,6 +1,7 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
 import { runGit as defaultRunGit } from "./git.js";
+import { redactString } from "./redactor.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
@@ -30,7 +31,7 @@ export type UntrackedFileSummary = {
   max_bytes: number;
   symlink?: boolean;
   omitted?: boolean;
-  omitted_reason?: "symlink";
+  omitted_reason?: "symlink" | "sensitive_path";
 };
 
 export type WorktreeDiffFile = {
@@ -254,7 +255,9 @@ function lineCount(content: string): number {
 
 function excerptForContent(content: string, maxBytes: number): FileExcerpt {
   const truncated = Buffer.byteLength(content, "utf8") > maxBytes;
-  const excerptContent = truncated ? truncateUtf8ToBytes(content, maxBytes) : content;
+  const excerptContent = redactString(
+    truncated ? truncateUtf8ToBytes(content, maxBytes) : content
+  );
 
   return {
     start_line: 1,
@@ -264,12 +267,49 @@ function excerptForContent(content: string, maxBytes: number): FileExcerpt {
   };
 }
 
+function isSensitiveUntrackedPath(path: string): boolean {
+  const segments = path.split(/[\\/]/);
+  const basename = segments.at(-1)?.toLowerCase() ?? "";
+
+  return (
+    basename === ".npmrc" ||
+    basename === ".yarnrc" ||
+    basename === ".pypirc" ||
+    basename === ".netrc" ||
+    basename === "credentials" ||
+    basename === "credentials.json" ||
+    basename === "luna.auth.json" ||
+    basename.startsWith(".env")
+  );
+}
+
+async function readFilePrefix(
+  path: string,
+  maxBytes: number
+): Promise<string> {
+  if (maxBytes <= 0) {
+    return "";
+  }
+
+  const handle = await open(path, "r");
+
+  try {
+    const buffer = Buffer.alloc(maxBytes + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
 async function summarizeUntrackedFile(
   cwd: string,
   path: string,
   maxBytes: number
 ): Promise<UntrackedFileSummary> {
   let content = "";
+  let bytes = 0;
   const emptyExcerpt = excerptForContent("", maxBytes);
   const fullPath = join(cwd, path);
 
@@ -289,12 +329,25 @@ async function summarizeUntrackedFile(
       };
     }
 
-    content = await readFile(fullPath, "utf8");
+    bytes = stats.size;
+
+    if (isSensitiveUntrackedPath(path)) {
+      return {
+        path,
+        excerpt: emptyExcerpt,
+        truncated: false,
+        bytes,
+        max_bytes: maxBytes,
+        omitted: true,
+        omitted_reason: "sensitive_path"
+      };
+    }
+
+    content = await readFilePrefix(fullPath, maxBytes);
   } catch {
     content = "";
   }
 
-  const bytes = Buffer.byteLength(content, "utf8");
   const excerpt = excerptForContent(content, maxBytes);
 
   return {

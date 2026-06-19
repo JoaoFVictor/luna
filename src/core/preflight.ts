@@ -18,6 +18,7 @@ type PreflightErrorCode =
   | "not_git_repository"
   | "git_remote_missing"
   | "expected_remote_urls_missing"
+  | "implementation_config_missing"
   | "remote_url_mismatch"
   | "push_requires_commit"
   | "pull_request_requires_push";
@@ -115,7 +116,10 @@ function assertWriteGateConsistency(
   implementation: ImplementationConfig["implementation"] | undefined
 ): void {
   if (implementation === undefined) {
-    return;
+    throw preflightError(
+      "Write-mode workflows require config/implementation.yaml",
+      "implementation_config_missing"
+    );
   }
 
   if (implementation.push.enabled && !implementation.commit.enabled) {

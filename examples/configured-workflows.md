@@ -175,6 +175,8 @@ mode: git_managed_read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
+artifacts:
+  root_namespace: my-workflow
 ```
 
 The write-mode implementation workflow uses:
@@ -299,8 +301,8 @@ input:
   findings: $.steps.validate_findings
 ```
 
-References are whole-value references. Luna does not currently support nested
-paths like `$.steps.review_plan.summary`.
+References support whole values and nested paths, such as
+`$.steps.review_plan.summary`.
 
 ## Adding An Input Adapter
 

@@ -248,7 +248,6 @@ async function writeImplementationConfig(
       "  branch_pattern: feature/{slug}",
       "  commit:",
       `    enabled: ${options.commitEnabled === true ? "true" : "false"}`,
-      "    co_author: false",
       "  push:",
       `    enabled: ${options.pushEnabled === true ? "true" : "false"}`,
       "    remote: origin",
@@ -1548,6 +1547,64 @@ describe("configured workflow runner", () => {
       ).resolves.toContain("run-1");
       await expect(
         readFile(path.join(root, "artifacts", "run-1", "review-plan.json"), "utf8")
+      ).resolves.toContain("Plan");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("writes artifacts under the configured workflow namespace", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
+      await writeFile(
+        path.join(root, "workflows", "code-review", "workflow.yaml"),
+        [
+          "id: code-review",
+          "type: workflow",
+          "mode: git_managed_read_only",
+          "input_schema: input.schema.json",
+          "output_schema: output.schema.json",
+          "graph: graph.yaml",
+          "artifacts:",
+          "  root_namespace: code-review",
+          ""
+        ].join("\n")
+      );
+
+      await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep: async ({ uses }: { uses: string }) =>
+            uses === "collect_repo_context" ? { files: [] } : { status: "ok" },
+          runAgentStep: async () => ({
+            summary: "Plan",
+            focus_areas: [],
+            files_to_review: []
+          })
+        }
+      });
+
+      await expect(
+        readFile(
+          path.join(
+            root,
+            "artifacts",
+            "code-review",
+            "run-1",
+            "review-plan.json"
+          ),
+          "utf8"
+        )
       ).resolves.toContain("Plan");
     } finally {
       await rm(root, { recursive: true, force: true });

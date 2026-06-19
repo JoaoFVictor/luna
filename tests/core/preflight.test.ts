@@ -41,7 +41,7 @@ const jiraInvocation: JiraTaskInvocation = {
 
 const implementationConfig: ImplementationConfig["implementation"] = {
   branch_pattern: "feature/{slug}",
-  commit: { enabled: true, co_author: false },
+  commit: { enabled: true },
   push: { enabled: true, remote: "origin" },
   pull_request: {
     enabled: true,
@@ -263,6 +263,24 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "expected_remote_urls_missing" });
   });
 
+  it("throws implementation_config_missing for git_managed_write without implementation config", async () => {
+    await expect(
+      runPreflight({
+        invocation: jiraInvocation,
+        repository: {
+          ...gitRepository,
+          expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
+        },
+        workflow: { mode: "git_managed_write" },
+        runGit: async (_cwd, args) =>
+          args[0] === "remote"
+            ? "git@github.com:octo-org/hello-world.git\n"
+            : "true\n",
+        stat: async () => ({ isDirectory: () => true })
+      })
+    ).rejects.toMatchObject({ code: "implementation_config_missing" });
+  });
+
   it("throws remote_url_mismatch when git_managed_write remote URL is not expected", async () => {
     await expect(
       runPreflight({
@@ -293,7 +311,7 @@ describe("preflight", () => {
         workflow: { mode: "git_managed_write" },
         implementation: {
           ...implementationConfig,
-          commit: { enabled: false, co_author: false },
+          commit: { enabled: false },
           push: { enabled: true, remote: "origin" },
           pull_request: { ...implementationConfig.pull_request, enabled: false }
         },
@@ -317,7 +335,7 @@ describe("preflight", () => {
         workflow: { mode: "git_managed_write" },
         implementation: {
           ...implementationConfig,
-          commit: { enabled: true, co_author: false },
+          commit: { enabled: true },
           push: { enabled: false, remote: "origin" },
           pull_request: { ...implementationConfig.pull_request, enabled: true }
         },

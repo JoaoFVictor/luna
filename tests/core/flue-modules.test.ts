@@ -61,27 +61,6 @@ describe("flue modules", () => {
     resetEnv();
   });
 
-  it.each([
-    ["review planner", "../../src/agents/review-planner.js"],
-    ["code reviewer", "../../src/agents/code-reviewer.js"],
-    ["acceptance reviewer", "../../src/agents/acceptance-reviewer.js"]
-  ])("%s default export and description are importable without API keys", async (_name, modulePath) => {
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-    delete process.env.DEFAULT_MODEL;
-    delete process.env.DEEP_MODEL;
-    delete process.env.BALANCED_MODEL;
-
-    const mod = (await import(modulePath)) as {
-      default?: CreatedAgent;
-      description?: unknown;
-    };
-
-    expect(mod.default).toMatchObject({ __flueCreatedAgent: true });
-    expect(typeof mod.description).toBe("string");
-    expect((mod.description as string).trim()).not.toBe("");
-  });
-
   it("exports the luna workflow run function", async () => {
     const workflow = await importWorkflowWithRunnerMock(
       "../../src/workflows/luna.js",

@@ -242,6 +242,10 @@ describe("config definition files", () => {
         target: "jira_task",
         started_at: "2026-06-19T00:00:00.000Z"
       },
+      workflow_id: "implementation",
+      steps: {
+        final_report: {}
+      },
       report: {
         jira: {
           key: "ABC-123",

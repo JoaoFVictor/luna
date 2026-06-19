@@ -4,3 +4,5 @@ mode: git_managed_read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
+artifacts:
+  root_namespace: code-review

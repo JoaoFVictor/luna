@@ -141,6 +141,11 @@ Core config lives in `config/`:
 `config/models.yaml` uses generic model profiles such as `default`, `deep`,
 `fast`, and `balanced`. Agents reference these profiles by name.
 
+`config/app.yaml` sets the shared artifact root. Each bundled workflow declares
+its own artifact namespace in `workflow.yaml`, so code review reports land under
+`.runs/code-review/<run-id>/` and Jira implementation reports land under
+`.runs/implementation/<run-id>/`.
+
 By default, Luna uses Pi's `openai-codex/...` provider. Running
 `npx @earendil-works/pi-ai login openai-codex` writes `auth.json` in the project
 directory. Luna reads that file at runtime and registers the provider with Flue.
