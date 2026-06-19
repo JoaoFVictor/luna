@@ -44,7 +44,8 @@ function capabilityError(
 }
 
 function isUnknownToolError(error: unknown): boolean {
-  return (error as { code?: unknown }).code === "flue_tool_unknown";
+  const code = (error as { code?: unknown }).code;
+  return code === "flue_tool_unknown" || code === "flue_tool_mode_not_allowed";
 }
 
 function isKnownMcpError(error: unknown): boolean {
@@ -62,7 +63,8 @@ function isKnownSubagentError(error: unknown): boolean {
   return (
     code === "subagent_self_reference" ||
     code === "subagent_model_profile_missing" ||
-    code === "subagent_context_missing"
+    code === "subagent_context_missing" ||
+    code === "subagent_capabilities_unsupported"
   );
 }
 
@@ -145,7 +147,11 @@ export async function resolveFlueAgentCapabilities({
         loadSkill(agent.directory, skillPath)
       )
     );
-    const localTools = resolveFlueTools({ ids: agent.tools ?? [], cwd });
+    const localTools = resolveFlueTools({
+      ids: agent.tools ?? [],
+      agentMode: agent.mode,
+      cwd
+    });
     const subagentIds = agent.subagents ?? [];
     const hasSubagents = subagentIds.length > 0;
 

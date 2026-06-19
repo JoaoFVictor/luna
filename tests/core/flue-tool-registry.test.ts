@@ -21,6 +21,7 @@ describe("flue tool registry", () => {
     const { resolveFlueTools } = await importRegistryWithGitMock();
     const tools = resolveFlueTools({
       ids: ["repository.status", "repository.diff-summary"],
+      agentMode: "trusted_host_local_write",
       cwd: "/repo/worktree"
     });
 
@@ -38,6 +39,7 @@ describe("flue tool registry", () => {
 
     const [statusTool, diffSummaryTool] = resolveFlueTools({
       ids: ["repository.status", "repository.diff-summary"],
+      agentMode: "trusted_host_local_write",
       cwd: "/repo/worktree"
     });
 
@@ -62,6 +64,7 @@ describe("flue tool registry", () => {
     try {
       resolveFlueTools({
         ids: ["repository.delete-everything"],
+        agentMode: "trusted_host_local_write",
         cwd: "/repo/worktree"
       });
     } catch (error: unknown) {
@@ -71,6 +74,26 @@ describe("flue tool registry", () => {
     expect(caught).toMatchObject({
       code: "flue_tool_unknown",
       message: "Unknown Flue tool: repository.delete-everything"
+    });
+  });
+
+  it("rejects tools for unsupported agent modes", async () => {
+    const { resolveFlueTools } = await importRegistryWithGitMock();
+    let caught: unknown;
+
+    try {
+      resolveFlueTools({
+        ids: ["repository.status"],
+        agentMode: "unsupported_mode" as never,
+        cwd: "/repo/worktree"
+      });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: "flue_tool_mode_not_allowed",
+      message: "Flue tool repository.status is not allowed for agent mode unsupported_mode"
     });
   });
 });

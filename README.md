@@ -161,6 +161,12 @@ The referenced ID must resolve to a valid Luna agent directory under
 Flue subagents run inside the parent agent session. They are not workflow graph
 nodes and do not create separate Luna artifacts automatically.
 
+In this phase, subagents are lightweight Flue profiles: Luna uses the referenced
+agent's description, instructions, and model profile only. Referenced subagents
+must not declare their own `skills`, `tools`, `mcp_servers`, or nested
+`subagents`; use a workflow graph node when that work needs its own tools, MCP
+access, schema, artifact, or workflow gate.
+
 ## Project Structure
 
 ```text

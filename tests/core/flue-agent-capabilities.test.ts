@@ -329,6 +329,51 @@ describe("flue agent capabilities", () => {
     }
   });
 
+  it("preserves unsupported subagent capability errors through the combined resolver", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+
+    try {
+      const reviewerDir = path.join(root, "agents", "implementation-reviewer");
+      await mkdir(reviewerDir, { recursive: true });
+      await writeFile(
+        path.join(reviewerDir, "agent.yaml"),
+        [
+          "id: implementation-reviewer",
+          "description: Reviews implementation diffs",
+          "model_profile: deep",
+          "mode: read_only",
+          "instructions_file: instructions.md",
+          "output_schema: output.schema.json",
+          "mcp_servers:",
+          "  - github",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        path.join(reviewerDir, "instructions.md"),
+        "Review the diff.\n"
+      );
+      await writeFile(path.join(reviewerDir, "output.schema.json"), "{}\n");
+
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: { ...agent, subagents: ["implementation-reviewer"] },
+          cwd: "/repo/worktree",
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles: {
+            deep: { model: "test/deep", reasoning_effort: "high" }
+          }
+        })
+      ).rejects.toMatchObject({
+        code: "subagent_capabilities_unsupported",
+        message: expect.stringContaining("mcp_servers")
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not open MCP connections when subagent resolution fails", async () => {
     const { root, agent } = await writeCodeImplementerFixture();
 

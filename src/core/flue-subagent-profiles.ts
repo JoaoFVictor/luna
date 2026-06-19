@@ -13,6 +13,22 @@ function subagentError(message: string, code: string): Error & { code: string } 
   return error;
 }
 
+function declaredCapabilities(agent: {
+  skills?: readonly string[];
+  tools?: readonly string[];
+  mcp_servers?: readonly string[];
+  subagents?: readonly string[];
+}): string[] {
+  return [
+    ["skills", agent.skills],
+    ["tools", agent.tools],
+    ["mcp_servers", agent.mcp_servers],
+    ["subagents", agent.subagents]
+  ].flatMap(([kind, values]) =>
+    Array.isArray(values) && values.length > 0 ? [kind as string] : []
+  );
+}
+
 export async function resolveFlueSubagentProfiles({
   agentsRoot,
   parentAgentId,
@@ -35,6 +51,17 @@ export async function resolveFlueSubagentProfiles({
     }
 
     const agent = await loadAgentDefinition(agentsRoot, id);
+    const unsupportedCapabilities = declaredCapabilities(agent);
+
+    if (unsupportedCapabilities.length > 0) {
+      throw subagentError(
+        `Subagent ${id} declares unsupported capabilities for Flue profile mode: ${unsupportedCapabilities.join(
+          ", "
+        )}`,
+        "subagent_capabilities_unsupported"
+      );
+    }
+
     const modelProfile = modelProfiles[agent.model_profile];
 
     if (modelProfile === undefined) {
