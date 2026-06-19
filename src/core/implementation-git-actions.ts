@@ -12,6 +12,13 @@ import type { WorktreeDiff } from "./worktree-diff-collector.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type RunGh = (cwd: string, args: readonly string[]) => Promise<string>;
+type ProcessFailure = {
+  code?: unknown;
+  exitCode?: unknown;
+  killed?: unknown;
+  signal?: unknown;
+  timedOut?: unknown;
+};
 
 type AcceptanceLike =
   | { status?: string; decision?: string; accepted?: boolean }
@@ -70,6 +77,20 @@ function branchMatchesPattern(branch: string, branchPattern: string): boolean {
   const pattern = `^${escapeRegExp(before)}[a-z0-9][a-z0-9._-]*${escapeRegExp(after)}$`;
 
   return new RegExp(pattern).test(branch);
+}
+
+function isExpectedAncestryMismatch(error: unknown): boolean {
+  const failure =
+    (error as { cause?: ProcessFailure } | undefined)?.cause ??
+    (error as ProcessFailure | undefined);
+  const exitCode = failure?.exitCode ?? failure?.code;
+
+  return (
+    exitCode === 1 &&
+    failure?.killed !== true &&
+    failure?.signal == null &&
+    failure?.timedOut !== true
+  );
 }
 
 async function currentBranch({
@@ -157,8 +178,12 @@ export async function commitChanges({
 
   try {
     await runGit(cwd, ["merge-base", "--is-ancestor", baseSha, "HEAD"]);
-  } catch {
-    return skipped(true, "base_ancestry_mismatch");
+  } catch (error) {
+    if (isExpectedAncestryMismatch(error)) {
+      return skipped(true, "base_ancestry_mismatch");
+    }
+
+    throw error;
   }
 
   await runGit(cwd, ["add", "-A"]);
@@ -197,6 +222,10 @@ export async function pushBranch({
     return skipped(true, "no_commit");
   }
 
+  if (commit.branch !== branch) {
+    return skipped(true, "branch_mismatch");
+  }
+
   if ((await currentBranch({ cwd, runGit })) !== branch) {
     return skipped(true, "branch_mismatch");
   }
@@ -219,6 +248,7 @@ export async function openPullRequest({
   enabled,
   cwd,
   push,
+  branch,
   provider,
   baseRef,
   draft,
@@ -229,6 +259,7 @@ export async function openPullRequest({
   enabled: boolean;
   cwd: string;
   push: PushBranchArtifact;
+  branch: string;
   provider: string;
   baseRef?: string;
   draft: boolean;
@@ -242,6 +273,10 @@ export async function openPullRequest({
 
   if (push.skipped) {
     return skipped(true, "no_push");
+  }
+
+  if (push.branch !== branch) {
+    return skipped(true, "branch_mismatch");
   }
 
   if (provider !== "github") {
@@ -264,7 +299,7 @@ export async function openPullRequest({
     args.push("--draft");
   }
 
-  args.push("--base", baseRef, "--title", title);
+  args.push("--base", baseRef, "--head", branch, "--title", title);
 
   if (body !== undefined) {
     args.push("--body", body);

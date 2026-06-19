@@ -64,11 +64,13 @@ const emptyDiff: WorktreeDiff = {
 function createRunGit({
   currentBranch = branch,
   remoteUrl = "git@github.com:swinggo-dev/swg-front-nuxt.git",
-  baseAncestor = true
+  baseAncestor = true,
+  baseAncestorError
 }: {
   currentBranch?: string;
   remoteUrl?: string;
   baseAncestor?: boolean;
+  baseAncestorError?: unknown;
 } = {}): { calls: GitCall[]; runGit: (cwd: string, args: readonly string[]) => Promise<string> } {
   const calls: GitCall[] = [];
 
@@ -86,8 +88,19 @@ function createRunGit({
       }
 
       if (args[0] === "merge-base" && args[1] === "--is-ancestor") {
+        if (baseAncestorError !== undefined) {
+          throw baseAncestorError;
+        }
+
         if (!baseAncestor) {
-          throw new Error("base is not ancestor");
+          throw Object.assign(new Error("base is not ancestor"), {
+            code: "git_command_failed",
+            cause: {
+              code: 1,
+              killed: false,
+              signal: null
+            }
+          });
         }
 
         return "";
@@ -224,6 +237,27 @@ describe("implementation git actions", () => {
       ]);
     });
 
+    it("throws when the base ancestry check fails for infrastructure reasons", async () => {
+      const baseAncestorError = Object.assign(new Error("git timed out"), {
+        code: "git_command_failed",
+        cause: {
+          code: null,
+          killed: true,
+          signal: "SIGTERM"
+        }
+      });
+      const { calls, runGit } = createRunGit({ baseAncestorError });
+
+      await expect(commitChanges(commitInput({ runGit }))).rejects.toBe(
+        baseAncestorError
+      );
+      expect(calls).toEqual([
+        { cwd, args: ["branch", "--show-current"] },
+        { cwd, args: ["remote", "get-url", remote] },
+        { cwd, args: ["merge-base", "--is-ancestor", baseSha, "HEAD"] }
+      ]);
+    });
+
     it("does not run git add or git commit after a failed gate", async () => {
       const { calls, runGit } = createRunGit({
         remoteUrl: "git@github.com:someone/else.git"
@@ -294,6 +328,24 @@ describe("implementation git actions", () => {
         skipped: true,
         reason: "no_commit"
       });
+    });
+
+    it("skips when the committed branch differs from the registered branch", async () => {
+      const { calls, runGit } = createRunGit();
+
+      await expect(
+        pushBranch(
+          pushInput({
+            commit: { ...committed, branch: "feature/other" },
+            runGit
+          })
+        )
+      ).resolves.toEqual({
+        enabled: true,
+        skipped: true,
+        reason: "branch_mismatch"
+      });
+      expect(calls).toEqual([]);
     });
 
     it("skips when the current branch differs from the registered branch", async () => {
@@ -368,6 +420,7 @@ describe("implementation git actions", () => {
           enabled: true,
           cwd,
           push: pushed,
+          branch,
           provider: "github",
           baseRef: "main",
           draft: true,
@@ -428,6 +481,19 @@ describe("implementation git actions", () => {
       });
     });
 
+    it("skips when the pushed branch differs from the registered branch", async () => {
+      const { input, calls } = prInput({
+        push: { ...pushed, branch: "feature/other" }
+      });
+
+      await expect(openPullRequest(input)).resolves.toEqual({
+        enabled: true,
+        skipped: true,
+        reason: "branch_mismatch"
+      });
+      expect(calls).toEqual([]);
+    });
+
     it("skips when gh is not authenticated", async () => {
       const calls: GhCall[] = [];
       const { input } = prInput({
@@ -464,6 +530,8 @@ describe("implementation git actions", () => {
             "--draft",
             "--base",
             "main",
+            "--head",
+            branch,
             "--title",
             commitMessage,
             "--body",
