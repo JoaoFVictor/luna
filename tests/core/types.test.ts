@@ -161,6 +161,62 @@ describe("core zod schemas", () => {
     expect(InvocationSchema.parse(validInvocation)).toEqual(validInvocation);
   });
 
+  it("accepts optional subject url and normalized actor fields", () => {
+    const invocation = {
+      ...validInvocation,
+      subject: {
+        type: "pull_request",
+        id: "42",
+        title: "Review normalized input adapters"
+      },
+      actor: {
+        id: "123",
+        display_name: "Mona Octocat"
+      }
+    };
+
+    expect(InvocationSchema.parse(invocation)).toEqual(invocation);
+  });
+
+  it("rejects legacy actor fields on invocations", () => {
+    expect(() =>
+      InvocationSchema.parse({
+        ...validInvocation,
+        actor: {
+          type: "user",
+          login: "octocat",
+          name: "Mona Octocat",
+          email: "mona@example.com"
+        }
+      })
+    ).toThrow();
+  });
+
+  it("rejects non-string invocation references", () => {
+    expect(() =>
+      InvocationSchema.parse({
+        ...validInvocation,
+        references: {
+          base_ref: "main",
+          pull_number: 42
+        }
+      })
+    ).toThrow();
+  });
+
+  it("rejects empty invocation payload keys", () => {
+    expect(() =>
+      InvocationSchema.parse({
+        ...validInvocation,
+        payload: {
+          "": {
+            number: 42
+          }
+        }
+      })
+    ).toThrow();
+  });
+
   it("rejects legacy github_pr invocations", () => {
     expect(() =>
       InvocationSchema.parse({

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const NonEmptyStringSchema = z.string().min(1);
+const AbsoluteUrlSchema = z.string().url();
 
 export const RepositoryRefSchema = z
   .object({
@@ -37,18 +38,16 @@ export const InvocationSubjectSchema = z
   .object({
     type: NonEmptyStringSchema,
     id: NonEmptyStringSchema,
-    url: z.string().url()
+    url: AbsoluteUrlSchema.optional(),
+    title: NonEmptyStringSchema.optional()
   })
   .strict();
 export type InvocationSubject = z.infer<typeof InvocationSubjectSchema>;
 
 export const InvocationActorSchema = z
   .object({
-    type: NonEmptyStringSchema,
     id: NonEmptyStringSchema.optional(),
-    login: NonEmptyStringSchema.optional(),
-    name: NonEmptyStringSchema.optional(),
-    email: NonEmptyStringSchema.optional()
+    display_name: NonEmptyStringSchema.optional()
   })
   .strict();
 export type InvocationActor = z.infer<typeof InvocationActorSchema>;
@@ -63,8 +62,8 @@ export const NormalizedInvocationSchema = z
     repository: InvocationRepositorySchema.optional(),
     subject: InvocationSubjectSchema.optional(),
     actor: InvocationActorSchema.optional(),
-    references: z.record(z.unknown()).optional(),
-    payload: z.record(z.unknown()).optional()
+    references: z.record(NonEmptyStringSchema, NonEmptyStringSchema).optional(),
+    payload: z.record(NonEmptyStringSchema, z.unknown()).optional()
   })
   .strict();
 export type NormalizedInvocation = z.infer<typeof NormalizedInvocationSchema>;
