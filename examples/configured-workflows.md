@@ -157,6 +157,39 @@ and instructions make sense in both places.
 Configured workflows do not attach tools directly. The graph picks agents; each
 agent declares its own skills and tools.
 
+## MCP Capabilities
+
+Agents can opt into configured MCP servers:
+
+```yaml
+mcp_servers:
+  - github
+```
+
+MCP server policy lives in `config/mcp.yaml`. Secrets stay in environment
+variables. `allowed_tools` uses original MCP tool names, such as
+`get_pull_request`; Flue exposes them to the model as adapted names like
+`mcp__github__get_pull_request`. Luna filters exposed MCP tools through that
+allowlist and rejects servers that are not allowed for the agent mode.
+
+Example `config/mcp.yaml` entry:
+
+```yaml
+mcp_servers:
+  - id: github
+    transport: streamable-http
+    url_env: LUNA_MCP_GITHUB_URL
+    headers:
+      Authorization:
+        env: LUNA_MCP_GITHUB_TOKEN
+        prefix: "Bearer "
+    allowed_tools:
+      - get_pull_request
+    allowed_agent_modes:
+      - read_only
+    timeout_ms: 30000
+```
+
 ## Adding A Workflow
 
 Create:
@@ -374,6 +407,7 @@ Use YAML/config for:
 - New agents.
 - New workflow graphs using existing built-ins.
 - New model profiles.
+- New MCP server policy in `config/mcp.yaml`.
 - New local repository entries.
 - New routing rules.
 - Jira instance mappings in `config/jira.yaml`.

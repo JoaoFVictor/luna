@@ -131,6 +131,21 @@ IDs resolved through Luna's TypeScript registry. Workflows do not declare tools
 directly; the workflow chooses agents, and each agent brings its own
 capabilities.
 
+## MCP Capabilities
+
+Agents can opt into configured MCP servers:
+
+```yaml
+mcp_servers:
+  - github
+```
+
+MCP server policy lives in `config/mcp.yaml`. Secrets stay in environment
+variables. `allowed_tools` uses original MCP tool names, such as
+`get_pull_request`; Flue exposes them to the model as adapted names like
+`mcp__github__get_pull_request`. Luna filters exposed MCP tools through that
+allowlist and rejects servers that are not allowed for the agent mode.
+
 ## Project Structure
 
 ```text
@@ -150,6 +165,7 @@ Core config lives in `config/`:
 - `repositories.yaml`: local repositories Luna is allowed to inspect.
 - `routing.yaml`: deterministic routing rules.
 - `models.yaml`: reusable model profiles.
+- `mcp.yaml`: MCP server definitions, tool allowlists, and allowed agent modes.
 - `jira.yaml`: Jira instances, repository field mapping, and optional
   acceptance criteria field mapping for the `jira-task-url` adapter.
 - `implementation.yaml`: branch naming, validation commands, trusted local
