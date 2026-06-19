@@ -99,4 +99,69 @@ describe("flue agent capabilities", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("rejects absolute skill paths", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+
+    try {
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: {
+            ...agent,
+            skills: [
+              path.join(root, "skills", "implementation-safe-git", "SKILL.md")
+            ]
+          },
+          cwd: "/repo/worktree"
+        })
+      ).rejects.toMatchObject({
+        code: "flue_capability_resolve_failed"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects skill paths that escape the Luna capability root", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const outsideRoot = await mkdtemp(
+      path.join(tmpdir(), "luna-outside-skill-")
+    );
+
+    try {
+      const outsideSkillDir = path.join(outsideRoot, "external-skill");
+      await mkdir(outsideSkillDir, { recursive: true });
+      await writeFile(
+        path.join(outsideSkillDir, "SKILL.md"),
+        [
+          "---",
+          "name: external-skill",
+          "description: Should not be loadable from this agent.",
+          "---",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: {
+            ...agent,
+            skills: [
+              path.relative(
+                agent.directory,
+                path.join(outsideSkillDir, "SKILL.md")
+              )
+            ]
+          },
+          cwd: "/repo/worktree"
+        })
+      ).rejects.toMatchObject({
+        code: "flue_capability_resolve_failed"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outsideRoot, { recursive: true, force: true });
+    }
+  });
 });

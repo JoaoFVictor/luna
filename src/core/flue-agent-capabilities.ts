@@ -5,6 +5,7 @@ import YAML from "yaml";
 import { z } from "zod";
 import type { AgentDefinition } from "./agent-definition.js";
 import { resolveFlueTools } from "./flue-tool-registry.js";
+import { isInsideRoot } from "./path-security.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];
@@ -59,8 +60,21 @@ async function loadSkill(
   agentDirectory: string,
   skillPath: string
 ): Promise<WorkspaceSkill> {
+  if (path.isAbsolute(skillPath)) {
+    throw new Error(
+      `Skill path must be relative to the agent directory: ${skillPath}`
+    );
+  }
+
+  const capabilityRoot = path.dirname(path.dirname(agentDirectory));
   const skillMdPath = path.resolve(agentDirectory, skillPath);
+  const capabilityRootReal = await realpath(capabilityRoot);
   const resolvedSkillMdPath = await realpath(skillMdPath);
+
+  if (!isInsideRoot(capabilityRootReal, resolvedSkillMdPath)) {
+    throw new Error(`Skill path resolves outside Luna capability root: ${skillPath}`);
+  }
+
   const directory = path.dirname(resolvedSkillMdPath);
   const content = await readFile(resolvedSkillMdPath, "utf8");
   const frontmatter = parseSkillFrontmatter(content, resolvedSkillMdPath);

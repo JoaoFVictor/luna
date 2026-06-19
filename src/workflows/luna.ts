@@ -55,6 +55,34 @@ function workspacePath(value: unknown): string | undefined {
   return typeof pathValue === "string" ? pathValue : undefined;
 }
 
+function repositoryPath(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("path" in value)) {
+    return undefined;
+  }
+
+  const pathValue = (value as { path?: unknown }).path;
+  return typeof pathValue === "string" ? pathValue : undefined;
+}
+
+function capabilityCwdFor(options: RunAgentStepOptions): string {
+  const path =
+    workspacePath(options.state.workspace) ??
+    repositoryPath(options.state.repository);
+
+  if (path !== undefined) {
+    return path;
+  }
+
+  if ((options.agent.tools ?? []).length === 0) {
+    return process.cwd();
+  }
+
+  throw codedError(
+    `Agent ${options.agent.id} declares local tools but no repository or workspace path is available`,
+    "agent_tool_cwd_missing"
+  );
+}
+
 type JsonSchema = {
   type?: unknown;
   enum?: unknown;
@@ -232,7 +260,7 @@ async function runFlueAgentStep(
     return fakeAgentOutput(options.agent.id);
   }
 
-  const capabilityCwd = workspacePath(options.state.workspace) ?? process.cwd();
+  const capabilityCwd = capabilityCwdFor(options);
   const capabilities = await resolveFlueAgentCapabilities({
     agent: options.agent,
     cwd: capabilityCwd

@@ -327,11 +327,15 @@ describe("flue modules", () => {
   it("injects configured skills and tools into read-only Flue agent steps", async () => {
     const initCalls: InitCall[] = [];
     const local = vi.fn();
+    const runGit = vi.fn(async () => " M src/index.ts\n");
     vi.doMock("@flue/runtime/node", () => ({ local }));
+    vi.doMock("../../src/core/git.js", () => ({ runGit }));
 
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-"));
+    const repositoryPath = path.join(root, "repo");
     const agentDir = path.join(root, "agents", "review-planner");
     await mkdir(agentDir, { recursive: true });
+    await mkdir(repositoryPath, { recursive: true });
     await createImplementationSafeGitSkill(root);
 
     const instructionsPath = path.join(agentDir, "instructions.md");
@@ -378,8 +382,15 @@ describe("flue modules", () => {
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
-            repository: undefined,
-            workspace: { path: root },
+            repository: {
+              id: "example",
+              provider: "github",
+              owner: "org",
+              name: "repo",
+              path: repositoryPath,
+              remote: "origin"
+            },
+            workspace: undefined,
             run: { run_id: "run-1", target: "github_pr" },
             steps: {}
           }
@@ -418,6 +429,8 @@ describe("flue modules", () => {
 
     expect(config.skills).toHaveLength(1);
     expect(config.tools).toHaveLength(1);
+    await config.tools?.[0]?.execute({});
+    expect(runGit).toHaveBeenCalledWith(repositoryPath, ["status", "--short"]);
     expect(local).not.toHaveBeenCalled();
   });
 
