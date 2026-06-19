@@ -134,6 +134,54 @@ async function writeWorkflow(root: string): Promise<void> {
   );
 }
 
+async function writeToyWorkflow(root: string): Promise<void> {
+  await mkdir(path.join(root, "workflows", "toy-review"), { recursive: true });
+  await writeFile(
+    path.join(root, "routing.yaml"),
+    [
+      "routes:",
+      "  - name: toy-review",
+      "    when: {}",
+      "    target:",
+      "      type: workflow",
+      "      id: toy-review",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "toy-review", "workflow.yaml"),
+    [
+      "id: toy-review",
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "toy-review", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: preflight",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifact: preflight.json",
+      "  - id: toy_agent",
+      "    type: agent",
+      "    agent: review-planner",
+      "    output_schema: review_plan",
+      "    artifact: toy-agent.json",
+      "    input:",
+      "      preflight: $.steps.preflight",
+      "    after:",
+      "      - preflight",
+      ""
+    ].join("\n")
+  );
+}
+
 async function writeFullCodeReviewWorkflow(root: string): Promise<void> {
   await writeFile(
     path.join(root, "workflows", "code-review", "workflow.yaml"),
@@ -711,6 +759,52 @@ describe("configured workflow runner", () => {
       await expect(
         readFile(path.join(root, "artifacts", "run-1", "review-plan.json"), "utf8")
       ).resolves.toContain("Plan");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("runs a new configured workflow without a workflow-specific TypeScript module", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeToyWorkflow(root);
+      await writeReviewPlannerAgent(root);
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        workflowsRoot: path.join(root, "workflows"),
+        agentsRoot: path.join(root, "agents"),
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" })),
+          runAgentStep: vi.fn(async ({ input }: { input: unknown }) => ({
+            summary: "Toy workflow executed",
+            focus_areas: [],
+            files_to_review: [],
+            input
+          }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error("Expected success result");
+      }
+      expect(result.workflow_id).toBe("toy-review");
+      expect(result.steps.toy_agent).toMatchObject({
+        summary: "Toy workflow executed",
+        input: { preflight: { status: "ok" } }
+      });
+      await expect(
+        readFile(path.join(root, "artifacts", "run-1", "toy-agent.json"), "utf8")
+      ).resolves.toContain("Toy workflow executed");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
