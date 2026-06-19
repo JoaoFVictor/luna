@@ -963,7 +963,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("uses the default workflow for legacy github_pr payloads with real routing config", async () => {
+  it("routes legacy github_pr payloads through normal routing rules", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -972,10 +972,13 @@ describe("configured workflow runner", () => {
       await writeReviewPlannerAgent(root);
 
       const result = await runConfiguredWorkflow({
-        invocation,
+        invocation: {
+          ...invocation,
+          source: "github",
+          event: "pull_request.opened"
+        } as unknown as Invocation,
         configRoot: root,
         workflowsRoot: path.join(root, "workflows"),
-        defaultWorkflowId: "code-review",
         dependencies: {
           createRunIdentity: () => ({
             run_id: "run-1",
@@ -1000,7 +1003,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("does not hide malformed explicit targets behind the default workflow", async () => {
+  it("rejects malformed explicit targets", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -1015,7 +1018,6 @@ describe("configured workflow runner", () => {
           } as unknown as Invocation,
           configRoot: root,
           workflowsRoot: path.join(root, "workflows"),
-          defaultWorkflowId: "code-review",
           dependencies: {
             createRunIdentity: () => ({
               run_id: "run-1",

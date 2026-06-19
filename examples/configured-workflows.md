@@ -22,5 +22,5 @@ The supported subset covers the schema features used by the bundled agents:
 objects, required properties, arrays, strings, numbers, integers, booleans,
 string enums, `minLength`, and `minimum`.
 
-The compatibility workflow `code-review` remains available while existing
-integrations migrate to `luna`.
+The only Flue workflow entrypoint is `luna`; workflow selection happens through
+configuration and routing.

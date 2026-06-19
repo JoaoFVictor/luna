@@ -116,32 +116,6 @@ describe("flue local CLI wrapper", () => {
     ]);
   });
 
-  it("can build a command for the compatibility code-review workflow", async () => {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-command-"));
-    await mkdir(path.join(projectRoot, "node_modules", "@flue", "cli"), {
-      recursive: true
-    });
-    await writeFile(
-      path.join(projectRoot, "node_modules", "@flue", "cli", "package.json"),
-      JSON.stringify({ bin: { flue: "./bin/flue.js" } })
-    );
-
-    const command = await buildFlueRunCommand(validInvocation, {
-      projectRoot,
-      workflowName: "code-review"
-    });
-
-    expect(command.args).toEqual([
-      path.join(projectRoot, "node_modules", "@flue", "cli", "bin", "flue.js"),
-      "run",
-      "code-review",
-      "--target",
-      "node",
-      "--payload",
-      JSON.stringify(validInvocation)
-    ]);
-  });
-
   it("validates invocation JSON before invoking Flue", async () => {
     const invocationFile = path.join(
       await mkdtemp(path.join(tmpdir(), "luna-cli-invalid-")),
@@ -166,9 +140,9 @@ describe("flue local CLI wrapper", () => {
     await expect(loadInvocationFromFile(invocationFile)).resolves.toEqual(validInvocation);
   });
 
-  it("does not import or call the code-review workflow directly", async () => {
+  it("does not import or call workflow modules directly", async () => {
     vi.resetModules();
-    vi.doMock("../../src/workflows/code-review.js", () => {
+    vi.doMock("../../src/workflows/luna.js", () => {
       throw new Error("CLI should invoke Flue, not import the workflow");
     });
 
@@ -188,7 +162,7 @@ describe("flue local CLI wrapper", () => {
     ).resolves.toBe(0);
 
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
-    vi.doUnmock("../../src/workflows/code-review.js");
+    vi.doUnmock("../../src/workflows/luna.js");
     vi.resetModules();
   });
 

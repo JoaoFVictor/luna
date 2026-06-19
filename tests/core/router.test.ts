@@ -71,6 +71,19 @@ describe("router", () => {
     ).toEqual({ type: "workflow", id: "code-review" });
   });
 
+  it("does not treat legacy string targets as explicit workflow targets", () => {
+    expect(
+      routeInvocation(
+        {
+          source: "github",
+          event: "pull_request.opened",
+          target: "github_pr"
+        },
+        routingConfig
+      )
+    ).toEqual({ type: "workflow", id: "code-review" });
+  });
+
   it("throws no_route_matched for unmatched input", () => {
     expect(() =>
       routeInvocation(

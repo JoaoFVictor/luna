@@ -9,10 +9,6 @@ import {
 } from "../core/configured-workflow-runner.js";
 import type { Invocation } from "../core/types.js";
 
-type RunWithFlueOptions = {
-  defaultWorkflowId?: string;
-};
-
 function codedError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };
   error.code = code;
@@ -223,15 +219,11 @@ async function runFlueAgentStep(
 }
 
 export async function runWithFlue(
-  ctx: FlueContext<Invocation>,
-  options: RunWithFlueOptions = {}
+  ctx: FlueContext<Invocation>
 ): Promise<ConfiguredWorkflowResult> {
   return await runConfiguredWorkflow({
     invocation: ctx.payload,
     configRoot: process.env.LUNA_CONFIG_ROOT ?? "config",
-    ...(options.defaultWorkflowId === undefined
-      ? {}
-      : { defaultWorkflowId: options.defaultWorkflowId }),
     dependencies: {
       runAgentStep: async (agentStepOptions) =>
         await runFlueAgentStep(ctx, agentStepOptions)

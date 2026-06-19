@@ -5,12 +5,7 @@ routes:
     use_target_from_input: true
 
   - name: github-pr-code-review
-    when:
-      source: github
-      event_in:
-        - pull_request.opened
-        - pull_request.synchronize
-        - pull_request.ready_for_review
+    when: {}
     target:
       type: workflow
       id: code-review

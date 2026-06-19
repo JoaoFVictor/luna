@@ -71,13 +71,11 @@ describe("flue modules", () => {
     expect((mod.description as string).trim()).not.toBe("");
   });
 
-  it.each([
-    ["luna", "../../src/workflows/luna.js"],
-    ["code-review", "../../src/workflows/code-review.js"]
-  ])("exports a %s workflow run function", async (_name, modulePath) => {
-    const workflow = await importWorkflowWithRunnerMock(modulePath, async () => ({
-      status: "success"
-    }));
+  it("exports the luna workflow run function", async () => {
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      async () => ({ status: "success" })
+    );
 
     expect(typeof workflow.run).toBe("function");
   });
@@ -96,28 +94,6 @@ describe("flue modules", () => {
     expect(runConfiguredWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
         invocation: gitInvocation,
-        configRoot: "config"
-      })
-    );
-    const options = runConfiguredWorkflow.mock.calls[0]?.[0];
-    expect(options).not.toHaveProperty("defaultWorkflowId");
-  });
-
-  it("keeps code-review as a compatibility wrapper around the configured runner", async () => {
-    const runConfiguredWorkflow = vi.fn(
-      async (_options: RunConfiguredWorkflowOptions) => ({ status: "success" })
-    );
-    const workflow = await importWorkflowWithRunnerMock(
-      "../../src/workflows/code-review.js",
-      runConfiguredWorkflow
-    );
-
-    await workflow.run({ payload: gitInvocation } as never);
-
-    expect(runConfiguredWorkflow).toHaveBeenCalledWith(
-      expect.objectContaining({
-        invocation: gitInvocation,
-        defaultWorkflowId: "code-review",
         configRoot: "config"
       })
     );

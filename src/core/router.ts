@@ -40,7 +40,10 @@ export function routeInvocation(
   routingConfig: RoutingConfig
 ): RouteTarget {
   for (const route of routingConfig.routes) {
-    const hasInputTarget = invocation.target !== undefined;
+    const hasInputTarget =
+      typeof invocation.target === "object" &&
+      invocation.target !== null &&
+      !Array.isArray(invocation.target);
 
     if (
       route.when.has_target === true &&

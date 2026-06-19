@@ -78,7 +78,6 @@ export type RunConfiguredWorkflowOptions = {
   configRoot?: string;
   workflowsRoot?: string;
   agentsRoot?: string;
-  defaultWorkflowId?: string;
   dependencies?: ConfiguredWorkflowRunnerDependencies;
   attempt?: number;
   throwOnError?: boolean;
@@ -166,26 +165,10 @@ async function loadConfigs(configRoot: string): Promise<{
 function workflowIdFromRoute(
   invocation: Invocation,
   routing: RoutingConfig,
-  dependencies: ConfiguredWorkflowRunnerDependencies,
-  defaultWorkflowId: string | undefined
+  dependencies: ConfiguredWorkflowRunnerDependencies
 ): string {
   const routeInvocation = dependencies.routeInvocation ?? defaultRouteInvocation;
-  let target: RouteTarget;
-
-  try {
-    target = routeInvocation(invocation, routing);
-  } catch (cause) {
-    const code = (cause as { code?: unknown })?.code;
-    const canUseCompatibilityDefault =
-      code === "no_route_matched" ||
-      (code === "invalid_invocation" && invocation.target === "github_pr");
-
-    if (defaultWorkflowId !== undefined && canUseCompatibilityDefault) {
-      return defaultWorkflowId;
-    }
-
-    throw cause;
-  }
+  const target: RouteTarget = routeInvocation(invocation, routing);
 
   return target.id;
 }
@@ -520,7 +503,6 @@ export async function runConfiguredWorkflow({
   configRoot = resolveConfigRoot(),
   workflowsRoot,
   agentsRoot,
-  defaultWorkflowId,
   dependencies = {},
   attempt = 1,
   throwOnError = true
@@ -558,8 +540,7 @@ export async function runConfiguredWorkflow({
     workflowId = workflowIdFromRoute(
       invocation,
       configs.routing,
-      dependencies,
-      defaultWorkflowId
+      dependencies
     );
     repository = resolveRepository(
       invocation,
