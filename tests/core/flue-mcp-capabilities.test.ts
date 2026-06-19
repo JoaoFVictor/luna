@@ -61,6 +61,46 @@ describe("flue mcp capabilities", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it("matches runtime MCP adapted names for sanitized server and tool parts", async () => {
+    const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const connectMcpServer = vi.fn().mockResolvedValue({
+      name: "github.enterprise",
+      tools: [
+        tool("mcp__github_enterprise__get_pull-request"),
+        tool("mcp__github_enterprise__unnamed"),
+        tool("mcp__github_enterprise__ignored")
+      ],
+      close
+    });
+
+    const result = await resolveFlueMcpTools({
+      ids: ["github.enterprise"],
+      agentMode: "read_only",
+      config: {
+        mcp_servers: [
+          {
+            id: "github.enterprise",
+            transport: "streamable-http",
+            url_env: "LUNA_MCP_GITHUB_ENTERPRISE_URL",
+            headers: {},
+            allowed_tools: ["get.pull-request", "..."],
+            allowed_agent_modes: ["read_only"],
+            timeout_ms: 30000
+          }
+        ]
+      },
+      env: {
+        LUNA_MCP_GITHUB_ENTERPRISE_URL: "https://mcp.example.test"
+      },
+      connectMcpServer
+    });
+
+    expect(result.tools.map((resolvedTool) => resolvedTool.name)).toEqual([
+      "mcp__github_enterprise__get_pull-request",
+      "mcp__github_enterprise__unnamed"
+    ]);
+  });
+
   it("rejects MCP servers not allowed for agent mode", async () => {
     await expect(
       resolveFlueMcpTools({
@@ -108,8 +148,9 @@ describe("flue mcp capabilities", () => {
     });
   });
 
-  it("closes already opened connections when a later server connect fails", async () => {
+  it("wraps connect failures and closes already opened connections", async () => {
     const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const connectFailure = new Error("connection failed");
     const connectMcpServer = vi
       .fn()
       .mockResolvedValueOnce({
@@ -117,7 +158,7 @@ describe("flue mcp capabilities", () => {
         tools: [tool("mcp__github__get_pull_request")],
         close
       })
-      .mockRejectedValueOnce(new Error("connection failed"));
+      .mockRejectedValueOnce(connectFailure);
 
     await expect(
       resolveFlueMcpTools({
@@ -144,7 +185,11 @@ describe("flue mcp capabilities", () => {
         },
         connectMcpServer
       })
-    ).rejects.toThrow("connection failed");
+    ).rejects.toMatchObject({
+      code: "mcp_server_connect_failed",
+      message: expect.stringContaining("linear"),
+      cause: connectFailure
+    });
 
     expect(close).toHaveBeenCalledTimes(1);
   });

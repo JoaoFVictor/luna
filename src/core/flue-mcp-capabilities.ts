@@ -8,6 +8,7 @@ import type { McpConfig, McpServerConfig } from "./mcp-config.js";
 type McpCapabilityErrorCode =
   | "mcp_agent_mode_not_allowed"
   | "mcp_env_missing"
+  | "mcp_server_connect_failed"
   | "mcp_server_unknown";
 
 type ConnectMcpServer = typeof defaultConnectMcpServer;
@@ -20,16 +21,28 @@ export type ResolvedFlueMcpTools = {
 
 function mcpCapabilityError(
   message: string,
-  code: McpCapabilityErrorCode
+  code: McpCapabilityErrorCode,
+  cause?: unknown
 ): Error & { code: McpCapabilityErrorCode } {
-  const error = new Error(message) as Error & { code: McpCapabilityErrorCode };
+  const error = new Error(message, { cause }) as Error & {
+    code: McpCapabilityErrorCode;
+  };
   error.code = code;
 
   return error;
 }
 
+function sanitizeMcpToolNamePart(value: string): string {
+  return (
+    value.replace(/[^A-Za-z0-9_-]/g, "_").replace(/^_+|_+$/g, "") ||
+    "unnamed"
+  );
+}
+
 function adaptedMcpToolName(serverId: string, toolName: string): string {
-  return `mcp__${serverId}__${toolName.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  return `mcp__${sanitizeMcpToolNamePart(serverId)}__${sanitizeMcpToolNamePart(
+    toolName
+  )}`;
 }
 
 function requireEnv(
@@ -112,24 +125,33 @@ export async function resolveFlueMcpTools({
 
       const url = requireEnv(env, server.url_env, server.id);
       const headers = resolveHeaders(server, env);
-      const connection = await connectMcpServer(server.id, {
-        url,
-        transport: server.transport,
-        headers,
-        timeoutMs: server.timeout_ms
-      });
-      connections.push(connection);
 
-      const allowedToolNames = new Set(
-        server.allowed_tools.map((toolName) =>
-          adaptedMcpToolName(server.id, toolName)
-        )
-      );
-      tools.push(
-        ...connection.tools.filter((toolDefinition) =>
-          allowedToolNames.has(toolDefinition.name)
-        )
-      );
+      try {
+        const connection = await connectMcpServer(server.id, {
+          url,
+          transport: server.transport,
+          headers,
+          timeoutMs: server.timeout_ms
+        });
+        connections.push(connection);
+
+        const allowedToolNames = new Set(
+          server.allowed_tools.map((toolName) =>
+            adaptedMcpToolName(server.id, toolName)
+          )
+        );
+        tools.push(
+          ...connection.tools.filter((toolDefinition) =>
+            allowedToolNames.has(toolDefinition.name)
+          )
+        );
+      } catch (cause) {
+        throw mcpCapabilityError(
+          `Failed to connect MCP server ${server.id}`,
+          "mcp_server_connect_failed",
+          cause
+        );
+      }
     }
   } catch (cause) {
     await Promise.allSettled(
