@@ -1,13 +1,15 @@
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import path, { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z, ZodError } from "zod";
 import {
   loadJsonFile,
+  loadOptionalYamlFile,
   loadYamlFile,
   resolveConfigRoot
 } from "../../src/core/config-loader.js";
+import { McpConfigSchema } from "../../src/core/mcp-config.js";
 import { resolveModelProfiles } from "../../src/core/model-config.js";
 import {
   AppConfigSchema,
@@ -22,6 +24,7 @@ const configSchemas = {
   "app.yaml": AppConfigSchema,
   "implementation.yaml": ImplementationConfigSchema,
   "jira.yaml": JiraConfigSchema,
+  "mcp.yaml": McpConfigSchema,
   "models.yaml": ModelsConfigSchema,
   "repositories.yaml": RepositoriesConfigSchema,
   "routing.yaml": RoutingConfigSchema
@@ -109,6 +112,17 @@ describe("config loader", () => {
       code: "config_read_failed",
       path: filePath
     });
+  });
+
+  it("returns undefined for missing optional YAML files", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-config-loader-"));
+
+    await expect(
+      loadOptionalYamlFile(
+        path.join(root, "missing.yaml"),
+        z.object({ enabled: z.boolean() })
+      )
+    ).resolves.toBeUndefined();
   });
 
   it("uses config as the default config root", () => {

@@ -11,7 +11,11 @@ import {
   loadAgentDefinition,
   type AgentDefinition
 } from "./agent-definition.js";
-import { loadYamlFile, resolveConfigRoot } from "./config-loader.js";
+import {
+  loadOptionalYamlFile,
+  loadYamlFile,
+  resolveConfigRoot
+} from "./config-loader.js";
 import {
   resolveModelProfiles,
   toFlueModelOptions,
@@ -220,17 +224,6 @@ async function loadRuntimeConfig(
       ? {}
       : { implementation: implementation.implementation })
   };
-}
-
-async function loadOptionalYamlFile<T>(
-  filePath: string,
-  schema: { parse(value: unknown): T }
-): Promise<T | undefined> {
-  if (!(await pathExists(filePath))) {
-    return undefined;
-  }
-
-  return await loadYamlFile(filePath, schema);
 }
 
 function workflowIdFromRoute(
