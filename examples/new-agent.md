@@ -1,7 +1,7 @@
 # Create A New Agent
 
-Agents are reusable read-only workers. A workflow graph decides when an agent
-runs and what input it receives.
+Agents are reusable workers. A workflow graph decides when an agent runs and
+what input it receives.
 
 ## 1. Create The Agent Directory
 
@@ -26,7 +26,7 @@ output_schema: output.schema.json
 Rules:
 
 - The directory name and `id` must match.
-- `mode` currently supports `read_only`.
+- `mode` supports `read_only` and `trusted_host_local_write`.
 - `model_profile` must exist in `config/models.yaml`.
 - `instructions_file` and `output_schema` must stay inside the agent directory.
 
@@ -69,7 +69,8 @@ strings, numbers, integers, booleans, string enums, `minLength`, and `minimum`.
 
 ## Add Skills And Tools
 
-Skills are markdown capabilities loaded through paths to `SKILL.md`:
+Skills are markdown capabilities loaded through paths to `SKILL.md`. Paths are
+relative to the agent directory:
 
 ```yaml
 skills:

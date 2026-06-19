@@ -19,7 +19,8 @@ was the first concrete workflow used to prove the architecture.
 - Implement Jira tasks in a managed write worktree through a trusted local
   agent mode.
 - Configure model profiles once and reuse them across agents.
-- Add new read-only agents with YAML, Markdown instructions, and JSON Schema.
+- Add new agents with YAML, Markdown instructions, JSON Schema, and explicit
+  read/write modes.
 - Add new workflows with YAML graphs when they can reuse Luna's current
   git built-ins.
 - Add new input sources by implementing CLI adapters selected with `--from`.
@@ -125,9 +126,10 @@ tools:
   - repository.diff-summary
 ```
 
-Skills are relative paths to `SKILL.md` files. Tools are IDs resolved through
-Luna's TypeScript registry. Workflows do not declare tools directly; the
-workflow chooses agents, and each agent brings its own capabilities.
+Skills are paths to `SKILL.md` files relative to the agent directory. Tools are
+IDs resolved through Luna's TypeScript registry. Workflows do not declare tools
+directly; the workflow chooses agents, and each agent brings its own
+capabilities.
 
 ## Project Structure
 
