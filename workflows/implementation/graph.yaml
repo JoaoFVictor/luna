@@ -1,0 +1,118 @@
+nodes:
+  - id: preflight
+    type: built_in
+    uses: preflight
+    artifact: preflight.json
+
+  - id: workspace
+    type: built_in
+    uses: prepare_implementation_worktree
+    artifact: workspace.json
+    after:
+      - preflight
+
+  - id: task_context
+    type: built_in
+    uses: collect_task_context
+    artifact: task-context.json
+    after:
+      - workspace
+
+  - id: implementation_plan
+    type: agent
+    agent: implementation-planner
+    output_schema: implementation_plan
+    artifact: implementation-plan.json
+    input:
+      invocation: $.invocation
+      task_context: $.steps.task_context
+    after:
+      - task_context
+
+  - id: implementation
+    type: agent_loop
+    agent: code-implementer
+    output_schema: implementation_result
+    artifact:
+      attempts: implementation-attempts.json
+      validation: validation.json
+      result: implementation-result.json
+    input:
+      invocation: $.invocation
+      task_context: $.steps.task_context
+      implementation_plan: $.steps.implementation_plan
+      workspace: $.workspace
+    sandbox:
+      type: trusted_host_local
+      cwd: $.workspace.path
+      env_allowlist: []
+    validation:
+      commands: $.config.implementation.validation.commands
+      max_output_bytes: $.config.implementation.validation.max_output_bytes
+    repair:
+      attempts: $.config.implementation.validation.repair_attempts
+    after:
+      - implementation_plan
+
+  - id: worktree_diff
+    type: built_in
+    uses: collect_worktree_diff
+    artifact: worktree-diff.json
+    after:
+      - implementation
+
+  - id: implementation_review
+    type: agent
+    agent: implementation-reviewer
+    output_schema: implementation_review
+    artifact: implementation-review.json
+    input:
+      invocation: $.invocation
+      task_context: $.steps.task_context
+      implementation_result: $.steps.implementation
+      worktree_diff: $.steps.worktree_diff
+    after:
+      - worktree_diff
+
+  - id: acceptance
+    type: agent
+    agent: implementation-acceptance-reviewer
+    output_schema: acceptance_decision
+    artifact: acceptance-review.json
+    input:
+      invocation: $.invocation
+      task_context: $.steps.task_context
+      implementation_result: $.steps.implementation
+      review: $.steps.implementation_review
+    after:
+      - implementation_review
+
+  - id: commit
+    type: built_in
+    uses: commit_changes
+    artifact: commit.json
+    after:
+      - acceptance
+
+  - id: push
+    type: built_in
+    uses: push_branch
+    artifact: push.json
+    after:
+      - commit
+
+  - id: pull_request
+    type: built_in
+    uses: open_pull_request
+    artifact: pull-request.json
+    after:
+      - push
+
+  - id: final_report
+    type: built_in
+    uses: final_implementation_report
+    artifact:
+      json: final-report.json
+      markdown: final-report.md
+    after:
+      - pull_request

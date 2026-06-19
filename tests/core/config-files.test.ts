@@ -13,7 +13,7 @@ type AgentConfig = {
 type WorkflowGraph = {
   nodes: Array<{
     id: string;
-    type: "agent" | "built_in";
+    type: "agent" | "built_in" | "agent_loop";
     agent?: string;
     after?: string[];
   }>;
@@ -130,9 +130,17 @@ describe("config definition files", () => {
       expect.arrayContaining([
         "agents/acceptance-reviewer/agent.yaml",
         "agents/code-reviewer/agent.yaml",
+        "agents/code-implementer/agent.yaml",
+        "agents/implementation-acceptance-reviewer/agent.yaml",
+        "agents/implementation-planner/agent.yaml",
+        "agents/implementation-reviewer/agent.yaml",
         "agents/review-planner/agent.yaml",
+        "config/implementation.yaml",
+        "config/jira.yaml",
         "workflows/code-review/graph.yaml",
-        "workflows/code-review/workflow.yaml"
+        "workflows/code-review/workflow.yaml",
+        "workflows/implementation/graph.yaml",
+        "workflows/implementation/workflow.yaml"
       ])
     );
 
@@ -149,9 +157,15 @@ describe("config definition files", () => {
       expect.arrayContaining([
         "agents/acceptance-reviewer/output.schema.json",
         "agents/code-reviewer/output.schema.json",
+        "agents/code-implementer/output.schema.json",
+        "agents/implementation-acceptance-reviewer/output.schema.json",
+        "agents/implementation-planner/output.schema.json",
+        "agents/implementation-reviewer/output.schema.json",
         "agents/review-planner/output.schema.json",
         "workflows/code-review/input.schema.json",
-        "workflows/code-review/output.schema.json"
+        "workflows/code-review/output.schema.json",
+        "workflows/implementation/input.schema.json",
+        "workflows/implementation/output.schema.json"
       ])
     );
 
@@ -173,7 +187,11 @@ describe("config definition files", () => {
 
     expect(agentFiles).toEqual([
       "agents/acceptance-reviewer/agent.yaml",
+      "agents/code-implementer/agent.yaml",
       "agents/code-reviewer/agent.yaml",
+      "agents/implementation-acceptance-reviewer/agent.yaml",
+      "agents/implementation-planner/agent.yaml",
+      "agents/implementation-reviewer/agent.yaml",
       "agents/review-planner/agent.yaml"
     ]);
 
@@ -264,6 +282,47 @@ describe("config definition files", () => {
     ]);
 
     for (const node of graph.nodes.filter((node) => node.type === "agent")) {
+      expect(node.agent, node.id).toBeDefined();
+      await expect(access(join("agents", node.agent ?? ""))).resolves.toBe(
+        undefined
+      );
+    }
+  });
+
+  it("references existing agents from the implementation workflow graph", async () => {
+    const graph = (await parseYamlFile(
+      "workflows/implementation/graph.yaml"
+    )) as WorkflowGraph;
+
+    expect(graph.nodes.map((node) => node.id)).toEqual([
+      "preflight",
+      "workspace",
+      "task_context",
+      "implementation_plan",
+      "implementation",
+      "worktree_diff",
+      "implementation_review",
+      "acceptance",
+      "commit",
+      "push",
+      "pull_request",
+      "final_report"
+    ]);
+    expect(graph.nodes.find((node) => node.id === "implementation")).toEqual(
+      expect.objectContaining({
+        type: "agent_loop",
+        agent: "code-implementer",
+        artifact: {
+          attempts: "implementation-attempts.json",
+          validation: "validation.json",
+          result: "implementation-result.json"
+        }
+      })
+    );
+
+    for (const node of graph.nodes.filter(
+      (candidate) => candidate.type === "agent" || candidate.type === "agent_loop"
+    )) {
       expect(node.agent, node.id).toBeDefined();
       await expect(access(join("agents", node.agent ?? ""))).resolves.toBe(
         undefined

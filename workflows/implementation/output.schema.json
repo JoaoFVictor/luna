@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "run", "report"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "success"
+        },
+        "run": {
+          "$ref": "#/definitions/run_identity"
+        },
+        "report": {
+          "type": "object"
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspace"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "run", "error"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "failed"
+        },
+        "run": {
+          "$ref": "#/definitions/run_identity"
+        },
+        "error": {
+          "$ref": "#/definitions/error_artifact"
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspace"
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "run_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "target"],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "const": "jira_task"
+        },
+        "started_at": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["run_id", "path", "preserved", "reason"],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preserved": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "error_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+id: implementation-acceptance-reviewer
+description: Decides whether an implementation satisfies the Jira task.
+model_profile: deep
+mode: read_only
+instructions_file: instructions.md
+output_schema: output.schema.json

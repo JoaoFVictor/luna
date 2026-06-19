@@ -1,0 +1,26 @@
+implementation:
+  branch_pattern: feature/{slug}
+  commit:
+    enabled: false
+    co_author: false
+  push:
+    enabled: false
+    remote: origin
+  pull_request:
+    enabled: false
+    provider: github
+    draft: true
+    base_ref: main
+  sandbox:
+    type: trusted_host_local
+    env_allowlist: []
+  validation:
+    repair_attempts: 1
+    max_output_bytes: 200000
+    commands:
+      - cmd: npm
+        args: ["test"]
+        timeout_ms: 120000
+      - cmd: npm
+        args: ["run", "typecheck"]
+        timeout_ms: 120000
