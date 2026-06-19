@@ -2,11 +2,15 @@ import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
+import { fetchGitHubPullRequestInvocation } from "./github-pr-adapter.js";
 import { InvocationSchema, type Invocation } from "./types.js";
 
 export type CliArgs = {
   command: "run";
   input: string;
+} | {
+  command: "review-pr";
+  url: string;
 };
 
 export type FlueRunCommand = {
@@ -21,6 +25,7 @@ export type BuildFlueRunCommandOptions = {
 export type MainDependencies = {
   execute?: (command: string, args: string[]) => Promise<number>;
   buildCommand?: (invocation: Invocation) => Promise<FlueRunCommand>;
+  loadPullRequestInvocation?: (url: string) => Promise<Invocation>;
 };
 
 type PackageJsonWithBin = {
@@ -80,18 +85,28 @@ export async function findProjectRoot(startPath = process.cwd()): Promise<string
 export function parseCliArgs(args: string[]): CliArgs {
   const [command, ...rest] = args;
 
-  if (command !== "run") {
-    throw cliError("unknown_command", "Expected command: run");
+  if (command === "run") {
+    const inputFlagIndex = rest.indexOf("--input");
+    const input = inputFlagIndex >= 0 ? rest[inputFlagIndex + 1] : undefined;
+
+    if (!input) {
+      throw cliError("missing_input", "Missing required --input <path>");
+    }
+
+    return { command, input };
   }
 
-  const inputFlagIndex = rest.indexOf("--input");
-  const input = inputFlagIndex >= 0 ? rest[inputFlagIndex + 1] : undefined;
+  if (command === "review-pr") {
+    const [url] = rest;
 
-  if (!input) {
-    throw cliError("missing_input", "Missing required --input <path>");
+    if (!url) {
+      throw cliError("missing_pr_url", "Missing required PR URL");
+    }
+
+    return { command, url };
   }
 
-  return { command, input };
+  throw cliError("unknown_command", "Expected command: run or review-pr");
 }
 
 export async function loadInvocationFromFile(filePath: string): Promise<Invocation> {
@@ -220,7 +235,12 @@ export async function main(
   deps: MainDependencies = {}
 ): Promise<number> {
   const parsedArgs = parseCliArgs(args);
-  const invocation = await loadInvocationFromFile(parsedArgs.input);
+  const invocation =
+    parsedArgs.command === "run"
+      ? await loadInvocationFromFile(parsedArgs.input)
+      : await (deps.loadPullRequestInvocation ?? fetchGitHubPullRequestInvocation)(
+          parsedArgs.url
+        );
   const buildCommand = deps.buildCommand ?? buildFlueRunCommand;
   const command = await buildCommand(invocation);
   const execute = deps.execute ?? executeFile;

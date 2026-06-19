@@ -54,9 +54,24 @@ describe("flue local CLI wrapper", () => {
     });
   });
 
+  it("parses review-pr URL arguments", () => {
+    expect(
+      parseCliArgs(["review-pr", "https://github.com/withastro/luna/pull/123"])
+    ).toEqual({
+      command: "review-pr",
+      url: "https://github.com/withastro/luna/pull/123"
+    });
+  });
+
   it("throws missing_input when run input is missing", () => {
     expect(() => parseCliArgs(["run"])).toThrow(
       expect.objectContaining({ code: "missing_input" })
+    );
+  });
+
+  it("throws missing_pr_url when review-pr URL is missing", () => {
+    expect(() => parseCliArgs(["review-pr"])).toThrow(
+      expect.objectContaining({ code: "missing_pr_url" })
     );
   });
 
@@ -138,6 +153,29 @@ describe("flue local CLI wrapper", () => {
     await writeFile(invocationFile, JSON.stringify(validInvocation));
 
     await expect(loadInvocationFromFile(invocationFile)).resolves.toEqual(validInvocation);
+  });
+
+  it("loads a PR URL invocation through the GitHub adapter before invoking Flue", async () => {
+    const execute = vi.fn(async () => 0);
+    const buildCommand = vi.fn(async () => ({
+      command: process.execPath,
+      args: ["local-flue"]
+    }));
+    const loadPullRequestInvocation = vi.fn(async () => validInvocation);
+
+    await expect(
+      main(["review-pr", "https://github.com/octo-org/hello-world/pull/42"], {
+        execute,
+        buildCommand,
+        loadPullRequestInvocation
+      })
+    ).resolves.toBe(0);
+
+    expect(loadPullRequestInvocation).toHaveBeenCalledWith(
+      "https://github.com/octo-org/hello-world/pull/42"
+    );
+    expect(buildCommand).toHaveBeenCalledWith(validInvocation);
+    expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
   });
 
   it("does not import or call workflow modules directly", async () => {
