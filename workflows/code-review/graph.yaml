@@ -1,12 +1,78 @@
 nodes:
-  - id: review-planner
+  - id: preflight
+    type: built_in
+    uses: preflight
+    artifact: preflight.json
+
+  - id: workspace
+    type: built_in
+    uses: prepare_worktree
+    artifact: workspace.json
+    after:
+      - preflight
+
+  - id: repo_context
+    type: built_in
+    uses: collect_repo_context
+    artifact: repo-context.json
+    after:
+      - workspace
+
+  - id: review_plan
+    type: agent
     agent: review-planner
-  - id: code-reviewer
+    output_schema: review_plan
+    artifact: review-plan.json
+    input:
+      invocation: $.invocation
+      repo_context: $.steps.repo_context
+    after:
+      - repo_context
+
+  - id: code_review
+    type: agent
     agent: code-reviewer
-  - id: acceptance-reviewer
+    output_schema: code_review_findings
+    artifact: code-review-findings.json
+    input:
+      invocation: $.invocation
+      repo_context: $.steps.repo_context
+      review_plan: $.steps.review_plan
+    after:
+      - review_plan
+
+  - id: validate_findings
+    type: built_in
+    uses: validate_code_review_findings
+    artifact: code-review-findings.json
+    input:
+      repo_context: $.steps.repo_context
+      findings: $.steps.code_review
+    after:
+      - code_review
+
+  - id: acceptance
+    type: agent
     agent: acceptance-reviewer
-edges:
-  - from: review-planner
-    to: code-reviewer
-  - from: code-reviewer
-    to: acceptance-reviewer
+    output_schema: acceptance_decision
+    artifact: acceptance-review.json
+    input:
+      invocation: $.invocation
+      repo_context: $.steps.repo_context
+      review_plan: $.steps.review_plan
+      findings: $.steps.validate_findings
+    after:
+      - validate_findings
+
+  - id: final_report
+    type: built_in
+    uses: final_code_review_report
+    artifact:
+      json: final-report.json
+      markdown: final-report.md
+    input:
+      invocation: $.invocation
+      findings: $.steps.validate_findings
+      acceptance: $.steps.acceptance
+    after:
+      - acceptance

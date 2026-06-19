@@ -11,8 +11,12 @@ type AgentConfig = {
 };
 
 type WorkflowGraph = {
-  nodes: Array<{ id: string; agent?: string }>;
-  edges: Array<{ from: string; to: string }>;
+  nodes: Array<{
+    id: string;
+    type: "agent" | "built_in";
+    agent?: string;
+    after?: string[];
+  }>;
 };
 
 const yamlRoots = ["agents", "workflows", "config"];
@@ -246,16 +250,20 @@ describe("config definition files", () => {
     )) as WorkflowGraph;
 
     expect(graph.nodes.map((node) => node.id)).toEqual([
-      "review-planner",
-      "code-reviewer",
-      "acceptance-reviewer"
+      "preflight",
+      "workspace",
+      "repo_context",
+      "review_plan",
+      "code_review",
+      "validate_findings",
+      "acceptance",
+      "final_report"
     ]);
-    expect(graph.edges).toEqual([
-      { from: "review-planner", to: "code-reviewer" },
-      { from: "code-reviewer", to: "acceptance-reviewer" }
+    expect(graph.nodes.find((node) => node.id === "code_review")?.after).toEqual([
+      "review_plan"
     ]);
 
-    for (const node of graph.nodes) {
+    for (const node of graph.nodes.filter((node) => node.type === "agent")) {
       expect(node.agent, node.id).toBeDefined();
       await expect(access(join("agents", node.agent ?? ""))).resolves.toBe(
         undefined
