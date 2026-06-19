@@ -231,6 +231,100 @@ describe("config definition files", () => {
     }
   });
 
+  it("keeps implementation workflow output schema aligned with the final report contract", async () => {
+    const ajv = createSchemaAjv();
+    const schema = await parseJsonFile("workflows/implementation/output.schema.json");
+    const validate = ajv.compile(schema as AnySchema);
+    const output = {
+      status: "success",
+      run: {
+        run_id: "run-1",
+        target: "jira_task",
+        started_at: "2026-06-19T00:00:00.000Z"
+      },
+      report: {
+        jira: {
+          key: "ABC-123",
+          url: "https://company.atlassian.net/browse/ABC-123",
+          summary: "Fix checkout validation",
+          status: "To Do"
+        },
+        repository: {
+          provider: "github",
+          owner: "swinggo-dev",
+          name: "swg-front-nuxt"
+        },
+        status: "validation_failed",
+        branch: "feature/abc-123-fix-checkout-validation",
+        worktree: {
+          path: "/tmp/luna/swg-front-nuxt/run-1",
+          preserved: true,
+          reason: "commit_disabled"
+        },
+        validation: {
+          passed: false,
+          command_count: 1
+        },
+        commit: {
+          enabled: false,
+          skipped: true,
+          status: "disabled",
+          reason: "disabled"
+        },
+        push: {
+          enabled: false,
+          skipped: true,
+          status: "disabled",
+          reason: "disabled"
+        },
+        pull_request: {
+          enabled: false,
+          skipped: true,
+          status: "disabled",
+          reason: "disabled"
+        },
+        warnings: [
+          "trusted_host_local execution can access host filesystem, credentials, network, and local CLIs."
+        ]
+      },
+      workspace: {
+        run_id: "run-1",
+        path: "/tmp/luna/swg-front-nuxt/run-1",
+        preserved: true,
+        reason: "commit_disabled",
+        repository_id: "swg-front-nuxt",
+        remote: "origin",
+        base_ref: "main",
+        base_sha: "base-sha",
+        branch: "feature/abc-123-fix-checkout-validation"
+      }
+    };
+
+    expect(validate(output), formatAjvErrors(validate.errors)).toBe(true);
+
+    expect(
+      validate({
+        ...output,
+        report: {
+          ...output.report,
+          unexpected: true
+        }
+      }),
+      "report should reject additional properties"
+    ).toBe(false);
+
+    expect(
+      validate({
+        ...output,
+        workspace: {
+          ...output.workspace,
+          unexpected: true
+        }
+      }),
+      "workspace should reject additional properties"
+    ).toBe(false);
+  });
+
   it("accepts fork metadata in code review workflow input head repository", async () => {
     const ajv = createSchemaAjv();
     const schema = await parseJsonFile("workflows/code-review/input.schema.json");

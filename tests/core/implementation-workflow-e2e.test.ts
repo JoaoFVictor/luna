@@ -278,12 +278,13 @@ describe("implementation workflow e2e", () => {
           runAgentLoopStep: vi.fn(async () => {
             calls.push("agent_loop");
             return {
+              status: "failed",
+              attempts_exhausted: true,
               attempts: [{ attempt: 1, phase: "initial", validation }],
               validation,
               final_validation: validation,
               result: {
-                status: "failed",
-                attempts_exhausted: true
+                status: "failed"
               }
             };
           }),

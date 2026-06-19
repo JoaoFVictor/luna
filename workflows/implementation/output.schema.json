@@ -14,7 +14,7 @@
           "$ref": "#/definitions/run_identity"
         },
         "report": {
-          "type": "object"
+          "$ref": "#/definitions/final_report"
         },
         "workspace": {
           "$ref": "#/definitions/workspace"
@@ -62,9 +62,223 @@
         }
       }
     },
+    "final_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jira",
+        "repository",
+        "status",
+        "branch",
+        "worktree",
+        "validation",
+        "commit",
+        "push",
+        "pull_request",
+        "warnings"
+      ],
+      "properties": {
+        "jira": {
+          "$ref": "#/definitions/jira_summary"
+        },
+        "repository": {
+          "$ref": "#/definitions/repository"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["validation_failed", "ready_for_pr", "completed_with_skips"]
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worktree": {
+          "$ref": "#/definitions/worktree_summary"
+        },
+        "validation": {
+          "$ref": "#/definitions/validation_summary"
+        },
+        "commit": {
+          "$ref": "#/definitions/commit_action"
+        },
+        "push": {
+          "$ref": "#/definitions/push_action"
+        },
+        "pull_request": {
+          "$ref": "#/definitions/pull_request_action"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "jira_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "url", "summary", "status"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "owner", "name"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "const": "github"
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "worktree_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "preserved", "reason"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preserved": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "validation_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "command_count"],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "command_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "commit_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "skipped", "status"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit_sha": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "push_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "skipped", "status"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remote": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "pull_request_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "skipped", "status"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "const": "github"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "workspace": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "required": ["run_id", "path", "preserved", "reason"],
       "properties": {
         "run_id": {
@@ -79,6 +293,26 @@
           "type": "boolean"
         },
         "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remote": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_sha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branch": {
           "type": "string",
           "minLength": 1
         }
