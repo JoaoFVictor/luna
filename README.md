@@ -146,6 +146,21 @@ variables. `allowed_tools` uses original MCP tool names, such as
 `mcp__github__get_pull_request`. Luna filters exposed MCP tools through that
 allowlist and rejects servers that are not allowed for the agent mode.
 
+## Flue Subagents
+
+Agents can declare other Luna agents as Flue subagents:
+
+```yaml
+subagents:
+  - implementation-reviewer
+```
+
+The referenced ID must resolve to a valid Luna agent directory under
+`agents/<id>/`, including `agent.yaml`, the files referenced by
+`instructions_file` and `output_schema`, and a configured `model_profile`.
+Flue subagents run inside the parent agent session. They are not workflow graph
+nodes and do not create separate Luna artifacts automatically.
+
 ## Project Structure
 
 ```text

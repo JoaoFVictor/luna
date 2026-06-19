@@ -118,6 +118,19 @@ mcp_servers:
     timeout_ms: 30000
 ```
 
+## Add Subagents
+
+Reference another Luna agent by ID:
+
+```yaml
+subagents:
+  - implementation-reviewer
+```
+
+Create or reuse a valid `agents/implementation-reviewer/` directory with
+`agent.yaml`, `instructions_file`, `output_schema`, and a configured
+`model_profile`. No TypeScript is needed for each new subagent.
+
 ## 5. Use The Agent In A Workflow
 
 Add an agent node to a workflow `graph.yaml`:
