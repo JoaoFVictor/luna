@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { prepare } from "../../src/core/git-worktree-manager.js";
+import { githubPullRequestContextFrom } from "../../src/core/github-pr-context.js";
 import { collectRepoContext } from "../../src/core/repo-context-collector.js";
 import {
   createRealGitReviewFixture,
@@ -47,8 +48,9 @@ describe("repo context collector with real Git", () => {
       maxExcerptBytes: 64
     });
 
-    expect(created.invocation.head_repository.full_name).not.toBe(
-      created.invocation.base_repository.full_name
+    const pullRequest = githubPullRequestContextFrom(created.invocation);
+    expect(pullRequest.head_repository.full_name).not.toBe(
+      pullRequest.base_repository.full_name
     );
     expect(context.base_sha).toBe(created.base_sha);
     expect(context.head_sha).toBe(created.head_sha);

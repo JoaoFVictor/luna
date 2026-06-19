@@ -152,6 +152,7 @@ export async function createRealGitReviewFixture(): Promise<RealGitReviewFixture
     headMismatchInvocation: {
       ...invocation,
       references: {
+        ...invocation.references,
         base_sha: baseSha,
         head_sha: baseSha
       }
