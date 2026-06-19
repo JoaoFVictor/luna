@@ -14,7 +14,7 @@ const JiraPayloadSchema = z
   .object({
     instance_id: z.string().min(1),
     description: z.string().min(1),
-    acceptance_criteria: z.string().min(1),
+    acceptance_criteria: z.string(),
     status: z.string().min(1),
     issue_type: z.string().min(1)
   })

@@ -48,6 +48,20 @@ describe("Jira issue context parser", () => {
     expect(jiraIssueContextFrom(invocation)).toEqual(expected);
   });
 
+  it("allows empty acceptance criteria when Jira config has no acceptance field", () => {
+    expect(
+      jiraIssueContextFrom({
+        ...invocation,
+        payload: {
+          jira: {
+            ...(invocation.payload?.jira as Record<string, unknown>),
+            acceptance_criteria: ""
+          }
+        }
+      }).acceptanceCriteria
+    ).toBe("");
+  });
+
   it("preserves the generic missing payload error code", () => {
     expect(() =>
       jiraIssueContextFrom({

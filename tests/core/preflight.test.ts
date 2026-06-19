@@ -221,6 +221,38 @@ describe("preflight", () => {
     });
   });
 
+  it("supports git_managed_write when Jira acceptance criteria is empty", async () => {
+    const result = await runPreflight({
+      invocation: {
+        ...jiraInvocation,
+        payload: {
+          jira: {
+            ...(jiraInvocation.payload?.jira as Record<string, unknown>),
+            acceptance_criteria: ""
+          }
+        }
+      },
+      repository: {
+        ...gitRepository,
+        expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
+      },
+      workflow: { mode: "git_managed_write" },
+      implementation: implementationConfig,
+      runGit: async (_cwd, args) => {
+        if (args[0] === "remote") {
+          return "git@github.com:octo-org/hello-world.git\n";
+        }
+
+        return "true\n";
+      },
+      stat: async () => ({ isDirectory: () => true })
+    });
+
+    expect(result.repository.remote_url).toBe(
+      "git@github.com:octo-org/hello-world.git"
+    );
+  });
+
   it("matches git_managed_write SSH actual remote against HTTPS expected remote", async () => {
     const result = await runPreflight({
       invocation: jiraInvocation,
