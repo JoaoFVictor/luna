@@ -134,6 +134,32 @@ async function writeWorkflow(root: string): Promise<void> {
   );
 }
 
+async function writeReviewPlannerAgent(root: string): Promise<void> {
+  const agentRoot = path.join(root, "agents", "review-planner");
+  await mkdir(agentRoot, { recursive: true });
+
+  await writeFile(
+    path.join(agentRoot, "agent.yaml"),
+    [
+      "id: review-planner",
+      "description: Plans repository review",
+      "model_profile: planner",
+      "mode: read_only",
+      "instructions_file: instructions.md",
+      "output_schema: output.schema.json",
+      ""
+    ].join("\n")
+  );
+  await writeFile(path.join(agentRoot, "instructions.md"), "Plan the review.\n");
+  await writeFile(
+    path.join(agentRoot, "output.schema.json"),
+    JSON.stringify({
+      type: "object",
+      additionalProperties: true
+    })
+  );
+}
+
 describe("configured workflow runner", () => {
   it("runs a configured workflow graph and writes artifacts", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
@@ -141,6 +167,7 @@ describe("configured workflow runner", () => {
     try {
       await writeBaseConfig(root);
       await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
 
       const runBuiltInStep = vi.fn(async ({ uses }: { uses: string }) => {
         if (uses === "preflight") {
@@ -198,6 +225,102 @@ describe("configured workflow runner", () => {
     }
   });
 
+  it("passes agent definition, model options, and resolved input to agent steps", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
+
+      const repoContext = { files: ["src/index.ts"], summary: "existing" };
+      const runAgentStep = vi.fn(async () => ({
+        summary: "Plan",
+        focus_areas: [],
+        files_to_review: []
+      }));
+
+      await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        workflowsRoot: path.join(root, "workflows"),
+        agentsRoot: path.join(root, "agents"),
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
+            uses === "collect_repo_context" ? repoContext : { status: "ok" }
+          ),
+          runAgentStep
+        }
+      });
+
+      expect(runAgentStep).toHaveBeenCalledTimes(1);
+      expect(runAgentStep).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: expect.objectContaining({
+            id: "review-planner",
+            model_profile: "planner"
+          }),
+          model: {
+            model: "openai/gpt-5-mini",
+            thinkingLevel: "medium"
+          },
+          input: {
+            repo_context: repoContext
+          }
+        })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("throws model_profile_missing when an agent references an unknown model profile", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
+      await writeFile(
+        path.join(root, "models.yaml"),
+        [
+          "model_profiles:",
+          "  reviewer:",
+          "    model: openai/gpt-5-mini",
+          "    reasoning_effort: medium",
+          ""
+        ].join("\n")
+      );
+
+      await expect(
+        runConfiguredWorkflow({
+          invocation,
+          configRoot: root,
+          workflowsRoot: path.join(root, "workflows"),
+          agentsRoot: path.join(root, "agents"),
+          dependencies: {
+            createRunIdentity: () => ({
+              run_id: "run-1",
+              target: "github_pr",
+              started_at: "2026-06-19T00:00:00.000Z"
+            }),
+            runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
+              uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
+            ),
+            runAgentStep: vi.fn()
+          }
+        })
+      ).rejects.toMatchObject({ code: "model_profile_missing" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("maps missing workflow configuration to workflow_config_read_failed", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
@@ -231,6 +354,7 @@ describe("configured workflow runner", () => {
     try {
       await writeBaseConfig(root, "code-review", "real");
       await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
 
       const result = await runConfiguredWorkflow({
         invocation,

@@ -5,7 +5,16 @@ import {
   type BuiltInStepDependencies,
   type RunBuiltInStepOptions
 } from "./built-in-steps.js";
+import {
+  loadAgentDefinition,
+  type AgentDefinition
+} from "./agent-definition.js";
 import { loadYamlFile, resolveConfigRoot } from "./config-loader.js";
+import {
+  resolveModelProfiles,
+  toFlueModelOptions,
+  type ResolvedModelProfiles
+} from "./model-config.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import { createRunIdentity as defaultCreateRunIdentity } from "./run-identity.js";
 import {
@@ -33,9 +42,11 @@ import {
 type MaybePromise<T> = T | Promise<T>;
 
 export type RunAgentStepOptions = {
-  node: Extract<WorkflowNode, { type: "agent" }>;
-  state: WorkflowState;
+  agent: AgentDefinition;
+  node: WorkflowNode;
+  model: ReturnType<typeof toFlueModelOptions>;
   input: Record<string, unknown>;
+  state: WorkflowState;
 };
 
 export type ConfiguredWorkflowRunnerDependencies = {
@@ -202,10 +213,28 @@ function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
   );
 }
 
+function resolveAgentModel(
+  agent: AgentDefinition,
+  modelProfiles: ResolvedModelProfiles
+): ReturnType<typeof toFlueModelOptions> {
+  const profile = modelProfiles[agent.model_profile];
+
+  if (profile === undefined) {
+    throw configuredWorkflowError(
+      `Model profile not found for agent ${agent.id}: ${agent.model_profile}`,
+      "model_profile_missing"
+    );
+  }
+
+  return toFlueModelOptions(profile);
+}
+
 async function runWorkflowNode(
   node: WorkflowNode,
   state: WorkflowState,
-  dependencies: ConfiguredWorkflowRunnerDependencies
+  dependencies: ConfiguredWorkflowRunnerDependencies,
+  agentsRoot: string,
+  modelProfiles: ResolvedModelProfiles
 ): Promise<unknown> {
   if (node.type === "built_in") {
     const runBuiltInStep =
@@ -226,10 +255,14 @@ async function runWorkflowNode(
     );
   }
 
+  const agent = await loadAgentDefinition(agentsRoot, node.agent);
+
   return await dependencies.runAgentStep({
+    agent,
     node,
-    state,
-    input: resolveWorkflowInput(node.input, state)
+    model: resolveAgentModel(agent, modelProfiles),
+    input: resolveWorkflowInput(node.input, state),
+    state
   });
 }
 
@@ -237,12 +270,14 @@ export async function runConfiguredWorkflow({
   invocation,
   configRoot = resolveConfigRoot(),
   workflowsRoot,
+  agentsRoot,
   defaultWorkflowId,
   dependencies = {},
   attempt = 1
 }: RunConfiguredWorkflowOptions): Promise<ConfiguredWorkflowSuccessResult> {
   const configs = await loadConfigs(configRoot);
-  void configs.models;
+  const modelProfiles = resolveModelProfiles(configs.models);
+  const resolvedAgentsRoot = agentsRoot ?? path.join(configRoot, "agents");
 
   const workflowId = workflowIdFromRoute(
     invocation,
@@ -278,7 +313,13 @@ export async function runConfiguredWorkflow({
   );
 
   for (const node of topologicalNodes(workflow.graph.nodes)) {
-    const output = await runWorkflowNode(node, state, dependencies);
+    const output = await runWorkflowNode(
+      node,
+      state,
+      dependencies,
+      resolvedAgentsRoot,
+      modelProfiles
+    );
 
     state.steps[node.id] = output;
     if (node.type === "built_in" && node.uses === "prepare_worktree") {
