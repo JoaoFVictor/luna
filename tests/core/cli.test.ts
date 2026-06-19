@@ -37,6 +37,26 @@ const validInvocation: Invocation = {
   }
 };
 
+const validJiraInvocation: Invocation = {
+  target: "jira_task",
+  workflow: "implementation",
+  jira: {
+    instance_id: "company",
+    issue_key: "ABC-123",
+    url: "https://company.atlassian.net/browse/ABC-123",
+    summary: "Fix checkout validation",
+    description: "Reject invalid checkout payloads.",
+    acceptance_criteria: "Invalid payloads fail validation.",
+    status: "To Do",
+    issue_type: "Task"
+  },
+  repository: {
+    provider: "github",
+    owner: "swinggo-dev",
+    name: "swg-front-nuxt"
+  }
+};
+
 describe("flue local CLI wrapper", () => {
   it("keeps the package bin pointed at the emitted CLI path", async () => {
     const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
@@ -200,6 +220,37 @@ describe("flue local CLI wrapper", () => {
       ...validInvocation,
       workflow: "code-review"
     });
+    expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
+  });
+
+  it("loads a Jira task invocation through the selected input adapter before invoking Flue", async () => {
+    const execute = vi.fn(async () => 0);
+    const buildCommand = vi.fn(async () => ({
+      command: process.execPath,
+      args: ["local-flue"]
+    }));
+    const loadJiraTaskInvocation = vi.fn(async () => validJiraInvocation);
+
+    await expect(
+      main(
+        [
+          "run",
+          "--from",
+          "jira-task-url",
+          "https://company.atlassian.net/browse/ABC-123"
+        ],
+        {
+          execute,
+          buildCommand,
+          loadJiraTaskInvocation
+        }
+      )
+    ).resolves.toBe(0);
+
+    expect(loadJiraTaskInvocation).toHaveBeenCalledWith(
+      "https://company.atlassian.net/browse/ABC-123"
+    );
+    expect(buildCommand).toHaveBeenCalledWith(validJiraInvocation);
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
   });
 
