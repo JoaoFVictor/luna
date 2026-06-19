@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,6 +25,23 @@ type LocalCall = {
 };
 
 const originalEnv = { ...process.env };
+
+async function createImplementationSafeGitSkill(root: string): Promise<void> {
+  const skillDir = path.join(root, "skills", "implementation-safe-git");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    [
+      "---",
+      "name: implementation-safe-git",
+      "description: Keep implementation work scoped and reviewable.",
+      "---",
+      "",
+      "# Implementation Safe Git",
+      ""
+    ].join("\n")
+  );
+}
 
 function resetEnv(): void {
   process.env = { ...originalEnv };
@@ -306,6 +323,103 @@ describe("flue modules", () => {
     expect(local).not.toHaveBeenCalled();
   });
 
+  it("injects configured skills and tools into read-only Flue agent steps", async () => {
+    const initCalls: InitCall[] = [];
+    const local = vi.fn();
+    vi.doMock("@flue/runtime/node", () => ({ local }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-"));
+    const agentDir = path.join(root, "agents", "review-planner");
+    await mkdir(agentDir, { recursive: true });
+    await createImplementationSafeGitSkill(root);
+
+    const instructionsPath = path.join(agentDir, "instructions.md");
+    const outputSchemaPath = path.join(agentDir, "output.schema.json");
+    await writeFile(instructionsPath, "Plan the review.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({
+        type: "object",
+        additionalProperties: true
+      })
+    );
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentStep =
+          options.dependencies?.runAgentStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentStep"]
+          >;
+
+        return await runAgentStep({
+          agent: {
+            id: "review-planner",
+            description: "Plan the review",
+            model_profile: "default",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            skills: ["../../skills/implementation-safe-git/SKILL.md"],
+            tools: ["repository.status"],
+            directory: agentDir,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "review_plan",
+            type: "agent",
+            agent: "review-planner",
+            output_schema: "review_plan",
+            input: {},
+            artifact: "review-plan.json"
+          },
+          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          input: { repo_context: { files: [] } },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            workspace: { path: root },
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    await workflow.run({
+      payload: gitInvocation,
+      init: vi.fn(async (agent: CreatedAgent, options?: { name?: string }) => {
+        initCalls.push({ agent, options });
+
+        return {
+          session: vi.fn(async () => ({
+            prompt: vi.fn(async () => ({
+              data: {
+                summary: "Review auth changes.",
+                focus_areas: ["auth"],
+                files_to_review: ["src/auth.ts"]
+              }
+            }))
+          }))
+        };
+      })
+    } as never);
+
+    const config = await initCalls[0].agent.initialize({
+      id: "test-run",
+      payload: gitInvocation,
+      env: process.env
+    });
+
+    expect(config.skills).toHaveLength(1);
+    expect(config.tools).toHaveLength(1);
+    expect(local).not.toHaveBeenCalled();
+  });
+
   it("runs trusted_host_local agent_loop steps with Flue local cwd and env allowlist", async () => {
     process.env.LUNA_ALLOWED_TOKEN = "allowed-secret";
     process.env.LUNA_SECOND_ALLOWED_TOKEN = "second-allowed-secret";
@@ -315,6 +429,7 @@ describe("flue modules", () => {
     const localCalls: LocalCall[] = [];
     const promptCalls: PromptCall[] = [];
     const initCalls: InitCall[] = [];
+    const runGit = vi.fn(async () => "");
     const validationResult = { passed: true, commands: [] };
     const diffSummary = { files: [] };
     const local = vi.fn((options?: LocalCall) => {
@@ -325,6 +440,7 @@ describe("flue modules", () => {
     const collectWorktreeDiff = vi.fn(async () => diffSummary);
 
     vi.doMock("@flue/runtime/node", () => ({ local }));
+    vi.doMock("../../src/core/git.js", () => ({ runGit }));
     vi.doMock("../../src/core/validation-runner.js", async (importOriginal) => ({
       ...(await importOriginal<typeof import("../../src/core/validation-runner.js")>()),
       runValidationCommands
@@ -336,8 +452,12 @@ describe("flue modules", () => {
 
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
     const worktreePath = path.join(root, "worktree");
-    const instructionsPath = path.join(root, "instructions.md");
-    const outputSchemaPath = path.join(root, "output.schema.json");
+    const agentDir = path.join(root, "agents", "code-implementer");
+    await mkdir(agentDir, { recursive: true });
+    await createImplementationSafeGitSkill(root);
+
+    const instructionsPath = path.join(agentDir, "instructions.md");
+    const outputSchemaPath = path.join(agentDir, "output.schema.json");
     await writeFile(instructionsPath, "Implement the requested change.\n");
     await writeFile(
       outputSchemaPath,
@@ -362,7 +482,9 @@ describe("flue modules", () => {
             mode: "trusted_host_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
-            directory: root,
+            skills: ["../../skills/implementation-safe-git/SKILL.md"],
+            tools: ["repository.status", "repository.diff-summary"],
+            directory: agentDir,
             instructionsPath,
             outputSchemaPath
           },
@@ -438,6 +560,10 @@ describe("flue modules", () => {
           model: "openai/implementer-test",
           sandbox: { __flueLocalSandbox: true }
         });
+        expect(initialized.skills).toHaveLength(1);
+        expect(initialized.tools).toHaveLength(2);
+        await initialized.tools?.[0]?.execute({});
+        await initialized.tools?.[1]?.execute({});
 
         return {
           session: vi.fn(async () => ({
@@ -500,6 +626,14 @@ describe("flue modules", () => {
       cwd: worktreePath,
       maxDiffBytes: 200000
     });
+    expect(runGit).toHaveBeenNthCalledWith(1, worktreePath, [
+      "status",
+      "--short"
+    ]);
+    expect(runGit).toHaveBeenNthCalledWith(2, worktreePath, [
+      "diff",
+      "--stat"
+    ]);
   });
 
   it("rejects trusted_host_local agent_loop when the agent is not trusted_host_local_write", async () => {

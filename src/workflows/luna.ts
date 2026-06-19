@@ -13,6 +13,7 @@ import {
   type RunAgentLoopStepOptions,
   type RunAgentStepOptions
 } from "../core/configured-workflow-runner.js";
+import { resolveFlueAgentCapabilities } from "../core/flue-agent-capabilities.js";
 import { registerConfiguredPiOAuthProviders } from "../core/pi-auth.js";
 import type { Invocation } from "../core/types.js";
 import { runValidationCommands } from "../core/validation-runner.js";
@@ -40,6 +41,15 @@ function allowlistedEnv(
   }
 
   return env;
+}
+
+function workspacePath(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("path" in value)) {
+    return undefined;
+  }
+
+  const pathValue = (value as { path?: unknown }).path;
+  return typeof pathValue === "string" ? pathValue : undefined;
 }
 
 type JsonSchema = {
@@ -219,9 +229,16 @@ async function runFlueAgentStep(
     return fakeAgentOutput(options.agent.id);
   }
 
+  const capabilityCwd = workspacePath(options.state.workspace) ?? process.cwd();
+  const capabilities = await resolveFlueAgentCapabilities({
+    agent: options.agent,
+    cwd: capabilityCwd
+  });
   const agent = createAgent(async () => ({
     description: options.agent.description,
     instructions: await readFile(options.agent.instructionsPath, "utf8"),
+    skills: capabilities.skills,
+    tools: capabilities.tools,
     ...options.model
   }));
   const harness = await ctx.init(agent, { name: options.agent.id });
@@ -264,9 +281,15 @@ async function runWritableAgent(
   options: RunAgentLoopStepOptions,
   input: RunWritableAgentInput
 ): Promise<unknown> {
+  const capabilities = await resolveFlueAgentCapabilities({
+    agent: options.agent,
+    cwd: options.sandbox.cwd
+  });
   const agent = createAgent(async () => ({
     description: options.agent.description,
     instructions: await readFile(options.agent.instructionsPath, "utf8"),
+    skills: capabilities.skills,
+    tools: capabilities.tools,
     cwd: options.sandbox.cwd,
     sandbox: local({
       cwd: options.sandbox.cwd,
