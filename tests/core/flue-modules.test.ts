@@ -434,6 +434,181 @@ describe("flue modules", () => {
     expect(local).not.toHaveBeenCalled();
   });
 
+  it("closes read-only agent capabilities after a successful prompt", async () => {
+    const close = vi.fn(async () => {});
+    const resolveFlueAgentCapabilities = vi.fn(async () => ({
+      skills: [],
+      tools: [],
+      close
+    }));
+    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+      resolveFlueAgentCapabilities
+    }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-close-"));
+    const instructionsPath = path.join(root, "instructions.md");
+    const outputSchemaPath = path.join(root, "output.schema.json");
+    await writeFile(instructionsPath, "Plan the review.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({
+        type: "object",
+        additionalProperties: true
+      })
+    );
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentStep =
+          options.dependencies?.runAgentStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentStep"]
+          >;
+
+        const output = await runAgentStep({
+          agent: {
+            id: "review-planner",
+            description: "Plan the review",
+            model_profile: "default",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "review_plan",
+            type: "agent",
+            agent: "review-planner",
+            output_schema: "review_plan",
+            input: {},
+            artifact: "review-plan.json"
+          },
+          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          input: { repo_context: { files: [] } },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+
+        return { status: "success", output };
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    await workflow.run({
+      payload: gitInvocation,
+      init: vi.fn(async () => ({
+        session: vi.fn(async () => ({
+          prompt: vi.fn(async () => ({
+            data: {
+              summary: "Review auth changes.",
+              focus_areas: ["auth"],
+              files_to_review: ["src/auth.ts"]
+            }
+          }))
+        }))
+      }))
+    } as never);
+
+    expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith({
+      agent: expect.objectContaining({ id: "review-planner" }),
+      cwd: process.cwd(),
+      mcpConfig: { mcp_servers: [] },
+      env: process.env
+    });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes read-only agent capabilities when prompt throws", async () => {
+    const close = vi.fn(async () => {});
+    const promptFailure = new Error("prompt failed");
+    const resolveFlueAgentCapabilities = vi.fn(async () => ({
+      skills: [],
+      tools: [],
+      close
+    }));
+    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+      resolveFlueAgentCapabilities
+    }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-close-"));
+    const instructionsPath = path.join(root, "instructions.md");
+    const outputSchemaPath = path.join(root, "output.schema.json");
+    await writeFile(instructionsPath, "Plan the review.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({
+        type: "object",
+        additionalProperties: true
+      })
+    );
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentStep =
+          options.dependencies?.runAgentStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentStep"]
+          >;
+
+        return await runAgentStep({
+          agent: {
+            id: "review-planner",
+            description: "Plan the review",
+            model_profile: "default",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "review_plan",
+            type: "agent",
+            agent: "review-planner",
+            output_schema: "review_plan",
+            input: {},
+            artifact: "review-plan.json"
+          },
+          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          input: { repo_context: { files: [] } },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: { run_id: "run-1", target: "github_pr" },
+            steps: {}
+          }
+        });
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+
+    await expect(
+      workflow.run({
+        payload: gitInvocation,
+        init: vi.fn(async () => ({
+          session: vi.fn(async () => ({
+            prompt: vi.fn(async () => {
+              throw promptFailure;
+            })
+          }))
+        }))
+      } as never)
+    ).rejects.toBe(promptFailure);
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it("runs trusted_host_local agent_loop steps with Flue local cwd and env allowlist", async () => {
     process.env.LUNA_ALLOWED_TOKEN = "allowed-secret";
     process.env.LUNA_SECOND_ALLOWED_TOKEN = "second-allowed-secret";
@@ -650,7 +825,7 @@ describe("flue modules", () => {
     ]);
   });
 
-  it("resolves trusted_host_local agent_loop capabilities once across repair attempts", async () => {
+  it("resolves trusted_host_local agent_loop capabilities once across repair attempts and closes after completion", async () => {
     const initCalls: InitCall[] = [];
     const validationResults = [
       { passed: false, commands: [] },
@@ -666,6 +841,7 @@ describe("flue modules", () => {
       commands: []
     });
     const collectWorktreeDiff = vi.fn(async () => diffSummary);
+    const close = vi.fn(async () => {});
     const resolveFlueAgentCapabilities = vi.fn(async () => ({
       skills: [
         {
@@ -680,7 +856,8 @@ describe("flue modules", () => {
           parameters: {},
           execute: async () => ""
         }
-      ]
+      ],
+      close
     }));
 
     vi.doMock("@flue/runtime/node", () => ({ local }));
@@ -817,8 +994,11 @@ describe("flue modules", () => {
     expect(resolveFlueAgentCapabilities).toHaveBeenCalledTimes(1);
     expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith({
       agent: expect.objectContaining({ id: "code-implementer" }),
-      cwd: worktreePath
+      cwd: worktreePath,
+      mcpConfig: { mcp_servers: [] },
+      env: process.env
     });
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("rejects trusted_host_local agent_loop when the agent is not trusted_host_local_write", async () => {

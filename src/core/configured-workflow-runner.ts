@@ -21,6 +21,7 @@ import {
   toFlueModelOptions,
   type ResolvedModelProfiles
 } from "./model-config.js";
+import type { McpConfig } from "./mcp-config.js";
 import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import { createRunIdentity as defaultCreateRunIdentity } from "./run-identity.js";
@@ -62,6 +63,7 @@ export type RunAgentStepOptions = {
   model: ReturnType<typeof toFlueModelOptions>;
   input: Record<string, unknown>;
   state: WorkflowState;
+  mcpConfig?: McpConfig;
 };
 
 type AgentLoopWorkflowNode = Extract<WorkflowNode, { type: "agent_loop" }>;
@@ -93,6 +95,7 @@ export type RunAgentLoopStepOptions = {
   validation: ResolvedAgentLoopNode["validation"];
   repair: ResolvedAgentLoopNode["repair"];
   state: WorkflowState;
+  mcpConfig?: McpConfig;
 };
 
 export type ConfiguredWorkflowRunnerDependencies = {

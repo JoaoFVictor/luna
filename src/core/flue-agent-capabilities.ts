@@ -4,12 +4,15 @@ import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
 import type { AgentDefinition } from "./agent-definition.js";
+import { resolveFlueMcpTools } from "./flue-mcp-capabilities.js";
 import { resolveFlueTools } from "./flue-tool-registry.js";
+import type { McpConfig } from "./mcp-config.js";
 import { isInsideRoot } from "./path-security.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];
   tools: ToolDefinition[];
+  close(): Promise<void>;
 };
 
 type WorkspaceSkill = {
@@ -90,19 +93,33 @@ async function loadSkill(
 
 export async function resolveFlueAgentCapabilities({
   agent,
-  cwd
+  cwd,
+  mcpConfig,
+  env
 }: {
   agent: AgentDefinition;
   cwd: string;
+  mcpConfig?: McpConfig;
+  env?: Record<string, string | undefined>;
 }): Promise<ResolvedFlueAgentCapabilities> {
   try {
+    const skills = await Promise.all(
+      (agent.skills ?? []).map((skillPath) =>
+        loadSkill(agent.directory, skillPath)
+      )
+    );
+    const localTools = resolveFlueTools({ ids: agent.tools ?? [], cwd });
+    const mcp = await resolveFlueMcpTools({
+      ids: agent.mcp_servers ?? [],
+      agentMode: agent.mode,
+      config: mcpConfig ?? { mcp_servers: [] },
+      env: env ?? process.env
+    });
+
     return {
-      skills: await Promise.all(
-        (agent.skills ?? []).map((skillPath) =>
-          loadSkill(agent.directory, skillPath)
-        )
-      ),
-      tools: resolveFlueTools({ ids: agent.tools ?? [], cwd })
+      skills,
+      tools: [...localTools, ...mcp.tools],
+      close: mcp.close
     };
   } catch (cause) {
     if (isUnknownToolError(cause)) {

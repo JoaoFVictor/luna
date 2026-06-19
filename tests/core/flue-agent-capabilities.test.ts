@@ -1,9 +1,20 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import type { ToolDefinition } from "@flue/runtime";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentDefinition } from "../../src/core/agent-definition.js";
+import { resolveFlueMcpTools } from "../../src/core/flue-mcp-capabilities.js";
 import { resolveFlueAgentCapabilities } from "../../src/core/flue-agent-capabilities.js";
+import type { McpConfig } from "../../src/core/mcp-config.js";
+
+vi.mock("../../src/core/flue-mcp-capabilities.js", () => ({
+  resolveFlueMcpTools: vi.fn()
+}));
+
+function tool(name: string): ToolDefinition {
+  return { name } as ToolDefinition;
+}
 
 async function writeCodeImplementerFixture(): Promise<{
   root: string;
@@ -58,6 +69,14 @@ async function writeCodeImplementerFixture(): Promise<{
 }
 
 describe("flue agent capabilities", () => {
+  beforeEach(() => {
+    vi.mocked(resolveFlueMcpTools).mockReset();
+    vi.mocked(resolveFlueMcpTools).mockResolvedValue({
+      tools: [],
+      close: async () => {}
+    });
+  });
+
   it("loads local skill paths and resolves local tools", async () => {
     const { root, agent } = await writeCodeImplementerFixture();
 
@@ -74,6 +93,86 @@ describe("flue agent capabilities", () => {
       });
       expect(capabilities.tools).toHaveLength(1);
       expect(capabilities.tools[0]?.name).toBe("repository_status");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("combines local tools with allowed MCP tools and closes MCP capabilities", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const close = vi.fn(async () => {});
+
+    vi.mocked(resolveFlueMcpTools).mockResolvedValueOnce({
+      tools: [tool("mcp__github__get_pull_request")],
+      close
+    });
+
+    try {
+      const mcpConfig: McpConfig = {
+        mcp_servers: [
+          {
+            id: "github",
+            transport: "streamable-http" as const,
+            url_env: "LUNA_MCP_GITHUB_URL",
+            headers: {},
+            allowed_tools: ["get_pull_request"],
+            allowed_agent_modes: ["read_only"],
+            timeout_ms: 30000
+          }
+        ]
+      };
+      const env = {
+        LUNA_MCP_GITHUB_URL: "https://mcp.example.test"
+      };
+      const capabilities = await resolveFlueAgentCapabilities({
+        agent: {
+          ...agent,
+          mode: "read_only",
+          mcp_servers: ["github"]
+        },
+        cwd: "/repo/worktree",
+        mcpConfig,
+        env
+      });
+
+      expect(capabilities.tools.map((resolvedTool) => resolvedTool.name)).toEqual([
+        "repository_status",
+        "mcp__github__get_pull_request"
+      ]);
+      expect(resolveFlueMcpTools).toHaveBeenCalledWith({
+        ids: ["github"],
+        agentMode: "read_only",
+        config: mcpConfig,
+        env
+      });
+
+      await capabilities.close();
+
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns a no-op close function for agents without MCP servers", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+
+    try {
+      const capabilities = await resolveFlueAgentCapabilities({
+        agent: {
+          ...agent,
+          mcp_servers: undefined
+        },
+        cwd: "/repo/worktree"
+      });
+
+      await expect(capabilities.close()).resolves.toBeUndefined();
+      expect(resolveFlueMcpTools).toHaveBeenCalledWith({
+        ids: [],
+        agentMode: agent.mode,
+        config: { mcp_servers: [] },
+        env: process.env
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
