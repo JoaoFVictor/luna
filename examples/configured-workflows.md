@@ -5,6 +5,8 @@ Luna exposes one generic Flue workflow entrypoint named `luna`.
 Run a configured workflow from an input adapter:
 
 ```bash
+npx @earendil-works/pi-ai login openai-codex
+gh auth status
 LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
@@ -12,6 +14,11 @@ This adapter loads PR metadata through `gh api`, builds the normalized Luna
 invocation, attaches `workflow: code-review`, validates it, and then invokes the
 generic Flue workflow. New input sources should be added as adapters selected by
 `--from`, not as new workflow-specific CLI commands.
+
+The bundled model profiles use `openai-codex/...` models by default. Run
+`npx @earendil-works/pi-ai login openai-codex` once in the project directory so
+Luna can read the generated `auth.json` and register the Pi OAuth token with
+Flue.
 
 The lower level `run --input <path>` command still exists for tests and
 automation that already produce a normalized invocation file. It can also

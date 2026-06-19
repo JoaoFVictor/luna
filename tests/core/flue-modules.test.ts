@@ -27,12 +27,17 @@ function resetEnv(): void {
 
 async function importWorkflowWithRunnerMock(
   modulePath: string,
-  runConfiguredWorkflow: (options: RunConfiguredWorkflowOptions) => Promise<unknown>
+  runConfiguredWorkflow: (options: RunConfiguredWorkflowOptions) => Promise<unknown>,
+  registerConfiguredPiOAuthProviders: () => Promise<void> = async () => {}
 ): Promise<{ run: (ctx: never) => Promise<unknown> }> {
   vi.resetModules();
   vi.doMock("../../src/core/configured-workflow-runner.js", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../../src/core/configured-workflow-runner.js")>()),
     runConfiguredWorkflow
+  }));
+  vi.doMock("../../src/core/pi-auth.js", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../../src/core/pi-auth.js")>()),
+    registerConfiguredPiOAuthProviders
   }));
 
   return await import(modulePath) as { run: (ctx: never) => Promise<unknown> };
@@ -45,6 +50,7 @@ describe("flue modules", () => {
 
   afterEach(() => {
     vi.doUnmock("../../src/core/configured-workflow-runner.js");
+    vi.doUnmock("../../src/core/pi-auth.js");
     vi.resetModules();
     vi.restoreAllMocks();
     resetEnv();
@@ -97,6 +103,25 @@ describe("flue modules", () => {
         configRoot: "config"
       })
     );
+  });
+
+  it("registers configured Pi OAuth providers before running workflows", async () => {
+    const runConfiguredWorkflow = vi.fn(
+      async (_options: RunConfiguredWorkflowOptions) => ({ status: "success" })
+    );
+    const registerConfiguredPiOAuthProviders = vi.fn(async () => {});
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow,
+      registerConfiguredPiOAuthProviders
+    );
+
+    await workflow.run({ payload: gitInvocation } as never);
+
+    expect(registerConfiguredPiOAuthProviders).toHaveBeenCalledWith({
+      configRoot: "config"
+    });
+    expect(runConfiguredWorkflow).toHaveBeenCalled();
   });
 
   it("uses Flue context to execute configured agent steps", async () => {

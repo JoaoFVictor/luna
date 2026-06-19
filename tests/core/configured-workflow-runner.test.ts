@@ -86,7 +86,7 @@ async function writeBaseConfig(
     [
       "model_profiles:",
       "  default:",
-      "    model: openai/gpt-5-mini",
+      "    model: openai-codex/gpt-5.4-mini",
       "    reasoning_effort: medium",
       ""
     ].join("\n")
@@ -843,7 +843,7 @@ describe("configured workflow runner", () => {
             model_profile: "default"
           }),
           model: {
-            model: "openai/gpt-5-mini",
+            model: "openai-codex/gpt-5.4-mini",
             thinkingLevel: "medium"
           },
           input: {
@@ -868,7 +868,7 @@ describe("configured workflow runner", () => {
         [
           "model_profiles:",
           "  deep:",
-          "    model: openai/gpt-5-mini",
+          "    model: openai-codex/gpt-5.4-mini",
           "    reasoning_effort: medium",
           ""
         ].join("\n")

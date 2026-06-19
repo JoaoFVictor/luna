@@ -21,10 +21,10 @@ describe("model config", () => {
     };
 
     expect(
-      resolveModelProfiles(modelsConfig, { DEFAULT_MODEL: "openai/gpt-5-mini" })
+      resolveModelProfiles(modelsConfig, { DEFAULT_MODEL: "openai-codex/gpt-5.4-mini" })
     ).toEqual({
       default: {
-        model: "openai/gpt-5-mini",
+        model: "openai-codex/gpt-5.4-mini",
         reasoning_effort: "medium"
       },
       deep: {
@@ -34,18 +34,18 @@ describe("model config", () => {
     });
   });
 
-  it("accepts model: openai/gpt-5-mini without environment lookup", () => {
+  it("accepts model: openai-codex/gpt-5.4-mini without environment lookup", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
         default: {
-          model: "openai/gpt-5-mini",
+          model: "openai-codex/gpt-5.4-mini",
           reasoning_effort: "medium"
         }
       }
     };
 
     expect(resolveModelProfiles(modelsConfig, {}).default.model).toBe(
-      "openai/gpt-5-mini"
+      "openai-codex/gpt-5.4-mini"
     );
   });
 
@@ -69,7 +69,7 @@ describe("model config", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
         deep: {
-          model: "${DEEP_MODEL:-openai/gpt-5-mini}",
+          model: "${DEEP_MODEL:-openai-codex/gpt-5.4-mini}",
           reasoning_effort: "high"
         }
       }
@@ -85,14 +85,14 @@ describe("model config", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
         default: {
-          model: "${DEFAULT_MODEL:-openai/gpt-5-mini}",
+          model: "${DEFAULT_MODEL:-openai-codex/gpt-5.4-mini}",
           reasoning_effort: "medium"
         }
       }
     };
 
     expect(resolveModelProfiles(modelsConfig, {}).default.model).toBe(
-      "openai/gpt-5-mini"
+      "openai-codex/gpt-5.4-mini"
     );
   });
 
@@ -179,14 +179,14 @@ describe("model config", () => {
 
   it("maps reasoning_effort low to thinkingLevel low", () => {
     expect(
-      toFlueModelOptions({ model: "openai/gpt-5-mini", reasoning_effort: "low" })
-    ).toEqual({ model: "openai/gpt-5-mini", thinkingLevel: "low" });
+      toFlueModelOptions({ model: "openai-codex/gpt-5.4-mini", reasoning_effort: "low" })
+    ).toEqual({ model: "openai-codex/gpt-5.4-mini", thinkingLevel: "low" });
   });
 
   it("maps reasoning_effort medium to thinkingLevel medium", () => {
     expect(
-      toFlueModelOptions({ model: "openai/gpt-5-mini", reasoning_effort: "medium" })
-    ).toEqual({ model: "openai/gpt-5-mini", thinkingLevel: "medium" });
+      toFlueModelOptions({ model: "openai-codex/gpt-5.4-mini", reasoning_effort: "medium" })
+    ).toEqual({ model: "openai-codex/gpt-5.4-mini", thinkingLevel: "medium" });
   });
 
   it("maps reasoning_effort high to thinkingLevel high", () => {

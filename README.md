@@ -71,6 +71,18 @@ Authenticate the GitHub CLI:
 gh auth status
 ```
 
+Authenticate Pi's OpenAI Codex provider with your ChatGPT Plus or Pro
+subscription:
+
+```bash
+npx @earendil-works/pi-ai login openai-codex
+```
+
+This writes `auth.json` in the project directory. Luna reads that file at
+runtime, refreshes the OAuth token when needed, and registers the
+`openai-codex` provider with Flue before running agents. Do not commit
+`auth.json`.
+
 Run the bundled code review workflow from a GitHub PR URL:
 
 ```bash
@@ -90,6 +102,11 @@ Core config lives in `config/`:
 - `routing.yaml`: default routing rules.
 - `models.yaml`: reusable model profiles such as `default`, `deep`, `fast`, and
   `balanced`.
+
+By default, `config/models.yaml` uses Pi's `openai-codex/...` model provider,
+which authenticates through `auth.json` from `npx @earendil-works/pi-ai login
+openai-codex`. You can still override model profiles with environment variables
+such as `DEFAULT_MODEL`, `DEEP_MODEL`, `FAST_MODEL`, and `BALANCED_MODEL`.
 
 Agents live in `agents/<agent-id>/`:
 

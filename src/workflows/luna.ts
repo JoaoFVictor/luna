@@ -7,6 +7,7 @@ import {
   type ConfiguredWorkflowResult,
   type RunAgentStepOptions
 } from "../core/configured-workflow-runner.js";
+import { registerConfiguredPiOAuthProviders } from "../core/pi-auth.js";
 import type { Invocation } from "../core/types.js";
 
 function codedError(message: string, code: string): Error & { code: string } {
@@ -221,9 +222,12 @@ async function runFlueAgentStep(
 export async function runWithFlue(
   ctx: FlueContext<Invocation>
 ): Promise<ConfiguredWorkflowResult> {
+  const configRoot = process.env.LUNA_CONFIG_ROOT ?? "config";
+  await registerConfiguredPiOAuthProviders({ configRoot });
+
   return await runConfiguredWorkflow({
     invocation: ctx.payload,
-    configRoot: process.env.LUNA_CONFIG_ROOT ?? "config",
+    configRoot,
     dependencies: {
       runAgentStep: async (agentStepOptions) =>
         await runFlueAgentStep(ctx, agentStepOptions)

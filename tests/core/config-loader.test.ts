@@ -175,12 +175,12 @@ describe("config loader", () => {
 
     expect(
       resolveModelProfiles(config, {
-        DEFAULT_MODEL: "openai/gpt-5-mini",
+        DEFAULT_MODEL: "openai-codex/gpt-5.4-mini",
         DEEP_MODEL: "openai/gpt-5",
-        FAST_MODEL: "openai/gpt-5-nano",
-        BALANCED_MODEL: "openai/gpt-5-mini"
+        FAST_MODEL: "openai-codex/gpt-5.3-codex-spark",
+        BALANCED_MODEL: "openai-codex/gpt-5.4-mini"
       }).default.model
-    ).toBe("openai/gpt-5-mini");
+    ).toBe("openai-codex/gpt-5.4-mini");
   });
 
   it("throws model_env_missing when a model environment variable is missing", () => {

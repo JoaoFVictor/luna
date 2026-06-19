@@ -27,3 +27,5 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+
+auth.json
