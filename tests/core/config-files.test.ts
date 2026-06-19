@@ -230,6 +230,34 @@ describe("config definition files", () => {
     ]);
   });
 
+  it("configures implementation reviewer as a code implementer subagent", async () => {
+    const config = (await parseYamlFile(
+      "agents/code-implementer/agent.yaml"
+    )) as { subagents?: string[] };
+
+    expect(config.subagents).toEqual(["implementation-reviewer"]);
+  });
+
+  it("defines the implementation reviewer subagent", async () => {
+    const config = (await parseYamlFile(
+      "agents/implementation-reviewer/agent.yaml"
+    )) as {
+      id?: string;
+      mode?: string;
+      model_profile?: string;
+      instructions_file?: string;
+      output_schema?: string;
+    };
+
+    expect(config).toMatchObject({
+      id: "implementation-reviewer",
+      mode: "read_only",
+      model_profile: "deep",
+      instructions_file: "instructions.md",
+      output_schema: "output.schema.json"
+    });
+  });
+
   it("keeps code review schemas compatible with strict draft-07 consumers", async () => {
     const files = [
       "agents/code-reviewer/output.schema.json",
