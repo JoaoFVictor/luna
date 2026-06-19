@@ -131,6 +131,38 @@ describe("agent definition loader", () => {
     }
   });
 
+  it("loads optional MCP server ids from agent.yaml", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-agent-definition-"));
+    const agentDir = path.join(root, "code-reviewer");
+
+    try {
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(
+        path.join(agentDir, "agent.yaml"),
+        [
+          "id: code-reviewer",
+          "description: Reviews code",
+          "model_profile: deep",
+          "mode: read_only",
+          "instructions_file: instructions.md",
+          "output_schema: output.schema.json",
+          "mcp_servers:",
+          "  - github",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(path.join(agentDir, "instructions.md"), "Review.\n", "utf8");
+      await writeFile(path.join(agentDir, "output.schema.json"), "{}\n", "utf8");
+
+      await expect(loadAgentDefinition(root, "code-reviewer")).resolves.toMatchObject({
+        mcp_servers: ["github"]
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects duplicate tool ids in agent.yaml", async () => {
     const root = await tempAgentsRoot();
     const agentDir = path.join(root, "reviewer");

@@ -12,18 +12,21 @@ export const SkillPathSchema = z.string().min(1).refine(
 
 export const AgentCapabilityFieldsSchema = z.object({
   skills: z.array(SkillPathSchema).optional(),
-  tools: z.array(CapabilityIdSchema).optional()
+  tools: z.array(CapabilityIdSchema).optional(),
+  mcp_servers: z.array(CapabilityIdSchema).optional()
 });
 
 export type AgentCapabilityFields = z.infer<typeof AgentCapabilityFieldsSchema>;
 
 export function assertNoDuplicateCapabilities({
   skills = [],
-  tools = []
+  tools = [],
+  mcp_servers = []
 }: AgentCapabilityFields): void {
   for (const [kind, ids] of [
     ["skills", skills],
-    ["tools", tools]
+    ["tools", tools],
+    ["mcp_servers", mcp_servers]
   ] as const) {
     const seen = new Set<string>();
 
