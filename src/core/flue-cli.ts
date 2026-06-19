@@ -16,6 +16,7 @@ export type FlueRunCommand = {
 
 export type BuildFlueRunCommandOptions = {
   projectRoot?: string;
+  workflowName?: string;
 };
 
 export type MainDependencies = {
@@ -152,7 +153,7 @@ export async function buildFlueRunCommand(
     args: [
       flueCliBin,
       "run",
-      "code-review",
+      options.workflowName ?? "luna",
       "--target",
       "node",
       "--payload",

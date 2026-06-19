@@ -108,6 +108,32 @@ describe("flue local CLI wrapper", () => {
     expect(command.args).toEqual([
       path.join(projectRoot, "node_modules", "@flue", "cli", "bin", "flue.js"),
       "run",
+      "luna",
+      "--target",
+      "node",
+      "--payload",
+      JSON.stringify(validInvocation)
+    ]);
+  });
+
+  it("can build a command for the compatibility code-review workflow", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-command-"));
+    await mkdir(path.join(projectRoot, "node_modules", "@flue", "cli"), {
+      recursive: true
+    });
+    await writeFile(
+      path.join(projectRoot, "node_modules", "@flue", "cli", "package.json"),
+      JSON.stringify({ bin: { flue: "./bin/flue.js" } })
+    );
+
+    const command = await buildFlueRunCommand(validInvocation, {
+      projectRoot,
+      workflowName: "code-review"
+    });
+
+    expect(command.args).toEqual([
+      path.join(projectRoot, "node_modules", "@flue", "cli", "bin", "flue.js"),
+      "run",
       "code-review",
       "--target",
       "node",
