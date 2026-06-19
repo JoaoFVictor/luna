@@ -1,26 +1,16 @@
 import { z } from "zod";
 import {
   RouteTargetSchema,
+  type Invocation,
   type RouteTarget,
   type RoutingConfig
 } from "./types.js";
-
-type InvocationLike = Record<string, unknown>;
 
 function errorWithCode(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };
   error.code = code;
 
   return error;
-}
-
-function hasNormalizedRoutingShape(invocation: InvocationLike): boolean {
-  return (
-    typeof invocation.source === "string" &&
-    invocation.source !== "" &&
-    typeof invocation.event === "string" &&
-    invocation.event !== ""
-  );
 }
 
 function parseInputTarget(target: unknown): RouteTarget {
@@ -35,17 +25,26 @@ function parseInputTarget(target: unknown): RouteTarget {
   }
 }
 
-export function routeInvocation(
-  invocation: InvocationLike,
-  routingConfig: RoutingConfig
-): RouteTarget {
-  if (typeof invocation.workflow === "string" && invocation.workflow !== "") {
-    return {
-      type: "workflow",
-      id: invocation.workflow
-    };
+function stringMatchesExactOrList(
+  value: string | undefined,
+  exact: string | undefined,
+  list: string[] | undefined
+): boolean {
+  if (exact === undefined && list === undefined) {
+    return true;
   }
 
+  if (value === undefined) {
+    return false;
+  }
+
+  return value === exact || list?.includes(value) === true;
+}
+
+export function routeInvocation(
+  invocation: Invocation,
+  routingConfig: RoutingConfig
+): RouteTarget {
   for (const route of routingConfig.routes) {
     const hasInputTarget =
       typeof invocation.target === "object" &&
@@ -57,24 +56,28 @@ export function routeInvocation(
       hasInputTarget &&
       route.use_target_from_input === true
     ) {
-      if (!hasNormalizedRoutingShape(invocation)) {
-        throw errorWithCode(
-          "Invalid invocation for routing",
-          "invalid_invocation"
-        );
-      }
-
       return parseInputTarget(invocation.target);
     }
 
     const sourceMatches =
       route.when.source === undefined || route.when.source === invocation.source;
-    const event = invocation.event;
-    const eventMatches =
-      route.when.event_in === undefined ||
-      (typeof event === "string" && route.when.event_in.includes(event));
+    const eventMatches = stringMatchesExactOrList(
+      invocation.event,
+      route.when.event,
+      route.when.event_in
+    );
+    const actionMatches = stringMatchesExactOrList(
+      invocation.action,
+      route.when.action,
+      route.when.action_in
+    );
 
-    if (sourceMatches && eventMatches && route.target !== undefined) {
+    if (
+      sourceMatches &&
+      eventMatches &&
+      actionMatches &&
+      route.target !== undefined
+    ) {
       return route.target;
     }
   }

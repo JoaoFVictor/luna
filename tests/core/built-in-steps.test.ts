@@ -6,7 +6,6 @@ import type {
   Finding,
   ImplementationConfig,
   Invocation,
-  JiraTaskInvocation,
   PullRequestArtifact,
   PushBranchArtifact,
   RepoContext,
@@ -19,25 +18,34 @@ import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
 import type { WorkflowState } from "../../src/core/workflow-state.js";
 
 const invocation: Invocation = {
-  target: "github_pr",
-  owner: "octo-org",
-  repo: "hello-world",
-  pull_number: 42,
-  base_ref: "main",
-  base_repository: {
-    owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
-  },
-  head_repository: {
-    owner: "contributor",
-    name: "hello-world",
-    full_name: "contributor/hello-world",
-    fork: true
+  version: "2026-06",
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  repository: { provider: "github", owner: "octo-org", name: "hello-world" },
+  subject: {
+    type: "pull_request",
+    id: "42",
+    url: "https://github.com/octo-org/hello-world/pull/42"
   },
   references: {
+    base_ref: "main",
     base_sha: "abc123",
     head_sha: "def456"
+  },
+  payload: {
+    pull_request: { number: 42 },
+    base_repository: {
+      owner: "octo-org",
+      name: "hello-world",
+      full_name: "octo-org/hello-world"
+    },
+    head_repository: {
+      owner: "contributor",
+      name: "hello-world",
+      full_name: "contributor/hello-world",
+      fork: true
+    }
   }
 };
 
@@ -54,23 +62,30 @@ const repository: RepositoryConfig = {
   ]
 };
 
-const jiraInvocation: JiraTaskInvocation = {
-  target: "jira_task",
-  workflow: "implementation",
-  jira: {
-    instance_id: "company",
-    issue_key: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    summary: "Fix checkout validation",
-    description: "Reject invalid checkout payloads.",
-    acceptance_criteria: "Invalid payloads fail validation.",
-    status: "To Do",
-    issue_type: "Task"
-  },
+const jiraInvocation: Invocation = {
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  action: "selected",
   repository: {
     provider: "github",
     owner: "swinggo-dev",
     name: "swg-front-nuxt"
+  },
+  subject: {
+    type: "jira_issue",
+    id: "ABC-123",
+    url: "https://company.atlassian.net/browse/ABC-123",
+    title: "Fix checkout validation"
+  },
+  payload: {
+    jira: {
+      instance_id: "company",
+      description: "Reject invalid checkout payloads.",
+      acceptance_criteria: "Invalid payloads fail validation.",
+      status: "To Do",
+      issue_type: "Task"
+    }
   }
 };
 

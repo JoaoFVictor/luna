@@ -1,4 +1,4 @@
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { Ajv, type AnySchema, type ErrorObject } from "ajv/dist/ajv.js";
 import YAML from "yaml";
@@ -21,6 +21,11 @@ type WorkflowGraph = {
 
 const yamlRoots = ["agents", "workflows", "config"];
 const jsonSchemaRoots = ["agents", "workflows"];
+const legacyReferenceScanRoots = ["src", "tests", "workflows", "examples", "README.md"];
+const intentionalLegacyReferenceFiles = new Set([
+  "tests/core/types.test.ts",
+  "tests/core/cli.test.ts"
+]);
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -58,6 +63,55 @@ async function listFiles(roots: string[], extensions: string[]): Promise<string[
 
   for (const root of roots) {
     if (await pathExists(root)) {
+      await visit(root);
+    }
+  }
+
+  return files.sort();
+}
+
+async function listTextFiles(roots: string[]): Promise<string[]> {
+  const files: string[] = [];
+
+  async function visit(path: string): Promise<void> {
+    const entries = await readdir(path, { withFileTypes: true });
+
+    await Promise.all(
+      entries.map(async (entry) => {
+        const entryPath = join(path, entry.name);
+
+        if (entry.isDirectory()) {
+          await visit(entryPath);
+          return;
+        }
+
+        if (!entry.isFile()) {
+          return;
+        }
+
+        const contents = await readFile(entryPath);
+        if (!contents.includes(0)) {
+          files.push(entryPath);
+        }
+      })
+    );
+  }
+
+  for (const root of roots) {
+    if (!(await pathExists(root))) {
+      continue;
+    }
+
+    const rootStat = await stat(root);
+    if (rootStat.isFile()) {
+      const contents = await readFile(root);
+      if (!contents.includes(0)) {
+        files.push(root);
+      }
+      continue;
+    }
+
+    if (rootStat.isDirectory()) {
       await visit(root);
     }
   }
@@ -123,6 +177,39 @@ function assertLineFieldsUseIntegers(
 }
 
 describe("config definition files", () => {
+  it("does not reintroduce legacy invocation target references", async () => {
+    const legacyTargets = ["github" + "_pr", "jira" + "_task"];
+    const bannedReferences = legacyTargets.flatMap((target) => [
+      `target: "${target}"`,
+      `"target": "${target}"`,
+      `z.literal("${target}")`
+    ]);
+    bannedReferences.push(
+      "Github" + "PrInvocation",
+      "Jira" + "TaskInvocation",
+      "Github" + "PrInvocationSchema",
+      "Jira" + "TaskInvocationSchema"
+    );
+
+    const files = await listTextFiles(legacyReferenceScanRoots);
+    const matches: string[] = [];
+
+    for (const file of files) {
+      if (intentionalLegacyReferenceFiles.has(file)) {
+        continue;
+      }
+
+      const contents = await readFile(file, "utf8");
+      for (const bannedReference of bannedReferences) {
+        if (contents.includes(bannedReference)) {
+          matches.push(`${file}: ${bannedReference}`);
+        }
+      }
+    }
+
+    expect(matches).toEqual([]);
+  });
+
   it("parses every YAML file under agents, workflows, and config", async () => {
     const files = await listFiles(yamlRoots, [".yaml", ".yml"]);
 
@@ -278,8 +365,12 @@ describe("config definition files", () => {
       status: "success",
       run: {
         run_id: "run-1",
-        target: "jira_task",
-        started_at: "2026-06-19T00:00:00.000Z"
+        attempt: 1,
+        source: "jira",
+        event: "issue",
+        action: "selected",
+        route_target: { type: "workflow", id: "implementation" },
+        subject: { type: "jira_issue", id: "ABC-123" }
       },
       workflow_id: "implementation",
       steps: {
@@ -368,31 +459,48 @@ describe("config definition files", () => {
     ).toBe(false);
   });
 
-  it("accepts fork metadata in code review workflow input head repository", async () => {
+  it("accepts normalized code review workflow input with pull request metadata", async () => {
     const ajv = createSchemaAjv();
     const schema = await parseJsonFile("workflows/code-review/input.schema.json");
     const validate = ajv.compile(schema as AnySchema);
 
     const input = {
-      target: "github_pr",
-      owner: "octo-org",
-      repo: "hello-world",
-      pull_number: 42,
-      base_ref: "main",
-      base_repository: {
-        owner: "octo-org",
-        name: "hello-world",
-        full_name: "octo-org/hello-world"
+      version: "2026-06",
+      source: "github",
+      event: "pull_request",
+      action: "selected",
+      target: {
+        type: "workflow",
+        id: "code-review"
       },
-      head_repository: {
-        owner: "contributor",
-        name: "hello-world",
-        full_name: "contributor/hello-world",
-        fork: true
+      repository: {
+        provider: "github",
+        owner: "octo-org",
+        name: "hello-world"
+      },
+      subject: {
+        type: "pull_request",
+        id: "42",
+        url: "https://github.com/octo-org/hello-world/pull/42"
       },
       references: {
+        base_ref: "main",
         base_sha: "base-sha",
         head_sha: "head-sha"
+      },
+      payload: {
+        pull_request: { number: 42 },
+        base_repository: {
+          owner: "octo-org",
+          name: "hello-world",
+          full_name: "octo-org/hello-world"
+        },
+        head_repository: {
+          owner: "contributor",
+          name: "hello-world",
+          full_name: "contributor/hello-world",
+          fork: true
+        }
       }
     };
 

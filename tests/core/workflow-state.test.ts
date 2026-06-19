@@ -4,10 +4,57 @@ import {
   type WorkflowState
 } from "../../src/core/workflow-state.js";
 
+const codeReviewInvocation = {
+  version: "2026-06",
+  source: "github",
+  event: "pull_request",
+  target: { type: "workflow", id: "code-review" },
+  repository: {
+    provider: "github",
+    owner: "octo-org",
+    name: "hello-world"
+  },
+  subject: {
+    type: "pull_request",
+    id: "123"
+  },
+  references: {
+    base_sha: "base-sha",
+    head_sha: "head-sha"
+  },
+  payload: {
+    pull_request: { number: 123 }
+  }
+};
+
+const implementationInvocation = {
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  target: { type: "workflow", id: "implementation" },
+  repository: {
+    provider: "github",
+    owner: "octo-org",
+    name: "hello-world"
+  },
+  subject: {
+    type: "jira_issue",
+    id: "ABC-123"
+  },
+  payload: {
+    jira: {
+      key: "ABC-123",
+      url: "https://company.atlassian.net/browse/ABC-123",
+      summary: "Fix checkout validation",
+      status: "To Do"
+    }
+  }
+};
+
 describe("workflow state", () => {
   it("resolves invocation and step references in configured node input", () => {
     const state = {
-      invocation: { target: "github_pr", pull_number: 123 },
+      invocation: codeReviewInvocation,
       steps: {
         repo_context: { files: [{ path: "a.ts" }] },
         review_plan: { summary: "Plan" }
@@ -24,7 +71,7 @@ describe("workflow state", () => {
         state
       )
     ).toEqual({
-      invocation: { target: "github_pr", pull_number: 123 },
+      invocation: codeReviewInvocation,
       repo_context: { files: [{ path: "a.ts" }] },
       review_plan: { summary: "Plan" }
     });
@@ -64,7 +111,7 @@ describe("workflow state", () => {
           cwd: "$.workspace.path"
         },
         {
-          invocation: { target: "jira_task" },
+          invocation: implementationInvocation,
           workspace: {
             run_id: "run-1",
             path: "/tmp/worktree",
@@ -83,7 +130,7 @@ describe("workflow state", () => {
       )
     ).toEqual({
       commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
-      invocation: { target: "jira_task" },
+      invocation: implementationInvocation,
       cwd: "/tmp/worktree"
     });
   });

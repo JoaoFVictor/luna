@@ -11,25 +11,34 @@ import type {
 } from "../../src/core/types.js";
 
 const invocation: Invocation = {
-  target: "github_pr",
-  owner: "octo-org",
-  repo: "hello-world",
-  pull_number: 42,
-  base_ref: "main",
-  base_repository: {
-    owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
-  },
-  head_repository: {
-    owner: "contributor",
-    name: "hello-world",
-    full_name: "contributor/hello-world",
-    fork: true
+  version: "2026-06",
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  repository: { provider: "github", owner: "octo-org", name: "hello-world" },
+  subject: {
+    type: "pull_request",
+    id: "42",
+    url: "https://github.com/octo-org/hello-world/pull/42"
   },
   references: {
+    base_ref: "main",
     base_sha: "abc123",
     head_sha: "def456"
+  },
+  payload: {
+    pull_request: { number: 42 },
+    base_repository: {
+      owner: "octo-org",
+      name: "hello-world",
+      full_name: "octo-org/hello-world"
+    },
+    head_repository: {
+      owner: "contributor",
+      name: "hello-world",
+      full_name: "contributor/hello-world",
+      fork: true
+    }
   }
 };
 

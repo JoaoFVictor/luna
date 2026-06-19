@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { githubPullRequestContextFrom } from "../../src/core/github-pr-context.js";
 import { collectRepoContext } from "../../src/core/repo-context-collector.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
@@ -7,8 +8,9 @@ type FakeGitCall = {
   args: readonly string[];
 };
 
-const baseSha = gitInvocation.references.base_sha;
-const headSha = gitInvocation.references.head_sha;
+const pullRequest = githubPullRequestContextFrom(gitInvocation);
+const baseSha = pullRequest.references.base_sha;
+const headSha = pullRequest.references.head_sha;
 const tabbedPath = "src/tab\tpath.ts";
 
 function nul(...fields: string[]): string {

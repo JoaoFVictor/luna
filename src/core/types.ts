@@ -1,9 +1,7 @@
 import { z } from "zod";
 
 const NonEmptyStringSchema = z.string().min(1);
-
-export const TargetSchema = z.enum(["github_pr", "jira_task"]);
-export type Target = z.infer<typeof TargetSchema>;
+const AbsoluteUrlSchema = z.string().url();
 
 export const RepositoryRefSchema = z
   .object({
@@ -19,58 +17,59 @@ export const HeadRepositoryRefSchema = RepositoryRefSchema.extend({
 }).strict();
 export type HeadRepositoryRef = z.infer<typeof HeadRepositoryRefSchema>;
 
-export const GithubPrInvocationSchema = z
+export const RouteTargetSchema = z
   .object({
-    target: z.literal("github_pr"),
+    type: z.literal("workflow"),
+    id: NonEmptyStringSchema
+  })
+  .strict();
+export type RouteTarget = z.infer<typeof RouteTargetSchema>;
+
+export const InvocationRepositorySchema = z
+  .object({
+    provider: NonEmptyStringSchema,
     owner: NonEmptyStringSchema,
-    repo: NonEmptyStringSchema,
-    pull_number: z.number().int().positive(),
-    base_ref: NonEmptyStringSchema,
-    base_repository: RepositoryRefSchema,
-    head_repository: HeadRepositoryRefSchema,
-    references: z
-      .object({
-        base_sha: NonEmptyStringSchema,
-        head_sha: NonEmptyStringSchema
-      })
-      .strict(),
-    workflow: NonEmptyStringSchema.optional()
+    name: NonEmptyStringSchema
   })
   .strict();
-export type GithubPrInvocation = z.infer<typeof GithubPrInvocationSchema>;
+export type InvocationRepository = z.infer<typeof InvocationRepositorySchema>;
 
-export const JiraTaskInvocationSchema = z
+export const InvocationSubjectSchema = z
   .object({
-    target: z.literal("jira_task"),
-    workflow: NonEmptyStringSchema,
-    jira: z
-      .object({
-        instance_id: NonEmptyStringSchema,
-        issue_key: NonEmptyStringSchema,
-        url: NonEmptyStringSchema,
-        summary: NonEmptyStringSchema,
-        description: z.string(),
-        acceptance_criteria: z.string(),
-        status: NonEmptyStringSchema,
-        issue_type: NonEmptyStringSchema
-      })
-      .strict(),
-    repository: z
-      .object({
-        provider: z.literal("github"),
-        owner: NonEmptyStringSchema,
-        name: NonEmptyStringSchema
-      })
-      .strict()
+    type: NonEmptyStringSchema,
+    id: NonEmptyStringSchema,
+    url: AbsoluteUrlSchema.optional(),
+    title: NonEmptyStringSchema.optional()
   })
   .strict();
-export type JiraTaskInvocation = z.infer<typeof JiraTaskInvocationSchema>;
+export type InvocationSubject = z.infer<typeof InvocationSubjectSchema>;
 
-export const InvocationSchema = z.discriminatedUnion("target", [
-  GithubPrInvocationSchema,
-  JiraTaskInvocationSchema
-]);
-export type Invocation = z.infer<typeof InvocationSchema>;
+export const InvocationActorSchema = z
+  .object({
+    id: NonEmptyStringSchema.optional(),
+    display_name: NonEmptyStringSchema.optional()
+  })
+  .strict();
+export type InvocationActor = z.infer<typeof InvocationActorSchema>;
+
+export const NormalizedInvocationSchema = z
+  .object({
+    version: z.literal("2026-06"),
+    source: NonEmptyStringSchema,
+    event: NonEmptyStringSchema,
+    action: NonEmptyStringSchema.optional(),
+    target: RouteTargetSchema.optional(),
+    repository: InvocationRepositorySchema.optional(),
+    subject: InvocationSubjectSchema.optional(),
+    actor: InvocationActorSchema.optional(),
+    references: z.record(NonEmptyStringSchema, NonEmptyStringSchema).optional(),
+    payload: z.record(NonEmptyStringSchema, z.unknown()).optional()
+  })
+  .strict();
+export type NormalizedInvocation = z.infer<typeof NormalizedInvocationSchema>;
+
+export const InvocationSchema = NormalizedInvocationSchema;
+export type Invocation = NormalizedInvocation;
 
 export const RepositoryConfigSchema = z
   .object({
@@ -111,18 +110,30 @@ export const RouteWhenSchema = z
   .object({
     has_target: z.boolean().optional(),
     source: NonEmptyStringSchema.optional(),
-    event_in: z.array(NonEmptyStringSchema).optional()
+    event: NonEmptyStringSchema.optional(),
+    event_in: z.array(NonEmptyStringSchema).optional(),
+    action: NonEmptyStringSchema.optional(),
+    action_in: z.array(NonEmptyStringSchema).optional()
   })
-  .strict();
-export type RouteWhen = z.infer<typeof RouteWhenSchema>;
+  .strict()
+  .superRefine((when, context) => {
+    if (when.event !== undefined && when.event_in !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "event and event_in cannot be used together",
+        path: ["event"]
+      });
+    }
 
-export const RouteTargetSchema = z
-  .object({
-    type: z.literal("workflow"),
-    id: NonEmptyStringSchema
-  })
-  .strict();
-export type RouteTarget = z.infer<typeof RouteTargetSchema>;
+    if (when.action !== undefined && when.action_in !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "action and action_in cannot be used together",
+        path: ["action"]
+      });
+    }
+  });
+export type RouteWhen = z.infer<typeof RouteWhenSchema>;
 
 export const RouteSchema = z
   .object({
@@ -379,8 +390,18 @@ export type RuntimeConfigState = {
 export const RunIdentitySchema = z
   .object({
     run_id: NonEmptyStringSchema,
-    target: TargetSchema,
-    started_at: NonEmptyStringSchema.optional()
+    attempt: z.number().int().positive(),
+    source: NonEmptyStringSchema,
+    event: NonEmptyStringSchema,
+    action: NonEmptyStringSchema.optional(),
+    route_target: RouteTargetSchema.optional(),
+    subject: z
+      .object({
+        type: NonEmptyStringSchema,
+        id: NonEmptyStringSchema
+      })
+      .strict()
+      .optional()
   })
   .strict();
 export type RunIdentity = z.infer<typeof RunIdentitySchema>;

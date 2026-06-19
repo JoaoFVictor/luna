@@ -3,37 +3,70 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
-import type { Invocation, WorkspaceRecord } from "../../src/core/types.js";
+import type { Invocation, RunIdentity, WorkspaceRecord } from "../../src/core/types.js";
 
 const invocation: Invocation = {
-  target: "github_pr",
-  owner: "octo",
-  repo: "hello",
-  pull_number: 123,
-  base_ref: "main",
-  base_repository: { owner: "octo", name: "hello", full_name: "octo/hello" },
-  head_repository: { owner: "octo", name: "hello", full_name: "octo/hello" },
-  references: { base_sha: "base", head_sha: "head" }
+  version: "2026-06",
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  target: { type: "workflow", id: "code-review" },
+  repository: { provider: "github", owner: "octo", name: "hello" },
+  subject: { type: "pull_request", id: "42" },
+  references: { base_ref: "main", base_sha: "base", head_sha: "head" },
+  payload: {
+    pull_request: { number: 42 },
+    base_repository: { owner: "octo", name: "hello", full_name: "octo/hello" },
+    head_repository: { owner: "octo", name: "hello", full_name: "octo/hello" }
+  }
 };
 
 const jiraInvocation: Invocation = {
-  target: "jira_task",
-  workflow: "implementation",
-  jira: {
-    instance_id: "company",
-    issue_key: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    summary: "Fix checkout validation",
-    description: "Reject invalid checkout payloads.",
-    acceptance_criteria: "Invalid payloads fail validation.",
-    status: "To Do",
-    issue_type: "Task"
-  },
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  action: "selected",
+  target: { type: "workflow", id: "implementation" },
   repository: {
     provider: "github",
     owner: "octo",
     name: "hello"
+  },
+  subject: {
+    type: "jira_issue",
+    id: "ABC-123",
+    title: "Fix checkout validation",
+    url: "https://company.atlassian.net/browse/ABC-123"
+  },
+  payload: {
+    jira: {
+      instance_id: "company",
+      description: "Reject invalid checkout payloads.",
+      acceptance_criteria: "Invalid payloads fail validation.",
+      status: "To Do",
+      issue_type: "Task"
+    }
   }
+};
+
+const githubRun: RunIdentity = {
+  run_id: "run-1",
+  attempt: 1,
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  route_target: { type: "workflow", id: "code-review" },
+  subject: { type: "pull_request", id: "42" }
+};
+
+const jiraRun: RunIdentity = {
+  run_id: "run-1",
+  attempt: 1,
+  source: "jira",
+  event: "issue",
+  action: "selected",
+  route_target: { type: "workflow", id: "implementation" },
+  subject: { type: "jira_issue", id: "ABC-123" }
 };
 
 async function writeBaseConfig(
@@ -82,10 +115,11 @@ async function writeBaseConfig(
           "  - name: github-pr-code-review",
           "    when:",
           "      source: github",
-          "      event_in:",
-          "        - pull_request.opened",
-          "        - pull_request.synchronize",
-          "        - pull_request.ready_for_review",
+          "      event: pull_request",
+          "      action_in:",
+          "        - opened",
+          "        - synchronize",
+          "        - ready_for_review",
           "    target:",
           "      type: workflow",
           `      id: ${workflowId}`,
@@ -598,11 +632,7 @@ async function runImplementationLifecycleScenario({
     invocation: jiraInvocation,
     configRoot: root,
     dependencies: {
-      createRunIdentity: () => ({
-        run_id: "run-1",
-        target: "jira_task",
-        started_at: "2026-06-19T00:00:00.000Z"
-      }),
+      createRunIdentity: () => jiraRun,
       runBuiltInStep,
       cleanupWorktree
     }
@@ -708,11 +738,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep
         }
       });
@@ -804,11 +830,7 @@ describe("configured workflow runner", () => {
         invocation: jiraInvocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "jira_task",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => jiraRun,
           runBuiltInStep,
           cleanupWorktree: vi.fn(async () => cleanedWorkspace)
         }
@@ -875,11 +897,7 @@ describe("configured workflow runner", () => {
         invocation: jiraInvocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "jira_task",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => jiraRun,
           runBuiltInStep,
           runAgentLoopStep,
           cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
@@ -962,11 +980,7 @@ describe("configured workflow runner", () => {
         configRoot: root,
         throwOnError: false,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "jira_task",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => jiraRun,
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "prepare_implementation_worktree"
               ? {
@@ -1029,11 +1043,7 @@ describe("configured workflow runner", () => {
           configRoot: root,
           throwOnError: false,
           dependencies: {
-            createRunIdentity: () => ({
-              run_id: "run-1",
-              target: "jira_task",
-              started_at: "2026-06-19T00:00:00.000Z"
-            }),
+            createRunIdentity: () => jiraRun,
             runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
               if (uses === "preflight") {
                 return preflight;
@@ -1195,11 +1205,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep,
           runAgentStep,
           cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
@@ -1297,11 +1303,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep,
           runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
             agent.id === "change-reviewer"
@@ -1360,11 +1362,7 @@ describe("configured workflow runner", () => {
         agentsRoot: path.join(root, "agents"),
         throwOnError: false,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
             if (uses === "preflight") {
               return { status: "ok" };
@@ -1437,11 +1435,7 @@ describe("configured workflow runner", () => {
         agentsRoot: path.join(root, "agents"),
         throwOnError: false,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
             if (uses === "preflight") {
               return { status: "ok" };
@@ -1525,11 +1519,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep,
           runAgentStep
         }
@@ -1548,7 +1538,7 @@ describe("configured workflow runner", () => {
       expect(runAgentStep).toHaveBeenCalledTimes(1);
       await expect(
         readFile(path.join(root, "artifacts", "run-1", "invocation.json"), "utf8")
-      ).resolves.toContain("github_pr");
+      ).resolves.toContain('"source": "github"');
       await expect(
         readFile(path.join(root, "artifacts", "run-1", "run.json"), "utf8")
       ).resolves.toContain("run-1");
@@ -1586,11 +1576,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep: async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" },
           runAgentStep: async () => ({
@@ -1630,11 +1616,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep: vi.fn(async () => ({ status: "ok" })),
           runAgentStep: vi.fn(async ({ input }: { input: unknown }) => ({
             summary: "Toy workflow executed",
@@ -1683,11 +1665,7 @@ describe("configured workflow runner", () => {
         workflowsRoot: path.join(root, "workflows"),
         agentsRoot: path.join(root, "agents"),
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? repoContext : { status: "ok" }
           ),
@@ -1748,11 +1726,7 @@ describe("configured workflow runner", () => {
           workflowsRoot: path.join(root, "workflows"),
           agentsRoot: path.join(root, "agents"),
           dependencies: {
-            createRunIdentity: () => ({
-              run_id: "run-1",
-              target: "github_pr",
-              started_at: "2026-06-19T00:00:00.000Z"
-            }),
+            createRunIdentity: () => githubRun,
             runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
               uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
             ),
@@ -1777,11 +1751,7 @@ describe("configured workflow runner", () => {
           configRoot: root,
           workflowsRoot: path.join(root, "workflows"),
           dependencies: {
-            createRunIdentity: () => ({
-              run_id: "run-1",
-              target: "github_pr",
-              started_at: "2026-06-19T00:00:00.000Z"
-            }),
+            createRunIdentity: () => githubRun,
             runBuiltInStep: vi.fn(),
             runAgentStep: vi.fn()
           }
@@ -1804,11 +1774,7 @@ describe("configured workflow runner", () => {
         workflowsRoot: path.join(root, "workflows"),
         throwOnError: false,
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep: vi.fn(),
           runAgentStep: vi.fn()
         }
@@ -1830,7 +1796,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("routes legacy github_pr payloads through normal routing rules", async () => {
+  it("routes GitHub pull request events through normal routing rules", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -1841,17 +1807,13 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation: {
           ...invocation,
-          source: "github",
-          event: "pull_request.opened"
+          target: undefined,
+          action: "opened"
         } as unknown as Invocation,
         configRoot: root,
         workflowsRoot: path.join(root, "workflows"),
         dependencies: {
-          createRunIdentity: () => ({
-            run_id: "run-1",
-            target: "github_pr",
-            started_at: "2026-06-19T00:00:00.000Z"
-          }),
+          createRunIdentity: () => githubRun,
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
           ),
@@ -1886,16 +1848,12 @@ describe("configured workflow runner", () => {
           configRoot: root,
           workflowsRoot: path.join(root, "workflows"),
           dependencies: {
-            createRunIdentity: () => ({
-              run_id: "run-1",
-              target: "github_pr",
-              started_at: "2026-06-19T00:00:00.000Z"
-            }),
+            createRunIdentity: () => githubRun,
             runBuiltInStep: vi.fn(),
             runAgentStep: vi.fn()
           }
         })
-      ).rejects.toMatchObject({ code: "invalid_invocation" });
+      ).rejects.toMatchObject({ code: "invalid_target" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

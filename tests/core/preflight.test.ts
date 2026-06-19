@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { githubPullRequestContextFrom } from "../../src/core/github-pr-context.js";
 import { runPreflight } from "../../src/core/preflight.js";
 import type {
-  GithubPrInvocation,
   ImplementationConfig,
-  JiraTaskInvocation
+  Invocation
 } from "../../src/core/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
+
+const pullRequest = githubPullRequestContextFrom(gitInvocation);
+const baseRef = pullRequest.base_ref;
+const baseSha = pullRequest.references.base_sha;
+const headSha = pullRequest.references.head_sha;
 
 type FakeGitCall = {
   cwd: string;
@@ -19,23 +24,30 @@ function codedError(code: string): Error & { code: string } {
   return error;
 }
 
-const jiraInvocation: JiraTaskInvocation = {
-  target: "jira_task",
-  workflow: "implementation",
-  jira: {
-    instance_id: "company",
-    issue_key: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    summary: "Fix checkout validation",
-    description: "Reject invalid checkout payloads.",
-    acceptance_criteria: "Invalid payloads fail validation.",
-    status: "To Do",
-    issue_type: "Task"
-  },
+const jiraInvocation: Invocation = {
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  action: "selected",
   repository: {
     provider: "github",
-    owner: "octo-org",
-    name: "hello-world"
+    owner: "swinggo-dev",
+    name: "swg-front-nuxt"
+  },
+  subject: {
+    type: "jira_issue",
+    id: "ABC-123",
+    url: "https://company.atlassian.net/browse/ABC-123",
+    title: "Fix checkout validation"
+  },
+  payload: {
+    jira: {
+      instance_id: "company",
+      description: "Reject invalid checkout payloads.",
+      acceptance_criteria: "Invalid payloads fail validation.",
+      status: "To Do",
+      issue_type: "Task"
+    }
   }
 };
 
@@ -111,7 +123,8 @@ describe("preflight", () => {
         invocation: {
           ...gitInvocation,
           references: {
-            ...gitInvocation.references,
+            base_ref: baseRef,
+            base_sha: baseSha,
             head_sha: ""
           }
         },
@@ -123,11 +136,15 @@ describe("preflight", () => {
   });
 
   it("throws invalid_invocation when base_ref is missing", async () => {
-    const { base_ref: _baseRef, ...invalidInvocation } = gitInvocation;
-
     await expect(
       runPreflight({
-        invocation: invalidInvocation as GithubPrInvocation,
+        invocation: {
+          ...gitInvocation,
+          references: {
+            base_sha: baseSha,
+            head_sha: headSha
+          }
+        },
         repository: gitRepository,
         runGit: async () => "",
         stat: async () => ({ isDirectory: () => true })
@@ -171,14 +188,14 @@ describe("preflight", () => {
         remote_url: "git@github.com:octo-org/hello-world.git"
       },
       expected: {
-        base_sha: gitInvocation.references.base_sha,
-        head_sha: gitInvocation.references.head_sha,
-        base_ref: gitInvocation.base_ref
+        base_sha: baseSha,
+        head_sha: headSha,
+        base_ref: baseRef
       }
     });
   });
 
-  it("supports jira_task preflight for git_managed_write when the remote URL is expected", async () => {
+  it("supports Jira issue preflight for git_managed_write when the remote URL is expected", async () => {
     const result = await runPreflight({
       invocation: jiraInvocation,
       repository: {
@@ -202,6 +219,38 @@ describe("preflight", () => {
         remote_url: "git@github.com:octo-org/hello-world.git"
       }
     });
+  });
+
+  it("supports git_managed_write when Jira acceptance criteria is empty", async () => {
+    const result = await runPreflight({
+      invocation: {
+        ...jiraInvocation,
+        payload: {
+          jira: {
+            ...(jiraInvocation.payload?.jira as Record<string, unknown>),
+            acceptance_criteria: ""
+          }
+        }
+      },
+      repository: {
+        ...gitRepository,
+        expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
+      },
+      workflow: { mode: "git_managed_write" },
+      implementation: implementationConfig,
+      runGit: async (_cwd, args) => {
+        if (args[0] === "remote") {
+          return "git@github.com:octo-org/hello-world.git\n";
+        }
+
+        return "true\n";
+      },
+      stat: async () => ({ isDirectory: () => true })
+    });
+
+    expect(result.repository.remote_url).toBe(
+      "git@github.com:octo-org/hello-world.git"
+    );
   });
 
   it("matches git_managed_write SSH actual remote against HTTPS expected remote", async () => {

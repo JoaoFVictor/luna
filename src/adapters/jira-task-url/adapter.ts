@@ -1,52 +1,36 @@
 import path from "node:path";
 import { z } from "zod";
-import { loadYamlFile, resolveConfigRoot } from "./config-loader.js";
+import { loadYamlFile } from "../../core/config-loader.js";
 import {
   jiraAuthForInstance,
   loadLunaAuth,
   type JiraAuth
-} from "./jira-auth.js";
+} from "../../core/jira-auth.js";
 import {
   InvocationSchema,
   JiraConfigSchema,
-  RepositoriesConfigSchema,
   type Invocation,
-  type JiraConfig,
-  type LunaAuthConfig,
-  type RepositoryConfig,
-  type RepositoriesConfig
-} from "./types.js";
+  type JiraConfig
+} from "../../core/types.js";
+import type { AdapterInput, InputAdapter } from "../types.js";
 
 type JiraInstanceConfig = JiraConfig["instances"][number];
-
-type JiraAdapterConfigs = {
-  jira: JiraConfig;
-  repositories: RepositoriesConfig;
-};
 
 export type JiraIssueRequest = {
   instance: JiraInstanceConfig;
   auth: JiraAuth;
   issueKey: string;
-};
-
-export type FetchJiraTaskInvocationOptions = {
-  projectRoot?: string;
-  configRoot?: string;
-  loadConfigs?: () => Promise<JiraAdapterConfigs>;
-  loadAuth?: () => Promise<LunaAuthConfig>;
-  fetchIssue?: (request: JiraIssueRequest) => Promise<unknown>;
+  fetch: typeof fetch;
 };
 
 export type JiraAdapterError = Error & {
   code:
-    | "invalid_jira_task_url"
+    | "invalid_jira_issue_url"
     | "jira_instance_not_configured"
     | "jira_issue_fetch_failed"
     | "jira_issue_invalid_response"
     | "jira_repository_field_missing"
-    | "jira_repository_field_invalid"
-    | "repository_not_configured";
+    | "jira_repository_field_invalid";
   cause?: unknown;
 };
 
@@ -69,7 +53,7 @@ function adapterError(
   return error;
 }
 
-function parseJiraTaskUrl(url: string): {
+function parseJiraIssueUrl(url: string): {
   parsed: URL;
   issueKey: string;
   canonicalUrl: string;
@@ -78,16 +62,16 @@ function parseJiraTaskUrl(url: string): {
   try {
     parsed = new URL(url);
   } catch (cause) {
-    throw adapterError("invalid_jira_task_url", `Invalid Jira task URL: ${url}`, cause);
+    throw adapterError("invalid_jira_issue_url", `Invalid Jira task URL: ${url}`, cause);
   }
 
   if (parsed.protocol !== "https:") {
-    throw adapterError("invalid_jira_task_url", `Expected HTTPS Jira task URL: ${url}`);
+    throw adapterError("invalid_jira_issue_url", `Expected HTTPS Jira task URL: ${url}`);
   }
 
   if (parsed.username.length > 0 || parsed.password.length > 0) {
     throw adapterError(
-      "invalid_jira_task_url",
+      "invalid_jira_issue_url",
       "Jira task URL must not include credentials"
     );
   }
@@ -99,7 +83,7 @@ function parseJiraTaskUrl(url: string): {
     extra.length > 0 ||
     !/^[A-Z][A-Z0-9]+-\d+$/.test(issueKey)
   ) {
-    throw adapterError("invalid_jira_task_url", `Expected Jira browse URL: ${url}`);
+    throw adapterError("invalid_jira_issue_url", `Expected Jira browse URL: ${url}`);
   }
 
   return {
@@ -113,10 +97,7 @@ function originOf(url: string): string {
   return new URL(url).origin;
 }
 
-function findJiraInstance(
-  jira: JiraConfig,
-  url: URL
-): JiraInstanceConfig {
+function findJiraInstance(jira: JiraConfig, url: URL): JiraInstanceConfig {
   const instance = jira.instances.find(
     (candidate) => originOf(candidate.base_url) === url.origin
   );
@@ -194,43 +175,11 @@ function parseGithubFullName(value: unknown): { owner: string; name: string } {
   return { owner, name };
 }
 
-function findRepository(
-  repositories: readonly RepositoryConfig[],
-  owner: string,
-  name: string
-): RepositoryConfig {
-  const repository = repositories.find(
-    (candidate) =>
-      candidate.provider === "github" &&
-      candidate.owner.toLowerCase() === owner.toLowerCase() &&
-      candidate.name.toLowerCase() === name.toLowerCase()
-  );
-
-  if (repository === undefined) {
-    throw adapterError(
-      "repository_not_configured",
-      `Repository is not configured: github/${owner}/${name}`
-    );
-  }
-
-  return repository;
-}
-
-async function loadDefaultConfigs(
-  configRoot: string
-): Promise<JiraAdapterConfigs> {
-  const [jira, repositories] = await Promise.all([
-    loadYamlFile(path.join(configRoot, "jira.yaml"), JiraConfigSchema),
-    loadYamlFile(path.join(configRoot, "repositories.yaml"), RepositoriesConfigSchema)
-  ]);
-
-  return { jira, repositories };
-}
-
 async function defaultFetchIssue({
   instance,
   auth,
-  issueKey
+  issueKey,
+  fetch
 }: JiraIssueRequest): Promise<unknown> {
   const url = new URL(
     `/rest/api/3/issue/${encodeURIComponent(issueKey)}`,
@@ -256,22 +205,23 @@ async function defaultFetchIssue({
   return await response.json();
 }
 
-export async function fetchJiraTaskInvocation(
-  url: string,
-  options: FetchJiraTaskInvocationOptions = {}
+async function loadJiraIssueUrlInvocation(
+  input: AdapterInput,
+  context: Parameters<InputAdapter["load"]>[1]
 ): Promise<Invocation> {
-  const projectRoot = options.projectRoot ?? process.cwd();
-  const configRoot = options.configRoot ?? resolveConfigRoot();
-  const { parsed, issueKey, canonicalUrl } = parseJiraTaskUrl(url);
-  const configs = await (options.loadConfigs ??
-    (() => loadDefaultConfigs(configRoot)))();
-  const instance = findJiraInstance(configs.jira, parsed);
-  const auth = jiraAuthForInstance(
-    await (options.loadAuth ?? (() => loadLunaAuth(projectRoot)))(),
-    instance.id
+  const { parsed, issueKey, canonicalUrl } = parseJiraIssueUrl(input.value);
+  const jira = await loadYamlFile(
+    path.join(context.configRoot, "jira.yaml"),
+    JiraConfigSchema
   );
-  const fetchIssue = options.fetchIssue ?? defaultFetchIssue;
-  const issueResponse = await fetchIssue({ instance, auth, issueKey });
+  const instance = findJiraInstance(jira, parsed);
+  const auth = jiraAuthForInstance(await loadLunaAuth(context.projectRoot), instance.id);
+  const issueResponse = await defaultFetchIssue({
+    instance,
+    auth,
+    issueKey,
+    fetch: context.fetch
+  });
   const parsedIssue = JiraIssueSchema.safeParse(issueResponse);
 
   if (!parsedIssue.success) {
@@ -286,29 +236,44 @@ export async function fetchJiraTaskInvocation(
   const fields = issue.fields;
   const repositoryField = fields[instance.repository_field.field_id];
   const { owner, name } = parseGithubFullName(repositoryField);
-  findRepository(configs.repositories.repositories, owner, name);
+  const summary = compactText(fields.summary);
 
   return InvocationSchema.parse({
-    target: "jira_task",
-    workflow: "implementation",
-    jira: {
-      instance_id: instance.id,
-      issue_key: issue.key,
-      url: canonicalUrl,
-      summary: compactText(fields.summary),
-      description: compactText(fields.description),
-      acceptance_criteria: compactText(
-        instance.acceptance_criteria_field === undefined
-          ? ""
-          : fields[instance.acceptance_criteria_field.field_id]
-      ),
-      status: fieldName(fields.status),
-      issue_type: fieldName(fields.issuetype)
-    },
+    version: "2026-06",
+    source: "jira",
+    event: "issue",
+    action: "selected",
     repository: {
       provider: "github",
       owner,
       name
+    },
+    subject: {
+      type: "jira_issue",
+      id: issue.key,
+      url: canonicalUrl,
+      title: summary
+    },
+    payload: {
+      jira: {
+        instance_id: instance.id,
+        description: compactText(fields.description),
+        acceptance_criteria: compactText(
+          instance.acceptance_criteria_field === undefined
+            ? ""
+            : fields[instance.acceptance_criteria_field.field_id]
+        ),
+        status: fieldName(fields.status),
+        issue_type: fieldName(fields.issuetype)
+      }
     }
   });
 }
+
+export const jiraTaskUrlAdapter: InputAdapter = {
+  id: "jira-task-url",
+  description: "Load a Jira issue from a configured Jira browse URL.",
+  async load(input, context) {
+    return await loadJiraIssueUrlInvocation(input, context);
+  }
+};

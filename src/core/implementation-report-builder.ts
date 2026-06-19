@@ -1,6 +1,8 @@
+import { jiraIssueContextFrom } from "./jira-issue-context.js";
 import type {
   CommitChangesArtifact,
-  JiraTaskInvocation,
+  Invocation,
+  InvocationRepository,
   PullRequestArtifact,
   PushBranchArtifact,
   ValidationResult
@@ -13,7 +15,7 @@ type ImplementationWorktreeSummary = {
 };
 
 type ReportInput = {
-  invocation: JiraTaskInvocation;
+  invocation: Invocation;
   status: string;
   branch: string;
   worktree: ImplementationWorktreeSummary;
@@ -38,7 +40,7 @@ export type ImplementationReportJson = {
     summary: string;
     status: string;
   };
-  repository: JiraTaskInvocation["repository"];
+  repository: InvocationRepository;
   status: string;
   branch: string;
   worktree: ImplementationWorktreeSummary;
@@ -99,14 +101,16 @@ export function buildImplementationReportJson({
   pullRequest,
   trustedHostLocal
 }: ReportInput): ImplementationReportJson {
+  const task = jiraIssueContextFrom(invocation);
+
   return {
     jira: {
-      key: invocation.jira.issue_key,
-      url: invocation.jira.url,
-      summary: invocation.jira.summary,
-      status: invocation.jira.status
+      key: task.issueKey,
+      url: task.url ?? "",
+      summary: task.title ?? "",
+      status: task.status
     },
-    repository: invocation.repository,
+    repository: task.repository,
     status,
     branch,
     worktree,

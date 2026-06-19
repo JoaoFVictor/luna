@@ -1,11 +1,39 @@
 import { describe, expect, it } from "vitest";
 import { resolveRepository } from "../../src/core/workspace-resolver.js";
-import type { JiraTaskInvocation } from "../../src/core/types.js";
-import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
+import type { Invocation } from "../../src/core/types.js";
+import { gitRepository } from "../fixtures/git-repo.js";
+
+const githubInvocation = {
+  version: "2026-06",
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  target: { type: "workflow", id: "code-review" },
+  repository: {
+    provider: "github",
+    owner: "Octo-Org",
+    name: "Hello-World"
+  },
+  subject: { type: "pull_request", id: "42" }
+} as const satisfies Invocation;
+
+const jiraInvocation = {
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  action: "selected",
+  target: { type: "workflow", id: "implementation" },
+  repository: {
+    provider: "github",
+    owner: "swinggo-dev",
+    name: "swg-front-nuxt"
+  },
+  subject: { type: "issue", id: "ABC-123" }
+} as const satisfies Invocation;
 
 describe("workspace resolver", () => {
-  it("matches github_pr repositories by top-level provider, owner, and name", () => {
-    const repository = resolveRepository(gitInvocation, [
+  it("matches github repositories by invocation repository owner and name", () => {
+    const repository = resolveRepository(githubInvocation, [
       {
         ...gitRepository,
         id: "other",
@@ -18,26 +46,22 @@ describe("workspace resolver", () => {
     expect(repository).toBe(gitRepository);
   });
 
-  it("matches jira_task repositories by invocation repository owner and name", () => {
-    const jiraInvocation: JiraTaskInvocation = {
-      target: "jira_task",
-      workflow: "implementation",
-      jira: {
-        instance_id: "company",
-        issue_key: "ABC-123",
-        url: "https://company.atlassian.net/browse/ABC-123",
-        summary: "Fix checkout validation",
-        description: "Reject invalid checkout payloads.",
-        acceptance_criteria: "Invalid payloads fail validation.",
-        status: "To Do",
-        issue_type: "Task"
+  it("matches repository provider case-insensitively", () => {
+    const repository = resolveRepository(
+      {
+        ...githubInvocation,
+        repository: {
+          ...githubInvocation.repository,
+          provider: "GitHub"
+        }
       },
-      repository: {
-        provider: "github",
-        owner: "swinggo-dev",
-        name: "swg-front-nuxt"
-      }
-    };
+      [gitRepository]
+    );
+
+    expect(repository).toBe(gitRepository);
+  });
+
+  it("matches jira repositories by invocation repository owner and name", () => {
     const jiraRepository = {
       ...gitRepository,
       id: "swg-front-nuxt",
@@ -55,7 +79,7 @@ describe("workspace resolver", () => {
 
   it("throws repository_not_configured when no repository matches", () => {
     expect(() =>
-      resolveRepository(gitInvocation, [
+      resolveRepository(githubInvocation, [
         {
           ...gitRepository,
           owner: "someone-else"
@@ -64,29 +88,24 @@ describe("workspace resolver", () => {
     ).toThrow(expect.objectContaining({ code: "repository_not_configured" }));
   });
 
-  it("throws repository_not_configured when no jira_task repository matches", () => {
-    const jiraInvocation: JiraTaskInvocation = {
-      target: "jira_task",
-      workflow: "implementation",
-      jira: {
-        instance_id: "company",
-        issue_key: "ABC-123",
-        url: "https://company.atlassian.net/browse/ABC-123",
-        summary: "Fix checkout validation",
-        description: "Reject invalid checkout payloads.",
-        acceptance_criteria: "Invalid payloads fail validation.",
-        status: "To Do",
-        issue_type: "Task"
-      },
-      repository: {
-        provider: "github",
-        owner: "swinggo-dev",
-        name: "swg-front-nuxt"
-      }
-    };
-
+  it("throws repository_not_configured when no jira repository matches", () => {
     expect(() => resolveRepository(jiraInvocation, [gitRepository])).toThrow(
       expect.objectContaining({ code: "repository_not_configured" })
     );
+  });
+
+  it("throws repository_not_configured when invocation has no repository", () => {
+    const invocationWithoutRepository = {
+      version: "2026-06",
+      source: "github",
+      event: "pull_request",
+      action: "selected",
+      target: { type: "workflow", id: "code-review" },
+      subject: { type: "pull_request", id: "42" }
+    } as const satisfies Invocation;
+
+    expect(() =>
+      resolveRepository(invocationWithoutRepository, [gitRepository])
+    ).toThrow(expect.objectContaining({ code: "repository_not_configured" }));
   });
 });

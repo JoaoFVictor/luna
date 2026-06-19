@@ -4,14 +4,22 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "run", "report"],
+      "required": ["status", "run", "workflow_id", "steps", "report"],
       "properties": {
         "status": {
           "type": "string",
           "const": "success"
         },
+        "workflow_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "run": {
           "$ref": "#/definitions/run_identity"
+        },
+        "steps": {
+          "type": "object",
+          "additionalProperties": true
         },
         "report": {
           "$ref": "#/definitions/final_report"
@@ -24,11 +32,15 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "run", "error"],
+      "required": ["status", "run", "workflow_id", "error"],
       "properties": {
         "status": {
           "type": "string",
           "const": "failed"
+        },
+        "workflow_id": {
+          "type": "string",
+          "minLength": 1
         },
         "run": {
           "$ref": "#/definitions/run_identity"
@@ -46,17 +58,61 @@
     "run_identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["run_id", "target"],
+      "required": ["run_id", "attempt", "source", "event"],
       "properties": {
         "run_id": {
           "type": "string",
           "minLength": 1
         },
-        "target": {
-          "type": "string",
-          "const": "github_pr"
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
         },
-        "started_at": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "route_target": {
+          "$ref": "#/definitions/route_target"
+        },
+        "subject": {
+          "$ref": "#/definitions/run_subject"
+        }
+      }
+    },
+    "route_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "workflow"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "run_subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
           "type": "string",
           "minLength": 1
         }

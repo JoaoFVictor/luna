@@ -14,7 +14,11 @@ describe("artifact store", () => {
     const store = new ArtifactStore(root, "20260618T150405Z-org-repo-pr-1-a1");
 
     const invocationPath = await store.writeJson("invocation.json", {
-      target: "github_pr"
+      version: "2026-06",
+      source: "github",
+      event: "pull_request",
+      target: { type: "workflow", id: "code-review" },
+      subject: { type: "pull_request", id: "1" }
     });
     const runPath = await store.writeJson("run.json", { run_id: "run-1" });
     const reportPath = await store.writeMarkdown("report.md", "# Review\n");
@@ -27,7 +31,7 @@ describe("artifact store", () => {
     expect(errorPath).toBe(join(runDir, "error.json"));
 
     await expect(readFile(invocationPath, "utf8")).resolves.toContain(
-      "\"target\": \"github_pr\""
+      "\"source\": \"github\""
     );
     await expect(readFile(reportPath, "utf8")).resolves.toBe("# Review\n");
     await expect(readFile(errorPath, "utf8")).resolves.toContain("\"message\"");

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { runGit } from "../../src/core/git.js";
 import type {
-  GithubPrInvocation,
+  Invocation,
   RepositoryConfig
 } from "../../src/core/types.js";
 
@@ -16,26 +16,35 @@ export const gitRepository: RepositoryConfig = {
   remote: "origin"
 };
 
-export const gitInvocation: GithubPrInvocation = {
-  target: "github_pr",
-  owner: "octo-org",
-  repo: "hello-world",
-  pull_number: 42,
-  base_ref: "main",
-  base_repository: {
-    owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
-  },
-  head_repository: {
-    owner: "contributor",
-    name: "hello-world",
-    full_name: "contributor/hello-world",
-    fork: true
+export const gitInvocation: Invocation = {
+  version: "2026-06",
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  repository: { provider: "github", owner: "octo-org", name: "hello-world" },
+  subject: {
+    type: "pull_request",
+    id: "42",
+    url: "https://github.com/octo-org/hello-world/pull/42"
   },
   references: {
-    base_sha: "1111111111111111111111111111111111111111",
-    head_sha: "2222222222222222222222222222222222222222"
+    base_ref: "main",
+    base_sha: "BASE_SHA_PLACEHOLDER",
+    head_sha: "HEAD_SHA_PLACEHOLDER"
+  },
+  payload: {
+    pull_request: { number: 42 },
+    base_repository: {
+      owner: "octo-org",
+      name: "hello-world",
+      full_name: "octo-org/hello-world"
+    },
+    head_repository: {
+      owner: "contributor",
+      name: "hello-world",
+      full_name: "contributor/hello-world",
+      fork: true
+    }
   }
 };
 
@@ -46,8 +55,8 @@ export type RealGitReviewFixture = {
   base_sha: string;
   head_sha: string;
   repository: RepositoryConfig;
-  invocation: GithubPrInvocation;
-  headMismatchInvocation: GithubPrInvocation;
+  invocation: Invocation;
+  headMismatchInvocation: Invocation;
   cleanup: () => Promise<void>;
 };
 
@@ -114,10 +123,29 @@ export async function createRealGitReviewFixture(): Promise<RealGitReviewFixture
     path: sourcePath,
     remote: "origin"
   };
-  const invocation: GithubPrInvocation = {
+  const invocation: Invocation = {
     ...gitInvocation,
-    pull_number: 123,
+    subject: {
+      type: "pull_request",
+      id: "123",
+      url: "https://github.com/octo-org/hello-world/pull/123"
+    },
+    payload: {
+      pull_request: { number: 123 },
+      base_repository: {
+        owner: "octo-org",
+        name: "hello-world",
+        full_name: "octo-org/hello-world"
+      },
+      head_repository: {
+        owner: "contributor",
+        name: "hello-world",
+        full_name: "contributor/hello-world",
+        fork: true
+      }
+    },
     references: {
+      base_ref: "main",
       base_sha: baseSha,
       head_sha: headSha
     }
@@ -134,6 +162,7 @@ export async function createRealGitReviewFixture(): Promise<RealGitReviewFixture
     headMismatchInvocation: {
       ...invocation,
       references: {
+        ...invocation.references,
         base_sha: baseSha,
         head_sha: baseSha
       }

@@ -1,10 +1,6 @@
 import { slugify } from "./path-security.js";
 import type { Invocation, RunIdentity } from "./types.js";
 
-type InvocationWithOptionalId = Invocation & {
-  invocation_id?: unknown;
-};
-
 function runIdentityError(message: string): Error & { code: "invalid_run_id" } {
   const error = new Error(message) as Error & { code: "invalid_run_id" };
   error.code = "invalid_run_id";
@@ -23,24 +19,22 @@ export function slugTimestamp(date: Date): string {
   return `${year}${month}${day}t${hour}${minute}${second}z`;
 }
 
-function invocationSlug(invocation: InvocationWithOptionalId): string {
-  if (typeof invocation.invocation_id === "string" && invocation.invocation_id !== "") {
-    return slugify(invocation.invocation_id);
-  }
-
-  if (invocation.target === "jira_task") {
-    return slugify(
-      `${invocation.repository.provider}-${invocation.repository.owner}-${invocation.repository.name}-jira-${invocation.jira.issue_key}`
-    );
-  }
-
-  return slugify(
-    `${invocation.owner}-${invocation.repo}-pr-${invocation.pull_number}`
-  );
+function invocationSlug(invocation: Invocation): string {
+  return [
+    invocation.source,
+    invocation.event,
+    invocation.repository?.owner,
+    invocation.repository?.name,
+    invocation.subject?.type,
+    invocation.subject?.id
+  ]
+    .filter((part): part is string => part !== undefined)
+    .map((part) => slugify(part.replace(/_/g, "-")))
+    .join("-");
 }
 
 export function createRunIdentity(
-  invocation: InvocationWithOptionalId,
+  invocation: Invocation,
   attempt: number,
   date = new Date()
 ): RunIdentity {
@@ -54,9 +48,27 @@ export function createRunIdentity(
     throw runIdentityError("Run id contains unsafe characters");
   }
 
-  return {
+  const identity: RunIdentity = {
     run_id,
-    target: invocation.target,
-    started_at: date.toISOString()
+    attempt,
+    source: invocation.source,
+    event: invocation.event
   };
+
+  if (invocation.action !== undefined) {
+    identity.action = invocation.action;
+  }
+
+  if (invocation.target !== undefined) {
+    identity.route_target = invocation.target;
+  }
+
+  if (invocation.subject !== undefined) {
+    identity.subject = {
+      type: invocation.subject.type,
+      id: invocation.subject.id
+    };
+  }
+
+  return identity;
 }

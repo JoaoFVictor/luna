@@ -1,22 +1,41 @@
 {
-  "target": "github_pr",
-  "owner": "octo-org",
-  "repo": "hello-world",
-  "pull_number": 42,
-  "base_ref": "main",
-  "base_repository": {
-    "owner": "octo-org",
-    "name": "hello-world",
-    "full_name": "octo-org/hello-world"
+  "version": "2026-06",
+  "source": "github",
+  "event": "pull_request",
+  "action": "selected",
+  "target": {
+    "type": "workflow",
+    "id": "code-review"
   },
-  "head_repository": {
-    "owner": "contributor",
-    "name": "hello-world",
-    "full_name": "contributor/hello-world",
-    "fork": true
+  "repository": {
+    "provider": "github",
+    "owner": "org",
+    "name": "repo"
+  },
+  "subject": {
+    "type": "pull_request",
+    "id": "123",
+    "url": "https://github.com/org/repo/pull/123"
   },
   "references": {
-    "base_sha": "abc123",
-    "head_sha": "def456"
+    "base_ref": "main",
+    "base_sha": "base-sha",
+    "head_sha": "head-sha"
+  },
+  "payload": {
+    "pull_request": {
+      "number": 123
+    },
+    "base_repository": {
+      "owner": "org",
+      "name": "repo",
+      "full_name": "org/repo"
+    },
+    "head_repository": {
+      "owner": "contributor",
+      "name": "repo",
+      "full_name": "contributor/repo",
+      "fork": true
+    }
   }
 }

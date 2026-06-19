@@ -6,8 +6,10 @@ exist so callers do not need to hand-write JSON.
 The CLI shape should stay generic:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow my-workflow --from my-adapter value
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from my-adapter value
 ```
+
+`--workflow <id>` is an alias for `--target workflow:<id>`.
 
 Do not add workflow-specific commands such as:
 
@@ -30,10 +32,12 @@ The adapter receives the value after `--from <adapter>`.
 
 ## 2. Create The Adapter Module
 
-Create a module under `src/core/`, for example:
+Create a module under `src/adapters/<adapter-id>/`, for example:
 
 ```text
-src/core/slack-message-adapter.ts
+src/adapters/slack-message-url/
+  adapter.ts
+  index.ts
 ```
 
 The adapter should:
@@ -43,167 +47,74 @@ The adapter should:
 - Normalize the result into Luna's invocation shape.
 - Return clear errors for invalid input, missing auth, or unsupported sources.
 
-For GitHub PRs, `src/core/github-pr-adapter.ts` is the reference implementation.
-For Jira tasks, `src/core/jira-adapter.ts` shows an adapter that reads
-`config/jira.yaml`, loads secrets from `luna.auth.json`, fetches source
-metadata over HTTP, and returns a write-workflow invocation.
+For GitHub PRs, `src/adapters/github-pr-url/adapter.ts` is the reference
+implementation. For Jira tasks, `src/adapters/jira-task-url/adapter.ts` shows
+an adapter that reads `config/jira.yaml`, loads secrets from `luna.auth.json`,
+fetches source metadata over HTTP, and returns a normalized invocation for the
+implementation workflow to consume through routing or a CLI target override.
 
 ## 3. Return A Normalized Invocation
 
-The result must satisfy Luna's `InvocationSchema`.
-
-Current Luna invocations include GitHub PRs and Jira tasks. A valid GitHub PR
-example looks like this:
-
-```json
-{
-  "target": "github_pr",
-  "owner": "octo-org",
-  "repo": "hello-world",
-  "pull_number": 42,
-  "base_ref": "main",
-  "base_repository": {
-    "owner": "octo-org",
-    "name": "hello-world",
-    "full_name": "octo-org/hello-world"
-  },
-  "head_repository": {
-    "owner": "contributor",
-    "name": "hello-world",
-    "full_name": "contributor/hello-world",
-    "fork": true
-  },
-  "references": {
-    "base_sha": "abc123",
-    "head_sha": "def456"
-  }
-}
-```
-
-See `examples/github-pr-opened.invocation.json` for the committed example.
-
-An adapter may also attach `workflow` when the mapping is deterministic:
+The result must satisfy Luna's `NormalizedInvocation` contract:
 
 ```ts
-return {
-  target: "github_pr",
-  owner: "octo-org",
-  repo: "hello-world",
-  pull_number: 42,
-  base_ref: "main",
-  base_repository: {
-    owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
-  },
-  head_repository: {
-    owner: "contributor",
-    name: "hello-world",
-    full_name: "contributor/hello-world",
-    fork: true
-  },
-  references: {
-    base_sha: "abc123",
-    head_sha: "def456"
-  },
-  workflow: "code-review",
+import { InvocationSchema, type NormalizedInvocation } from "../../core/types.js";
+import type { InputAdapter } from "../types.js";
+
+export const slackMessageUrlAdapter: InputAdapter = {
+  id: "slack-message-url",
+  description: "Load a Slack message from a Slack message URL.",
+  async load(input): Promise<NormalizedInvocation> {
+    const messageUrl = new URL(input.value);
+
+    return InvocationSchema.parse({
+      version: "2026-06",
+      source: "slack",
+      event: "message",
+      action: "selected",
+      subject: {
+        type: "slack_message",
+        id: "C123:1710000000.000100",
+        url: messageUrl.toString()
+      },
+      payload: {
+        channel_id: "C123",
+        timestamp: "1710000000.000100"
+      }
+    });
+  }
 };
 ```
 
+Use `version`, `source`, `event`, optional `action`, and source-specific
+`subject`, `repository`, `references`, and `payload` fields as needed.
+Invocation routing uses `target` when it is present, but URL adapters should
+omit `target` unless the CLI override is used. Without a target override,
+workflow selection comes from the invocation `target` or `config/routing.yaml`.
+
 Do not ask an LLM which workflow should run. Routing should be deterministic.
 
-The bundled `jira-task-url` adapter returns a `jira_task` invocation with
-`workflow: implementation`:
+## 4. Export And Register The Adapter
 
-```json
-{
-  "target": "jira_task",
-  "workflow": "implementation",
-  "jira": {
-    "instance_id": "company",
-    "issue_key": "ABC-123",
-    "url": "https://company.atlassian.net/browse/ABC-123",
-    "summary": "Fix checkout validation",
-    "description": "Reject invalid checkout payloads.",
-    "acceptance_criteria": "Invalid payloads fail validation.",
-    "status": "To Do",
-    "issue_type": "Task"
-  },
-  "repository": {
-    "provider": "github",
-    "owner": "org",
-    "name": "repo"
-  }
-}
-```
-
-`config/jira.yaml` maps a Jira origin and fields:
-
-```yaml
-instances:
-  - id: company
-    base_url: https://company.atlassian.net
-    repository_field:
-      field_id: customfield_12345
-      format: github_full_name
-    acceptance_criteria_field:
-      field_id: customfield_67890
-      format: markdown
-```
-
-`luna.auth.json` stores Jira credentials at the Luna project root and must not
-be committed:
-
-```json
-{
-  "providers": {
-    "jira": {
-      "company": {
-        "base_url": "https://company.atlassian.net",
-        "auth_type": "basic_api_token",
-        "email": "user@company.com",
-        "api_token": "secret-token"
-      }
-    }
-  }
-}
-```
-
-For write-mode adapters, ensure the matched repository entry has
-`expected_remote_urls` so Luna can verify the local git remote before writing:
-
-```yaml
-repositories:
-  - id: repo
-    provider: github
-    owner: org
-    name: repo
-    path: /path/to/local/repo
-    remote: origin
-    expected_remote_urls:
-      - git@github.com:org/repo.git
-```
-
-## 4. Register The Adapter In The CLI
-
-Register the adapter in `src/core/flue-cli.ts`, where `--from` is resolved.
-
-The existing shape is:
+Export the adapter from the adapter package:
 
 ```ts
-if ("input" in parsedArgs) {
-  invocation = await loadInvocationFromFile(parsedArgs.input);
-} else if (parsedArgs.from === "github-pr-url") {
-  invocation = await fetchGitHubPullRequestInvocation(parsedArgs.value);
-} else if (parsedArgs.from === "jira-task-url") {
-  invocation = await fetchJiraTaskInvocation(parsedArgs.value);
-} else {
-  throw cliError("unknown_input_adapter", `Unknown input adapter: ${parsedArgs.from}`);
-}
+export { slackMessageUrlAdapter } from "./adapter.js";
 ```
 
-Add your adapter as another explicit branch or refactor to a small registry if
-the list grows.
+Register it once in `src/adapters/registry.ts`:
+
+```ts
+import { slackMessageUrlAdapter } from "./slack-message-url/index.js";
+
+export const inputAdapterRegistry = defineInputAdapters([
+  githubPrUrlAdapter,
+  jiraTaskUrlAdapter,
+  slackMessageUrlAdapter
+]);
+```
+
+The CLI resolves `--from <adapter>` through this registry.
 
 ## 5. Keep Responsibilities Separate
 
@@ -212,7 +123,7 @@ An adapter should not:
 - Run Flue directly.
 - Create git worktrees.
 - Write final artifacts.
-- Hide which workflow is being called.
+- Hide how the workflow is selected.
 - Enable commit, push, or pull request creation directly. For the
   `implementation` workflow, `config/implementation.yaml` controls optional
   commit, push, and draft PR gates after validation and acceptance.
@@ -221,7 +132,7 @@ The runtime handles workflow execution after the adapter returns an invocation.
 
 ## 6. Add Tests
 
-Add adapter tests for:
+Add adapter tests under `tests/adapters/` for:
 
 - Valid input parsing.
 - Invalid input.
@@ -233,12 +144,12 @@ Add CLI tests proving `--from <adapter>` dispatches to the adapter.
 Useful test targets:
 
 ```bash
-npm test -- tests/core/cli.test.ts tests/core/github-pr-adapter.test.ts
+npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
 ```
 
-For a new adapter, add a dedicated test file beside `github-pr-adapter.test.ts`.
-For Jira-like adapters, also cover missing `luna.auth.json`, instance mapping,
-and repository field validation.
+For a new adapter, add a dedicated `tests/adapters/<adapter-id>-adapter.test.ts`
+file. For Jira-like adapters, also cover missing `luna.auth.json`, instance
+mapping, and repository field validation.
 
 ## 7. Document The Adapter
 

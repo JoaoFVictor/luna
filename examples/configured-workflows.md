@@ -31,28 +31,32 @@ adapter or JSON input -> invocation -> route -> workflow graph -> agents/built-i
 
 The workflow id comes from one of these places:
 
-1. The CLI flag:
+1. The CLI target override:
    ```bash
-   --workflow code-review
+   --target workflow:code-review
    ```
-2. The normalized invocation's `workflow` field.
+2. The normalized invocation's `target` field.
 3. `config/routing.yaml`.
 
 The common command shape is:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow <workflow-id> --from <adapter> <value>
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --from <adapter> <value>
 ```
+
+`--workflow <id>` is an alias for `--target workflow:<id>`.
 
 The lower-level JSON path is useful for tests and automation:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow <workflow-id> --input path/to/invocation.json
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --input path/to/invocation.json
 ```
 
-The committed workflows currently use GitHub PR and Jira task invocation
-shapes. See `examples/github-pr-opened.invocation.json` for a GitHub PR
-example. The `jira-task-url` adapter builds a `jira_task` invocation by reading
+The committed workflows consume Luna's normalized invocation shape. See
+`examples/github-pr-opened.invocation.json` for a GitHub PR example. URL
+adapters omit `target` unless the CLI override is used; otherwise routing can
+come from the invocation `target` or `config/routing.yaml`. The
+`jira-task-url` adapter builds a normalized Jira issue invocation by reading
 Jira issue fields and matching the referenced GitHub repository.
 
 ## Current Inventory
@@ -351,26 +355,25 @@ Adapters exist so callers do not need to hand-write invocation JSON.
 The current adapter command is:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --from github-pr-url https://github.com/org/repo/pull/123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 The Jira implementation adapter command is:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --workflow implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 To add a new adapter:
 
-1. Create a module under `src/core/`, for example
-   `src/core/slack-message-adapter.ts`.
-2. Export a function that receives the external value and returns a normalized
-   invocation.
+1. Create a module under `src/adapters/<adapter-id>/adapter.ts`, for example
+   `src/adapters/slack-message-url/adapter.ts`.
+2. Export an `InputAdapter` object with `id`, `description`, and
+   `load(input, context)`.
 3. Validate external input early.
 4. Fetch source metadata using the source's normal tool or API.
-5. Parse the result with Luna's `InvocationSchema` or return data that will pass
-   it in the CLI.
-6. Register the adapter name in `src/core/flue-cli.ts`.
+5. Return a normalized invocation parsed with Luna's `InvocationSchema`.
+6. Register the adapter once in `src/adapters/registry.ts`.
 7. Add unit tests for the adapter.
 8. Add CLI tests proving `--from <adapter>` dispatches to it.
 9. Add docs to `README.md` and this file.
@@ -378,7 +381,7 @@ To add a new adapter:
 Keep the CLI shape generic:
 
 ```bash
-run --workflow <workflow-id> --from <adapter> <value>
+run --target workflow:<workflow-id> --from <adapter> <value>
 ```
 
 Do not add one-off commands such as:
@@ -392,7 +395,9 @@ review-pr <url>
 An adapter should:
 
 - Convert source-specific input into Luna's normalized invocation.
-- Attach `workflow` only when the source has an explicit deterministic mapping.
+- Return `version`, `source`, `event`, optional `action`, and normalized
+  `repository`, `subject`, `references`, and `payload` data as applicable.
+- Omit `target` for URL adapters unless the CLI override is used.
 - Preserve source metadata that agents may need.
 - Return clear errors for invalid input and missing source auth.
 - Avoid LLM routing decisions.
@@ -443,7 +448,7 @@ npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflo
 For a new adapter:
 
 ```bash
-npm test -- tests/core/cli.test.ts tests/core/github-pr-adapter.test.ts
+npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
 ```
 
 Before finishing a branch:
@@ -533,6 +538,6 @@ id:
 4. Add the repo to `config/repositories.yaml`.
 5. Run:
    ```bash
-   LUNA_CONFIG_ROOT=config npm run dev -- run --workflow code-review --from github-pr-url https://github.com/org/repo/pull/123
+   LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
    ```
 6. Open `.runs/code-review/<run-id>/final-report.md`.

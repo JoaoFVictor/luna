@@ -1,9 +1,6 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { z } from "zod";
-import { InvocationSchema, type Invocation } from "./types.js";
-
-const execFileAsync = promisify(execFile);
+import { InvocationSchema, type Invocation } from "../../core/types.js";
+import type { AdapterInput, InputAdapter } from "../types.js";
 
 const GitHubRepositorySchema = z
   .object({
@@ -43,27 +40,21 @@ export type PullRequestCoordinates = {
   pull_number: number;
 };
 
-export type ExecuteJson = (command: string, args: string[]) => Promise<unknown>;
-
-export type FetchGitHubPullRequestInvocationOptions = {
-  executeJson?: ExecuteJson;
-};
-
-export type GitHubPrAdapterError = Error & {
+export type GitHubPullRequestAdapterError = Error & {
   code:
     | "invalid_pr_url"
-    | "github_pr_fetch_failed"
-    | "github_pr_invalid_response"
-    | "github_pr_head_repo_missing";
+    | "github_pull_request_fetch_failed"
+    | "github_pull_request_invalid_response"
+    | "github_pull_request_head_repo_missing";
   cause?: unknown;
 };
 
 function adapterError(
-  code: GitHubPrAdapterError["code"],
+  code: GitHubPullRequestAdapterError["code"],
   message: string,
   cause?: unknown
-): GitHubPrAdapterError {
-  const error = new Error(message, { cause }) as GitHubPrAdapterError;
+): GitHubPullRequestAdapterError {
+  const error = new Error(message, { cause }) as GitHubPullRequestAdapterError;
   error.code = code;
   error.cause = cause;
 
@@ -93,16 +84,20 @@ export function parseGitHubPullRequestUrl(url: string): PullRequestCoordinates {
   const [owner, repo, kind, number, ...extra] = parsed.pathname
     .split("/")
     .filter(Boolean);
-  const pullNumber = Number(number);
 
   if (
     owner === undefined ||
     repo === undefined ||
     kind !== "pull" ||
+    number === undefined ||
     extra.length > 0 ||
-    !Number.isSafeInteger(pullNumber) ||
-    pullNumber < 1
+    !/^[1-9]\d*$/.test(number)
   ) {
+    throw adapterError("invalid_pr_url", `Expected GitHub PR URL: ${url}`);
+  }
+
+  const pullNumber = Number(number);
+  if (!Number.isSafeInteger(pullNumber)) {
     throw adapterError("invalid_pr_url", `Expected GitHub PR URL: ${url}`);
   }
 
@@ -113,38 +108,30 @@ export function parseGitHubPullRequestUrl(url: string): PullRequestCoordinates {
   };
 }
 
-async function executeGhJson(command: string, args: string[]): Promise<unknown> {
-  try {
-    const { stdout } = await execFileAsync(command, args, {
-      timeout: 60000,
-      maxBuffer: 10 * 1024 * 1024
-    });
+async function fetchPullRequest(
+  input: AdapterInput,
+  executeJson: (command: string, args: string[]) => Promise<unknown>
+): Promise<Invocation> {
+  const coordinates = parseGitHubPullRequestUrl(input.value);
+  let response: unknown;
 
-    return JSON.parse(stdout);
+  try {
+    response = await executeJson("gh", [
+      "api",
+      `repos/${coordinates.owner}/${coordinates.repo}/pulls/${coordinates.pull_number}`
+    ]);
   } catch (cause) {
     throw adapterError(
-      "github_pr_fetch_failed",
-      `Failed to load GitHub PR metadata with: ${command} ${args.join(" ")}`,
+      "github_pull_request_fetch_failed",
+      `Failed to load GitHub PR metadata with: gh api repos/${coordinates.owner}/${coordinates.repo}/pulls/${coordinates.pull_number}`,
       cause
     );
   }
-}
 
-export async function fetchGitHubPullRequestInvocation(
-  url: string,
-  options: FetchGitHubPullRequestInvocationOptions = {}
-): Promise<Invocation> {
-  const coordinates = parseGitHubPullRequestUrl(url);
-  const executeJson = options.executeJson ?? executeGhJson;
-  const response = await executeJson("gh", [
-    "api",
-    `repos/${coordinates.owner}/${coordinates.repo}/pulls/${coordinates.pull_number}`
-  ]);
   const parsed = GitHubPullRequestSchema.safeParse(response);
-
   if (!parsed.success) {
     throw adapterError(
-      "github_pr_invalid_response",
+      "github_pull_request_invalid_response",
       parsed.error.message,
       parsed.error
     );
@@ -153,31 +140,56 @@ export async function fetchGitHubPullRequestInvocation(
   const pullRequest = parsed.data;
   if (pullRequest.head.repo === null) {
     throw adapterError(
-      "github_pr_head_repo_missing",
+      "github_pull_request_head_repo_missing",
       "GitHub PR head repository is unavailable"
     );
   }
 
+  const canonicalUrl = `https://github.com/${coordinates.owner}/${coordinates.repo}/pull/${pullRequest.number}`;
+
   return InvocationSchema.parse({
-    target: "github_pr",
-    owner: coordinates.owner,
-    repo: coordinates.repo,
-    pull_number: pullRequest.number,
-    base_ref: pullRequest.base.ref,
-    base_repository: {
-      owner: pullRequest.base.repo.owner.login,
-      name: pullRequest.base.repo.name,
-      full_name: pullRequest.base.repo.full_name
+    version: "2026-06",
+    source: "github",
+    event: "pull_request",
+    action: "selected",
+    repository: {
+      provider: "github",
+      owner: coordinates.owner,
+      name: coordinates.repo
     },
-    head_repository: {
-      owner: pullRequest.head.repo.owner.login,
-      name: pullRequest.head.repo.name,
-      full_name: pullRequest.head.repo.full_name,
-      fork: pullRequest.head.repo.fork
+    subject: {
+      type: "pull_request",
+      id: String(pullRequest.number),
+      url: canonicalUrl
     },
     references: {
+      base_ref: pullRequest.base.ref,
       base_sha: pullRequest.base.sha,
       head_sha: pullRequest.head.sha
+    },
+    payload: {
+      pull_request: {
+        number: pullRequest.number
+      },
+      base_repository: {
+        owner: pullRequest.base.repo.owner.login,
+        name: pullRequest.base.repo.name,
+        full_name: pullRequest.base.repo.full_name
+      },
+      head_repository: {
+        owner: pullRequest.head.repo.owner.login,
+        name: pullRequest.head.repo.name,
+        full_name: pullRequest.head.repo.full_name,
+        fork: pullRequest.head.repo.fork
+      }
     }
   });
 }
+
+export const githubPrUrlAdapter: InputAdapter = {
+  id: "github-pr-url",
+  description: "Load a GitHub pull request from a github.com pull request URL.",
+  async load(input, context) {
+    return await fetchPullRequest(input, context.executeJson);
+  }
+};
