@@ -31,7 +31,6 @@ const BuiltInNodeSchema = z
       "prepare_worktree",
       "collect_repo_context",
       "validate_code_review_findings",
-      "cleanup_worktree",
       "final_code_review_report"
     ]),
     artifact: z.union([NonEmptyStringSchema, z.record(NonEmptyStringSchema)]).optional(),
