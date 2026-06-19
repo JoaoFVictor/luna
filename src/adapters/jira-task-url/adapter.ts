@@ -205,7 +205,7 @@ async function defaultFetchIssue({
   return await response.json();
 }
 
-async function fetchJiraTaskInvocation(
+async function loadJiraTaskUrlInvocation(
   input: AdapterInput,
   context: Parameters<InputAdapter["load"]>[1]
 ): Promise<Invocation> {
@@ -274,6 +274,6 @@ export const jiraTaskUrlAdapter: InputAdapter = {
   id: "jira-task-url",
   description: "Load a Jira issue from a configured Jira browse URL.",
   async load(input, context) {
-    return await fetchJiraTaskInvocation(input, context);
+    return await loadJiraTaskUrlInvocation(input, context);
   }
 };

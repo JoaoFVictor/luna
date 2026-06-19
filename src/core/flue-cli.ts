@@ -2,17 +2,27 @@ import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
-import { fetchGitHubPullRequestInvocation } from "./github-pr-adapter.js";
-import { fetchJiraTaskInvocation } from "./jira-adapter.js";
-import { InvocationSchema, type Invocation } from "./types.js";
+import {
+  defaultAdapterContext,
+  inputAdapterRegistry,
+  unknownAdapterError,
+  type InputAdapterRegistry
+} from "../adapters/registry.js";
+import type { AdapterContext } from "../adapters/types.js";
+import {
+  InvocationSchema,
+  RouteTargetSchema,
+  type Invocation,
+  type RouteTarget
+} from "./types.js";
 
 export type CliArgs = {
   command: "run";
-  workflow?: string;
+  target?: RouteTarget;
   input: string;
 } | {
   command: "run";
-  workflow?: string;
+  target?: RouteTarget;
   from: string;
   value: string;
 };
@@ -29,8 +39,8 @@ export type BuildFlueRunCommandOptions = {
 export type MainDependencies = {
   execute?: (command: string, args: string[]) => Promise<number>;
   buildCommand?: (invocation: Invocation) => Promise<FlueRunCommand>;
-  loadPullRequestInvocation?: (url: string) => Promise<Invocation>;
-  loadJiraTaskInvocation?: (url: string) => Promise<Invocation>;
+  adapterRegistry?: InputAdapterRegistry;
+  adapterContext?: AdapterContext;
 };
 
 type PackageJsonWithBin = {
@@ -94,15 +104,36 @@ export function parseCliArgs(args: string[]): CliArgs {
     const workflowFlagIndex = rest.indexOf("--workflow");
     const workflow =
       workflowFlagIndex >= 0 ? rest[workflowFlagIndex + 1] : undefined;
+    const targetFlagIndex = rest.indexOf("--target");
+    const targetValue =
+      targetFlagIndex >= 0 ? rest[targetFlagIndex + 1] : undefined;
     const inputFlagIndex = rest.indexOf("--input");
     const input = inputFlagIndex >= 0 ? rest[inputFlagIndex + 1] : undefined;
     const fromFlagIndex = rest.indexOf("--from");
     const from = fromFlagIndex >= 0 ? rest[fromFlagIndex + 1] : undefined;
     const value = fromFlagIndex >= 0 ? rest[fromFlagIndex + 2] : undefined;
 
+    if (workflowFlagIndex >= 0 && targetFlagIndex >= 0) {
+      throw cliError(
+        "ambiguous_target",
+        "Use either --workflow or --target, not both"
+      );
+    }
+
     if (workflowFlagIndex >= 0 && !workflow) {
       throw cliError("missing_workflow", "Missing required --workflow <id>");
     }
+
+    if (targetFlagIndex >= 0 && !targetValue) {
+      throw cliError("invalid_target", "Missing required --target workflow:<id>");
+    }
+
+    const target =
+      workflow !== undefined
+        ? RouteTargetSchema.parse({ type: "workflow", id: workflow })
+        : targetValue === undefined
+          ? undefined
+          : parseWorkflowTarget(targetValue);
 
     if (input && from) {
       throw cliError("ambiguous_input", "Use either --input or --from, not both");
@@ -113,17 +144,34 @@ export function parseCliArgs(args: string[]): CliArgs {
         throw cliError("missing_from_value", "Missing required adapter input value");
       }
 
-      return { command, workflow, from, value };
+      return { command, target, from, value };
     }
 
     if (!input) {
       throw cliError("missing_input", "Missing required --input <path>");
     }
 
-    return { command, workflow, input };
+    return { command, target, input };
   }
 
   throw cliError("unknown_command", "Expected command: run");
+}
+
+export function parseWorkflowTarget(value: string): RouteTarget {
+  const prefix = "workflow:";
+  const candidate: unknown = value.startsWith(prefix)
+    ? { type: "workflow", id: value.slice(prefix.length) }
+    : value;
+  const result = RouteTargetSchema.safeParse(candidate);
+
+  if (!result.success) {
+    throw cliError(
+      "invalid_target",
+      `Invalid --target value "${value}". Expected workflow:<id>.`
+    );
+  }
+
+  return result.data;
 }
 
 export async function loadInvocationFromFile(filePath: string): Promise<Invocation> {
@@ -252,27 +300,29 @@ export async function main(
   deps: MainDependencies = {}
 ): Promise<number> {
   const parsedArgs = parseCliArgs(args);
+  const registry = deps.adapterRegistry ?? inputAdapterRegistry;
   let invocation: Invocation;
 
   if ("input" in parsedArgs) {
     invocation = await loadInvocationFromFile(parsedArgs.input);
-  } else if (parsedArgs.from === "github-pr-url") {
-    invocation = await (deps.loadPullRequestInvocation ??
-      fetchGitHubPullRequestInvocation)(parsedArgs.value);
-  } else if (parsedArgs.from === "jira-task-url") {
-    invocation = await (deps.loadJiraTaskInvocation ??
-      fetchJiraTaskInvocation)(parsedArgs.value);
   } else {
-    throw cliError(
-      "unknown_input_adapter",
-      `Unknown input adapter: ${parsedArgs.from}`
+    const adapter = registry.get(parsedArgs.from);
+    if (adapter === undefined) {
+      throw unknownAdapterError(parsedArgs.from, registry);
+    }
+
+    const context =
+      deps.adapterContext ?? defaultAdapterContext(await findProjectRoot());
+    invocation = await adapter.load(
+      { kind: "cli", value: parsedArgs.value },
+      context
     );
   }
 
-  if (parsedArgs.workflow !== undefined) {
+  if (parsedArgs.target !== undefined) {
     invocation = {
       ...invocation,
-      workflow: parsedArgs.workflow
+      target: parsedArgs.target
     };
   }
 

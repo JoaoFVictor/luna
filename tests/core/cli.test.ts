@@ -2,6 +2,8 @@ import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
+import type { AdapterContext, InputAdapter } from "../../src/adapters/types.js";
 import type { Invocation } from "../../src/core/types.js";
 import {
   buildFlueRunCommand,
@@ -11,51 +13,89 @@ import {
   loadInvocationFromFile,
   main,
   parseCliArgs,
+  parseWorkflowTarget,
   resolveFlueCliBin
 } from "../../src/core/flue-cli.js";
 
 const validInvocation: Invocation = {
-  target: "github_pr",
-  owner: "octo-org",
-  repo: "hello-world",
-  pull_number: 42,
-  base_ref: "main",
-  base_repository: {
+  version: "2026-06",
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  repository: {
+    provider: "github",
     owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
+    name: "hello-world"
   },
-  head_repository: {
-    owner: "contributor",
-    name: "hello-world",
-    full_name: "contributor/hello-world",
-    fork: true
+  subject: {
+    type: "pull_request",
+    id: "42",
+    url: "https://github.com/octo-org/hello-world/pull/42"
   },
   references: {
+    base_ref: "main",
     base_sha: "abc123",
     head_sha: "def456"
+  },
+  payload: {
+    pull_request: {
+      number: 42
+    }
   }
 };
 
 const validJiraInvocation: Invocation = {
-  target: "jira_task",
-  workflow: "implementation",
-  jira: {
-    instance_id: "company",
-    issue_key: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    summary: "Fix checkout validation",
-    description: "Reject invalid checkout payloads.",
-    acceptance_criteria: "Invalid payloads fail validation.",
-    status: "To Do",
-    issue_type: "Task"
-  },
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  action: "selected",
   repository: {
     provider: "github",
     owner: "swinggo-dev",
     name: "swg-front-nuxt"
+  },
+  subject: {
+    type: "jira_issue",
+    id: "ABC-123",
+    url: "https://company.atlassian.net/browse/ABC-123",
+    title: "Fix checkout validation"
+  },
+  payload: {
+    jira: {
+      instance_id: "company",
+      description: "Reject invalid checkout payloads.",
+      acceptance_criteria: "Invalid payloads fail validation.",
+      status: "To Do",
+      issue_type: "Task"
+    }
   }
 };
+
+const adapterContext: AdapterContext = {
+  projectRoot: "/workspace/project",
+  configRoot: "/workspace/config",
+  env: {},
+  fetch,
+  executeJson: vi.fn()
+};
+
+function registryWith(adapter: InputAdapter): InputAdapterRegistry {
+  return {
+    get(id) {
+      return id === adapter.id ? adapter : undefined;
+    },
+    require(id) {
+      if (id !== adapter.id) {
+        throw new Error(`Unexpected adapter id: ${id}`);
+      }
+
+      return adapter;
+    },
+    ids() {
+      return [adapter.id];
+    }
+  };
+}
 
 describe("flue local CLI wrapper", () => {
   it("keeps the package bin pointed at the emitted CLI path", async () => {
@@ -71,11 +111,29 @@ describe("flue local CLI wrapper", () => {
     expect(parseCliArgs(["run", "--input", "example.json"])).toEqual({
       command: "run",
       input: "example.json",
-      workflow: undefined
+      target: undefined
     });
   });
 
-  it("parses workflow input adapter arguments", () => {
+  it("parses explicit target input adapter arguments", () => {
+    expect(
+      parseCliArgs([
+        "run",
+        "--target",
+        "workflow:code-review",
+        "--from",
+        "github-pr-url",
+        "https://github.com/withastro/luna/pull/123"
+      ])
+    ).toEqual({
+      command: "run",
+      target: { type: "workflow", id: "code-review" },
+      from: "github-pr-url",
+      value: "https://github.com/withastro/luna/pull/123"
+    });
+  });
+
+  it("parses workflow as a target alias for input adapter arguments", () => {
     expect(
       parseCliArgs([
         "run",
@@ -87,10 +145,37 @@ describe("flue local CLI wrapper", () => {
       ])
     ).toEqual({
       command: "run",
-      workflow: "code-review",
+      target: { type: "workflow", id: "code-review" },
       from: "github-pr-url",
       value: "https://github.com/withastro/luna/pull/123"
     });
+  });
+
+  it("parses workflow targets", () => {
+    expect(parseWorkflowTarget("workflow:implementation")).toEqual({
+      type: "workflow",
+      id: "implementation"
+    });
+  });
+
+  it("throws invalid_target when the target is not a workflow target", () => {
+    expect(() => parseWorkflowTarget("agent:implementation")).toThrow(
+      expect.objectContaining({ code: "invalid_target" })
+    );
+  });
+
+  it("throws ambiguous_target when workflow and target are both provided", () => {
+    expect(() =>
+      parseCliArgs([
+        "run",
+        "--workflow",
+        "code-review",
+        "--target",
+        "workflow:implementation",
+        "--input",
+        "input.json"
+      ])
+    ).toThrow(expect.objectContaining({ code: "ambiguous_target" }));
   });
 
   it("throws missing_input when run input is missing", () => {
@@ -193,7 +278,12 @@ describe("flue local CLI wrapper", () => {
       command: process.execPath,
       args: ["local-flue"]
     }));
-    const loadPullRequestInvocation = vi.fn(async () => validInvocation);
+    const load = vi.fn(async () => validInvocation);
+    const adapter: InputAdapter = {
+      id: "github-pr-url",
+      description: "GitHub pull request URL",
+      load
+    };
 
     await expect(
       main(
@@ -208,17 +298,19 @@ describe("flue local CLI wrapper", () => {
         {
           execute,
           buildCommand,
-          loadPullRequestInvocation
+          adapterRegistry: registryWith(adapter),
+          adapterContext
         }
       )
     ).resolves.toBe(0);
 
-    expect(loadPullRequestInvocation).toHaveBeenCalledWith(
-      "https://github.com/octo-org/hello-world/pull/42"
+    expect(load).toHaveBeenCalledWith(
+      { kind: "cli", value: "https://github.com/octo-org/hello-world/pull/42" },
+      adapterContext
     );
     expect(buildCommand).toHaveBeenCalledWith({
       ...validInvocation,
-      workflow: "code-review"
+      target: { type: "workflow", id: "code-review" }
     });
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
   });
@@ -229,7 +321,12 @@ describe("flue local CLI wrapper", () => {
       command: process.execPath,
       args: ["local-flue"]
     }));
-    const loadJiraTaskInvocation = vi.fn(async () => validJiraInvocation);
+    const load = vi.fn(async () => validJiraInvocation);
+    const adapter: InputAdapter = {
+      id: "jira-task-url",
+      description: "Jira task URL",
+      load
+    };
 
     await expect(
       main(
@@ -242,13 +339,15 @@ describe("flue local CLI wrapper", () => {
         {
           execute,
           buildCommand,
-          loadJiraTaskInvocation
+          adapterRegistry: registryWith(adapter),
+          adapterContext
         }
       )
     ).resolves.toBe(0);
 
-    expect(loadJiraTaskInvocation).toHaveBeenCalledWith(
-      "https://company.atlassian.net/browse/ABC-123"
+    expect(load).toHaveBeenCalledWith(
+      { kind: "cli", value: "https://company.atlassian.net/browse/ABC-123" },
+      adapterContext
     );
     expect(buildCommand).toHaveBeenCalledWith(validJiraInvocation);
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
