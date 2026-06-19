@@ -70,12 +70,10 @@ Workflows:
 Agents:
 
 - `review-planner`
-- `code-reviewer`
-- `acceptance-reviewer`
+- `change-reviewer`
+- `change-acceptance-reviewer`
 - `implementation-planner`
 - `code-implementer`
-- `implementation-reviewer`
-- `implementation-acceptance-reviewer`
 
 Built-in steps:
 
@@ -282,7 +280,7 @@ Agent node:
 ```yaml
 - id: code_review
   type: agent
-  agent: code-reviewer
+  agent: change-reviewer
   output_schema: code_review_findings
   artifact: code-review-findings.json
   input:

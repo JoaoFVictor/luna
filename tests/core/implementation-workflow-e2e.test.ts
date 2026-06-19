@@ -255,7 +255,7 @@ describe("implementation workflow e2e", () => {
               };
             }
 
-            if (agent.id === "implementation-reviewer") {
+            if (agent.id === "change-reviewer") {
               return {
                 summary: "Validation is failing.",
                 findings: [
@@ -271,7 +271,8 @@ describe("implementation workflow e2e", () => {
             return {
               status: "rejected",
               summary: "Validation failed.",
-              blocking_reasons: ["Tests failed"]
+              blocking_reasons: ["Tests failed"],
+              recommended_action: "stop"
             };
           }),
           runAgentLoopStep: vi.fn(async () => {
@@ -300,8 +301,8 @@ describe("implementation workflow e2e", () => {
         "implementation-planner",
         "agent_loop",
         "collect_worktree_diff",
-        "implementation-reviewer",
-        "implementation-acceptance-reviewer",
+        "change-reviewer",
+        "change-acceptance-reviewer",
         "commit_changes",
         "push_branch",
         "open_pull_request",

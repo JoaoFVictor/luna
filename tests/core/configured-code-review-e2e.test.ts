@@ -45,9 +45,10 @@ const findings: CodeReviewFindings = {
 };
 
 const acceptance: AcceptanceDecision = {
-  decision: "comment",
+  status: "needs_human_review",
   summary: "Fixture review completed.",
-  blocking_findings: []
+  blocking_reasons: [],
+  recommended_action: "comment"
 };
 
 async function readJson<T>(root: string, name: string): Promise<T> {
@@ -172,7 +173,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
             return reviewPlan;
           }
 
-          if (agent.id === "code-reviewer") {
+          if (agent.id === "change-reviewer") {
             return findings;
           }
 

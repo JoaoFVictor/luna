@@ -399,7 +399,7 @@ async function writeFullCodeReviewWorkflow(root: string): Promise<void> {
       "      - repo_context",
       "  - id: code_review",
       "    type: agent",
-      "    agent: code-reviewer",
+      "    agent: change-reviewer",
       "    output_schema: code_review_findings",
       "    artifact: code-review-findings.json",
       "    input:",
@@ -417,7 +417,7 @@ async function writeFullCodeReviewWorkflow(root: string): Promise<void> {
       "      - code_review",
       "  - id: acceptance",
       "    type: agent",
-      "    agent: acceptance-reviewer",
+      "    agent: change-acceptance-reviewer",
       "    output_schema: acceptance_decision",
       "    artifact: acceptance-review.json",
       "    input:",
@@ -1144,8 +1144,8 @@ describe("configured workflow runner", () => {
       await writeBaseConfig(root);
       await writeFullCodeReviewWorkflow(root);
       await writeAgent(root, "review-planner");
-      await writeAgent(root, "code-reviewer");
-      await writeAgent(root, "acceptance-reviewer");
+      await writeAgent(root, "change-reviewer");
+      await writeAgent(root, "change-acceptance-reviewer");
 
       const workspace: WorkspaceRecord = {
         run_id: "run-1",
@@ -1184,7 +1184,7 @@ describe("configured workflow runner", () => {
           return { summary: "Plan", focus_areas: [], files_to_review: [] };
         }
 
-        if (agent.id === "code-reviewer") {
+        if (agent.id === "change-reviewer") {
           return { summary: "Findings", findings: [] };
         }
 
@@ -1241,8 +1241,8 @@ describe("configured workflow runner", () => {
       await writeBaseConfig(root);
       await writeFullCodeReviewWorkflow(root);
       await writeAgent(root, "review-planner");
-      await writeAgent(root, "code-reviewer");
-      await writeAgent(root, "acceptance-reviewer");
+      await writeAgent(root, "change-reviewer");
+      await writeAgent(root, "change-acceptance-reviewer");
 
       const preparedWorkspace: WorkspaceRecord = {
         run_id: "run-1",
@@ -1304,7 +1304,7 @@ describe("configured workflow runner", () => {
           }),
           runBuiltInStep,
           runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
-            agent.id === "code-reviewer"
+            agent.id === "change-reviewer"
               ? { summary: "Findings", findings: [] }
               : { status: "accepted", findings_to_fix: [] }
           ),
@@ -1341,8 +1341,8 @@ describe("configured workflow runner", () => {
       await writeBaseConfig(root);
       await writeFullCodeReviewWorkflow(root);
       await writeAgent(root, "review-planner");
-      await writeAgent(root, "code-reviewer");
-      await writeAgent(root, "acceptance-reviewer");
+      await writeAgent(root, "change-reviewer");
+      await writeAgent(root, "change-acceptance-reviewer");
 
       const preparedWorkspace: WorkspaceRecord = {
         run_id: "run-1",
@@ -1381,7 +1381,7 @@ describe("configured workflow runner", () => {
             return {};
           }),
           runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) => {
-            if (agent.id === "code-reviewer") {
+            if (agent.id === "change-reviewer") {
               throw reviewError;
             }
 
@@ -1420,8 +1420,8 @@ describe("configured workflow runner", () => {
       await writeBaseConfig(root);
       await writeFullCodeReviewWorkflow(root);
       await writeAgent(root, "review-planner");
-      await writeAgent(root, "code-reviewer");
-      await writeAgent(root, "acceptance-reviewer");
+      await writeAgent(root, "change-reviewer");
+      await writeAgent(root, "change-acceptance-reviewer");
 
       const preparedWorkspace: WorkspaceRecord = {
         run_id: "run-1",
@@ -1462,7 +1462,7 @@ describe("configured workflow runner", () => {
             return {};
           }),
           runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
-            agent.id === "code-reviewer"
+            agent.id === "change-reviewer"
               ? { summary: "Findings", findings: [] }
               : { status: "accepted", findings_to_fix: [] }
           ),

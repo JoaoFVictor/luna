@@ -72,12 +72,12 @@ async function writeImplementationReviewerFixture(
   root: string,
   modelProfile = "deep"
 ): Promise<void> {
-  const reviewerDir = path.join(root, "agents", "implementation-reviewer");
+  const reviewerDir = path.join(root, "agents", "change-reviewer");
   await mkdir(reviewerDir, { recursive: true });
   await writeFile(
     path.join(reviewerDir, "agent.yaml"),
     [
-      "id: implementation-reviewer",
+      "id: change-reviewer",
       "description: Reviews implementation diffs",
       `model_profile: ${modelProfile}`,
       "mode: read_only",
@@ -128,7 +128,7 @@ describe("flue agent capabilities", () => {
       await writeImplementationReviewerFixture(root);
 
       const capabilities = await resolveFlueAgentCapabilities({
-        agent: { ...agent, subagents: ["implementation-reviewer"] },
+        agent: { ...agent, subagents: ["change-reviewer"] },
         cwd: "/repo/worktree",
         agentsRoot: path.join(root, "agents"),
         modelProfiles: {
@@ -138,7 +138,7 @@ describe("flue agent capabilities", () => {
 
       expect(capabilities.subagents).toHaveLength(1);
       expect(capabilities.subagents[0]).toMatchObject({
-        name: "implementation-reviewer",
+        name: "change-reviewer",
         description: "Reviews implementation diffs",
         model: "test/deep",
         thinkingLevel: "high"
@@ -282,7 +282,7 @@ describe("flue agent capabilities", () => {
     try {
       await expect(
         resolveFlueAgentCapabilities({
-          agent: { ...agent, subagents: ["implementation-reviewer"] },
+          agent: { ...agent, subagents: ["change-reviewer"] },
           cwd: "/repo/worktree"
         })
       ).rejects.toMatchObject({ code: "subagent_context_missing" });
@@ -299,7 +299,7 @@ describe("flue agent capabilities", () => {
 
       await expect(
         resolveFlueAgentCapabilities({
-          agent: { ...agent, subagents: ["implementation-reviewer"] },
+          agent: { ...agent, subagents: ["change-reviewer"] },
           cwd: "/repo/worktree",
           agentsRoot: path.join(root, "agents"),
           modelProfiles: {}
@@ -333,12 +333,12 @@ describe("flue agent capabilities", () => {
     const { root, agent } = await writeCodeImplementerFixture();
 
     try {
-      const reviewerDir = path.join(root, "agents", "implementation-reviewer");
+      const reviewerDir = path.join(root, "agents", "change-reviewer");
       await mkdir(reviewerDir, { recursive: true });
       await writeFile(
         path.join(reviewerDir, "agent.yaml"),
         [
-          "id: implementation-reviewer",
+          "id: change-reviewer",
           "description: Reviews implementation diffs",
           "model_profile: deep",
           "mode: read_only",
@@ -358,7 +358,7 @@ describe("flue agent capabilities", () => {
 
       await expect(
         resolveFlueAgentCapabilities({
-          agent: { ...agent, subagents: ["implementation-reviewer"] },
+          agent: { ...agent, subagents: ["change-reviewer"] },
           cwd: "/repo/worktree",
           agentsRoot: path.join(root, "agents"),
           modelProfiles: {
@@ -399,7 +399,7 @@ describe("flue agent capabilities", () => {
           agent: {
             ...agent,
             mode: "read_only",
-            subagents: ["implementation-reviewer"],
+            subagents: ["change-reviewer"],
             mcp_servers: ["github"]
           },
           cwd: "/repo/worktree",

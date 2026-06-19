@@ -34,9 +34,10 @@ const invocation: Invocation = {
 };
 
 const acceptance: AcceptanceDecision = {
-  decision: "request_changes",
+  status: "rejected",
   summary: "One blocking issue remains.",
-  blocking_findings: ["Critical issue"]
+  blocking_reasons: ["Critical issue"],
+  recommended_action: "request_changes"
 };
 
 function finding(title: string, severity: Finding["severity"]): Finding {
@@ -115,7 +116,8 @@ describe("final report builder", () => {
     });
 
     expect(markdown).toContain("request_changes");
-    expect(json.acceptance.decision).toBe("request_changes");
+    expect(json.acceptance.recommended_action).toBe("request_changes");
+    expect(json.acceptance.status).toBe("rejected");
   });
 
   it("uses the final workspace preserved state in JSON", () => {

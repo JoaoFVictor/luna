@@ -63,7 +63,7 @@ nodes:
 
   - id: implementation_review
     type: agent
-    agent: implementation-reviewer
+    agent: change-reviewer
     output_schema: implementation_review
     artifact: implementation-review.json
     input:
@@ -76,7 +76,7 @@ nodes:
 
   - id: acceptance
     type: agent
-    agent: implementation-acceptance-reviewer
+    agent: change-acceptance-reviewer
     output_schema: acceptance_decision
     artifact: acceptance-review.json
     input:

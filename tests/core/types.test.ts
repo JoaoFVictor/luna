@@ -145,9 +145,10 @@ const validCodeReviewFindings = {
 };
 
 const validAcceptanceDecision = {
-  decision: "request_changes",
+  status: "rejected",
   summary: "One high-confidence authorization issue remains.",
-  blocking_findings: ["Missing authorization check"]
+  blocking_reasons: ["Missing authorization check"],
+  recommended_action: "request_changes"
 };
 
 describe("core zod schemas", () => {
