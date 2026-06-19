@@ -231,8 +231,9 @@ describe("core zod schemas", () => {
         status: "failed",
         attempts_exhausted: true,
         attempts: [],
+        validation: { passed: false },
         final_validation: { passed: false },
-        result: { summary: "Validation failed." }
+        result: { status: "failed", summary: "Validation failed." }
       })
     ).toMatchObject({ status: "failed" });
 
@@ -245,17 +246,19 @@ describe("core zod schemas", () => {
     ).toMatchObject({ skipped: true });
   });
 
-  it("requires final_validation on agent loop result artifacts without requiring validation", () => {
+  it("requires validation and result status on agent loop result artifacts", () => {
     expect(
       AgentLoopResultSchema.parse({
         status: "passed",
         attempts_exhausted: false,
         attempts: [],
+        validation: { passed: true },
         final_validation: { passed: true },
-        result: { summary: "Validation passed." }
+        result: { status: "passed", summary: "Validation passed." }
       })
     ).toMatchObject({
       status: "passed",
+      validation: { passed: true },
       final_validation: { passed: true }
     });
 
@@ -264,7 +267,18 @@ describe("core zod schemas", () => {
         status: "passed",
         attempts_exhausted: false,
         attempts: [],
+        final_validation: { passed: true },
+        result: { status: "passed", summary: "Validation passed." }
+      })
+    ).toThrow();
+
+    expect(() =>
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
         validation: { passed: true },
+        final_validation: { passed: true },
         result: { summary: "Validation passed." }
       })
     ).toThrow();

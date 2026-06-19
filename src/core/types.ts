@@ -248,9 +248,13 @@ export const AgentLoopResultSchema = z
     status: z.enum(["passed", "failed"]),
     attempts_exhausted: z.boolean(),
     attempts: z.array(AgentLoopAttemptSchema),
-    validation: ValidationResultSchema.optional(),
+    validation: ValidationResultSchema,
     final_validation: ValidationResultSchema,
-    result: z.record(z.unknown()).optional()
+    result: z
+      .object({
+        status: NonEmptyStringSchema
+      })
+      .passthrough()
   })
   .strict();
 export type AgentLoopResult = z.infer<typeof AgentLoopResultSchema>;

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { runAgentLoopStateMachine } from "../../src/core/agent-loop-runner.js";
-import type { ValidationResult } from "../../src/core/types.js";
+import {
+  AgentLoopResultSchema,
+  type ValidationResult
+} from "../../src/core/types.js";
 
 const passedValidation: ValidationResult = { passed: true };
 const failedValidation: ValidationResult = { passed: false };
@@ -26,6 +29,7 @@ describe("agent loop runner", () => {
       }
     });
 
+    expect(AgentLoopResultSchema.parse(output)).toEqual(output);
     expect(output).toEqual({
       status: "passed",
       attempts_exhausted: false,
