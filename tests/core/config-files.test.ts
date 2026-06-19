@@ -1,4 +1,4 @@
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { Ajv, type AnySchema, type ErrorObject } from "ajv/dist/ajv.js";
 import YAML from "yaml";
@@ -21,6 +21,11 @@ type WorkflowGraph = {
 
 const yamlRoots = ["agents", "workflows", "config"];
 const jsonSchemaRoots = ["agents", "workflows"];
+const legacyReferenceScanRoots = ["src", "tests", "workflows", "examples", "README.md"];
+const intentionalLegacyReferenceFiles = new Set([
+  "tests/core/types.test.ts",
+  "tests/core/cli.test.ts"
+]);
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -58,6 +63,55 @@ async function listFiles(roots: string[], extensions: string[]): Promise<string[
 
   for (const root of roots) {
     if (await pathExists(root)) {
+      await visit(root);
+    }
+  }
+
+  return files.sort();
+}
+
+async function listTextFiles(roots: string[]): Promise<string[]> {
+  const files: string[] = [];
+
+  async function visit(path: string): Promise<void> {
+    const entries = await readdir(path, { withFileTypes: true });
+
+    await Promise.all(
+      entries.map(async (entry) => {
+        const entryPath = join(path, entry.name);
+
+        if (entry.isDirectory()) {
+          await visit(entryPath);
+          return;
+        }
+
+        if (!entry.isFile()) {
+          return;
+        }
+
+        const contents = await readFile(entryPath);
+        if (!contents.includes(0)) {
+          files.push(entryPath);
+        }
+      })
+    );
+  }
+
+  for (const root of roots) {
+    if (!(await pathExists(root))) {
+      continue;
+    }
+
+    const rootStat = await stat(root);
+    if (rootStat.isFile()) {
+      const contents = await readFile(root);
+      if (!contents.includes(0)) {
+        files.push(root);
+      }
+      continue;
+    }
+
+    if (rootStat.isDirectory()) {
       await visit(root);
     }
   }
@@ -123,6 +177,39 @@ function assertLineFieldsUseIntegers(
 }
 
 describe("config definition files", () => {
+  it("does not reintroduce legacy invocation target references", async () => {
+    const legacyTargets = ["github" + "_pr", "jira" + "_task"];
+    const bannedReferences = legacyTargets.flatMap((target) => [
+      `target: "${target}"`,
+      `"target": "${target}"`,
+      `z.literal("${target}")`
+    ]);
+    bannedReferences.push(
+      "Github" + "PrInvocation",
+      "Jira" + "TaskInvocation",
+      "Github" + "PrInvocationSchema",
+      "Jira" + "TaskInvocationSchema"
+    );
+
+    const files = await listTextFiles(legacyReferenceScanRoots);
+    const matches: string[] = [];
+
+    for (const file of files) {
+      if (intentionalLegacyReferenceFiles.has(file)) {
+        continue;
+      }
+
+      const contents = await readFile(file, "utf8");
+      for (const bannedReference of bannedReferences) {
+        if (contents.includes(bannedReference)) {
+          matches.push(`${file}: ${bannedReference}`);
+        }
+      }
+    }
+
+    expect(matches).toEqual([]);
+  });
+
   it("parses every YAML file under agents, workflows, and config", async () => {
     const files = await listFiles(yamlRoots, [".yaml", ".yml"]);
 
