@@ -195,7 +195,7 @@ describe("preflight", () => {
     });
   });
 
-  it("supports jira_task preflight for git_managed_write when the remote URL is expected", async () => {
+  it("supports Jira issue preflight for git_managed_write when the remote URL is expected", async () => {
     const result = await runPreflight({
       invocation: jiraInvocation,
       repository: {
