@@ -1,6 +1,10 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import {
+  AgentCapabilityFieldsSchema,
+  assertNoDuplicateCapabilities
+} from "./agent-capabilities.js";
 import { loadYamlFile } from "./config-loader.js";
 import { assertSafeSegment, isInsideRoot } from "./path-security.js";
 
@@ -15,6 +19,7 @@ const AgentMetadataSchema = z
     instructions_file: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema
   })
+  .extend(AgentCapabilityFieldsSchema.shape)
   .strict();
 
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
@@ -120,6 +125,20 @@ export async function loadAgentDefinition(
     path.join(directory, "agent.yaml"),
     AgentMetadataSchema
   );
+
+  try {
+    assertNoDuplicateCapabilities(metadata);
+  } catch (cause) {
+    if ((cause as { code?: unknown }).code === "agent_capability_duplicate") {
+      throw agentDefinitionError(
+        cause instanceof Error ? cause.message : "Duplicate agent capability",
+        "agent_capability_duplicate",
+        cause
+      );
+    }
+
+    throw cause;
+  }
 
   if (metadata.id !== agentId) {
     throw agentDefinitionError(

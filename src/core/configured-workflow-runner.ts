@@ -11,12 +11,17 @@ import {
   loadAgentDefinition,
   type AgentDefinition
 } from "./agent-definition.js";
-import { loadYamlFile, resolveConfigRoot } from "./config-loader.js";
+import {
+  loadOptionalYamlFile,
+  loadYamlFile,
+  resolveConfigRoot
+} from "./config-loader.js";
 import {
   resolveModelProfiles,
   toFlueModelOptions,
   type ResolvedModelProfiles
 } from "./model-config.js";
+import type { McpConfig } from "./mcp-config.js";
 import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import { createRunIdentity as defaultCreateRunIdentity } from "./run-identity.js";
@@ -58,6 +63,7 @@ export type RunAgentStepOptions = {
   model: ReturnType<typeof toFlueModelOptions>;
   input: Record<string, unknown>;
   state: WorkflowState;
+  mcpConfig?: McpConfig;
 };
 
 type AgentLoopWorkflowNode = Extract<WorkflowNode, { type: "agent_loop" }>;
@@ -89,6 +95,7 @@ export type RunAgentLoopStepOptions = {
   validation: ResolvedAgentLoopNode["validation"];
   repair: ResolvedAgentLoopNode["repair"];
   state: WorkflowState;
+  mcpConfig?: McpConfig;
 };
 
 export type ConfiguredWorkflowRunnerDependencies = {
@@ -220,17 +227,6 @@ async function loadRuntimeConfig(
       ? {}
       : { implementation: implementation.implementation })
   };
-}
-
-async function loadOptionalYamlFile<T>(
-  filePath: string,
-  schema: { parse(value: unknown): T }
-): Promise<T | undefined> {
-  if (!(await pathExists(filePath))) {
-    return undefined;
-  }
-
-  return await loadYamlFile(filePath, schema);
 }
 
 function workflowIdFromRoute(

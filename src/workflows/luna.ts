@@ -13,6 +13,11 @@ import {
   type RunAgentLoopStepOptions,
   type RunAgentStepOptions
 } from "../core/configured-workflow-runner.js";
+import {
+  resolveFlueAgentCapabilities,
+  type ResolvedFlueAgentCapabilities
+} from "../core/flue-agent-capabilities.js";
+import { loadMcpConfig } from "../core/mcp-config.js";
 import { registerConfiguredPiOAuthProviders } from "../core/pi-auth.js";
 import type { Invocation } from "../core/types.js";
 import { runValidationCommands } from "../core/validation-runner.js";
@@ -40,6 +45,43 @@ function allowlistedEnv(
   }
 
   return env;
+}
+
+function workspacePath(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("path" in value)) {
+    return undefined;
+  }
+
+  const pathValue = (value as { path?: unknown }).path;
+  return typeof pathValue === "string" ? pathValue : undefined;
+}
+
+function repositoryPath(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("path" in value)) {
+    return undefined;
+  }
+
+  const pathValue = (value as { path?: unknown }).path;
+  return typeof pathValue === "string" ? pathValue : undefined;
+}
+
+function capabilityCwdFor(options: RunAgentStepOptions): string {
+  const path =
+    workspacePath(options.state.workspace) ??
+    repositoryPath(options.state.repository);
+
+  if (path !== undefined) {
+    return path;
+  }
+
+  if ((options.agent.tools ?? []).length === 0) {
+    return process.cwd();
+  }
+
+  throw codedError(
+    `Agent ${options.agent.id} declares local tools but no repository or workspace path is available`,
+    "agent_tool_cwd_missing"
+  );
 }
 
 type JsonSchema = {
@@ -219,26 +261,40 @@ async function runFlueAgentStep(
     return fakeAgentOutput(options.agent.id);
   }
 
-  const agent = createAgent(async () => ({
-    description: options.agent.description,
-    instructions: await readFile(options.agent.instructionsPath, "utf8"),
-    ...options.model
-  }));
-  const harness = await ctx.init(agent, { name: options.agent.id });
-  const session = await harness.session();
-  const response = await session.prompt(
-    [
-      options.agent.description,
-      "Use only the provided workflow input and return structured output matching the configured schema.",
-      promptBody(options.input)
-    ].join("\n\n"),
-    {
-      result: await resultSchema(options.agent.outputSchemaPath),
-      ...options.model
-    }
-  );
+  const capabilityCwd = capabilityCwdFor(options);
+  const capabilities = await resolveFlueAgentCapabilities({
+    agent: options.agent,
+    cwd: capabilityCwd,
+    mcpConfig: options.mcpConfig,
+    env: process.env
+  });
 
-  return response.data;
+  try {
+    const agent = createAgent(async () => ({
+      description: options.agent.description,
+      instructions: await readFile(options.agent.instructionsPath, "utf8"),
+      skills: capabilities.skills,
+      tools: capabilities.tools,
+      ...options.model
+    }));
+    const harness = await ctx.init(agent, { name: options.agent.id });
+    const session = await harness.session();
+    const response = await session.prompt(
+      [
+        options.agent.description,
+        "Use only the provided workflow input and return structured output matching the configured schema.",
+        promptBody(options.input)
+      ].join("\n\n"),
+      {
+        result: await resultSchema(options.agent.outputSchemaPath),
+        ...options.model
+      }
+    );
+
+    return response.data;
+  } finally {
+    await capabilities.close();
+  }
 }
 
 function writableAgentPrompt(
@@ -262,11 +318,14 @@ function writableAgentPrompt(
 async function runWritableAgent(
   ctx: FlueContext<Invocation>,
   options: RunAgentLoopStepOptions,
-  input: RunWritableAgentInput
+  input: RunWritableAgentInput,
+  capabilities: ResolvedFlueAgentCapabilities
 ): Promise<unknown> {
   const agent = createAgent(async () => ({
     description: options.agent.description,
     instructions: await readFile(options.agent.instructionsPath, "utf8"),
+    skills: capabilities.skills,
+    tools: capabilities.tools,
     cwd: options.sandbox.cwd,
     sandbox: local({
       cwd: options.sandbox.cwd,
@@ -302,26 +361,37 @@ async function runFlueAgentLoopStep(
     );
   }
 
-  return await runAgentLoopStateMachine({
+  const capabilities = await resolveFlueAgentCapabilities({
+    agent: options.agent,
     cwd: options.sandbox.cwd,
-    prompt: options.input,
-    repairAttempts: options.repair.attempts,
-    dependencies: {
-      runWritableAgent: async (input) =>
-        await runWritableAgent(ctx, options, input),
-      runValidation: async () =>
-        await runValidationCommands({
-          cwd: options.sandbox.cwd,
-          commands: options.validation.commands,
-          maxOutputBytes: options.validation.max_output_bytes
-        }),
-      collectDiffSummary: async () =>
-        await collectWorktreeDiff({
-          cwd: options.sandbox.cwd,
-          maxDiffBytes: options.validation.max_output_bytes
-        })
-    }
+    mcpConfig: options.mcpConfig,
+    env: process.env
   });
+
+  try {
+    return await runAgentLoopStateMachine({
+      cwd: options.sandbox.cwd,
+      prompt: options.input,
+      repairAttempts: options.repair.attempts,
+      dependencies: {
+        runWritableAgent: async (input) =>
+          await runWritableAgent(ctx, options, input, capabilities),
+        runValidation: async () =>
+          await runValidationCommands({
+            cwd: options.sandbox.cwd,
+            commands: options.validation.commands,
+            maxOutputBytes: options.validation.max_output_bytes
+          }),
+        collectDiffSummary: async () =>
+          await collectWorktreeDiff({
+            cwd: options.sandbox.cwd,
+            maxDiffBytes: options.validation.max_output_bytes
+          })
+      }
+    });
+  } finally {
+    await capabilities.close();
+  }
 }
 
 export async function runWithFlue(
@@ -329,15 +399,19 @@ export async function runWithFlue(
 ): Promise<ConfiguredWorkflowResult> {
   const configRoot = process.env.LUNA_CONFIG_ROOT ?? "config";
   await registerConfiguredPiOAuthProviders({ configRoot });
+  const mcpConfig = await loadMcpConfig(configRoot);
 
   return await runConfiguredWorkflow({
     invocation: ctx.payload,
     configRoot,
     dependencies: {
       runAgentStep: async (agentStepOptions) =>
-        await runFlueAgentStep(ctx, agentStepOptions),
+        await runFlueAgentStep(ctx, { ...agentStepOptions, mcpConfig }),
       runAgentLoopStep: async (agentLoopStepOptions) =>
-        await runFlueAgentLoopStep(ctx, agentLoopStepOptions)
+        await runFlueAgentLoopStep(ctx, {
+          ...agentLoopStepOptions,
+          mcpConfig
+        })
     }
   });
 }

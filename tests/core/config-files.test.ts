@@ -213,6 +213,23 @@ describe("config definition files", () => {
     }
   });
 
+  it("configures reusable skills and local tools for the code implementer", async () => {
+    const config = (await parseYamlFile(
+      "agents/code-implementer/agent.yaml"
+    )) as {
+      skills?: string[];
+      tools?: string[];
+    };
+
+    expect(config.skills).toEqual([
+      "../../skills/implementation-safe-git/SKILL.md"
+    ]);
+    expect(config.tools).toEqual([
+      "repository.status",
+      "repository.diff-summary"
+    ]);
+  });
+
   it("keeps code review schemas compatible with strict draft-07 consumers", async () => {
     const files = [
       "agents/code-reviewer/output.schema.json",

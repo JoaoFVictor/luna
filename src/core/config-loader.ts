@@ -1,8 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import YAML from "yaml";
 import { ZodError } from "zod";
 
-type ParseSchema<T> = {
+export type ParseSchema<T> = {
   parse(value: unknown): T;
 };
 
@@ -38,6 +38,24 @@ async function readConfig(path: string): Promise<string> {
   try {
     return await readFile(path, "utf8");
   } catch (cause) {
+    throw configError(
+      `Failed to read config file: ${path}`,
+      "config_read_failed",
+      path,
+      cause
+    );
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+
     throw configError(
       `Failed to read config file: ${path}`,
       "config_read_failed",
@@ -89,6 +107,17 @@ export async function loadYamlFile<T>(
   const content = await readConfig(path);
 
   return parseConfig(path, content, YAML.parse, schema);
+}
+
+export async function loadOptionalYamlFile<T>(
+  path: string,
+  schema: ParseSchema<T>
+): Promise<T | undefined> {
+  if (!(await pathExists(path))) {
+    return undefined;
+  }
+
+  return await loadYamlFile(path, schema);
 }
 
 export async function loadJsonFile<T>(

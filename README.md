@@ -19,7 +19,8 @@ was the first concrete workflow used to prove the architecture.
 - Implement Jira tasks in a managed write worktree through a trusted local
   agent mode.
 - Configure model profiles once and reuse them across agents.
-- Add new read-only agents with YAML, Markdown instructions, and JSON Schema.
+- Add new agents with YAML, Markdown instructions, JSON Schema, and explicit
+  read/write modes.
 - Add new workflows with YAML graphs when they can reuse Luna's current
   git built-ins.
 - Add new input sources by implementing CLI adapters selected with `--from`.
@@ -113,6 +114,38 @@ There is one generic Flue workflow entrypoint: `luna`.
 Workflow selection happens through the invocation and routing config. You do not
 create a new TypeScript file under `src/workflows/` for every workflow.
 
+## Agent Capabilities
+
+Agents can declare Flue skills and local tools in `agent.yaml`:
+
+```yaml
+skills:
+  - ../../skills/implementation-safe-git/SKILL.md
+tools:
+  - repository.status
+  - repository.diff-summary
+```
+
+Skills are paths to `SKILL.md` files relative to the agent directory. Tools are
+IDs resolved through Luna's TypeScript registry. Workflows do not declare tools
+directly; the workflow chooses agents, and each agent brings its own
+capabilities.
+
+## MCP Capabilities
+
+Agents can opt into configured MCP servers:
+
+```yaml
+mcp_servers:
+  - github
+```
+
+MCP server policy lives in `config/mcp.yaml`. Secrets stay in environment
+variables. `allowed_tools` uses original MCP tool names, such as
+`get_pull_request`; Flue exposes them to the model as adapted names like
+`mcp__github__get_pull_request`. Luna filters exposed MCP tools through that
+allowlist and rejects servers that are not allowed for the agent mode.
+
 ## Project Structure
 
 ```text
@@ -132,6 +165,7 @@ Core config lives in `config/`:
 - `repositories.yaml`: local repositories Luna is allowed to inspect.
 - `routing.yaml`: deterministic routing rules.
 - `models.yaml`: reusable model profiles.
+- `mcp.yaml`: MCP server definitions, tool allowlists, and allowed agent modes.
 - `jira.yaml`: Jira instances, repository field mapping, and optional
   acceptance criteria field mapping for the `jira-task-url` adapter.
 - `implementation.yaml`: branch naming, validation commands, trusted local
