@@ -1,6 +1,6 @@
 id: review-planner
 description: Builds a focused review plan from trusted repository context and untrusted pull request evidence.
-model_profile: planner
+model_profile: default
 mode: read_only
 instructions_file: instructions.md
 output_schema: output.schema.json

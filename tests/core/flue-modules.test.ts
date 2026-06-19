@@ -57,9 +57,9 @@ describe("flue modules", () => {
   ])("%s default export and description are importable without API keys", async (_name, modulePath) => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
-    delete process.env.PLANNER_MODEL;
-    delete process.env.REVIEWER_MODEL;
-    delete process.env.ACCEPTANCE_MODEL;
+    delete process.env.DEFAULT_MODEL;
+    delete process.env.DEEP_MODEL;
+    delete process.env.BALANCED_MODEL;
 
     const mod = (await import(modulePath)) as {
       default?: CreatedAgent;
@@ -125,7 +125,7 @@ describe("flue modules", () => {
           agent: {
             id: "review-planner",
             description: "Plan the review",
-            model_profile: "planner",
+            model_profile: "default",
             mode: "read_only",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
@@ -155,7 +155,7 @@ describe("flue modules", () => {
           agent: {
             id: "code-reviewer",
             description: "Review code",
-            model_profile: "reviewer",
+            model_profile: "deep",
             mode: "read_only",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
@@ -185,7 +185,7 @@ describe("flue modules", () => {
           agent: {
             id: "acceptance-reviewer",
             description: "Accept review",
-            model_profile: "acceptance",
+            model_profile: "default",
             mode: "read_only",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",

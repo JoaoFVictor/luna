@@ -85,7 +85,7 @@ async function writeBaseConfig(
     path.join(root, "models.yaml"),
     [
       "model_profiles:",
-      "  planner:",
+      "  default:",
       "    model: openai/gpt-5-mini",
       "    reasoning_effort: medium",
       ""
@@ -276,7 +276,7 @@ async function writeReviewPlannerAgent(root: string): Promise<void> {
     [
       "id: review-planner",
       "description: Plans repository review",
-      "model_profile: planner",
+      "model_profile: default",
       "mode: read_only",
       "instructions_file: instructions.md",
       "output_schema: output.schema.json",
@@ -302,7 +302,7 @@ async function writeAgent(root: string, id: string): Promise<void> {
     [
       `id: ${id}`,
       `description: ${id}`,
-      "model_profile: planner",
+      "model_profile: default",
       "mode: read_only",
       "instructions_file: instructions.md",
       "output_schema: output.schema.json",
@@ -840,7 +840,7 @@ describe("configured workflow runner", () => {
         expect.objectContaining({
           agent: expect.objectContaining({
             id: "review-planner",
-            model_profile: "planner"
+            model_profile: "default"
           }),
           model: {
             model: "openai/gpt-5-mini",
@@ -867,7 +867,7 @@ describe("configured workflow runner", () => {
         path.join(root, "models.yaml"),
         [
           "model_profiles:",
-          "  reviewer:",
+          "  deep:",
           "    model: openai/gpt-5-mini",
           "    reasoning_effort: medium",
           ""

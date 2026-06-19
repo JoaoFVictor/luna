@@ -187,15 +187,12 @@ async function writeSmokeConfig(
     path.join(root, "models.yaml"),
     [
       "model_profiles:",
-      "  planner:",
-      "    model: test/planner",
+      "  default:",
+      "    model: test/default",
       "    reasoning_effort: medium",
-      "  reviewer:",
-      "    model: test/reviewer",
+      "  deep:",
+      "    model: test/deep",
       "    reasoning_effort: high",
-      "  acceptance:",
-      "    model: test/acceptance",
-      "    reasoning_effort: medium",
       ""
     ].join("\n"),
     "utf8"

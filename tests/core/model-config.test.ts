@@ -9,11 +9,11 @@ describe("model config", () => {
   it("resolves model profiles to concrete model names", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        planner: {
-          model: "${PLANNER_MODEL}",
+        default: {
+          model: "${DEFAULT_MODEL}",
           reasoning_effort: "medium"
         },
-        reviewer: {
+        deep: {
           model: "openai/gpt-5",
           reasoning_effort: "high"
         }
@@ -21,13 +21,13 @@ describe("model config", () => {
     };
 
     expect(
-      resolveModelProfiles(modelsConfig, { PLANNER_MODEL: "openai/gpt-5-mini" })
+      resolveModelProfiles(modelsConfig, { DEFAULT_MODEL: "openai/gpt-5-mini" })
     ).toEqual({
-      planner: {
+      default: {
         model: "openai/gpt-5-mini",
         reasoning_effort: "medium"
       },
-      reviewer: {
+      deep: {
         model: "openai/gpt-5",
         reasoning_effort: "high"
       }
@@ -37,30 +37,30 @@ describe("model config", () => {
   it("accepts model: openai/gpt-5-mini without environment lookup", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        planner: {
+        default: {
           model: "openai/gpt-5-mini",
           reasoning_effort: "medium"
         }
       }
     };
 
-    expect(resolveModelProfiles(modelsConfig, {}).planner.model).toBe(
+    expect(resolveModelProfiles(modelsConfig, {}).default.model).toBe(
       "openai/gpt-5-mini"
     );
   });
 
-  it("resolves model: ${REVIEWER_MODEL} from env.REVIEWER_MODEL", () => {
+  it("resolves model: ${DEEP_MODEL} from env.DEEP_MODEL", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        reviewer: {
-          model: "${REVIEWER_MODEL}",
+        deep: {
+          model: "${DEEP_MODEL}",
           reasoning_effort: "high"
         }
       }
     };
 
     expect(
-      resolveModelProfiles(modelsConfig, { REVIEWER_MODEL: "openai/gpt-5" }).reviewer
+      resolveModelProfiles(modelsConfig, { DEEP_MODEL: "openai/gpt-5" }).deep
         .model
     ).toBe("openai/gpt-5");
   });
@@ -68,30 +68,30 @@ describe("model config", () => {
   it("resolves model fallback placeholders from the environment when present", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        reviewer: {
-          model: "${REVIEWER_MODEL:-openai/gpt-5-mini}",
+        deep: {
+          model: "${DEEP_MODEL:-openai/gpt-5-mini}",
           reasoning_effort: "high"
         }
       }
     };
 
     expect(
-      resolveModelProfiles(modelsConfig, { REVIEWER_MODEL: "openai/gpt-5" })
-        .reviewer.model
+      resolveModelProfiles(modelsConfig, { DEEP_MODEL: "openai/gpt-5" })
+        .deep.model
     ).toBe("openai/gpt-5");
   });
 
   it("resolves model fallback placeholders to the configured default", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        planner: {
-          model: "${PLANNER_MODEL:-openai/gpt-5-mini}",
+        default: {
+          model: "${DEFAULT_MODEL:-openai/gpt-5-mini}",
           reasoning_effort: "medium"
         }
       }
     };
 
-    expect(resolveModelProfiles(modelsConfig, {}).planner.model).toBe(
+    expect(resolveModelProfiles(modelsConfig, {}).default.model).toBe(
       "openai/gpt-5-mini"
     );
   });
@@ -99,7 +99,7 @@ describe("model config", () => {
   it("throws model_env_missing for model: ${MISSING_MODEL}", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        reviewer: {
+        deep: {
           model: "${MISSING_MODEL}",
           reasoning_effort: "high"
         }
@@ -114,8 +114,8 @@ describe("model config", () => {
   it("throws model_spec_invalid when a model fallback default lacks a provider", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        planner: {
-          model: "${PLANNER_MODEL:-gpt-5-mini}",
+        default: {
+          model: "${DEFAULT_MODEL:-gpt-5-mini}",
           reasoning_effort: "medium"
         }
       }
@@ -129,25 +129,25 @@ describe("model config", () => {
   it("throws model_env_missing for whitespace-only environment values", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        planner: {
-          model: "${PLANNER_MODEL}",
+        default: {
+          model: "${DEFAULT_MODEL}",
           reasoning_effort: "medium"
         }
       }
     };
 
     expect(() =>
-      resolveModelProfiles(modelsConfig, { PLANNER_MODEL: "   " })
+      resolveModelProfiles(modelsConfig, { DEFAULT_MODEL: "   " })
     ).toThrow(expect.objectContaining({ code: "model_env_missing" }));
   });
 
   it.each([
     ["direct model", "gpt-5"],
-    ["environment model", "${REVIEWER_MODEL}"]
+    ["environment model", "${DEEP_MODEL}"]
   ])("throws model_spec_invalid for %s without provider prefix", (_case, model) => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
-        reviewer: {
+        deep: {
           model,
           reasoning_effort: "high"
         }
@@ -155,16 +155,16 @@ describe("model config", () => {
     };
 
     expect(() =>
-      resolveModelProfiles(modelsConfig, { REVIEWER_MODEL: "gpt-5" })
+      resolveModelProfiles(modelsConfig, { DEEP_MODEL: "gpt-5" })
     ).toThrow(expect.objectContaining({ code: "model_spec_invalid" }));
   });
 
-  it.each(["${PLANNER_MODEL }", "${planner_model}", "${PLANNER_MODEL"])(
+  it.each(["${DEFAULT_MODEL }", "${default_model}", "${DEFAULT_MODEL"])(
     "throws model_placeholder_invalid for malformed placeholder %s",
     (model) => {
       const modelsConfig: ModelsConfig = {
         model_profiles: {
-          planner: {
+          default: {
             model,
             reasoning_effort: "medium"
           }

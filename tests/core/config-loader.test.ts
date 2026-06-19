@@ -139,13 +139,14 @@ describe("config loader", () => {
     );
   });
 
-  it("models.yaml contains planner, reviewer, and acceptance profiles", async () => {
+  it("models.yaml contains generic capability profiles", async () => {
     const config = await loadYamlFile("config/models.yaml", ModelsConfigSchema);
 
     expect(Object.keys(config.model_profiles).sort()).toEqual([
-      "acceptance",
-      "planner",
-      "reviewer"
+      "balanced",
+      "deep",
+      "default",
+      "fast"
     ]);
   });
 
@@ -159,8 +160,8 @@ describe("config loader", () => {
 
     const invalidConfig = {
       model_profiles: {
-        planner: {
-          env: "PLANNER_MODEL",
+        default: {
+          env: "DEFAULT_MODEL",
           reasoning_effort: "medium"
         }
       }
@@ -169,23 +170,24 @@ describe("config loader", () => {
     expect(() => ModelsConfigSchema.parse(invalidConfig)).toThrow(ZodError);
   });
 
-  it("resolves ${PLANNER_MODEL} from a provided environment map", async () => {
+  it("resolves generic model profile fallbacks from a provided environment map", async () => {
     const config = await loadYamlFile("config/models.yaml", ModelsConfigSchema);
 
     expect(
       resolveModelProfiles(config, {
-        PLANNER_MODEL: "openai/gpt-5-mini",
-        REVIEWER_MODEL: "openai/gpt-5",
-        ACCEPTANCE_MODEL: "openai/gpt-5-mini"
-      }).planner.model
+        DEFAULT_MODEL: "openai/gpt-5-mini",
+        DEEP_MODEL: "openai/gpt-5",
+        FAST_MODEL: "openai/gpt-5-nano",
+        BALANCED_MODEL: "openai/gpt-5-mini"
+      }).default.model
     ).toBe("openai/gpt-5-mini");
   });
 
   it("throws model_env_missing when a model environment variable is missing", () => {
     const config = {
       model_profiles: {
-        planner: {
-          model: "${PLANNER_MODEL}",
+        default: {
+          model: "${DEFAULT_MODEL}",
           reasoning_effort: "medium"
         }
       }

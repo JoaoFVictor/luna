@@ -59,7 +59,7 @@ const validRepoContext = {
 
 const validModelsConfig = {
   model_profiles: {
-    reviewer: {
+    deep: {
       model: "openai/gpt-5",
       reasoning_effort: "high"
     }
@@ -187,7 +187,7 @@ describe("core zod schemas", () => {
 
     const invalidConfig = {
       profiles: {
-        reviewer: {
+        deep: {
           model: "openai/gpt-5",
           reasoning_effort: "high"
         }
@@ -210,7 +210,7 @@ describe("core zod schemas", () => {
   it("rejects a ModelsConfig profile that uses env", () => {
     const invalidConfig = {
       model_profiles: {
-        reviewer: {
+        deep: {
           env: "OPENAI_MODEL",
           reasoning_effort: "high"
         }

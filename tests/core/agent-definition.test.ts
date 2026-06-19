@@ -22,7 +22,7 @@ async function writeAgentYaml(
   const metadata = {
     id: "review-planner",
     description: "Plans review work.",
-    model_profile: "planner",
+    model_profile: "default",
     mode: "read_only",
     instructions_file: "instructions.md",
     output_schema: "output.schema.json",
@@ -57,7 +57,7 @@ describe("agent definition loader", () => {
 
       await expect(loadAgentDefinition(root, "review-planner")).resolves.toMatchObject({
         id: "review-planner",
-        model_profile: "planner",
+        model_profile: "default",
         mode: "read_only",
         instructionsPath: path.join(agentDir, "instructions.md"),
         outputSchemaPath: path.join(agentDir, "output.schema.json")
