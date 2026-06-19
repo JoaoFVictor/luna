@@ -18,25 +18,29 @@ import {
 } from "../../src/core/types.js";
 
 const validInvocation = {
-  target: "github_pr",
-  owner: "octo-org",
-  repo: "hello-world",
-  pull_number: 42,
-  base_ref: "main",
-  base_repository: {
+  version: "2026-06",
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  repository: {
+    provider: "github",
     owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
+    name: "hello-world"
   },
-  head_repository: {
-    owner: "contributor",
-    name: "hello-world",
-    full_name: "contributor/hello-world",
-    fork: true
+  subject: {
+    type: "pull_request",
+    id: "42",
+    url: "https://github.com/octo-org/hello-world/pull/42"
   },
   references: {
+    base_ref: "main",
     base_sha: "abc123",
     head_sha: "def456"
+  },
+  payload: {
+    pull_request: {
+      number: 42
+    }
   }
 };
 
@@ -96,7 +100,8 @@ const plannedRoutingConfig = {
       name: "github-pr-code-review",
       when: {
         source: "github",
-        event_in: ["pull_request.opened"]
+        event: "pull_request",
+        action_in: ["opened", "reopened"]
       },
       target: {
         type: "workflow",
@@ -156,8 +161,35 @@ describe("core zod schemas", () => {
     expect(InvocationSchema.parse(validInvocation)).toEqual(validInvocation);
   });
 
-  it("accepts jira_task invocations", () => {
-    expect(
+  it("rejects legacy github_pr invocations", () => {
+    expect(() =>
+      InvocationSchema.parse({
+        target: "github_pr",
+        owner: "octo-org",
+        repo: "hello-world",
+        pull_number: 42,
+        base_ref: "main",
+        base_repository: {
+          owner: "octo-org",
+          name: "hello-world",
+          full_name: "octo-org/hello-world"
+        },
+        head_repository: {
+          owner: "contributor",
+          name: "hello-world",
+          full_name: "contributor/hello-world",
+          fork: true
+        },
+        references: {
+          base_sha: "abc123",
+          head_sha: "def456"
+        }
+      })
+    ).toThrow();
+  });
+
+  it("rejects legacy jira_task invocations", () => {
+    expect(() =>
       InvocationSchema.parse({
         target: "jira_task",
         workflow: "implementation",
@@ -177,7 +209,16 @@ describe("core zod schemas", () => {
           name: "swg-front-nuxt"
         }
       })
-    ).toMatchObject({ target: "jira_task" });
+    ).toThrow();
+  });
+
+  it("rejects top-level workflow fields on invocations", () => {
+    expect(() =>
+      InvocationSchema.parse({
+        ...validInvocation,
+        workflow: "code-review"
+      })
+    ).toThrow();
   });
 
   it("accepts implementation config with structured validation commands", () => {
@@ -285,23 +326,6 @@ describe("core zod schemas", () => {
     ).toThrow();
   });
 
-  it("rejects a GitHub PR invocation when head_sha is missing", () => {
-    const invalidInvocation = {
-      ...validInvocation,
-      references: {
-        base_sha: "abc123"
-      }
-    };
-
-    expect(() => InvocationSchema.parse(invalidInvocation)).toThrow();
-  });
-
-  it("rejects a GitHub PR invocation when base_ref is missing", () => {
-    const { base_ref: _baseRef, ...invalidInvocation } = validInvocation;
-
-    expect(() => InvocationSchema.parse(invalidInvocation)).toThrow();
-  });
-
   it("accepts a RepoContext containing binary metadata with null patch and excerpt", () => {
     expect(RepoContextSchema.parse(validRepoContext)).toEqual(validRepoContext);
   });
@@ -335,6 +359,49 @@ describe("core zod schemas", () => {
     expect(RoutingConfigSchema.parse(plannedRoutingConfig)).toEqual(
       plannedRoutingConfig
     );
+  });
+
+  it("rejects a route with both event and event_in", () => {
+    expect(() =>
+      RoutingConfigSchema.parse({
+        routes: [
+          {
+            name: "conflicting-events",
+            when: {
+              source: "github",
+              event: "pull_request",
+              event_in: ["issues"]
+            },
+            target: {
+              type: "workflow",
+              id: "code-review"
+            }
+          }
+        ]
+      })
+    ).toThrow();
+  });
+
+  it("rejects a route with both action and action_in", () => {
+    expect(() =>
+      RoutingConfigSchema.parse({
+        routes: [
+          {
+            name: "conflicting-actions",
+            when: {
+              source: "github",
+              event: "pull_request",
+              action: "opened",
+              action_in: ["reopened"]
+            },
+            target: {
+              type: "workflow",
+              id: "code-review"
+            }
+          }
+        ]
+      })
+    ).toThrow();
   });
 
   it("accepts the planned app workspace config shape", () => {
