@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { collectWorktreeDiff } from "../../src/core/worktree-diff-collector.js";
 
@@ -38,11 +41,50 @@ describe("worktree diff collector", () => {
 
     expect(result).toEqual({
       files: [
-        { path: "src/staged.ts", index_status: "M", worktree_status: " " },
-        { path: "src/unstaged.ts", index_status: " ", worktree_status: "M" },
-        { path: "notes.txt", index_status: "?", worktree_status: "?" }
+        {
+          path: "src/staged.ts",
+          status: "modified",
+          index_status: "M",
+          worktree_status: " "
+        },
+        {
+          path: "src/unstaged.ts",
+          status: "modified",
+          index_status: " ",
+          worktree_status: "M"
+        },
+        {
+          path: "notes.txt",
+          status: "untracked",
+          index_status: "?",
+          worktree_status: "?",
+          untracked_summary: {
+            path: "notes.txt",
+            excerpt: {
+              start_line: 1,
+              end_line: 1,
+              content: ""
+            },
+            truncated: false,
+            bytes: 0,
+            max_bytes: 1000
+          }
+        }
       ],
       untracked_files: ["notes.txt"],
+      untracked_summaries: [
+        {
+          path: "notes.txt",
+          excerpt: {
+            start_line: 1,
+            end_line: 1,
+            content: ""
+          },
+          truncated: false,
+          bytes: 0,
+          max_bytes: 1000
+        }
+      ],
       staged_diff:
         "diff --git a/src/staged.ts b/src/staged.ts\n+staged\n",
       unstaged_diff:
@@ -63,6 +105,22 @@ describe("worktree diff collector", () => {
       {
         cwd: "/repo/worktree",
         args: ["diff", "--binary"]
+      },
+      {
+        cwd: "/repo/worktree",
+        args: ["diff", "--cached", "--numstat", "-z"]
+      },
+      {
+        cwd: "/repo/worktree",
+        args: ["diff", "--numstat", "-z"]
+      },
+      {
+        cwd: "/repo/worktree",
+        args: ["diff", "--cached", "--raw", "-z"]
+      },
+      {
+        cwd: "/repo/worktree",
+        args: ["diff", "--raw", "-z"]
       }
     ]);
   });
@@ -88,5 +146,146 @@ describe("worktree diff collector", () => {
     expect(result.unstaged_diff).toBe("12345");
     expect(result.staged_diff_truncated).toBe(true);
     expect(result.unstaged_diff_truncated).toBe(true);
+  });
+
+  it("parses porcelain rename entries without creating a phantom old-path file", async () => {
+    const result = await collectWorktreeDiff({
+      cwd: "/repo/worktree",
+      maxDiffBytes: 1000,
+      runGit: async (_cwd, args) => {
+        if (args[0] === "status") {
+          return ["R  src/new.ts", "src/old.ts", ""].join("\0");
+        }
+
+        return "";
+      }
+    });
+
+    expect(result.files).toEqual([
+      {
+        path: "src/new.ts",
+        previous_path: "src/old.ts",
+        status: "renamed",
+        index_status: "R",
+        worktree_status: " "
+      }
+    ]);
+    expect(result.files.map((file) => file.path)).not.toContain("src/old.ts");
+  });
+
+  it("normalizes deleted files from porcelain status", async () => {
+    const result = await collectWorktreeDiff({
+      cwd: "/repo/worktree",
+      maxDiffBytes: 1000,
+      runGit: async (_cwd, args) => {
+        if (args[0] === "status") {
+          return [" D src/deleted.ts", ""].join("\0");
+        }
+
+        return "";
+      }
+    });
+
+    expect(result.files).toEqual([
+      {
+        path: "src/deleted.ts",
+        status: "deleted",
+        index_status: " ",
+        worktree_status: "D"
+      }
+    ]);
+  });
+
+  it("summarizes untracked files with bounded excerpts and truncation metadata", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "worktree-diff-"));
+
+    try {
+      await writeFile(join(cwd, "notes.txt"), "alpha\nbravo\ncharlie\n");
+
+      const result = await collectWorktreeDiff({
+        cwd,
+        maxDiffBytes: 12,
+        runGit: async (_cwd, args) => {
+          if (args[0] === "status") {
+            return ["?? notes.txt", ""].join("\0");
+          }
+
+          return "";
+        }
+      });
+
+      expect(result.untracked_summaries).toEqual([
+        {
+          path: "notes.txt",
+          excerpt: {
+            start_line: 1,
+            end_line: 2,
+            content: "alpha\nbravo\n",
+            truncated: true
+          },
+          truncated: true,
+          bytes: 20,
+          max_bytes: 12
+        }
+      ]);
+      expect(result.files[0]?.untracked_summary).toEqual(
+        result.untracked_summaries[0]
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("marks binary, submodule, and large changed files from git metadata", async () => {
+    const result = await collectWorktreeDiff({
+      cwd: "/repo/worktree",
+      maxDiffBytes: 8,
+      runGit: async (_cwd, args) => {
+        if (args[0] === "status") {
+          return [
+            "M  assets/logo.png",
+            "M  vendor/lib",
+            " M src/large.ts",
+            ""
+          ].join("\0");
+        }
+
+        if (args[0] === "diff" && args.includes("--numstat")) {
+          if (args.includes("--cached")) {
+            return ["-\t-\tassets/logo.png", "1\t1\tvendor/lib", ""].join("\0");
+          }
+
+          return ["20\t0\tsrc/large.ts", ""].join("\0");
+        }
+
+        if (args[0] === "diff" && args.includes("--raw")) {
+          if (args.includes("--cached")) {
+            return [
+              ":100644 100644 1111111 2222222 M",
+              "assets/logo.png",
+              ":160000 160000 3333333 4444444 M",
+              "vendor/lib",
+              ""
+            ].join("\0");
+          }
+
+          return [":100644 100644 5555555 6666666 M", "src/large.ts", ""].join(
+            "\0"
+          );
+        }
+
+        return "";
+      }
+    });
+
+    expect(result.files.find((file) => file.path === "assets/logo.png")).toMatchObject({
+      binary: true
+    });
+    expect(result.files.find((file) => file.path === "vendor/lib")).toMatchObject({
+      is_submodule: true
+    });
+    expect(result.files.find((file) => file.path === "src/large.ts")).toMatchObject({
+      is_large: true
+    });
   });
 });
