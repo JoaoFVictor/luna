@@ -1,5 +1,6 @@
 import path from "node:path";
 import { ArtifactStore } from "./artifact-store.js";
+import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
 import {
   runBuiltInStep as defaultRunBuiltInStep,
   type BuiltInStepDependencies,
@@ -15,8 +16,10 @@ import {
   toFlueModelOptions,
   type ResolvedModelProfiles
 } from "./model-config.js";
+import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import { createRunIdentity as defaultCreateRunIdentity } from "./run-identity.js";
+import { safeJoin } from "./path-security.js";
 import {
   loadWorkflowDefinition,
   type WorkflowNode
@@ -29,6 +32,7 @@ import {
   RepositoriesConfigSchema,
   RoutingConfigSchema,
   type AppConfig,
+  type ErrorArtifact,
   type Invocation,
   type ModelsConfig,
   type RepositoriesConfig,
@@ -62,6 +66,7 @@ export type ConfiguredWorkflowRunnerDependencies = {
   ) => RepositoryConfig;
   runBuiltInStep?: (options: RunBuiltInStepOptions) => MaybePromise<unknown>;
   runAgentStep?: (options: RunAgentStepOptions) => MaybePromise<unknown>;
+  cleanupWorktree?: typeof defaultCleanupWorktree;
   builtInStepDependencies?: BuiltInStepDependencies;
   ArtifactStore?: typeof ArtifactStore;
   now?: () => Date;
@@ -75,6 +80,7 @@ export type RunConfiguredWorkflowOptions = {
   defaultWorkflowId?: string;
   dependencies?: ConfiguredWorkflowRunnerDependencies;
   attempt?: number;
+  throwOnError?: boolean;
 };
 
 export type ConfiguredWorkflowSuccessResult = {
@@ -82,8 +88,21 @@ export type ConfiguredWorkflowSuccessResult = {
   run: RunIdentity;
   workflow_id: string;
   steps: Record<string, unknown>;
+  report?: FinalReportJson;
   workspace?: WorkspaceRecord;
 };
+
+export type ConfiguredWorkflowFailureResult = {
+  status: "failed";
+  run: RunIdentity;
+  workflow_id?: string;
+  error: ErrorArtifact;
+  workspace?: WorkspaceRecord;
+};
+
+export type ConfiguredWorkflowResult =
+  | ConfiguredWorkflowSuccessResult
+  | ConfiguredWorkflowFailureResult;
 
 function configuredWorkflowError(
   message: string,
@@ -94,6 +113,27 @@ function configuredWorkflowError(
   error.code = code;
 
   return error;
+}
+
+function errorCode(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === "string" && code !== "" ? code : "unknown_error";
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message !== "") {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function errorArtifact(runId: string, error: unknown): ErrorArtifact {
+  return {
+    run_id: runId,
+    code: errorCode(error),
+    message: errorMessage(error)
+  };
 }
 
 async function loadConfigs(configRoot: string): Promise<{
@@ -196,6 +236,26 @@ async function writeNodeArtifact(
 ): Promise<void> {
   if (typeof node.artifact === "string") {
     await artifactStore.writeJson(node.artifact, output);
+    return;
+  }
+
+  if (
+    node.artifact !== undefined &&
+    typeof output === "object" &&
+    output !== null &&
+    !Array.isArray(output)
+  ) {
+    const outputRecord = output as Record<string, unknown>;
+
+    for (const [outputKey, artifactName] of Object.entries(node.artifact)) {
+      const value = outputRecord[outputKey];
+
+      if (outputKey === "markdown") {
+        await artifactStore.writeMarkdown(artifactName, String(value ?? ""));
+      } else {
+        await artifactStore.writeJson(artifactName, value);
+      }
+    }
   }
 }
 
@@ -211,6 +271,168 @@ function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
     typeof candidate.preserved === "boolean" &&
     typeof candidate.reason === "string"
   );
+}
+
+function isFinalReportNode(node: WorkflowNode): boolean {
+  return node.type === "built_in" && node.uses === "final_code_review_report";
+}
+
+function finalReportFrom(output: unknown): FinalReportJson | undefined {
+  if (typeof output !== "object" || output === null || Array.isArray(output)) {
+    return undefined;
+  }
+
+  return (output as { json?: FinalReportJson }).json;
+}
+
+async function markdownArtifactPath({
+  artifactRoot,
+  runId,
+  node
+}: {
+  artifactRoot: string;
+  runId: string;
+  node: WorkflowNode;
+}): Promise<string | undefined> {
+  if (
+    node.artifact === undefined ||
+    typeof node.artifact === "string" ||
+    typeof node.artifact.markdown !== "string"
+  ) {
+    return undefined;
+  }
+
+  return await safeJoin(artifactRoot, [runId, node.artifact.markdown]);
+}
+
+async function writeJsonBestEffort(
+  artifactStore: ArtifactStore,
+  name: string,
+  value: unknown
+): Promise<unknown> {
+  try {
+    await artifactStore.writeJson(name, value);
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+async function finalizeFailureWorkspace({
+  artifactStore,
+  workspaceRecord,
+  persistedWorkspaceRecord,
+  repository,
+  workspaceConfig,
+  cleanupWorktree
+}: {
+  artifactStore: ArtifactStore;
+  workspaceRecord?: WorkspaceRecord;
+  persistedWorkspaceRecord?: WorkspaceRecord;
+  repository?: RepositoryConfig;
+  workspaceConfig: AppConfig["workspace"];
+  cleanupWorktree: typeof defaultCleanupWorktree;
+}): Promise<WorkspaceRecord | undefined> {
+  if (workspaceRecord === undefined) {
+    return undefined;
+  }
+
+  let finalWorkspace = workspaceRecord;
+
+  if (
+    workspaceRecord.reason === "success_cleanup" ||
+    workspaceRecord.reason === "success_cleanup_failed" ||
+    workspaceRecord.reason === "success_preserved" ||
+    workspaceRecord.reason === "failure_cleanup_failed" ||
+    workspaceRecord.reason === "failure_preserved"
+  ) {
+    finalWorkspace = workspaceRecord;
+  } else if (workspaceConfig.preserve_on_failure) {
+    finalWorkspace = {
+      ...workspaceRecord,
+      preserved: true,
+      reason: "failure_preserved"
+    };
+  } else if (repository !== undefined) {
+    try {
+      finalWorkspace = await cleanupWorktree({
+        repositoryPath: repository.path,
+        workspaceRoot: workspaceConfig.root,
+        workspaceRecord,
+        persistedWorkspaceRecord
+      });
+    } catch {
+      finalWorkspace = {
+        ...workspaceRecord,
+        preserved: true,
+        reason: "failure_cleanup_failed"
+      };
+    }
+  }
+
+  await artifactStore.writeJson("workspace.json", finalWorkspace);
+  return finalWorkspace;
+}
+
+async function finalizeSuccessWorkspace({
+  artifactStore,
+  workspaceRecord,
+  persistedWorkspaceRecord,
+  repository,
+  workspaceConfig,
+  cleanupWorktree
+}: {
+  artifactStore: ArtifactStore;
+  workspaceRecord?: WorkspaceRecord;
+  persistedWorkspaceRecord?: WorkspaceRecord;
+  repository?: RepositoryConfig;
+  workspaceConfig: AppConfig["workspace"];
+  cleanupWorktree: typeof defaultCleanupWorktree;
+}): Promise<WorkspaceRecord | undefined> {
+  if (workspaceRecord === undefined) {
+    return undefined;
+  }
+
+  let finalWorkspace: WorkspaceRecord;
+
+  if (!workspaceConfig.preserve_on_success) {
+    if (repository === undefined) {
+      finalWorkspace = workspaceRecord;
+    } else {
+      try {
+        finalWorkspace = await cleanupWorktree({
+          repositoryPath: repository.path,
+          workspaceRoot: workspaceConfig.root,
+          workspaceRecord,
+          persistedWorkspaceRecord
+        });
+      } catch (cause) {
+        const failedWorkspace = {
+          ...workspaceRecord,
+          preserved: true,
+          reason: "success_cleanup_failed"
+        };
+        await artifactStore.writeJson("workspace.json", failedWorkspace);
+        const error = configuredWorkflowError(
+          "Successful review workspace cleanup failed",
+          "success_cleanup_failed",
+          cause
+        );
+        (error as Error & { workspaceRecord?: WorkspaceRecord }).workspaceRecord =
+          failedWorkspace;
+        throw error;
+      }
+    }
+  } else {
+    finalWorkspace = {
+      ...workspaceRecord,
+      preserved: true,
+      reason: "success_preserved"
+    };
+  }
+
+  await artifactStore.writeJson("workspace.json", finalWorkspace);
+  return finalWorkspace;
 }
 
 function resolveAgentModel(
@@ -273,69 +495,176 @@ export async function runConfiguredWorkflow({
   agentsRoot,
   defaultWorkflowId,
   dependencies = {},
-  attempt = 1
-}: RunConfiguredWorkflowOptions): Promise<ConfiguredWorkflowSuccessResult> {
+  attempt = 1,
+  throwOnError = true
+}: RunConfiguredWorkflowOptions): Promise<ConfiguredWorkflowResult> {
   const configs = await loadConfigs(configRoot);
-  const modelProfiles = resolveModelProfiles(configs.models);
-  const resolvedAgentsRoot = agentsRoot ?? path.join(configRoot, "agents");
-
-  const workflowId = workflowIdFromRoute(
-    invocation,
-    configs.routing,
-    dependencies,
-    defaultWorkflowId
-  );
-  const resolveRepository =
-    dependencies.resolveRepository ?? defaultResolveRepository;
   const makeRunIdentity =
     dependencies.createRunIdentity ?? defaultCreateRunIdentity;
   const Store = dependencies.ArtifactStore ?? ArtifactStore;
-  const repository = resolveRepository(
-    invocation,
-    configs.repositories.repositories
-  );
   const run = makeRunIdentity(invocation, attempt, dependencies.now?.());
   const artifactStore = new Store(configs.app.artifacts.root, run.run_id);
-  const state: WorkflowState = {
-    invocation,
-    repository,
-    run,
-    workspaceRoot: configs.app.workspace.root,
-    steps: {}
-  };
+  const modelProfiles = resolveModelProfiles(configs.models);
+  const resolvedAgentsRoot = agentsRoot ?? path.join(configRoot, "agents");
+  const resolveRepository =
+    dependencies.resolveRepository ?? defaultResolveRepository;
+  const cleanupWorktree =
+    dependencies.cleanupWorktree ?? defaultCleanupWorktree;
+  let workflowId: string | undefined;
+  let repository: RepositoryConfig | undefined;
+  let workspaceRecord: WorkspaceRecord | undefined;
+  let persistedWorkspaceRecord: WorkspaceRecord | undefined;
 
   await artifactStore.writeJson("invocation.json", invocation);
   await artifactStore.writeJson("run.json", run);
 
-  const workflow = await loadConfiguredWorkflow(
-    workflowsRoot ?? path.join(configRoot, "workflows"),
-    workflowId
-  );
-
-  for (const node of topologicalNodes(workflow.graph.nodes)) {
-    const output = await runWorkflowNode(
-      node,
-      state,
+  try {
+    workflowId = workflowIdFromRoute(
+      invocation,
+      configs.routing,
       dependencies,
-      resolvedAgentsRoot,
-      modelProfiles
+      defaultWorkflowId
     );
+    repository = resolveRepository(
+      invocation,
+      configs.repositories.repositories
+    );
+    const workflow = await loadConfiguredWorkflow(
+      workflowsRoot ?? path.join(configRoot, "workflows"),
+      workflowId
+    );
+    const state: WorkflowState = {
+      invocation,
+      repository,
+      run,
+      workspaceRoot: configs.app.workspace.root,
+      steps: {}
+    };
+    const orderedNodes = topologicalNodes(workflow.graph.nodes);
+    const deferredFinalReportNodes: WorkflowNode[] = [];
 
-    state.steps[node.id] = output;
-    if (node.type === "built_in" && node.uses === "prepare_worktree") {
-      if (isWorkspaceRecord(output)) {
-        state.workspace = output;
+    for (const node of orderedNodes) {
+      if (isFinalReportNode(node)) {
+        deferredFinalReportNodes.push(node);
+        continue;
       }
+
+      const output = await runWorkflowNode(
+        node,
+        state,
+        dependencies,
+        resolvedAgentsRoot,
+        modelProfiles
+      );
+
+      state.steps[node.id] = output;
+      if (node.type === "built_in" && node.uses === "prepare_worktree") {
+        if (isWorkspaceRecord(output)) {
+          state.workspace = output;
+          workspaceRecord = output;
+          persistedWorkspaceRecord = output;
+        }
+      }
+
+      await writeNodeArtifact(artifactStore, node, output);
     }
 
-    await writeNodeArtifact(artifactStore, node, output);
-  }
+    const finalWorkspace = await finalizeSuccessWorkspace({
+      artifactStore,
+      workspaceRecord,
+      persistedWorkspaceRecord,
+      repository,
+      workspaceConfig: configs.app.workspace,
+      cleanupWorktree
+    });
+    if (finalWorkspace !== undefined) {
+      workspaceRecord = finalWorkspace;
+      state.workspace = finalWorkspace;
+    }
 
-  return {
-    status: "success",
-    run,
-    workflow_id: workflow.id,
-    steps: state.steps,
-    ...(isWorkspaceRecord(state.workspace) ? { workspace: state.workspace } : {})
-  };
+    let report: FinalReportJson | undefined;
+    for (const node of deferredFinalReportNodes) {
+      const reportPath = await markdownArtifactPath({
+        artifactRoot: configs.app.artifacts.root,
+        runId: run.run_id,
+        node
+      });
+      if (reportPath !== undefined) {
+        state.reportPath = reportPath;
+      }
+
+      const output = await runWorkflowNode(
+        node,
+        state,
+        dependencies,
+        resolvedAgentsRoot,
+        modelProfiles
+      );
+
+      state.steps[node.id] = output;
+      await writeNodeArtifact(artifactStore, node, output);
+      report = finalReportFrom(output) ?? report;
+    }
+
+    return {
+      status: "success",
+      run,
+      workflow_id: workflow.id,
+      steps: state.steps,
+      ...(report === undefined ? {} : { report }),
+      ...(isWorkspaceRecord(state.workspace) ? { workspace: state.workspace } : {})
+    };
+  } catch (error) {
+    const failedWorkspace = (error as { workspaceRecord?: unknown })
+      .workspaceRecord;
+    if (isWorkspaceRecord(failedWorkspace)) {
+      workspaceRecord = failedWorkspace;
+    }
+
+    const artifact = errorArtifact(run.run_id, error);
+    const artifactWriteError = await writeJsonBestEffort(
+      artifactStore,
+      "error.json",
+      artifact
+    );
+    let finalWorkspace: WorkspaceRecord | undefined;
+    const workspaceWriteError = await (async () => {
+      try {
+        finalWorkspace = await finalizeFailureWorkspace({
+          artifactStore,
+          workspaceRecord,
+          persistedWorkspaceRecord,
+          repository,
+          workspaceConfig: configs.app.workspace,
+          cleanupWorktree
+        });
+        return undefined;
+      } catch (cause) {
+        return cause;
+      }
+    })();
+
+    if (throwOnError) {
+      throw error;
+    }
+
+    if (artifactWriteError !== undefined || workspaceWriteError !== undefined) {
+      artifact.details = {
+        ...(artifactWriteError === undefined
+          ? {}
+          : { error_artifact_write_failed: errorMessage(artifactWriteError) }),
+        ...(workspaceWriteError === undefined
+          ? {}
+          : { workspace_artifact_write_failed: errorMessage(workspaceWriteError) })
+      };
+    }
+
+    return {
+      status: "failed",
+      run,
+      ...(workflowId === undefined ? {} : { workflow_id: workflowId }),
+      error: artifact,
+      workspace: finalWorkspace
+    };
+  }
 }

@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
-import type { Invocation } from "../../src/core/types.js";
+import type { Invocation, WorkspaceRecord } from "../../src/core/types.js";
 
 const invocation: Invocation = {
   target: "github_pr",
@@ -134,6 +134,91 @@ async function writeWorkflow(root: string): Promise<void> {
   );
 }
 
+async function writeFullCodeReviewWorkflow(root: string): Promise<void> {
+  await writeFile(
+    path.join(root, "workflows", "code-review", "workflow.yaml"),
+    [
+      "id: code-review",
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "code-review", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: preflight",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifact: preflight.json",
+      "  - id: workspace",
+      "    type: built_in",
+      "    uses: prepare_worktree",
+      "    artifact: workspace.json",
+      "    after:",
+      "      - preflight",
+      "  - id: repo_context",
+      "    type: built_in",
+      "    uses: collect_repo_context",
+      "    artifact: repo-context.json",
+      "    after:",
+      "      - workspace",
+      "  - id: review_plan",
+      "    type: agent",
+      "    agent: review-planner",
+      "    output_schema: review_plan",
+      "    artifact: review-plan.json",
+      "    input:",
+      "      repo_context: $.steps.repo_context",
+      "    after:",
+      "      - repo_context",
+      "  - id: code_review",
+      "    type: agent",
+      "    agent: code-reviewer",
+      "    output_schema: code_review_findings",
+      "    artifact: code-review-findings.json",
+      "    input:",
+      "      review_plan: $.steps.review_plan",
+      "    after:",
+      "      - review_plan",
+      "  - id: validate_findings",
+      "    type: built_in",
+      "    uses: validate_code_review_findings",
+      "    artifact: code-review-findings.json",
+      "    input:",
+      "      repo_context: $.steps.repo_context",
+      "      findings: $.steps.code_review",
+      "    after:",
+      "      - code_review",
+      "  - id: acceptance",
+      "    type: agent",
+      "    agent: acceptance-reviewer",
+      "    output_schema: acceptance_decision",
+      "    artifact: acceptance-review.json",
+      "    input:",
+      "      findings: $.steps.validate_findings",
+      "    after:",
+      "      - validate_findings",
+      "  - id: final_report",
+      "    type: built_in",
+      "    uses: final_code_review_report",
+      "    artifact:",
+      "      json: final-report.json",
+      "      markdown: final-report.md",
+      "    input:",
+      "      findings: $.steps.validate_findings",
+      "      acceptance: $.steps.acceptance",
+      "    after:",
+      "      - acceptance",
+      ""
+    ].join("\n")
+  );
+}
+
 async function writeReviewPlannerAgent(root: string): Promise<void> {
   const agentRoot = path.join(root, "agents", "review-planner");
   await mkdir(agentRoot, { recursive: true });
@@ -160,7 +245,410 @@ async function writeReviewPlannerAgent(root: string): Promise<void> {
   );
 }
 
+async function writeAgent(root: string, id: string): Promise<void> {
+  const agentRoot = path.join(root, "agents", id);
+  await mkdir(agentRoot, { recursive: true });
+
+  await writeFile(
+    path.join(agentRoot, "agent.yaml"),
+    [
+      `id: ${id}`,
+      `description: ${id}`,
+      "model_profile: planner",
+      "mode: read_only",
+      "instructions_file: instructions.md",
+      "output_schema: output.schema.json",
+      ""
+    ].join("\n")
+  );
+  await writeFile(path.join(agentRoot, "instructions.md"), `${id}\n`);
+  await writeFile(
+    path.join(agentRoot, "output.schema.json"),
+    JSON.stringify({
+      type: "object",
+      additionalProperties: true
+    })
+  );
+}
+
+async function readJson(root: string, runId: string, name: string): Promise<unknown> {
+  return JSON.parse(
+    await readFile(path.join(root, "artifacts", runId, name), "utf8")
+  ) as unknown;
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("configured workflow runner", () => {
+  it("preserves code-review artifacts for the configured graph", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeFullCodeReviewWorkflow(root);
+      await writeAgent(root, "review-planner");
+      await writeAgent(root, "code-reviewer");
+      await writeAgent(root, "acceptance-reviewer");
+
+      const workspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+      const runBuiltInStep = vi.fn(async ({ uses }: { uses: string }) => {
+        if (uses === "preflight") {
+          return { status: "ok" };
+        }
+
+        if (uses === "prepare_worktree") {
+          return workspace;
+        }
+
+        if (uses === "collect_repo_context") {
+          return { files: [] };
+        }
+
+        if (uses === "validate_code_review_findings") {
+          return { summary: "Validated", findings: [] };
+        }
+
+        if (uses === "final_code_review_report") {
+          return {
+            json: { report_path: "placeholder", findings: [], workspace },
+            markdown: "# Review\n"
+          };
+        }
+
+        return {};
+      });
+      const runAgentStep = vi.fn(async ({ agent }: { agent: { id: string } }) => {
+        if (agent.id === "review-planner") {
+          return { summary: "Plan", focus_areas: [], files_to_review: [] };
+        }
+
+        if (agent.id === "code-reviewer") {
+          return { summary: "Findings", findings: [] };
+        }
+
+        return { status: "accepted", findings_to_fix: [] };
+      });
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        workflowsRoot: path.join(root, "workflows"),
+        agentsRoot: path.join(root, "agents"),
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep,
+          runAgentStep,
+          cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
+            ...workspaceRecord,
+            preserved: false,
+            reason: "success_cleanup"
+          }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      await Promise.all(
+        [
+          "invocation.json",
+          "run.json",
+          "preflight.json",
+          "workspace.json",
+          "repo-context.json",
+          "review-plan.json",
+          "code-review-findings.json",
+          "acceptance-review.json",
+          "final-report.json",
+          "final-report.md"
+        ].map(async (name) => {
+          await expect(
+            pathExists(path.join(root, "artifacts", "run-1", name))
+          ).resolves.toBe(true);
+        })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans successful workspaces when preserve_on_success is false and rewrites final workspace", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeFullCodeReviewWorkflow(root);
+      await writeAgent(root, "review-planner");
+      await writeAgent(root, "code-reviewer");
+      await writeAgent(root, "acceptance-reviewer");
+
+      const preparedWorkspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+      const cleanedWorkspace: WorkspaceRecord = {
+        ...preparedWorkspace,
+        preserved: false,
+        reason: "success_cleanup"
+      };
+      const cleanupWorktree = vi.fn(async () => cleanedWorkspace);
+      const finalReportWorkspaces: unknown[] = [];
+      const runBuiltInStep = vi.fn(
+        async ({
+          uses,
+          state
+        }: {
+          uses: string;
+          state: { reportPath?: string; workspace?: unknown };
+        }) => {
+          if (uses === "preflight") {
+            return { status: "ok" };
+          }
+
+          if (uses === "prepare_worktree") {
+            return preparedWorkspace;
+          }
+
+          if (uses === "collect_repo_context") {
+            return { files: [] };
+          }
+
+          if (uses === "validate_code_review_findings") {
+            return { summary: "Validated", findings: [] };
+          }
+
+          if (uses === "final_code_review_report") {
+            finalReportWorkspaces.push(state.workspace);
+            return {
+              json: { workspace: state.workspace, report_path: state.reportPath },
+              markdown: "# Review\n"
+            };
+          }
+
+          return {};
+        }
+      );
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        workflowsRoot: path.join(root, "workflows"),
+        agentsRoot: path.join(root, "agents"),
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep,
+          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
+            agent.id === "code-reviewer"
+              ? { summary: "Findings", findings: [] }
+              : { status: "accepted", findings_to_fix: [] }
+          ),
+          cleanupWorktree
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(result.workspace).toEqual(cleanedWorkspace);
+      expect(cleanupWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repositoryPath: path.join(root, "repo"),
+          workspaceRoot: path.join(root, "workspaces"),
+          workspaceRecord: preparedWorkspace,
+          persistedWorkspaceRecord: preparedWorkspace
+        })
+      );
+      await expect(readJson(root, "run-1", "workspace.json")).resolves.toEqual(
+        cleanedWorkspace
+      );
+      expect(finalReportWorkspaces).toEqual([cleanedWorkspace]);
+      await expect(readJson(root, "run-1", "final-report.json")).resolves.toMatchObject({
+        workspace: cleanedWorkspace
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns a failed result when throwOnError is false and preserves failure workspaces", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeFullCodeReviewWorkflow(root);
+      await writeAgent(root, "review-planner");
+      await writeAgent(root, "code-reviewer");
+      await writeAgent(root, "acceptance-reviewer");
+
+      const preparedWorkspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+      const reviewError = new Error("review failed") as Error & { code: string };
+      reviewError.code = "review_failed";
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        workflowsRoot: path.join(root, "workflows"),
+        agentsRoot: path.join(root, "agents"),
+        throwOnError: false,
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
+            if (uses === "preflight") {
+              return { status: "ok" };
+            }
+
+            if (uses === "prepare_worktree") {
+              return preparedWorkspace;
+            }
+
+            if (uses === "collect_repo_context") {
+              return { files: [] };
+            }
+
+            return {};
+          }),
+          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) => {
+            if (agent.id === "code-reviewer") {
+              throw reviewError;
+            }
+
+            return { summary: "Plan", focus_areas: [], files_to_review: [] };
+          }),
+          cleanupWorktree: vi.fn()
+        }
+      });
+
+      const expectedWorkspace = {
+        ...preparedWorkspace,
+        preserved: true,
+        reason: "failure_preserved"
+      };
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") {
+        throw new Error("Expected failed result");
+      }
+      expect(result.error).toMatchObject({ code: "review_failed" });
+      expect(result.workspace).toEqual(expectedWorkspace);
+      await expect(readJson(root, "run-1", "error.json")).resolves.toMatchObject({
+        code: "review_failed"
+      });
+      await expect(readJson(root, "run-1", "workspace.json")).resolves.toEqual(
+        expectedWorkspace
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("writes success_cleanup_failed when successful workspace cleanup fails", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeFullCodeReviewWorkflow(root);
+      await writeAgent(root, "review-planner");
+      await writeAgent(root, "code-reviewer");
+      await writeAgent(root, "acceptance-reviewer");
+
+      const preparedWorkspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        workflowsRoot: path.join(root, "workflows"),
+        agentsRoot: path.join(root, "agents"),
+        throwOnError: false,
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
+            if (uses === "preflight") {
+              return { status: "ok" };
+            }
+
+            if (uses === "prepare_worktree") {
+              return preparedWorkspace;
+            }
+
+            if (uses === "collect_repo_context") {
+              return { files: [] };
+            }
+
+            if (uses === "validate_code_review_findings") {
+              return { summary: "Validated", findings: [] };
+            }
+
+            return {};
+          }),
+          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
+            agent.id === "code-reviewer"
+              ? { summary: "Findings", findings: [] }
+              : { status: "accepted", findings_to_fix: [] }
+          ),
+          cleanupWorktree: vi.fn(async () => {
+            const error = new Error("cleanup failed");
+            throw error;
+          })
+        }
+      });
+
+      const expectedWorkspace = {
+        ...preparedWorkspace,
+        preserved: true,
+        reason: "success_cleanup_failed"
+      };
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") {
+        throw new Error("Expected failed result");
+      }
+      expect(result.error).toMatchObject({ code: "success_cleanup_failed" });
+      expect(result.workspace).toEqual(expectedWorkspace);
+      await expect(readJson(root, "run-1", "error.json")).resolves.toMatchObject({
+        code: "success_cleanup_failed"
+      });
+      await expect(readJson(root, "run-1", "workspace.json")).resolves.toEqual(
+        expectedWorkspace
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs a configured workflow graph and writes artifacts", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
@@ -204,6 +692,9 @@ describe("configured workflow runner", () => {
       });
 
       expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error("Expected success result");
+      }
       expect(result.workflow_id).toBe("code-review");
       expect(result.steps.review_plan).toMatchObject({
         summary: "Plan",
@@ -343,6 +834,44 @@ describe("configured workflow runner", () => {
           }
         })
       ).rejects.toMatchObject({ code: "workflow_config_read_failed" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns failed result and writes error.json for missing workflow when throwOnError is false", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "missing-workflow");
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        workflowsRoot: path.join(root, "workflows"),
+        throwOnError: false,
+        dependencies: {
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            target: "github_pr",
+            started_at: "2026-06-19T00:00:00.000Z"
+          }),
+          runBuiltInStep: vi.fn(),
+          runAgentStep: vi.fn()
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") {
+        throw new Error("Expected failed result");
+      }
+      expect(result.workflow_id).toBe("missing-workflow");
+      expect(result.error).toMatchObject({
+        code: "workflow_config_read_failed"
+      });
+      await expect(readJson(root, "run-1", "error.json")).resolves.toMatchObject({
+        code: "workflow_config_read_failed"
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
