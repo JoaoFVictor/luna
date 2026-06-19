@@ -61,6 +61,136 @@ describe("workflow definition loader", () => {
     }
   });
 
+  it("loads git-managed write workflows with agent_loop nodes", async () => {
+    const root = await tempWorkflowRoot();
+    const workflowDir = path.join(root, "implementation");
+
+    try {
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, "workflow.yaml"),
+        [
+          "id: implementation",
+          "type: workflow",
+          "mode: git_managed_write",
+          "input_schema: input.schema.json",
+          "output_schema: output.schema.json",
+          "graph: graph.yaml",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        path.join(workflowDir, "graph.yaml"),
+        [
+          "nodes:",
+          "  - id: implementation",
+          "    type: agent_loop",
+          "    agent: code-implementer",
+          "    output_schema: implementation_result",
+          "    artifact:",
+          "      attempts: implementation-attempts.json",
+          "      validation: validation.json",
+          "      result: implementation-result.json",
+          "      diff: implementation-diff.json",
+          "    sandbox:",
+          "      type: trusted_host_local",
+          "      cwd: $.workspace.path",
+          "      env_allowlist: []",
+          "    validation:",
+          "      commands: $.config.implementation.validation.commands",
+          "      max_output_bytes: $.config.implementation.validation.max_output_bytes",
+          "    repair:",
+          "      attempts: $.config.implementation.validation.repair_attempts",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      await expect(loadWorkflowDefinition(root, "implementation")).resolves.toMatchObject({
+        id: "implementation",
+        mode: "git_managed_write",
+        graph: {
+          nodes: [
+            {
+              id: "implementation",
+              type: "agent_loop",
+              artifact: {
+                validation: "validation.json",
+                diff: "implementation-diff.json"
+              }
+            }
+          ]
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads agent_loop artifact maps without requiring specific output keys", async () => {
+    const root = await tempWorkflowRoot();
+    const workflowDir = path.join(root, "implementation");
+
+    try {
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, "workflow.yaml"),
+        [
+          "id: implementation",
+          "type: workflow",
+          "mode: git_managed_write",
+          "input_schema: input.schema.json",
+          "output_schema: output.schema.json",
+          "graph: graph.yaml",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        path.join(workflowDir, "graph.yaml"),
+        [
+          "nodes:",
+          "  - id: implementation",
+          "    type: agent_loop",
+          "    agent: code-implementer",
+          "    output_schema: implementation_result",
+          "    artifact:",
+          "      summary: summary.json",
+          "      report: report.md",
+          "    sandbox:",
+          "      type: trusted_host_local",
+          "      cwd: $.workspace.path",
+          "      env_allowlist: []",
+          "    validation:",
+          "      commands: $.config.implementation.validation.commands",
+          "      max_output_bytes: $.config.implementation.validation.max_output_bytes",
+          "    repair:",
+          "      attempts: $.config.implementation.validation.repair_attempts",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      await expect(loadWorkflowDefinition(root, "implementation")).resolves.toMatchObject({
+        graph: {
+          nodes: [
+            {
+              id: "implementation",
+              type: "agent_loop",
+              artifact: {
+                summary: "summary.json",
+                report: "report.md"
+              }
+            }
+          ]
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects duplicate node ids", async () => {
     const root = await tempWorkflowRoot();
     const workflowDir = path.join(root, "code-review");

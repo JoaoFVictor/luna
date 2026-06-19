@@ -1,7 +1,9 @@
 export type WorkflowState = {
   invocation: unknown;
+  config?: unknown;
   repository?: unknown;
   run?: unknown;
+  workflow?: unknown;
   workspace?: unknown;
   workspaceRoot?: string;
   reportPath?: string;
@@ -14,46 +16,106 @@ function workflowStateError(message: string, code: string): Error & { code: stri
   return error;
 }
 
+function valueAtPath(
+  reference: string,
+  rootName: string,
+  root: unknown,
+  pathSegments: string[]
+): unknown {
+  if (root === undefined) {
+    throw workflowStateError(
+      `Workflow input references missing ${rootName}`,
+      "workflow_reference_missing"
+    );
+  }
+
+  let current: unknown = root;
+
+  for (const segment of pathSegments) {
+    if (segment === "") {
+      throw workflowStateError(
+        `Unsupported workflow input reference: ${reference}`,
+        "workflow_reference_unsupported"
+      );
+    }
+
+    if (
+      (typeof current !== "object" && typeof current !== "function") ||
+      current === null ||
+      !Object.prototype.hasOwnProperty.call(current, segment)
+    ) {
+      throw workflowStateError(
+        `Workflow input references missing path: ${reference}`,
+        "workflow_reference_missing"
+      );
+    }
+
+    current = (current as Record<string, unknown>)[segment];
+  }
+
+  return current;
+}
+
+function resolveObjectReference(
+  reference: string,
+  prefix: string,
+  rootName: string,
+  root: unknown
+): unknown {
+  if (reference === prefix) {
+    return valueAtPath(reference, rootName, root, []);
+  }
+
+  return valueAtPath(
+    reference,
+    rootName,
+    root,
+    reference.slice(prefix.length + 1).split(".")
+  );
+}
+
 function resolveReference(reference: string, state: WorkflowState): unknown {
   if (reference === "$.invocation") {
     return state.invocation;
   }
 
-  if (reference === "$.repository") {
-    if (state.repository === undefined) {
-      throw workflowStateError(
-        "Workflow input references missing repository",
-        "workflow_reference_missing"
+  for (const candidate of [
+    {
+      prefix: "$.config",
+      rootName: "config",
+      root: state.config
+    },
+    {
+      prefix: "$.repository",
+      rootName: "repository",
+      root: state.repository
+    },
+    {
+      prefix: "$.run",
+      rootName: "run",
+      root: state.run
+    },
+    {
+      prefix: "$.workspace",
+      rootName: "workspace",
+      root: state.workspace
+    }
+  ]) {
+    if (
+      reference === candidate.prefix ||
+      reference.startsWith(`${candidate.prefix}.`)
+    ) {
+      return resolveObjectReference(
+        reference,
+        candidate.prefix,
+        candidate.rootName,
+        candidate.root
       );
     }
-
-    return state.repository;
-  }
-
-  if (reference === "$.run") {
-    if (state.run === undefined) {
-      throw workflowStateError(
-        "Workflow input references missing run",
-        "workflow_reference_missing"
-      );
-    }
-
-    return state.run;
-  }
-
-  if (reference === "$.workspace") {
-    if (state.workspace === undefined) {
-      throw workflowStateError(
-        "Workflow input references missing workspace",
-        "workflow_reference_missing"
-      );
-    }
-
-    return state.workspace;
   }
 
   if (reference.startsWith("$.steps.")) {
-    const stepId = reference.slice("$.steps.".length);
+    const [stepId, ...pathSegments] = reference.slice("$.steps.".length).split(".");
 
     if (stepId === "") {
       throw workflowStateError(
@@ -69,7 +131,12 @@ function resolveReference(reference: string, state: WorkflowState): unknown {
       );
     }
 
-    return state.steps[stepId];
+    return valueAtPath(
+      reference,
+      `step output: ${stepId}`,
+      state.steps[stepId],
+      pathSegments
+    );
   }
 
   throw workflowStateError(

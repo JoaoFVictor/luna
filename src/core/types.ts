@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const NonEmptyStringSchema = z.string().min(1);
 
-export const TargetSchema = z.literal("github_pr");
+export const TargetSchema = z.enum(["github_pr", "jira_task"]);
 export type Target = z.infer<typeof TargetSchema>;
 
 export const RepositoryRefSchema = z
@@ -19,9 +19,9 @@ export const HeadRepositoryRefSchema = RepositoryRefSchema.extend({
 }).strict();
 export type HeadRepositoryRef = z.infer<typeof HeadRepositoryRefSchema>;
 
-export const InvocationSchema = z
+export const GithubPrInvocationSchema = z
   .object({
-    target: TargetSchema,
+    target: z.literal("github_pr"),
     owner: NonEmptyStringSchema,
     repo: NonEmptyStringSchema,
     pull_number: z.number().int().positive(),
@@ -37,6 +37,39 @@ export const InvocationSchema = z
     workflow: NonEmptyStringSchema.optional()
   })
   .strict();
+export type GithubPrInvocation = z.infer<typeof GithubPrInvocationSchema>;
+
+export const JiraTaskInvocationSchema = z
+  .object({
+    target: z.literal("jira_task"),
+    workflow: NonEmptyStringSchema,
+    jira: z
+      .object({
+        instance_id: NonEmptyStringSchema,
+        issue_key: NonEmptyStringSchema,
+        url: NonEmptyStringSchema,
+        summary: NonEmptyStringSchema,
+        description: z.string(),
+        acceptance_criteria: z.string(),
+        status: NonEmptyStringSchema,
+        issue_type: NonEmptyStringSchema
+      })
+      .strict(),
+    repository: z
+      .object({
+        provider: z.literal("github"),
+        owner: NonEmptyStringSchema,
+        name: NonEmptyStringSchema
+      })
+      .strict()
+  })
+  .strict();
+export type JiraTaskInvocation = z.infer<typeof JiraTaskInvocationSchema>;
+
+export const InvocationSchema = z.discriminatedUnion("target", [
+  GithubPrInvocationSchema,
+  JiraTaskInvocationSchema
+]);
 export type Invocation = z.infer<typeof InvocationSchema>;
 
 export const RepositoryConfigSchema = z
@@ -46,7 +79,8 @@ export const RepositoryConfigSchema = z
     owner: NonEmptyStringSchema,
     name: NonEmptyStringSchema,
     path: NonEmptyStringSchema,
-    remote: NonEmptyStringSchema
+    remote: NonEmptyStringSchema,
+    expected_remote_urls: z.array(NonEmptyStringSchema).optional()
   })
   .strict();
 export type RepositoryConfig = z.infer<typeof RepositoryConfigSchema>;
@@ -131,6 +165,216 @@ export const AppConfigSchema = z
   })
   .strict();
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+const JiraFieldConfigSchema = z
+  .object({
+    field_id: NonEmptyStringSchema,
+    format: NonEmptyStringSchema
+  })
+  .strict();
+
+export const JiraConfigSchema = z
+  .object({
+    instances: z.array(
+      z
+        .object({
+          id: NonEmptyStringSchema,
+          base_url: NonEmptyStringSchema,
+          repository_field: JiraFieldConfigSchema,
+          acceptance_criteria_field: JiraFieldConfigSchema.optional()
+        })
+        .strict()
+    )
+  })
+  .strict();
+export type JiraConfig = z.infer<typeof JiraConfigSchema>;
+
+export const ValidationCommandSchema = z
+  .object({
+    cmd: NonEmptyStringSchema,
+    args: z.array(z.string()).optional(),
+    timeout_ms: z.number().int().positive().optional()
+  })
+  .strict();
+export type ValidationCommand = z.infer<typeof ValidationCommandSchema>;
+
+export const ValidationCommandResultSchema = z
+  .object({
+    cmd: NonEmptyStringSchema,
+    args: z.array(z.string()).optional(),
+    exit_code: z.number().int().nullable(),
+    stdout: z.string(),
+    stderr: z.string(),
+    stdout_truncated: z.boolean(),
+    stderr_truncated: z.boolean(),
+    duration_ms: z.number().int().nonnegative(),
+    timed_out: z.boolean()
+  })
+  .strict();
+export type ValidationCommandResult = z.infer<
+  typeof ValidationCommandResultSchema
+>;
+
+export const ValidationResultSchema = z
+  .object({
+    passed: z.boolean(),
+    commands: z.array(ValidationCommandResultSchema).optional()
+  })
+  .strict();
+export type ValidationResult = z.infer<typeof ValidationResultSchema>;
+
+export const AgentLoopAttemptSchema = z
+  .object({
+    attempt: z.number().int().positive(),
+    phase: z.enum(["initial", "repair"]),
+    agent_output: z.unknown().optional(),
+    agent_error: z
+      .object({
+        message: NonEmptyStringSchema,
+        code: NonEmptyStringSchema.optional()
+      })
+      .strict()
+      .optional(),
+    validation: ValidationResultSchema.optional(),
+    diff_summary: z.unknown().optional(),
+    duration_ms: z.number().int().nonnegative().optional(),
+    truncated: z.boolean().optional()
+  })
+  .strict();
+export type AgentLoopAttempt = z.infer<typeof AgentLoopAttemptSchema>;
+
+export const AgentLoopResultSchema = z
+  .object({
+    status: z.enum(["passed", "failed"]),
+    attempts_exhausted: z.boolean(),
+    attempts: z.array(AgentLoopAttemptSchema),
+    validation: ValidationResultSchema,
+    final_validation: ValidationResultSchema,
+    result: z
+      .object({
+        status: NonEmptyStringSchema
+      })
+      .passthrough()
+  })
+  .strict();
+export type AgentLoopResult = z.infer<typeof AgentLoopResultSchema>;
+
+export const GitGateArtifactSchema = z
+  .object({
+    enabled: z.boolean(),
+    skipped: z.boolean(),
+    reason: NonEmptyStringSchema.optional()
+  })
+  .strict();
+export type GitGateArtifact = z.infer<typeof GitGateArtifactSchema>;
+
+export const CommitChangesArtifactSchema = GitGateArtifactSchema.extend({
+  commit_sha: NonEmptyStringSchema.optional(),
+  branch: NonEmptyStringSchema.optional()
+}).strict();
+export type CommitChangesArtifact = z.infer<typeof CommitChangesArtifactSchema>;
+
+export const PushBranchArtifactSchema = GitGateArtifactSchema.extend({
+  remote: NonEmptyStringSchema.optional(),
+  branch: NonEmptyStringSchema.optional()
+}).strict();
+export type PushBranchArtifact = z.infer<typeof PushBranchArtifactSchema>;
+
+export const PullRequestArtifactSchema = GitGateArtifactSchema.extend({
+  provider: z.literal("github").optional(),
+  url: NonEmptyStringSchema.optional()
+}).strict();
+export type PullRequestArtifact = z.infer<typeof PullRequestArtifactSchema>;
+
+export const ImplementationConfigSchema = z
+  .object({
+    implementation: z
+      .object({
+        branch_pattern: NonEmptyStringSchema,
+        commit: z
+          .object({
+            enabled: z.boolean()
+          })
+          .strict(),
+        push: z
+          .object({
+            enabled: z.boolean(),
+            remote: NonEmptyStringSchema
+          })
+          .strict(),
+        pull_request: z
+          .object({
+            enabled: z.boolean(),
+            provider: z.literal("github"),
+            draft: z.boolean(),
+            base_ref: NonEmptyStringSchema
+          })
+          .strict(),
+        sandbox: z
+          .object({
+            type: z.literal("trusted_host_local"),
+            env_allowlist: z.array(NonEmptyStringSchema)
+          })
+          .strict(),
+        validation: z
+          .object({
+            repair_attempts: z.number().int().nonnegative(),
+            max_output_bytes: z.number().int().positive(),
+            commands: z.array(ValidationCommandSchema)
+          })
+          .strict()
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((config, context) => {
+    if (config.implementation.push.enabled && !config.implementation.commit.enabled) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "push.enabled requires commit.enabled",
+        path: ["implementation", "push", "enabled"]
+      });
+    }
+
+    if (
+      config.implementation.pull_request.enabled &&
+      !config.implementation.push.enabled
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "pull_request.enabled requires push.enabled",
+        path: ["implementation", "pull_request", "enabled"]
+      });
+    }
+  });
+export type ImplementationConfig = z.infer<typeof ImplementationConfigSchema>;
+
+export const LunaAuthConfigSchema = z
+  .object({
+    providers: z
+      .object({
+        jira: z
+          .record(
+            z
+              .object({
+                base_url: NonEmptyStringSchema,
+                auth_type: z.literal("basic_api_token"),
+                email: NonEmptyStringSchema,
+                api_token: NonEmptyStringSchema
+              })
+              .strict()
+          )
+          .optional()
+      })
+      .strict()
+  })
+  .strict();
+export type LunaAuthConfig = z.infer<typeof LunaAuthConfigSchema>;
+
+export type RuntimeConfigState = {
+  jira?: JiraConfig;
+  implementation?: ImplementationConfig["implementation"];
+};
 
 export const RunIdentitySchema = z
   .object({

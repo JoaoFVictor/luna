@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveWorkflowInput } from "../../src/core/workflow-state.js";
+import {
+  resolveWorkflowInput,
+  type WorkflowState
+} from "../../src/core/workflow-state.js";
 
 describe("workflow state", () => {
   it("resolves invocation and step references in configured node input", () => {
@@ -49,6 +52,39 @@ describe("workflow state", () => {
       repository: { owner: "octo", repo: "hello" },
       run: { id: "run-123" },
       workspace: { path: "/tmp/workspace" }
+    });
+  });
+
+  it("resolves flattened config references", () => {
+    expect(
+      resolveWorkflowInput(
+        {
+          commands: "$.config.implementation.validation.commands",
+          invocation: "$.invocation",
+          cwd: "$.workspace.path"
+        },
+        {
+          invocation: { target: "jira_task" },
+          workspace: {
+            run_id: "run-1",
+            path: "/tmp/worktree",
+            preserved: true,
+            reason: "created"
+          },
+          steps: {},
+          config: {
+            implementation: {
+              validation: {
+                commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }]
+              }
+            }
+          }
+        } as WorkflowState
+      )
+    ).toEqual({
+      commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
+      invocation: { target: "jira_task" },
+      cwd: "/tmp/worktree"
     });
   });
 

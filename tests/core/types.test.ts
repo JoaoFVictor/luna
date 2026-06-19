@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   AcceptanceDecisionSchema,
+  AgentLoopResultSchema,
   AppConfigSchema,
   CodeReviewFindingsSchema,
   EvidenceRefSchema,
   FileExcerptSchema,
+  GitGateArtifactSchema,
+  ImplementationConfigSchema,
   InvocationSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RepoContextSchema,
   ReviewPlanSchema,
-  RoutingConfigSchema
+  RoutingConfigSchema,
+  ValidationResultSchema
 } from "../../src/core/types.js";
 
 const validInvocation = {
@@ -110,7 +114,7 @@ const plannedAppConfig = {
     preserve_on_failure: true
   },
   artifacts: {
-    root: ".runs/code-review"
+    root: ".runs"
   }
 };
 
@@ -149,6 +153,135 @@ const validAcceptanceDecision = {
 describe("core zod schemas", () => {
   it("accepts a valid normalized GitHub PR invocation", () => {
     expect(InvocationSchema.parse(validInvocation)).toEqual(validInvocation);
+  });
+
+  it("accepts jira_task invocations", () => {
+    expect(
+      InvocationSchema.parse({
+        target: "jira_task",
+        workflow: "implementation",
+        jira: {
+          instance_id: "company",
+          issue_key: "ABC-123",
+          url: "https://company.atlassian.net/browse/ABC-123",
+          summary: "Fix checkout validation",
+          description: "Reject invalid checkout payloads.",
+          acceptance_criteria: "Invalid payloads fail validation.",
+          status: "To Do",
+          issue_type: "Task"
+        },
+        repository: {
+          provider: "github",
+          owner: "swinggo-dev",
+          name: "swg-front-nuxt"
+        }
+      })
+    ).toMatchObject({ target: "jira_task" });
+  });
+
+  it("accepts implementation config with structured validation commands", () => {
+    expect(
+      ImplementationConfigSchema.parse({
+        implementation: {
+          branch_pattern: "feature/{slug}",
+          commit: { enabled: false },
+          push: { enabled: false, remote: "origin" },
+          pull_request: {
+            enabled: false,
+            provider: "github",
+            draft: true,
+            base_ref: "main"
+          },
+          sandbox: { type: "trusted_host_local", env_allowlist: [] },
+          validation: {
+            repair_attempts: 1,
+            max_output_bytes: 200000,
+            commands: [
+              { cmd: "npm", args: ["test"], timeout_ms: 120000 },
+              { cmd: "npm", args: ["run", "typecheck"], timeout_ms: 120000 }
+            ]
+          }
+        }
+      })
+    ).toBeDefined();
+  });
+
+  it("accepts implementation runtime result artifacts", () => {
+    expect(
+      ValidationResultSchema.parse({
+        passed: false,
+        commands: [
+          {
+            cmd: "npm",
+            args: ["test"],
+            exit_code: 1,
+            stdout: "",
+            stderr: "failed",
+            stdout_truncated: false,
+            stderr_truncated: false,
+            duration_ms: 42,
+            timed_out: false
+          }
+        ]
+      })
+    ).toMatchObject({ passed: false });
+
+    expect(
+      AgentLoopResultSchema.parse({
+        status: "failed",
+        attempts_exhausted: true,
+        attempts: [],
+        validation: { passed: false },
+        final_validation: { passed: false },
+        result: { status: "failed", summary: "Validation failed." }
+      })
+    ).toMatchObject({ status: "failed" });
+
+    expect(
+      GitGateArtifactSchema.parse({
+        enabled: true,
+        skipped: true,
+        reason: "validation_failed"
+      })
+    ).toMatchObject({ skipped: true });
+  });
+
+  it("requires validation and result status on agent loop result artifacts", () => {
+    expect(
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        validation: { passed: true },
+        final_validation: { passed: true },
+        result: { status: "passed", summary: "Validation passed." }
+      })
+    ).toMatchObject({
+      status: "passed",
+      validation: { passed: true },
+      final_validation: { passed: true }
+    });
+
+    expect(() =>
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        final_validation: { passed: true },
+        result: { status: "passed", summary: "Validation passed." }
+      })
+    ).toThrow();
+
+    expect(() =>
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        validation: { passed: true },
+        final_validation: { passed: true },
+        result: { summary: "Validation passed." }
+      })
+    ).toThrow();
   });
 
   it("rejects a GitHub PR invocation when head_sha is missing", () => {

@@ -51,7 +51,9 @@ const acceptance: AcceptanceDecision = {
 };
 
 async function readJson<T>(root: string, name: string): Promise<T> {
-  return JSON.parse(await readFile(path.join(root, runId, name), "utf8")) as T;
+  return JSON.parse(
+    await readFile(path.join(root, "code-review", runId, name), "utf8")
+  ) as T;
 }
 
 async function pathExists(filePath: string): Promise<boolean> {
@@ -196,12 +198,12 @@ describe("configured code review workflow end-to-end with real Git", () => {
         })
       ])
     );
-    await expect(pathExists(path.join(artifactRoot, runId, "final-report.json"))).resolves.toBe(
-      true
-    );
-    await expect(pathExists(path.join(artifactRoot, runId, "final-report.md"))).resolves.toBe(
-      true
-    );
+    await expect(
+      pathExists(path.join(artifactRoot, "code-review", runId, "final-report.json"))
+    ).resolves.toBe(true);
+    await expect(
+      pathExists(path.join(artifactRoot, "code-review", runId, "final-report.md"))
+    ).resolves.toBe(true);
     expect(workspace.path).toContain(path.join(workspaceRoot, fixture.repository.id));
     expect(collectedRepositoryPaths).toEqual([workspace.path]);
     expect(collectedRepositoryPaths[0]).not.toBe(fixture.repository.path);

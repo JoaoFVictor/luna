@@ -2,7 +2,7 @@ import { runGit as defaultRunGit } from "./git.js";
 import type {
   ChangedFile,
   FileExcerpt,
-  Invocation,
+  GithubPrInvocation,
   RepoContext,
   RepositoryConfig
 } from "./types.js";
@@ -10,7 +10,7 @@ import type {
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
 type CollectRepoContextOptions = {
-  invocation: Invocation;
+  invocation: GithubPrInvocation;
   repository: RepositoryConfig;
   runGit?: RunGit;
   maxChangedFiles?: number;

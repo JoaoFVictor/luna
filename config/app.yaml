@@ -4,4 +4,4 @@ workspace:
   preserve_on_success: false
   preserve_on_failure: true
 artifacts:
-  root: .runs/code-review
+  root: .runs

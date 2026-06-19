@@ -11,6 +11,8 @@ import {
 import { resolveModelProfiles } from "../../src/core/model-config.js";
 import {
   AppConfigSchema,
+  ImplementationConfigSchema,
+  JiraConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RoutingConfigSchema
@@ -18,6 +20,8 @@ import {
 
 const configSchemas = {
   "app.yaml": AppConfigSchema,
+  "implementation.yaml": ImplementationConfigSchema,
+  "jira.yaml": JiraConfigSchema,
   "models.yaml": ModelsConfigSchema,
   "repositories.yaml": RepositoriesConfigSchema,
   "routing.yaml": RoutingConfigSchema

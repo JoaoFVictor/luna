@@ -28,6 +28,12 @@ function invocationSlug(invocation: InvocationWithOptionalId): string {
     return slugify(invocation.invocation_id);
   }
 
+  if (invocation.target === "jira_task") {
+    return slugify(
+      `${invocation.repository.provider}-${invocation.repository.owner}-${invocation.repository.name}-jira-${invocation.jira.issue_key}`
+    );
+  }
+
   return slugify(
     `${invocation.owner}-${invocation.repo}-pr-${invocation.pull_number}`
   );

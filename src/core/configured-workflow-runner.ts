@@ -20,7 +20,8 @@ import {
 import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import { createRunIdentity as defaultCreateRunIdentity } from "./run-identity.js";
-import { safeJoin } from "./path-security.js";
+import { assertSafeSegment, safeJoin } from "./path-security.js";
+import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
 import {
   loadWorkflowDefinition,
   type WorkflowNode
@@ -29,6 +30,8 @@ import { resolveWorkflowInput, type WorkflowState } from "./workflow-state.js";
 import { resolveRepository as defaultResolveRepository } from "./workspace-resolver.js";
 import {
   AppConfigSchema,
+  ImplementationConfigSchema,
+  JiraConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RoutingConfigSchema,
@@ -39,8 +42,11 @@ import {
   type RepositoriesConfig,
   type RepositoryConfig,
   type RouteTarget,
+  type RuntimeConfigState,
   type RoutingConfig,
   type RunIdentity,
+  type ValidationCommand,
+  ValidationCommandSchema,
   type WorkspaceRecord
 } from "./types.js";
 
@@ -51,6 +57,37 @@ export type RunAgentStepOptions = {
   node: Extract<WorkflowNode, { type: "agent" }>;
   model: ReturnType<typeof toFlueModelOptions>;
   input: Record<string, unknown>;
+  state: WorkflowState;
+};
+
+type AgentLoopWorkflowNode = Extract<WorkflowNode, { type: "agent_loop" }>;
+
+type ResolvedAgentLoopNode = Omit<
+  AgentLoopWorkflowNode,
+  "sandbox" | "validation" | "repair"
+> & {
+  sandbox: {
+    type: "trusted_host_local";
+    cwd: string;
+    env_allowlist: string[];
+  };
+  validation: {
+    commands: ValidationCommand[];
+    max_output_bytes: number;
+  };
+  repair: {
+    attempts: number;
+  };
+};
+
+export type RunAgentLoopStepOptions = {
+  agent: AgentDefinition;
+  node: ResolvedAgentLoopNode;
+  model: ReturnType<typeof toFlueModelOptions>;
+  input: Record<string, unknown>;
+  sandbox: ResolvedAgentLoopNode["sandbox"];
+  validation: ResolvedAgentLoopNode["validation"];
+  repair: ResolvedAgentLoopNode["repair"];
   state: WorkflowState;
 };
 
@@ -67,6 +104,9 @@ export type ConfiguredWorkflowRunnerDependencies = {
   ) => RepositoryConfig;
   runBuiltInStep?: (options: RunBuiltInStepOptions) => MaybePromise<unknown>;
   runAgentStep?: (options: RunAgentStepOptions) => MaybePromise<unknown>;
+  runAgentLoopStep?: (
+    options: RunAgentLoopStepOptions
+  ) => MaybePromise<unknown>;
   cleanupWorktree?: typeof defaultCleanupWorktree;
   builtInStepDependencies?: BuiltInStepDependencies;
   ArtifactStore?: typeof ArtifactStore;
@@ -141,6 +181,7 @@ async function loadConfigs(configRoot: string): Promise<{
   repositories: RepositoriesConfig;
   routing: RoutingConfig;
   models: ModelsConfig;
+  runtimeConfig: RuntimeConfigState;
 }> {
   const app = await loadYamlFile(
     path.join(configRoot, "app.yaml"),
@@ -158,8 +199,38 @@ async function loadConfigs(configRoot: string): Promise<{
     path.join(configRoot, "models.yaml"),
     ModelsConfigSchema
   );
+  const runtimeConfig = await loadRuntimeConfig(configRoot);
 
-  return { app, repositories, routing, models };
+  return { app, repositories, routing, models, runtimeConfig };
+}
+
+async function loadRuntimeConfig(
+  configRoot: string
+): Promise<RuntimeConfigState> {
+  const jiraPath = path.join(configRoot, "jira.yaml");
+  const implementationPath = path.join(configRoot, "implementation.yaml");
+  const [jira, implementation] = await Promise.all([
+    loadOptionalYamlFile(jiraPath, JiraConfigSchema),
+    loadOptionalYamlFile(implementationPath, ImplementationConfigSchema)
+  ]);
+
+  return {
+    ...(jira === undefined ? {} : { jira }),
+    ...(implementation === undefined
+      ? {}
+      : { implementation: implementation.implementation })
+  };
+}
+
+async function loadOptionalYamlFile<T>(
+  filePath: string,
+  schema: { parse(value: unknown): T }
+): Promise<T | undefined> {
+  if (!(await pathExists(filePath))) {
+    return undefined;
+  }
+
+  return await loadYamlFile(filePath, schema);
 }
 
 function workflowIdFromRoute(
@@ -284,7 +355,11 @@ function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
 }
 
 function isFinalReportNode(node: WorkflowNode): boolean {
-  return node.type === "built_in" && node.uses === "final_code_review_report";
+  return (
+    node.type === "built_in" &&
+    (node.uses === "final_code_review_report" ||
+      node.uses === "final_implementation_report")
+  );
 }
 
 function finalReportFrom(output: unknown): FinalReportJson | undefined {
@@ -313,6 +388,15 @@ async function markdownArtifactPath({
   }
 
   return await safeJoin(artifactRoot, [runId, node.artifact.markdown]);
+}
+
+function artifactRootForWorkflow(root: string, rootNamespace?: string): string {
+  if (rootNamespace === undefined) {
+    return root;
+  }
+
+  assertSafeSegment(rootNamespace);
+  return path.join(root, rootNamespace);
 }
 
 async function writeJsonBestEffort(
@@ -390,6 +474,9 @@ async function finalizeSuccessWorkspace({
   persistedWorkspaceRecord,
   repository,
   workspaceConfig,
+  workflowMode,
+  implementationConfig,
+  steps,
   cleanupWorktree
 }: {
   artifactStore: ArtifactStore;
@@ -397,10 +484,26 @@ async function finalizeSuccessWorkspace({
   persistedWorkspaceRecord?: WorkspaceRecord;
   repository?: RepositoryConfig;
   workspaceConfig: AppConfig["workspace"];
+  workflowMode: "git_managed_read_only" | "git_managed_write";
+  implementationConfig?: RuntimeConfigState["implementation"];
+  steps: Record<string, unknown>;
   cleanupWorktree: typeof defaultCleanupWorktree;
 }): Promise<WorkspaceRecord | undefined> {
   if (workspaceRecord === undefined) {
     return undefined;
+  }
+
+  if (workflowMode === "git_managed_write") {
+    return await finalizeWriteSuccessWorkspace({
+      artifactStore,
+      workspaceRecord,
+      persistedWorkspaceRecord,
+      repository,
+      workspaceConfig,
+      implementationConfig,
+      steps,
+      cleanupWorktree
+    });
   }
 
   let finalWorkspace: WorkspaceRecord;
@@ -445,6 +548,204 @@ async function finalizeSuccessWorkspace({
   return finalWorkspace;
 }
 
+async function finalizeWriteSuccessWorkspace({
+  artifactStore,
+  workspaceRecord,
+  persistedWorkspaceRecord,
+  repository,
+  workspaceConfig,
+  implementationConfig,
+  steps,
+  cleanupWorktree
+}: {
+  artifactStore: ArtifactStore;
+  workspaceRecord: WorkspaceRecord;
+  persistedWorkspaceRecord?: WorkspaceRecord;
+  repository?: RepositoryConfig;
+  workspaceConfig: AppConfig["workspace"];
+  implementationConfig?: RuntimeConfigState["implementation"];
+  steps: Record<string, unknown>;
+  cleanupWorktree: typeof defaultCleanupWorktree;
+}): Promise<WorkspaceRecord> {
+  const lifecycle = shouldPreserveWriteWorkspace({
+    commitEnabled: implementationConfig?.commit.enabled ?? false,
+    validationPassed: validationPassedFromSteps(steps),
+    acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
+    commitSkippedOrFailed: commitSkippedOrFailed(
+      implementationConfig?.commit.enabled ?? false,
+      steps.commit ?? steps.commit_changes
+    ),
+    pushSkippedOrFailed: pushSkippedOrFailed(
+      implementationConfig?.push.enabled ?? false,
+      steps.push ?? steps.push_branch
+    ),
+    pullRequestSkippedOrFailed: pullRequestSkippedOrFailed(
+      implementationConfig?.pull_request.enabled ?? false,
+      steps.pull_request ?? steps.open_pull_request
+    )
+  });
+
+  if (lifecycle.preserve) {
+    const finalWorkspace = {
+      ...workspaceRecord,
+      preserved: true,
+      reason: lifecycle.reason
+    };
+    await artifactStore.writeJson("workspace.json", finalWorkspace);
+    return finalWorkspace;
+  }
+
+  if (repository === undefined) {
+    await artifactStore.writeJson("workspace.json", workspaceRecord);
+    return workspaceRecord;
+  }
+
+  try {
+    const finalWorkspace = await cleanupWorktree({
+      repositoryPath: repository.path,
+      workspaceRoot: workspaceConfig.root,
+      workspaceRecord,
+      persistedWorkspaceRecord
+    });
+    await artifactStore.writeJson("workspace.json", finalWorkspace);
+    return finalWorkspace;
+  } catch (cause) {
+    const failedWorkspace = {
+      ...workspaceRecord,
+      preserved: true,
+      reason: "success_cleanup_failed"
+    };
+    await artifactStore.writeJson("workspace.json", failedWorkspace);
+    const error = configuredWorkflowError(
+      "Successful implementation workspace cleanup failed",
+      "success_cleanup_failed",
+      cause
+    );
+    (error as Error & { workspaceRecord?: WorkspaceRecord }).workspaceRecord =
+      failedWorkspace;
+    throw error;
+  }
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function booleanAt(
+  value: unknown,
+  pathSegments: readonly string[]
+): boolean | undefined {
+  let current = value;
+
+  for (const segment of pathSegments) {
+    const record = recordValue(current);
+    if (record === undefined) {
+      return undefined;
+    }
+
+    current = record[segment];
+  }
+
+  return typeof current === "boolean" ? current : undefined;
+}
+
+function validationPassedFromSteps(steps: Record<string, unknown>): boolean {
+  for (const value of Object.values(steps)) {
+    const passed =
+      booleanAt(value, ["final_validation", "passed"]) ??
+      booleanAt(value, ["validation", "passed"]) ??
+      booleanAt(value, ["passed"]);
+
+    if (passed !== undefined) {
+      return passed;
+    }
+  }
+
+  return false;
+}
+
+function acceptanceAcceptedFromSteps(steps: Record<string, unknown>): boolean {
+  const acceptance = recordValue(
+    steps.acceptance ?? steps.implementation_acceptance
+  );
+
+  if (acceptance === undefined) {
+    return false;
+  }
+
+  return acceptance.status === "accepted" || acceptance.decision === "approve";
+}
+
+function gateSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
+  if (!gateEnabled) {
+    return false;
+  }
+
+  const record = recordValue(value);
+  if (record === undefined) {
+    return true;
+  }
+
+  return record.skipped === true || record.status === "failed";
+}
+
+function nonEmptyString(value: unknown): boolean {
+  return typeof value === "string" && value !== "";
+}
+
+function positiveInteger(value: unknown): boolean {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function gateSkippedOrFailedWithoutEvidence(
+  gateEnabled: boolean,
+  value: unknown,
+  hasSuccessEvidence: (record: Record<string, unknown>) => boolean
+): boolean {
+  if (!gateEnabled) {
+    return false;
+  }
+
+  if (gateSkippedOrFailed(gateEnabled, value)) {
+    return true;
+  }
+
+  const record = recordValue(value);
+  return record === undefined || !hasSuccessEvidence(record);
+}
+
+function commitSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
+  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) =>
+    nonEmptyString(record.commit_sha)
+  );
+}
+
+function pushSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
+  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) => {
+    if (record.pushed === true) {
+      return true;
+    }
+
+    return (
+      nonEmptyString(record.remote) &&
+      (nonEmptyString(record.branch) || nonEmptyString(record.ref))
+    );
+  });
+}
+
+function pullRequestSkippedOrFailed(
+  gateEnabled: boolean,
+  value: unknown
+): boolean {
+  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) =>
+    nonEmptyString(record.url) || positiveInteger(record.number)
+  );
+}
+
 function resolveAgentModel(
   agent: AgentDefinition,
   modelProfiles: ResolvedModelProfiles
@@ -461,6 +762,93 @@ function resolveAgentModel(
   return toFlueModelOptions(profile);
 }
 
+function validateAgentLoopCommands(value: unknown): ValidationCommand[] {
+  const parsed = ValidationCommandSchema.array().safeParse(value);
+
+  if (!parsed.success) {
+    throw configuredWorkflowError(
+      "Agent loop validation.commands must resolve to structured validation commands",
+      "agent_loop_validation_commands_invalid",
+      parsed.error
+    );
+  }
+
+  return parsed.data;
+}
+
+function validatePositiveInteger(
+  value: unknown,
+  message: string,
+  code: string
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value <= 0
+  ) {
+    throw configuredWorkflowError(message, code);
+  }
+
+  return value;
+}
+
+function validateNonnegativeInteger(
+  value: unknown,
+  message: string,
+  code: string
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    throw configuredWorkflowError(message, code);
+  }
+
+  return value;
+}
+
+function resolveAgentLoopNode(
+  node: AgentLoopWorkflowNode,
+  state: WorkflowState
+): ResolvedAgentLoopNode {
+  const sandbox = resolveWorkflowInput(node.sandbox, state);
+  const validation = resolveWorkflowInput(node.validation, state);
+  const repair = resolveWorkflowInput(node.repair, state);
+  const cwd = sandbox.cwd;
+
+  if (typeof cwd !== "string" || cwd === "") {
+    throw configuredWorkflowError(
+      "Agent loop sandbox.cwd must resolve to a path",
+      "agent_loop_sandbox_cwd_invalid"
+    );
+  }
+
+  return {
+    ...node,
+    sandbox: {
+      type: "trusted_host_local",
+      cwd,
+      env_allowlist: node.sandbox.env_allowlist
+    },
+    validation: {
+      commands: validateAgentLoopCommands(validation.commands),
+      max_output_bytes: validatePositiveInteger(
+        validation.max_output_bytes,
+        "Agent loop validation.max_output_bytes must resolve to a number",
+        "agent_loop_validation_max_output_bytes_invalid"
+      )
+    },
+    repair: {
+      attempts: validateNonnegativeInteger(
+        repair.attempts,
+        "Agent loop repair.attempts must resolve to a number",
+        "agent_loop_repair_attempts_invalid"
+      )
+    }
+  };
+}
+
 async function runWorkflowNode(
   node: WorkflowNode,
   state: WorkflowState,
@@ -475,8 +863,34 @@ async function runWorkflowNode(
     return await runBuiltInStep({
       uses: node.uses,
       state,
-      input: node.input,
+      input:
+        node.input === undefined
+          ? undefined
+          : resolveWorkflowInput(node.input, state),
       dependencies: dependencies.builtInStepDependencies
+    });
+  }
+
+  if (node.type === "agent_loop") {
+    if (dependencies.runAgentLoopStep === undefined) {
+      throw configuredWorkflowError(
+        `No agent loop runner configured for node: ${node.id}`,
+        "agent_loop_runner_missing"
+      );
+    }
+
+    const agent = await loadAgentDefinition(agentsRoot, node.agent);
+    const resolvedNode = resolveAgentLoopNode(node, state);
+
+    return await dependencies.runAgentLoopStep({
+      agent,
+      node: resolvedNode,
+      model: resolveAgentModel(agent, modelProfiles),
+      input: resolveWorkflowInput(node.input, state),
+      sandbox: resolvedNode.sandbox,
+      validation: resolvedNode.validation,
+      repair: resolvedNode.repair,
+      state
     });
   }
 
@@ -512,7 +926,7 @@ export async function runConfiguredWorkflow({
     dependencies.createRunIdentity ?? defaultCreateRunIdentity;
   const Store = dependencies.ArtifactStore ?? ArtifactStore;
   const run = makeRunIdentity(invocation, attempt, dependencies.now?.());
-  const artifactStore = new Store(configs.app.artifacts.root, run.run_id);
+  let artifactStore = new Store(configs.app.artifacts.root, run.run_id);
   const modelProfiles = resolveModelProfiles(configs.models);
   const resolvedAgentsRoot = await resolveConfiguredDirectoryRoot(
     configRoot,
@@ -533,9 +947,6 @@ export async function runConfiguredWorkflow({
   let workspaceRecord: WorkspaceRecord | undefined;
   let persistedWorkspaceRecord: WorkspaceRecord | undefined;
 
-  await artifactStore.writeJson("invocation.json", invocation);
-  await artifactStore.writeJson("run.json", run);
-
   try {
     workflowId = workflowIdFromRoute(
       invocation,
@@ -550,10 +961,25 @@ export async function runConfiguredWorkflow({
       resolvedWorkflowsRoot,
       workflowId
     );
+    artifactStore = new Store(
+      artifactRootForWorkflow(
+        configs.app.artifacts.root,
+        workflow.artifacts?.root_namespace
+      ),
+      run.run_id
+    );
+    await artifactStore.writeJson("invocation.json", invocation);
+    await artifactStore.writeJson("run.json", run);
+
     const state: WorkflowState = {
       invocation,
+      config: configs.runtimeConfig,
       repository,
       run,
+      workflow: {
+        id: workflow.id,
+        mode: workflow.mode
+      },
       workspaceRoot: configs.app.workspace.root,
       steps: {}
     };
@@ -575,7 +1001,11 @@ export async function runConfiguredWorkflow({
       );
 
       state.steps[node.id] = output;
-      if (node.type === "built_in" && node.uses === "prepare_worktree") {
+      if (
+        node.type === "built_in" &&
+        (node.uses === "prepare_worktree" ||
+          node.uses === "prepare_implementation_worktree")
+      ) {
         if (isWorkspaceRecord(output)) {
           state.workspace = output;
           workspaceRecord = output;
@@ -592,6 +1022,9 @@ export async function runConfiguredWorkflow({
       persistedWorkspaceRecord,
       repository,
       workspaceConfig: configs.app.workspace,
+      workflowMode: workflow.mode,
+      implementationConfig: configs.runtimeConfig.implementation,
+      steps: state.steps,
       cleanupWorktree
     });
     if (finalWorkspace !== undefined) {
@@ -602,7 +1035,7 @@ export async function runConfiguredWorkflow({
     let report: FinalReportJson | undefined;
     for (const node of deferredFinalReportNodes) {
       const reportPath = await markdownArtifactPath({
-        artifactRoot: configs.app.artifacts.root,
+        artifactRoot: artifactStore.artifactRoot,
         runId: run.run_id,
         node
       });
@@ -681,7 +1114,7 @@ export async function runConfiguredWorkflow({
       run,
       ...(workflowId === undefined ? {} : { workflow_id: workflowId }),
       error: artifact,
-      workspace: finalWorkspace
+      ...(finalWorkspace === undefined ? {} : { workspace: finalWorkspace })
     };
   }
 }

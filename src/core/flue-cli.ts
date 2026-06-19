@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
 import { fetchGitHubPullRequestInvocation } from "./github-pr-adapter.js";
+import { fetchJiraTaskInvocation } from "./jira-adapter.js";
 import { InvocationSchema, type Invocation } from "./types.js";
 
 export type CliArgs = {
@@ -29,6 +30,7 @@ export type MainDependencies = {
   execute?: (command: string, args: string[]) => Promise<number>;
   buildCommand?: (invocation: Invocation) => Promise<FlueRunCommand>;
   loadPullRequestInvocation?: (url: string) => Promise<Invocation>;
+  loadJiraTaskInvocation?: (url: string) => Promise<Invocation>;
 };
 
 type PackageJsonWithBin = {
@@ -257,6 +259,9 @@ export async function main(
   } else if (parsedArgs.from === "github-pr-url") {
     invocation = await (deps.loadPullRequestInvocation ??
       fetchGitHubPullRequestInvocation)(parsedArgs.value);
+  } else if (parsedArgs.from === "jira-task-url") {
+    invocation = await (deps.loadJiraTaskInvocation ??
+      fetchJiraTaskInvocation)(parsedArgs.value);
   } else {
     throw cliError(
       "unknown_input_adapter",

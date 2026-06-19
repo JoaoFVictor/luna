@@ -5,7 +5,11 @@ import {
 import path from "node:path";
 import { runGit as defaultRunGit } from "./git.js";
 import { isInsideRoot, safeJoin } from "./path-security.js";
-import type { Invocation, RepositoryConfig, WorkspaceRecord } from "./types.js";
+import type {
+  GithubPrInvocation,
+  RepositoryConfig,
+  WorkspaceRecord
+} from "./types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Mkdir = (
@@ -54,11 +58,11 @@ function isMissingCommitError(cause: unknown): boolean {
   );
 }
 
-function pullHeadRef(invocation: Invocation, remote: string): string {
+function pullHeadRef(invocation: GithubPrInvocation, remote: string): string {
   return `+refs/pull/${invocation.pull_number}/head:refs/remotes/${remote}/pull/${invocation.pull_number}/head`;
 }
 
-function fetchedPullHeadRef(invocation: Invocation, remote: string): string {
+function fetchedPullHeadRef(invocation: GithubPrInvocation, remote: string): string {
   return `refs/remotes/${remote}/pull/${invocation.pull_number}/head`;
 }
 
@@ -135,7 +139,7 @@ export async function prepare({
   runGit = defaultRunGit,
   mkdir = fsMkdir
 }: {
-  invocation: Invocation;
+  invocation: GithubPrInvocation;
   repository: RepositoryConfig;
   workspaceRoot: string;
   runId: string;

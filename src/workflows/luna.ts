@@ -1,14 +1,22 @@
 import { readFile } from "node:fs/promises";
 import { createAgent, type FlueContext } from "@flue/runtime";
+import { local } from "@flue/runtime/node";
 import * as v from "valibot";
 import type { GenericSchema } from "valibot";
 import {
+  runAgentLoopStateMachine,
+  type RunWritableAgentInput
+} from "../core/agent-loop-runner.js";
+import {
   runConfiguredWorkflow,
   type ConfiguredWorkflowResult,
+  type RunAgentLoopStepOptions,
   type RunAgentStepOptions
 } from "../core/configured-workflow-runner.js";
 import { registerConfiguredPiOAuthProviders } from "../core/pi-auth.js";
 import type { Invocation } from "../core/types.js";
+import { runValidationCommands } from "../core/validation-runner.js";
+import { collectWorktreeDiff } from "../core/worktree-diff-collector.js";
 
 function codedError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };
@@ -18,6 +26,20 @@ function codedError(message: string, code: string): Error & { code: string } {
 
 function promptBody(value: unknown): string {
   return JSON.stringify(value, null, 2);
+}
+
+function allowlistedEnv(
+  allowlist: readonly string[]
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+
+  for (const name of allowlist) {
+    if (process.env[name] !== undefined) {
+      env[name] = process.env[name];
+    }
+  }
+
+  return env;
 }
 
 type JsonSchema = {
@@ -219,6 +241,89 @@ async function runFlueAgentStep(
   return response.data;
 }
 
+function writableAgentPrompt(
+  options: RunAgentLoopStepOptions,
+  input: RunWritableAgentInput
+): string {
+  return [
+    options.agent.description,
+    "You are running in trusted host-local mode. Make changes only in the configured worktree and return structured output matching the configured schema.",
+    promptBody({
+      phase: input.phase,
+      attempt: input.attempt,
+      workflow_input: options.input,
+      previous_validation: input.previousValidation,
+      previous_error: input.previousError,
+      diff_summary: input.diffSummary
+    })
+  ].join("\n\n");
+}
+
+async function runWritableAgent(
+  ctx: FlueContext<Invocation>,
+  options: RunAgentLoopStepOptions,
+  input: RunWritableAgentInput
+): Promise<unknown> {
+  const agent = createAgent(async () => ({
+    description: options.agent.description,
+    instructions: await readFile(options.agent.instructionsPath, "utf8"),
+    cwd: options.sandbox.cwd,
+    sandbox: local({
+      cwd: options.sandbox.cwd,
+      env: allowlistedEnv(options.sandbox.env_allowlist)
+    }),
+    ...options.model
+  }));
+  const harness = await ctx.init(agent, { name: options.agent.id });
+  const session = await harness.session();
+  const response = await session.prompt(writableAgentPrompt(options, input), {
+    result: await resultSchema(options.agent.outputSchemaPath),
+    ...options.model
+  });
+
+  return response.data;
+}
+
+async function runFlueAgentLoopStep(
+  ctx: FlueContext<Invocation>,
+  options: RunAgentLoopStepOptions
+): Promise<unknown> {
+  if (options.sandbox.type !== "trusted_host_local") {
+    throw codedError(
+      `Unsupported agent_loop sandbox type: ${String(options.sandbox.type)}`,
+      "agent_loop_sandbox_unsupported"
+    );
+  }
+
+  if (options.agent.mode !== "trusted_host_local_write") {
+    throw codedError(
+      `Agent ${options.agent.id} must declare trusted_host_local_write for trusted_host_local execution`,
+      "trusted_host_local_agent_mode_required"
+    );
+  }
+
+  return await runAgentLoopStateMachine({
+    cwd: options.sandbox.cwd,
+    prompt: options.input,
+    repairAttempts: options.repair.attempts,
+    dependencies: {
+      runWritableAgent: async (input) =>
+        await runWritableAgent(ctx, options, input),
+      runValidation: async () =>
+        await runValidationCommands({
+          cwd: options.sandbox.cwd,
+          commands: options.validation.commands,
+          maxOutputBytes: options.validation.max_output_bytes
+        }),
+      collectDiffSummary: async () =>
+        await collectWorktreeDiff({
+          cwd: options.sandbox.cwd,
+          maxDiffBytes: options.validation.max_output_bytes
+        })
+    }
+  });
+}
+
 export async function runWithFlue(
   ctx: FlueContext<Invocation>
 ): Promise<ConfiguredWorkflowResult> {
@@ -230,7 +335,9 @@ export async function runWithFlue(
     configRoot,
     dependencies: {
       runAgentStep: async (agentStepOptions) =>
-        await runFlueAgentStep(ctx, agentStepOptions)
+        await runFlueAgentStep(ctx, agentStepOptions),
+      runAgentLoopStep: async (agentLoopStepOptions) =>
+        await runFlueAgentLoopStep(ctx, agentLoopStepOptions)
     }
   });
 }

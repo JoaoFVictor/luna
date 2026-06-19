@@ -1,7 +1,7 @@
 import type {
   AcceptanceDecision,
   Finding,
-  Invocation,
+  GithubPrInvocation,
   WorkspaceRecord
 } from "./types.js";
 
@@ -14,7 +14,7 @@ const severityRank: Record<Finding["severity"], number> = {
 };
 
 type MarkdownOptions = {
-  invocation: Invocation;
+  invocation: GithubPrInvocation;
   findings: readonly Finding[];
   acceptance: AcceptanceDecision;
 };

@@ -13,7 +13,7 @@ type AgentConfig = {
 type WorkflowGraph = {
   nodes: Array<{
     id: string;
-    type: "agent" | "built_in";
+    type: "agent" | "built_in" | "agent_loop";
     agent?: string;
     after?: string[];
   }>;
@@ -130,9 +130,17 @@ describe("config definition files", () => {
       expect.arrayContaining([
         "agents/acceptance-reviewer/agent.yaml",
         "agents/code-reviewer/agent.yaml",
+        "agents/code-implementer/agent.yaml",
+        "agents/implementation-acceptance-reviewer/agent.yaml",
+        "agents/implementation-planner/agent.yaml",
+        "agents/implementation-reviewer/agent.yaml",
         "agents/review-planner/agent.yaml",
+        "config/implementation.yaml",
+        "config/jira.yaml",
         "workflows/code-review/graph.yaml",
-        "workflows/code-review/workflow.yaml"
+        "workflows/code-review/workflow.yaml",
+        "workflows/implementation/graph.yaml",
+        "workflows/implementation/workflow.yaml"
       ])
     );
 
@@ -149,9 +157,15 @@ describe("config definition files", () => {
       expect.arrayContaining([
         "agents/acceptance-reviewer/output.schema.json",
         "agents/code-reviewer/output.schema.json",
+        "agents/code-implementer/output.schema.json",
+        "agents/implementation-acceptance-reviewer/output.schema.json",
+        "agents/implementation-planner/output.schema.json",
+        "agents/implementation-reviewer/output.schema.json",
         "agents/review-planner/output.schema.json",
         "workflows/code-review/input.schema.json",
-        "workflows/code-review/output.schema.json"
+        "workflows/code-review/output.schema.json",
+        "workflows/implementation/input.schema.json",
+        "workflows/implementation/output.schema.json"
       ])
     );
 
@@ -173,7 +187,11 @@ describe("config definition files", () => {
 
     expect(agentFiles).toEqual([
       "agents/acceptance-reviewer/agent.yaml",
+      "agents/code-implementer/agent.yaml",
       "agents/code-reviewer/agent.yaml",
+      "agents/implementation-acceptance-reviewer/agent.yaml",
+      "agents/implementation-planner/agent.yaml",
+      "agents/implementation-reviewer/agent.yaml",
       "agents/review-planner/agent.yaml"
     ]);
 
@@ -211,6 +229,104 @@ describe("config definition files", () => {
         `${file}: ${formatAjvErrors(ajv.errors)}`
       ).toBe(true);
     }
+  });
+
+  it("keeps implementation workflow output schema aligned with the final report contract", async () => {
+    const ajv = createSchemaAjv();
+    const schema = await parseJsonFile("workflows/implementation/output.schema.json");
+    const validate = ajv.compile(schema as AnySchema);
+    const output = {
+      status: "success",
+      run: {
+        run_id: "run-1",
+        target: "jira_task",
+        started_at: "2026-06-19T00:00:00.000Z"
+      },
+      workflow_id: "implementation",
+      steps: {
+        final_report: {}
+      },
+      report: {
+        jira: {
+          key: "ABC-123",
+          url: "https://company.atlassian.net/browse/ABC-123",
+          summary: "Fix checkout validation",
+          status: "To Do"
+        },
+        repository: {
+          provider: "github",
+          owner: "swinggo-dev",
+          name: "swg-front-nuxt"
+        },
+        status: "validation_failed",
+        branch: "feature/abc-123-fix-checkout-validation",
+        worktree: {
+          path: "/tmp/luna/swg-front-nuxt/run-1",
+          preserved: true,
+          reason: "commit_disabled"
+        },
+        validation: {
+          passed: false,
+          command_count: 1
+        },
+        commit: {
+          enabled: false,
+          skipped: true,
+          status: "disabled",
+          reason: "disabled"
+        },
+        push: {
+          enabled: false,
+          skipped: true,
+          status: "disabled",
+          reason: "disabled"
+        },
+        pull_request: {
+          enabled: false,
+          skipped: true,
+          status: "disabled",
+          reason: "disabled"
+        },
+        warnings: [
+          "trusted_host_local execution can access host filesystem, credentials, network, and local CLIs."
+        ]
+      },
+      workspace: {
+        run_id: "run-1",
+        path: "/tmp/luna/swg-front-nuxt/run-1",
+        preserved: true,
+        reason: "commit_disabled",
+        repository_id: "swg-front-nuxt",
+        remote: "origin",
+        base_ref: "main",
+        base_sha: "base-sha",
+        branch: "feature/abc-123-fix-checkout-validation"
+      }
+    };
+
+    expect(validate(output), formatAjvErrors(validate.errors)).toBe(true);
+
+    expect(
+      validate({
+        ...output,
+        report: {
+          ...output.report,
+          unexpected: true
+        }
+      }),
+      "report should reject additional properties"
+    ).toBe(false);
+
+    expect(
+      validate({
+        ...output,
+        workspace: {
+          ...output.workspace,
+          unexpected: true
+        }
+      }),
+      "workspace should reject additional properties"
+    ).toBe(false);
   });
 
   it("accepts fork metadata in code review workflow input head repository", async () => {
@@ -264,6 +380,47 @@ describe("config definition files", () => {
     ]);
 
     for (const node of graph.nodes.filter((node) => node.type === "agent")) {
+      expect(node.agent, node.id).toBeDefined();
+      await expect(access(join("agents", node.agent ?? ""))).resolves.toBe(
+        undefined
+      );
+    }
+  });
+
+  it("references existing agents from the implementation workflow graph", async () => {
+    const graph = (await parseYamlFile(
+      "workflows/implementation/graph.yaml"
+    )) as WorkflowGraph;
+
+    expect(graph.nodes.map((node) => node.id)).toEqual([
+      "preflight",
+      "workspace",
+      "task_context",
+      "implementation_plan",
+      "implementation",
+      "worktree_diff",
+      "implementation_review",
+      "acceptance",
+      "commit",
+      "push",
+      "pull_request",
+      "final_report"
+    ]);
+    expect(graph.nodes.find((node) => node.id === "implementation")).toEqual(
+      expect.objectContaining({
+        type: "agent_loop",
+        agent: "code-implementer",
+        artifact: {
+          attempts: "implementation-attempts.json",
+          validation: "validation.json",
+          result: "implementation-result.json"
+        }
+      })
+    );
+
+    for (const node of graph.nodes.filter(
+      (candidate) => candidate.type === "agent" || candidate.type === "agent_loop"
+    )) {
       expect(node.agent, node.id).toBeDefined();
       await expect(access(join("agents", node.agent ?? ""))).resolves.toBe(
         undefined
