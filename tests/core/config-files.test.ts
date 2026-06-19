@@ -278,8 +278,12 @@ describe("config definition files", () => {
       status: "success",
       run: {
         run_id: "run-1",
-        target: "jira_task",
-        started_at: "2026-06-19T00:00:00.000Z"
+        attempt: 1,
+        source: "jira",
+        event: "issue",
+        action: "selected",
+        route_target: { type: "workflow", id: "implementation" },
+        subject: { type: "jira_issue", id: "ABC-123" }
       },
       workflow_id: "implementation",
       steps: {
@@ -368,31 +372,48 @@ describe("config definition files", () => {
     ).toBe(false);
   });
 
-  it("accepts fork metadata in code review workflow input head repository", async () => {
+  it("accepts normalized code review workflow input with pull request metadata", async () => {
     const ajv = createSchemaAjv();
     const schema = await parseJsonFile("workflows/code-review/input.schema.json");
     const validate = ajv.compile(schema as AnySchema);
 
     const input = {
-      target: "github_pr",
-      owner: "octo-org",
-      repo: "hello-world",
-      pull_number: 42,
-      base_ref: "main",
-      base_repository: {
-        owner: "octo-org",
-        name: "hello-world",
-        full_name: "octo-org/hello-world"
+      version: "2026-06",
+      source: "github",
+      event: "pull_request",
+      action: "selected",
+      target: {
+        type: "workflow",
+        id: "code-review"
       },
-      head_repository: {
-        owner: "contributor",
-        name: "hello-world",
-        full_name: "contributor/hello-world",
-        fork: true
+      repository: {
+        provider: "github",
+        owner: "octo-org",
+        name: "hello-world"
+      },
+      subject: {
+        type: "pull_request",
+        id: "42",
+        url: "https://github.com/octo-org/hello-world/pull/42"
       },
       references: {
+        base_ref: "main",
         base_sha: "base-sha",
         head_sha: "head-sha"
+      },
+      payload: {
+        pull_request: { number: 42 },
+        base_repository: {
+          owner: "octo-org",
+          name: "hello-world",
+          full_name: "octo-org/hello-world"
+        },
+        head_repository: {
+          owner: "contributor",
+          name: "hello-world",
+          full_name: "contributor/hello-world",
+          fork: true
+        }
       }
     };
 

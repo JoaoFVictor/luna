@@ -7,6 +7,7 @@ import type {
   ConfiguredWorkflowRunnerDependencies,
   RunConfiguredWorkflowOptions
 } from "../../src/core/configured-workflow-runner.js";
+import type { RunIdentity } from "../../src/core/types.js";
 import { gitInvocation } from "../fixtures/git-repo.js";
 
 type PromptCall = {
@@ -34,6 +35,16 @@ const modelProfiles = {
     model: "openai-codex/gpt-5.4-mini",
     reasoning_effort: "high" as const
   }
+};
+
+const githubRun: RunIdentity = {
+  run_id: "run-1",
+  attempt: 1,
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  route_target: { type: "workflow", id: "code-review" },
+  subject: { type: "pull_request", id: "42" }
 };
 
 async function createImplementationSafeGitSkill(root: string): Promise<void> {
@@ -188,7 +199,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -220,7 +231,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: { review_plan: reviewPlan }
           }
         });
@@ -252,7 +263,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: { review_plan: reviewPlan, code_review: findings }
           }
         });
@@ -411,7 +422,7 @@ describe("flue modules", () => {
               remote: "origin"
             },
             workspace: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -522,7 +533,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -629,7 +640,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -727,7 +738,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -869,7 +880,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -1088,7 +1099,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -1255,7 +1266,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -1407,7 +1418,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -1491,7 +1502,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });
@@ -1572,7 +1583,7 @@ describe("flue modules", () => {
           state: {
             invocation: gitInvocation,
             repository: undefined,
-            run: { run_id: "run-1", target: "github_pr" },
+            run: githubRun,
             steps: {}
           }
         });

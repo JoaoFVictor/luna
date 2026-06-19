@@ -10,22 +10,30 @@ import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
 const repoRoot = process.cwd();
 
 const jiraInvocation: Invocation = {
-  target: "jira_task",
-  workflow: "implementation",
-  jira: {
-    instance_id: "company",
-    issue_key: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    summary: "Fix checkout validation",
-    description: "Reject invalid checkout payloads.",
-    acceptance_criteria: "Invalid payloads fail validation.",
-    status: "To Do",
-    issue_type: "Task"
-  },
+  version: "2026-06",
+  source: "jira",
+  event: "issue",
+  action: "selected",
+  target: { type: "workflow", id: "implementation" },
   repository: {
     provider: "github",
     owner: "swinggo-dev",
     name: "swg-front-nuxt"
+  },
+  subject: {
+    type: "jira_issue",
+    id: "ABC-123",
+    title: "Fix checkout validation",
+    url: "https://company.atlassian.net/browse/ABC-123"
+  },
+  payload: {
+    jira: {
+      instance_id: "company",
+      description: "Reject invalid checkout payloads.",
+      acceptance_criteria: "Invalid payloads fail validation.",
+      status: "To Do",
+      issue_type: "Task"
+    }
   }
 };
 
@@ -193,8 +201,12 @@ describe("implementation workflow e2e", () => {
         dependencies: {
           createRunIdentity: () => ({
             run_id: "run-1",
-            target: "jira_task",
-            started_at: "2026-06-19T00:00:00.000Z"
+            attempt: 1,
+            source: "jira",
+            event: "issue",
+            action: "selected",
+            route_target: { type: "workflow", id: "implementation" },
+            subject: { type: "jira_issue", id: "ABC-123" }
           }),
           builtInStepDependencies: {
             runPreflight: vi.fn(async () => {

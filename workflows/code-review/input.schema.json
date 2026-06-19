@@ -3,47 +3,131 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "target",
-    "owner",
-    "repo",
-    "pull_number",
-    "base_ref",
-    "base_repository",
-    "head_repository",
+    "version",
+    "source",
+    "event",
+    "repository",
+    "subject",
     "references"
   ],
   "properties": {
+    "version": {
+      "type": "string",
+      "const": "2026-06"
+    },
+    "source": {
+      "type": "string",
+      "const": "github"
+    },
+    "event": {
+      "type": "string",
+      "const": "pull_request"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1
+    },
     "target": {
-      "type": "string",
-      "const": "github_pr"
+      "$ref": "#/definitions/route_target"
     },
-    "owner": {
-      "type": "string",
-      "minLength": 1
-    },
-    "repo": {
-      "type": "string",
-      "minLength": 1
-    },
-    "pull_number": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "base_ref": {
-      "type": "string",
-      "minLength": 1
-    },
-    "base_repository": {
+    "repository": {
       "$ref": "#/definitions/repository"
     },
-    "head_repository": {
-      "$ref": "#/definitions/head_repository"
+    "subject": {
+      "$ref": "#/definitions/pull_request_subject"
+    },
+    "actor": {
+      "$ref": "#/definitions/actor"
     },
     "references": {
+      "$ref": "#/definitions/code_review_references"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "definitions": {
+    "route_target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["base_sha", "head_sha"],
+      "required": ["type", "id"],
       "properties": {
+        "type": {
+          "type": "string",
+          "const": "workflow"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "owner", "name"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "const": "github"
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "pull_request_subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "pull_request"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "code_review_references": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_ref", "base_sha", "head_sha"],
+      "properties": {
+        "base_ref": {
+          "type": "string",
+          "minLength": 1
+        },
         "base_sha": {
           "type": "string",
           "minLength": 1
@@ -51,49 +135,6 @@
         "head_sha": {
           "type": "string",
           "minLength": 1
-        }
-      }
-    }
-  },
-  "definitions": {
-    "repository": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["owner", "name", "full_name"],
-      "properties": {
-        "owner": {
-          "type": "string",
-          "minLength": 1
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "full_name": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "head_repository": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["owner", "name", "full_name"],
-      "properties": {
-        "owner": {
-          "type": "string",
-          "minLength": 1
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "full_name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "fork": {
-          "type": "boolean"
         }
       }
     }
