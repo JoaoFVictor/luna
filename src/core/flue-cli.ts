@@ -235,6 +235,8 @@ export async function buildFlueRunCommand(
       "luna",
       "--target",
       "node",
+      "--root",
+      projectRoot,
       "--payload",
       JSON.stringify(invocation)
     ]

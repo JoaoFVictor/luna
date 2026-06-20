@@ -752,6 +752,329 @@ async function writeAgentLoopWorkflow(
 }
 
 describe("configured workflow runner", () => {
+  it("routes and uses routed workflow options when creating the final run identity", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
+
+      const fixedDate = new Date("2026-06-20T12:34:56.789Z");
+      const createRunIdentity = vi.fn(
+        (receivedInvocation: Invocation, options: RunIdentityOptions): RunIdentity => ({
+          run_id: `run-${options.workflowId}`,
+          ...(options.flueRunId === undefined
+            ? {}
+            : { flue_run_id: options.flueRunId }),
+          workflow_id: options.workflowId,
+          attempt: options.attempt,
+          source: receivedInvocation.source,
+          event: receivedInvocation.event,
+          ...(receivedInvocation.action === undefined
+            ? {}
+            : { action: receivedInvocation.action }),
+          ...(receivedInvocation.target === undefined
+            ? {}
+            : { route_target: receivedInvocation.target }),
+          ...(receivedInvocation.subject === undefined
+            ? {}
+            : {
+                subject: {
+                  type: receivedInvocation.subject.type,
+                  id: receivedInvocation.subject.id
+                }
+              }),
+          started_at: options.date.toISOString()
+        })
+      );
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        flueRunId: "flue-1",
+        nonceFactory: () => "nonce-1",
+        dependencies: {
+          now: () => fixedDate,
+          createRunIdentity,
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
+            uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
+          ),
+          runAgentStep: vi.fn(async () => ({
+            summary: "Plan",
+            focus_areas: [],
+            files_to_review: []
+          }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(createRunIdentity).toHaveBeenCalledWith(
+        invocation,
+        expect.objectContaining({
+          workflowId: "code-review",
+          flueRunId: "flue-1",
+          nonce: "nonce-1",
+          attempt: 1,
+          date: fixedDate
+        })
+      );
+      await expect(
+        readJson(root, "code-review", "run-code-review", "run.json")
+      ).resolves.toMatchObject({
+        workflow_id: "code-review",
+        flue_run_id: "flue-1"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("writes pre-route failures under the failed workflow namespace", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
+
+      const fixedDate = new Date("2026-06-20T00:00:00.000Z");
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        throwOnError: false,
+        nonceFactory: () => "pre",
+        dependencies: {
+          now: () => fixedDate,
+          routeInvocation: () => {
+            throw Object.assign(new Error("No route matched"), {
+              code: "route_not_found"
+            });
+          }
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      expect(result.workflow_id).toBe("_failed");
+      await expect(
+        pathExists(path.join(root, "artifacts", "_failed"))
+      ).resolves.toBe(true);
+      await expect(
+        readJson(root, "_failed", result.run.run_id, "run.json")
+      ).resolves.toMatchObject({
+        workflow_id: "_failed"
+      });
+      await expect(
+        readJson(root, "_failed", result.run.run_id, "error.json")
+      ).resolves.toMatchObject({
+        code: "route_not_found",
+        run_id: result.run.run_id
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits routed and succeeded logger events for successful runs", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
+
+      const runLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn()
+      };
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        flueRunId: "flue-log",
+        nonceFactory: () => "log",
+        runLogger,
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z"),
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-log",
+            flue_run_id: "flue-log"
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
+            uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
+          ),
+          runAgentStep: vi.fn(async () => ({
+            summary: "Plan",
+            focus_areas: [],
+            files_to_review: []
+          }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(runLogger.info).toHaveBeenCalledWith("luna.workflow.routed", {
+        "luna.run_id": "run-log",
+        "luna.flue_run_id": "flue-log",
+        "luna.workflow_id": "code-review"
+      });
+      expect(runLogger.info).toHaveBeenCalledWith("luna.run.succeeded", {
+        "luna.run_id": "run-log",
+        "luna.flue_run_id": "flue-log",
+        "luna.workflow_id": "code-review"
+      });
+      expect(runLogger.error).not.toHaveBeenCalled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let logger failures mask successful runs", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        flueRunId: "flue-log",
+        nonceFactory: () => "log",
+        runLogger: {
+          info: vi.fn(() => {
+            throw new Error("logger unavailable");
+          }),
+          warn: vi.fn(),
+          error: vi.fn()
+        },
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z"),
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-log-throw",
+            flue_run_id: "flue-log"
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
+            uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
+          ),
+          runAgentStep: vi.fn(async () => ({
+            summary: "Plan",
+            focus_areas: [],
+            files_to_review: []
+          }))
+        }
+      });
+
+      expect(result).toMatchObject({
+        status: "success",
+        run: { run_id: "run-log-throw" }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits failed logger events for failures after a run exists", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+
+      const runLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn()
+      };
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        throwOnError: false,
+        flueRunId: "flue-fail",
+        nonceFactory: () => "fail",
+        runLogger,
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z"),
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-fail",
+            flue_run_id: "flue-fail"
+          }),
+          runBuiltInStep: vi.fn(async () => {
+            throw Object.assign(new Error("Preflight failed"), {
+              code: "preflight_failed"
+            });
+          })
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      expect(runLogger.error).toHaveBeenCalledWith("luna.run.failed", {
+        "luna.run_id": "run-fail",
+        "luna.flue_run_id": "flue-fail",
+        "luna.workflow_id": "code-review",
+        "error.code": "preflight_failed"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let logger failures mask workflow failures", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        throwOnError: false,
+        flueRunId: "flue-fail",
+        nonceFactory: () => "fail",
+        runLogger: {
+          info: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(() => {
+            throw new Error("logger unavailable");
+          })
+        },
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z"),
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-fail-logger",
+            flue_run_id: "flue-fail"
+          }),
+          runBuiltInStep: vi.fn(async () => {
+            throw Object.assign(new Error("Preflight failed"), {
+              code: "preflight_failed"
+            });
+          })
+        }
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        error: { code: "preflight_failed" },
+        run: { run_id: "run-fail-logger" }
+      });
+      await expect(
+        readJson(root, "code-review", "run-fail-logger", "error.json")
+      ).resolves.toMatchObject({
+        code: "preflight_failed",
+        run_id: "run-fail-logger"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("passes flattened implementation config references to built-in node input", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 

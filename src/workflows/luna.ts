@@ -19,6 +19,7 @@ import {
 } from "../core/flue-agent-capabilities.js";
 import { loadMcpConfig } from "../core/mcp-config.js";
 import { registerConfiguredPiOAuthProviders } from "../core/pi-auth.js";
+import { createFlueRunLogger } from "../core/run-logger.js";
 import type { Invocation } from "../core/types.js";
 import { runValidationCommands } from "../core/validation-runner.js";
 import { collectWorktreeDiff } from "../core/worktree-diff-collector.js";
@@ -405,12 +406,16 @@ export async function runWithFlue(
   ctx: FlueContext<Invocation>
 ): Promise<ConfiguredWorkflowResult> {
   const configRoot = process.env.LUNA_CONFIG_ROOT ?? "config";
+  const projectRoot = process.env.LUNA_PROJECT_ROOT ?? process.cwd();
   await registerConfiguredPiOAuthProviders({ configRoot });
   const mcpConfig = await loadMcpConfig(configRoot);
 
   return await runConfiguredWorkflow({
     invocation: ctx.payload,
     configRoot,
+    projectRoot,
+    flueRunId: ctx.id,
+    runLogger: createFlueRunLogger(ctx),
     dependencies: {
       runAgentStep: async (agentStepOptions) =>
         await runFlueAgentStep(ctx, { ...agentStepOptions, mcpConfig }),

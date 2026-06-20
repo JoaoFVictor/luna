@@ -243,6 +243,8 @@ describe("flue local CLI wrapper", () => {
       "luna",
       "--target",
       "node",
+      "--root",
+      projectRoot,
       "--payload",
       JSON.stringify(validInvocation)
     ]);

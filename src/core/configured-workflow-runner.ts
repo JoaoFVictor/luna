@@ -28,6 +28,11 @@ import type { McpConfig } from "./mcp-config.js";
 import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import {
+  noopRunLogger,
+  type RunLogAttributes,
+  type RunLogger
+} from "./run-logger.js";
+import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
 } from "./run-identity.js";
@@ -137,8 +142,12 @@ export type ConfiguredWorkflowRunnerDependencies = {
 export type RunConfiguredWorkflowOptions = {
   invocation: Invocation;
   configRoot?: string;
+  projectRoot?: string;
   workflowsRoot?: string;
   agentsRoot?: string;
+  flueRunId?: string;
+  runLogger?: RunLogger;
+  nonceFactory?: () => string;
   dependencies?: ConfiguredWorkflowRunnerDependencies;
   attempt?: number;
   throwOnError?: boolean;
@@ -443,6 +452,78 @@ async function writeJsonBestEffort(
   } catch (error) {
     return error;
   }
+}
+
+function emitRunLog(
+  logger: RunLogger,
+  level: keyof RunLogger,
+  event: string,
+  attributes: RunLogAttributes
+): void {
+  try {
+    logger[level](event, attributes);
+  } catch {
+    return;
+  }
+}
+
+async function ensureFailureArtifactStore({
+  artifactStore,
+  Store,
+  configs,
+  run,
+  makeRunIdentity,
+  invocation,
+  workflowId,
+  attempt,
+  date,
+  flueRunId,
+  nonce
+}: {
+  artifactStore?: ArtifactStore;
+  Store: typeof ArtifactStore;
+  configs: { app: AppConfig };
+  run?: RunIdentity;
+  makeRunIdentity: (
+    invocation: Invocation,
+    options: RunIdentityOptions
+  ) => RunIdentity;
+  invocation: Invocation;
+  workflowId?: string;
+  attempt: number;
+  date: Date;
+  flueRunId?: string;
+  nonce: string;
+}): Promise<{
+  artifactStore: ArtifactStore;
+  run: RunIdentity;
+  workflowId: string;
+}> {
+  if (artifactStore !== undefined && run !== undefined) {
+    return { artifactStore, run, workflowId: run.workflow_id };
+  }
+
+  const failureWorkflowId = workflowId ?? "_failed";
+  const failureRun = makeRunIdentity(invocation, {
+    workflowId: failureWorkflowId,
+    attempt,
+    date,
+    flueRunId,
+    nonce
+  });
+  const failureArtifactStore = new Store(
+    artifactRootForWorkflow(configs.app.artifacts.root, failureWorkflowId),
+    failureRun.run_id
+  );
+  await failureArtifactStore.initializeRunDirectory();
+  await failureArtifactStore.writeJson("invocation.json", invocation);
+  await failureArtifactStore.writeJson("run.json", failureRun);
+
+  return {
+    artifactStore: failureArtifactStore,
+    run: failureRun,
+    workflowId: failureWorkflowId
+  };
 }
 
 async function finalizeFailureWorkspace({
@@ -954,6 +1035,9 @@ export async function runConfiguredWorkflow({
   configRoot = resolveConfigRoot(),
   workflowsRoot,
   agentsRoot,
+  flueRunId,
+  runLogger,
+  nonceFactory,
   dependencies = {},
   attempt = 1,
   throwOnError = true
@@ -962,22 +1046,9 @@ export async function runConfiguredWorkflow({
   const makeRunIdentity =
     dependencies.createRunIdentity ?? defaultCreateRunIdentity;
   const Store = dependencies.ArtifactStore ?? ArtifactStore;
-  const workflowId = workflowIdFromRoute(
-    invocation,
-    configs.routing,
-    dependencies
-  );
   const date = dependencies.now?.() ?? new Date();
-  const run = makeRunIdentity(invocation, {
-    workflowId,
-    attempt,
-    date,
-    nonce: createRunNonce()
-  });
-  const artifactStore = new Store(
-    artifactRootForWorkflow(configs.app.artifacts.root, workflowId),
-    run.run_id
-  );
+  const nonce = (nonceFactory ?? createRunNonce)();
+  const logger = runLogger ?? noopRunLogger;
   const modelProfiles = resolveModelProfiles(configs.models);
   const resolvedAgentsRoot = await resolveConfiguredDirectoryRoot(
     configRoot,
@@ -995,22 +1066,47 @@ export async function runConfiguredWorkflow({
     dependencies.cleanupWorktree ?? defaultCleanupWorktree;
   const activeBuiltInStepRegistry =
     dependencies.builtInStepRegistry ?? defaultBuiltInStepRegistry;
+  let workflowId: string | undefined;
+  let run: RunIdentity | undefined;
+  let artifactStore: ArtifactStore | undefined;
   let repository: RepositoryConfig | undefined;
   let workspaceRecord: WorkspaceRecord | undefined;
   let persistedWorkspaceRecord: WorkspaceRecord | undefined;
 
   try {
-    await artifactStore.initializeRunDirectory();
-    repository = resolveRepository(
+    workflowId = workflowIdFromRoute(
       invocation,
-      configs.repositories.repositories
+      configs.routing,
+      dependencies
     );
     const workflow = await loadConfiguredWorkflow(
       resolvedWorkflowsRoot,
       workflowId
     );
+    run = makeRunIdentity(invocation, {
+      workflowId,
+      attempt,
+      date,
+      flueRunId,
+      nonce
+    });
+    artifactStore = new Store(
+      artifactRootForWorkflow(configs.app.artifacts.root, workflowId),
+      run.run_id
+    );
+    await artifactStore.initializeRunDirectory();
     await artifactStore.writeJson("invocation.json", invocation);
     await artifactStore.writeJson("run.json", run);
+    emitRunLog(logger, "info", "luna.workflow.routed", {
+      "luna.run_id": run.run_id,
+      "luna.flue_run_id": run.flue_run_id,
+      "luna.workflow_id": workflowId
+    });
+
+    repository = resolveRepository(
+      invocation,
+      configs.repositories.repositories
+    );
 
     const state: WorkflowState = {
       invocation,
@@ -1098,6 +1194,12 @@ export async function runConfiguredWorkflow({
       report = finalReportFrom(output) ?? report;
     }
 
+    emitRunLog(logger, "info", "luna.run.succeeded", {
+      "luna.run_id": run.run_id,
+      "luna.flue_run_id": run.flue_run_id,
+      "luna.workflow_id": workflowId
+    });
+
     return {
       status: "success",
       run,
@@ -1112,6 +1214,29 @@ export async function runConfiguredWorkflow({
     if (isWorkspaceRecord(failedWorkspace)) {
       workspaceRecord = failedWorkspace;
     }
+
+    const failure = await ensureFailureArtifactStore({
+      artifactStore,
+      Store,
+      configs,
+      run,
+      makeRunIdentity,
+      invocation,
+      workflowId,
+      attempt,
+      date,
+      flueRunId,
+      nonce
+    });
+    artifactStore = failure.artifactStore;
+    run = failure.run;
+    workflowId = failure.workflowId;
+    emitRunLog(logger, "error", "luna.run.failed", {
+      "luna.run_id": run.run_id,
+      "luna.flue_run_id": run.flue_run_id,
+      "luna.workflow_id": workflowId,
+      "error.code": errorCode(error)
+    });
 
     const artifact = errorArtifact(run.run_id, error);
     const artifactWriteError = await writeJsonBestEffort(

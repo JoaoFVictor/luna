@@ -121,12 +121,27 @@ describe("flue modules", () => {
       runConfiguredWorkflow
     );
 
-    await workflow.run({ payload: gitInvocation } as never);
+    await workflow.run({
+      id: "flue-1",
+      payload: gitInvocation,
+      log: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn()
+      }
+    } as never);
 
     expect(runConfiguredWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
         invocation: gitInvocation,
-        configRoot: "config"
+        configRoot: "config",
+        projectRoot: process.cwd(),
+        flueRunId: "flue-1",
+        runLogger: expect.objectContaining({
+          info: expect.any(Function),
+          warn: expect.any(Function),
+          error: expect.any(Function)
+        })
       })
     );
   });
