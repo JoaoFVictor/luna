@@ -258,7 +258,8 @@ describe("implementation built-ins", () => {
     ).resolves.toEqual(implementationWorkspace);
 
     expect(prepareImplementationWorktreeBuiltIn.metadata).toEqual({
-      capturesWorkspace: true
+      capturesWorkspace: true,
+      locks: [{ resource: "repository", mode: "exclusive" }]
     });
     expect(prepareImplementationWorktree).toHaveBeenCalledWith({
       invocation: jiraInvocation,

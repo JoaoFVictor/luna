@@ -20,6 +20,10 @@ export type MaybePromise<T> = T | Promise<T>;
 export type BuiltInStepMetadata = {
   readonly deferUntilAfterWorkspaceLifecycle?: boolean;
   readonly capturesWorkspace?: boolean;
+  readonly locks?: readonly {
+    readonly resource: "repository";
+    readonly mode: "exclusive";
+  }[];
 };
 
 export type BuiltInStepRunOptions = {

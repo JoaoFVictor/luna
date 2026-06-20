@@ -66,7 +66,10 @@ function implementationReportStatus({
 
 export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
   name: "prepare_implementation_worktree",
-  metadata: { capturesWorkspace: true },
+  metadata: {
+    capturesWorkspace: true,
+    locks: [{ resource: "repository", mode: "exclusive" }]
+  },
   async run({ state, dependencies = {} }) {
     const prepareImplementationWorktree =
       dependencies.prepareImplementationWorktree ??
@@ -132,6 +135,7 @@ export const collectWorktreeDiffBuiltIn = defineBuiltInStep({
 
 export const commitChangesBuiltIn = defineBuiltInStep({
   name: "commit_changes",
+  metadata: { locks: [{ resource: "repository", mode: "exclusive" }] },
   async run({ state, input, dependencies = {} }) {
     const commitChanges = dependencies.commitChanges ?? defaultCommitChanges;
     const resolved = resolvedInput(input, state);
@@ -158,6 +162,7 @@ export const commitChangesBuiltIn = defineBuiltInStep({
 
 export const pushBranchBuiltIn = defineBuiltInStep({
   name: "push_branch",
+  metadata: { locks: [{ resource: "repository", mode: "exclusive" }] },
   async run({ state, input, dependencies = {} }) {
     const pushBranch = dependencies.pushBranch ?? defaultPushBranch;
     const resolved = resolvedInput(input, state);
@@ -178,6 +183,7 @@ export const pushBranchBuiltIn = defineBuiltInStep({
 
 export const openPullRequestBuiltIn = defineBuiltInStep({
   name: "open_pull_request",
+  metadata: { locks: [{ resource: "repository", mode: "exclusive" }] },
   async run({ state, input, dependencies = {} }) {
     const openPullRequest = dependencies.openPullRequest ?? defaultOpenPullRequest;
     const resolved = resolvedInput(input, state);

@@ -1,14 +1,29 @@
 import { builtInError } from "./errors.js";
-import type { BuiltInStep } from "./types.js";
+import type { BuiltInStep, BuiltInStepMetadata } from "./types.js";
+
+function freezeMetadata(
+  metadata: BuiltInStepMetadata | undefined
+): BuiltInStepMetadata | undefined {
+  if (metadata === undefined) {
+    return undefined;
+  }
+
+  return Object.freeze({
+    ...metadata,
+    ...(metadata.locks === undefined
+      ? {}
+      : { locks: Object.freeze([...metadata.locks]) })
+  });
+}
 
 export function defineBuiltInStep<const Name extends string>(
   step: BuiltInStep<Name>
 ): BuiltInStep<Name> {
+  const metadata = freezeMetadata(step.metadata);
+
   return Object.freeze({
     ...step,
-    ...(step.metadata === undefined
-      ? {}
-      : { metadata: Object.freeze({ ...step.metadata }) })
+    ...(metadata === undefined ? {} : { metadata })
   });
 }
 

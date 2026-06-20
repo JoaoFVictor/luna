@@ -207,7 +207,10 @@ describe("code review built-ins", () => {
     ).resolves.toEqual(workspace);
 
     expect(prepareWorktreeBuiltIn.name).toBe("prepare_worktree");
-    expect(prepareWorktreeBuiltIn.metadata).toEqual({ capturesWorkspace: true });
+    expect(prepareWorktreeBuiltIn.metadata).toEqual({
+      capturesWorkspace: true,
+      locks: [{ resource: "repository", mode: "exclusive" }]
+    });
     expect(prepareWorktree).toHaveBeenCalledWith({
       invocation,
       repository,

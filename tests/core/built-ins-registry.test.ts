@@ -80,14 +80,41 @@ describe("built-in step registry", () => {
       "final_code_review_report"
     );
 
-    expect(prepareWorktree.metadata).toEqual({ capturesWorkspace: true });
+    expect(prepareWorktree.metadata).toEqual({
+      capturesWorkspace: true,
+      locks: [{ resource: "repository", mode: "exclusive" }]
+    });
     expect(finalReport.metadata).toEqual({
       deferUntilAfterWorkspaceLifecycle: true
     });
     expect(Object.isFrozen(prepareWorktree)).toBe(true);
     expect(Object.isFrozen(prepareWorktree.metadata)).toBe(true);
+    expect(Object.isFrozen(prepareWorktree.metadata?.locks)).toBe(true);
     expect(Object.isFrozen(finalReport)).toBe(true);
     expect(Object.isFrozen(finalReport.metadata)).toBe(true);
+  });
+
+  it("marks repository-sensitive built-ins with repository exclusive locks", () => {
+    const lockedNames = defaultBuiltInStepRegistry.names.filter((name) =>
+      defaultBuiltInStepRegistry.require(name).metadata?.locks?.some((lock) =>
+        lock.resource === "repository" && lock.mode === "exclusive"
+      ) === true
+    );
+
+    expect(lockedNames).toEqual([
+      "prepare_worktree",
+      "prepare_implementation_worktree",
+      "commit_changes",
+      "push_branch",
+      "open_pull_request"
+    ]);
+
+    for (const name of lockedNames) {
+      expect(defaultBuiltInStepRegistry.require(name).metadata?.locks).toContainEqual({
+        resource: "repository",
+        mode: "exclusive"
+      });
+    }
   });
 
   it("runs default built-ins through the generic entrypoint", async () => {

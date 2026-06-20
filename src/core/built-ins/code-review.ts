@@ -48,7 +48,10 @@ export const preflightBuiltIn = defineBuiltInStep({
 
 export const prepareWorktreeBuiltIn = defineBuiltInStep({
   name: "prepare_worktree",
-  metadata: { capturesWorkspace: true },
+  metadata: {
+    capturesWorkspace: true,
+    locks: [{ resource: "repository", mode: "exclusive" }]
+  },
   async run({ state, dependencies = {} }) {
     const prepareWorktree = dependencies.prepareWorktree ?? defaultPrepareWorktree;
 
