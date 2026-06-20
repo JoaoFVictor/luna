@@ -1017,7 +1017,9 @@ describe("configured workflow runner", () => {
         "luna.run_id": "run-fail",
         "luna.flue_run_id": "flue-fail",
         "luna.workflow_id": "code-review",
-        "error.code": "preflight_failed"
+        "luna.step_id": "preflight",
+        "error.code": "scheduler_step_failed",
+        "error.cause_code": "preflight_failed"
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -1061,13 +1063,17 @@ describe("configured workflow runner", () => {
 
       expect(result).toMatchObject({
         status: "failed",
-        error: { code: "preflight_failed" },
+        error: {
+          code: "scheduler_step_failed",
+          details: { step_id: "preflight", cause_code: "preflight_failed" }
+        },
         run: { run_id: "run-fail-logger" }
       });
       await expect(
         readJson(root, "code-review", "run-fail-logger", "error.json")
       ).resolves.toMatchObject({
-        code: "preflight_failed",
+        code: "scheduler_step_failed",
+        details: { step_id: "preflight", cause_code: "preflight_failed" },
         run_id: "run-fail-logger"
       });
     } finally {
@@ -1351,11 +1357,21 @@ describe("configured workflow runner", () => {
       if (result.status !== "failed") {
         throw new Error("Expected failed result");
       }
-      expect(result.error).toMatchObject({ code: "agent_loop_runner_missing" });
+      expect(result.error).toMatchObject({
+        code: "scheduler_step_failed",
+        details: {
+          step_id: "implementation",
+          cause_code: "agent_loop_runner_missing"
+        }
+      });
       await expect(
         readJson(root, "implementation", "run-1", "error.json")
       ).resolves.toMatchObject({
-        code: "agent_loop_runner_missing"
+        code: "scheduler_step_failed",
+        details: {
+          step_id: "implementation",
+          cause_code: "agent_loop_runner_missing"
+        }
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -1423,7 +1439,10 @@ describe("configured workflow runner", () => {
         if (result.status !== "failed") {
           throw new Error("Expected failed result");
         }
-        expect(result.error).toMatchObject({ code });
+        expect(result.error).toMatchObject({
+          code: "scheduler_step_failed",
+          details: { step_id: "implementation", cause_code: code }
+        });
         expect(runAgentLoopStep).not.toHaveBeenCalled();
       } finally {
         await rm(root, { recursive: true, force: true });
@@ -1933,12 +1952,16 @@ describe("configured workflow runner", () => {
       if (result.status !== "failed") {
         throw new Error("Expected failed result");
       }
-      expect(result.error).toMatchObject({ code: "review_failed" });
+      expect(result.error).toMatchObject({
+        code: "scheduler_step_failed",
+        details: { step_id: "code_review", cause_code: "review_failed" }
+      });
       expect(result.workspace).toEqual(expectedWorkspace);
       await expect(
         readJson(root, "code-review", "run-1", "error.json")
       ).resolves.toMatchObject({
-        code: "review_failed"
+        code: "scheduler_step_failed",
+        details: { step_id: "code_review", cause_code: "review_failed" }
       });
       await expect(
         readJson(root, "code-review", "run-1", "workspace.json")
@@ -2238,7 +2261,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("throws model_profile_missing when an agent references an unknown model profile", async () => {
+  it("wraps model_profile_missing when an agent references an unknown model profile", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -2270,7 +2293,13 @@ describe("configured workflow runner", () => {
             runAgentStep: vi.fn()
           }
         })
-      ).rejects.toMatchObject({ code: "model_profile_missing" });
+      ).rejects.toMatchObject({
+        code: "scheduler_step_failed",
+        details: {
+          step_id: "review_plan",
+          cause_code: "model_profile_missing"
+        }
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

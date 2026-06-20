@@ -32,6 +32,7 @@ import {
   type RunLogAttributes,
   type RunLogger
 } from "./run-logger.js";
+import { runWorkflowSchedule } from "./workflow-scheduler.js";
 import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
@@ -42,7 +43,11 @@ import {
   loadWorkflowDefinition,
   type WorkflowNode
 } from "./workflow-definition.js";
-import { resolveWorkflowInput, type WorkflowState } from "./workflow-state.js";
+import {
+  resolveWorkflowInput,
+  type SchedulerWorkflowState,
+  type WorkflowState
+} from "./workflow-state.js";
 import { resolveRepository as defaultResolveRepository } from "./workspace-resolver.js";
 import {
   AppConfigSchema,
@@ -199,10 +204,13 @@ function errorMessage(error: unknown): string {
 }
 
 function errorArtifact(runId: string, error: unknown): ErrorArtifact {
+  const details = (error as { details?: ErrorArtifact["details"] })?.details;
+
   return {
     run_id: runId,
     code: errorCode(error),
-    message: errorMessage(error)
+    message: errorMessage(error),
+    ...(details === undefined ? {} : { details })
   };
 }
 
@@ -395,13 +403,6 @@ function shouldDeferUntilAfterWorkspaceLifecycle(
     builtInMetadata(node, activeRegistry).deferUntilAfterWorkspaceLifecycle ===
     true
   );
-}
-
-function capturesWorkspace(
-  node: WorkflowNode,
-  activeRegistry: BuiltInMetadataRegistry
-): boolean {
-  return builtInMetadata(node, activeRegistry).capturesWorkspace === true;
 }
 
 function finalReportFrom(output: unknown): FinalReportJson | undefined {
@@ -1030,6 +1031,30 @@ async function runWorkflowNode(
   });
 }
 
+function firstSchedulerFailure(
+  steps: Record<string, unknown>
+): { code: string; details?: ErrorArtifact["details"] } | undefined {
+  for (const value of Object.values(steps)) {
+    const record = recordValue(value);
+    if (record?.status !== "failed") {
+      continue;
+    }
+
+    const code = record.code;
+    if (typeof code !== "string" || code === "") {
+      continue;
+    }
+
+    const details = recordValue(record.details);
+    return {
+      code,
+      ...(details === undefined ? {} : { details })
+    };
+  }
+
+  return undefined;
+}
+
 export async function runConfiguredWorkflow({
   invocation,
   configRoot = resolveConfigRoot(),
@@ -1108,7 +1133,7 @@ export async function runConfiguredWorkflow({
       configs.repositories.repositories
     );
 
-    const state: WorkflowState = {
+    const state: SchedulerWorkflowState = {
       invocation,
       config: configs.runtimeConfig,
       repository,
@@ -1121,37 +1146,53 @@ export async function runConfiguredWorkflow({
       steps: {}
     };
     const orderedNodes = topologicalNodes(workflow.graph.nodes);
-    const deferredFinalReportNodes: WorkflowNode[] = [];
-
-    for (const node of orderedNodes) {
-      if (
-        shouldDeferUntilAfterWorkspaceLifecycle(
+    const deferredFinalReportNodes = orderedNodes.filter((node) =>
+      shouldDeferUntilAfterWorkspaceLifecycle(node, activeBuiltInStepRegistry)
+    );
+    const mainNodes = orderedNodes.filter(
+      (node) =>
+        !shouldDeferUntilAfterWorkspaceLifecycle(
           node,
           activeBuiltInStepRegistry
         )
-      ) {
-        deferredFinalReportNodes.push(node);
-        continue;
-      }
+    );
+    const activeArtifactStore = artifactStore;
 
-      const output = await runWorkflowNode(
-        node,
-        state,
-        dependencies,
-        resolvedAgentsRoot,
-        modelProfiles
+    const scheduleResult = await runWorkflowSchedule({
+      nodes: mainNodes,
+      state,
+      execution: { max_concurrency: workflow.execution.max_concurrency },
+      logger,
+      runNode: async ({ node, state }) =>
+        await runWorkflowNode(
+          node,
+          state,
+          dependencies,
+          resolvedAgentsRoot,
+          modelProfiles
+        ),
+      writeNodeArtifact: async (node, output) =>
+        await writeNodeArtifact(activeArtifactStore, node, output),
+      builtInMetadata: (node) => builtInMetadata(node, activeBuiltInStepRegistry)
+    });
+
+    Object.assign(state.steps, scheduleResult.steps);
+    workspaceRecord = scheduleResult.workspace;
+    if (scheduleResult.workspace !== undefined) {
+      persistedWorkspaceRecord = scheduleResult.workspace;
+      state.workspace = scheduleResult.workspace;
+    }
+
+    if (scheduleResult.status === "failed") {
+      const primaryFailure = firstSchedulerFailure(scheduleResult.steps);
+      const error = configuredWorkflowError(
+        "Workflow scheduler failed",
+        primaryFailure?.code ?? "scheduler_step_failed"
       );
-
-      state.steps[node.id] = output;
-      if (capturesWorkspace(node, activeBuiltInStepRegistry)) {
-        if (isWorkspaceRecord(output)) {
-          state.workspace = output;
-          workspaceRecord = output;
-          persistedWorkspaceRecord = output;
-        }
-      }
-
-      await writeNodeArtifact(artifactStore, node, output);
+      (error as Error & { details?: ErrorArtifact["details"] }).details = {
+        ...(primaryFailure?.details ?? {})
+      };
+      throw error;
     }
 
     const finalWorkspace = await finalizeSuccessWorkspace({
@@ -1235,7 +1276,11 @@ export async function runConfiguredWorkflow({
       "luna.run_id": run.run_id,
       "luna.flue_run_id": run.flue_run_id,
       "luna.workflow_id": workflowId,
-      "error.code": errorCode(error)
+      "luna.step_id": (error as { details?: ErrorArtifact["details"] })
+        ?.details?.step_id,
+      "error.code": errorCode(error),
+      "error.cause_code": (error as { details?: ErrorArtifact["details"] })
+        ?.details?.cause_code
     });
 
     const artifact = errorArtifact(run.run_id, error);

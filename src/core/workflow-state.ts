@@ -1,3 +1,12 @@
+import type {
+  AppConfig,
+  Invocation,
+  RepositoryConfig,
+  RunIdentity,
+  RuntimeConfigState,
+  WorkspaceRecord
+} from "./types.js";
+
 export type WorkflowState = {
   invocation: unknown;
   config?: unknown;
@@ -8,6 +17,20 @@ export type WorkflowState = {
   workspaceRoot?: string;
   reportPath?: string;
   steps: Record<string, unknown>;
+};
+
+export type SchedulerWorkflowState = WorkflowState & {
+  invocation: Invocation;
+  config: RuntimeConfigState;
+  repository?: RepositoryConfig;
+  run: RunIdentity;
+  workflow: {
+    id: string;
+    mode: "git_managed_read_only" | "git_managed_write";
+  };
+  workspaceRoot: AppConfig["workspace"]["root"];
+  workspace?: WorkspaceRecord;
+  reportPath?: string;
 };
 
 function workflowStateError(message: string, code: string): Error & { code: string } {
