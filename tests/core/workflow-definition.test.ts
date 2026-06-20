@@ -8,6 +8,40 @@ async function tempWorkflowRoot(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), "luna-workflow-definition-"));
 }
 
+async function writeMinimalWorkflow(
+  root: string,
+  workflowId = "code-review",
+  extraMetadata: string[] = []
+): Promise<void> {
+  const workflowDir = path.join(root, workflowId);
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    path.join(workflowDir, "workflow.yaml"),
+    [
+      `id: ${workflowId}`,
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ...extraMetadata,
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(workflowDir, "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: preflight",
+      "    type: built_in",
+      "    uses: preflight",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
 describe("workflow definition loader", () => {
   it("loads workflow.yaml and graph.yaml for a configured workflow", async () => {
     const root = await tempWorkflowRoot();
@@ -406,6 +440,82 @@ describe("workflow definition loader", () => {
       max_concurrency: 2,
       lock_timeout_ms: 120000
     });
+  });
+
+  it("defaults observability to mandatory jsonl and optional flue_log", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeMinimalWorkflow(root);
+
+      const definition = await loadWorkflowDefinition(root, "code-review");
+
+      expect(definition.observability).toEqual({
+        exporters: {
+          flue_log: { enabled: true, required: false }
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects attempts to configure the mandatory jsonl exporter", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeMinimalWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    jsonl:",
+        "      enabled: false",
+        "      required: false"
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toThrow(
+        "events.jsonl is mandatory and cannot be configured"
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads explicit optional flue_log exporter config", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeMinimalWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    flue_log:",
+        "      enabled: false",
+        "      required: false"
+      ]);
+
+      const definition = await loadWorkflowDefinition(root, "code-review");
+
+      expect(definition.observability.exporters.flue_log).toEqual({
+        enabled: false,
+        required: false
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unknown observability exporters", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeMinimalWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    otel:",
+        "      enabled: true"
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toMatchObject({
+        code: "config_schema_invalid"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("parses explicit positive execution metadata", async () => {
