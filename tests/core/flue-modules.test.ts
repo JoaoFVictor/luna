@@ -137,11 +137,9 @@ describe("flue modules", () => {
         configRoot: "config",
         projectRoot: process.cwd(),
         flueRunId: "flue-1",
-        runLogger: expect.objectContaining({
-          info: expect.any(Function),
-          warn: expect.any(Function),
-          error: expect.any(Function)
-        })
+        observabilitySinks: expect.arrayContaining([
+          expect.objectContaining({ id: "flue-log", required: false })
+        ])
       })
     );
   });

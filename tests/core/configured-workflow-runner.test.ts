@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
+import type { LunaObservabilityEvent } from "../../src/core/observability/events.js";
 import type { RunIdentityOptions } from "../../src/core/run-identity.js";
 import type { Invocation, RunIdentity, WorkspaceRecord } from "../../src/core/types.js";
 
@@ -1002,7 +1003,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("emits routed and succeeded logger events for successful runs", async () => {
+  it("emits routed and finished observability events for successful runs", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -1010,18 +1011,22 @@ describe("configured workflow runner", () => {
       await writeWorkflow(root);
       await writeReviewPlannerAgent(root);
 
-      const runLogger = {
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn()
-      };
+      const events: LunaObservabilityEvent[] = [];
 
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
         flueRunId: "flue-log",
         nonceFactory: () => "log",
-        runLogger,
+        observabilitySinks: [
+          {
+            id: "memory",
+            required: false,
+            append: (event) => {
+              events.push(event);
+            }
+          }
+        ],
         dependencies: {
           now: () => new Date("2026-06-20T00:00:00.000Z"),
           createRunIdentity: staticRunIdentity({
@@ -1041,23 +1046,107 @@ describe("configured workflow runner", () => {
       });
 
       expect(result.status).toBe("success");
-      expect(runLogger.info).toHaveBeenCalledWith("luna.workflow.routed", {
-        "luna.run_id": "run-log",
-        "luna.flue_run_id": "flue-log",
-        "luna.workflow_id": "code-review"
-      });
-      expect(runLogger.info).toHaveBeenCalledWith("luna.run.succeeded", {
-        "luna.run_id": "run-log",
-        "luna.flue_run_id": "flue-log",
-        "luna.workflow_id": "code-review"
-      });
-      expect(runLogger.error).not.toHaveBeenCalled();
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "luna.workflow.routed",
+            run_id: "run-log",
+            flue_run_id: "flue-log",
+            workflow_id: "code-review"
+          }),
+          expect.objectContaining({
+            event: "luna.workflow.finished",
+            run_id: "run-log",
+            flue_run_id: "flue-log",
+            workflow_id: "code-review"
+          })
+        ])
+      );
+      expect(events.map((event) => event.event)).not.toContain(
+        "luna.run.succeeded"
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it("does not let logger failures mask successful runs", async () => {
+  it("creates observability artifacts and uses optional sinks without mutating run.json", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writePreflightWorkflow(root, "code-review");
+
+      const optionalEvents: LunaObservabilityEvent[] = [];
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        flueRunId: "flue-obs",
+        nonceFactory: () => "obs",
+        observabilitySinks: [
+          {
+            id: "optional-test",
+            required: false,
+            append: (event) => {
+              optionalEvents.push(event);
+              throw new Error("optional sink unavailable");
+            }
+          }
+        ],
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z"),
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-obs",
+            flue_run_id: "flue-obs"
+          }),
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(optionalEvents.map((event) => event.event)).toContain(
+        "luna.workflow.started"
+      );
+
+      const runJson = await readJson(root, "code-review", "run-obs", "run.json");
+      expect(runJson).toEqual(
+        expect.not.objectContaining({
+          prompt_operations: expect.anything(),
+          events_path: expect.anything()
+        })
+      );
+
+      const eventsPath = artifactPath(root, "code-review", "run-obs", "events.jsonl");
+      const events = (await readFile(eventsPath, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+
+      expect(events.map((event) => event.event)).toEqual(
+        expect.arrayContaining([
+          "luna.workflow.started",
+          "luna.scheduler.step.started",
+          "luna.scheduler.step.finished",
+          "luna.workflow.finished",
+          "luna.observability.sink.warning"
+        ])
+      );
+
+      await expect(
+        readJson(root, "code-review", "run-obs", "observability-summary.json")
+      ).resolves.toMatchObject({
+        run_id: "run-obs",
+        workflow_id: "code-review",
+        events_path: "events.jsonl",
+        prompt_operations: 0
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let optional observability sink failures mask successful runs", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -1070,13 +1159,15 @@ describe("configured workflow runner", () => {
         configRoot: root,
         flueRunId: "flue-log",
         nonceFactory: () => "log",
-        runLogger: {
-          info: vi.fn(() => {
-            throw new Error("logger unavailable");
-          }),
-          warn: vi.fn(),
-          error: vi.fn()
-        },
+        observabilitySinks: [
+          {
+            id: "optional-failing",
+            required: false,
+            append: () => {
+              throw new Error("observability unavailable");
+            }
+          }
+        ],
         dependencies: {
           now: () => new Date("2026-06-20T00:00:00.000Z"),
           createRunIdentity: staticRunIdentity({
@@ -1104,18 +1195,14 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("emits failed logger events for failures after a run exists", async () => {
+  it("emits failed observability events for failures after a run exists", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
       await writeBaseConfig(root);
       await writeWorkflow(root);
 
-      const runLogger = {
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn()
-      };
+      const events: LunaObservabilityEvent[] = [];
 
       const result = await runConfiguredWorkflow({
         invocation,
@@ -1123,7 +1210,15 @@ describe("configured workflow runner", () => {
         throwOnError: false,
         flueRunId: "flue-fail",
         nonceFactory: () => "fail",
-        runLogger,
+        observabilitySinks: [
+          {
+            id: "memory",
+            required: false,
+            append: (event) => {
+              events.push(event);
+            }
+          }
+        ],
         dependencies: {
           now: () => new Date("2026-06-20T00:00:00.000Z"),
           createRunIdentity: staticRunIdentity({
@@ -1140,20 +1235,27 @@ describe("configured workflow runner", () => {
       });
 
       expect(result.status).toBe("failed");
-      expect(runLogger.error).toHaveBeenCalledWith("luna.run.failed", {
-        "luna.run_id": "run-fail",
-        "luna.flue_run_id": "flue-fail",
-        "luna.workflow_id": "code-review",
-        "luna.step_id": "preflight",
-        "error.code": "scheduler_step_failed",
-        "error.cause_code": "preflight_failed"
-      });
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "luna.workflow.failed",
+            run_id: "run-fail",
+            flue_run_id: "flue-fail",
+            workflow_id: "code-review",
+            step_id: "preflight",
+            error: expect.objectContaining({
+              message: "Workflow scheduler failed"
+            })
+          })
+        ])
+      );
+      expect(events.map((event) => event.event)).not.toContain("luna.run.failed");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it("does not let logger failures mask workflow failures", async () => {
+  it("does not let optional observability sink failures mask workflow failures", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -1166,13 +1268,15 @@ describe("configured workflow runner", () => {
         throwOnError: false,
         flueRunId: "flue-fail",
         nonceFactory: () => "fail",
-        runLogger: {
-          info: vi.fn(),
-          warn: vi.fn(),
-          error: vi.fn(() => {
-            throw new Error("logger unavailable");
-          })
-        },
+        observabilitySinks: [
+          {
+            id: "optional-failing",
+            required: false,
+            append: () => {
+              throw new Error("observability unavailable");
+            }
+          }
+        ],
         dependencies: {
           now: () => new Date("2026-06-20T00:00:00.000Z"),
           createRunIdentity: staticRunIdentity({
@@ -1279,7 +1383,7 @@ describe("configured workflow runner", () => {
         flueRunId: "flue-lock",
         timeoutMs: 3456,
         staleAfterMs: 9000,
-        logger: expect.any(Object)
+        observability: expect.any(Object)
       });
     } finally {
       await rm(root, { recursive: true, force: true });

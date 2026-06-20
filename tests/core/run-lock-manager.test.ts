@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { RunLockManager } from "../../src/core/run-lock-manager.js";
-import { noopRunLogger, type RunLogger } from "../../src/core/run-logger.js";
+import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
+import type { LunaObservabilityEvent } from "../../src/core/observability/events.js";
 
 describe("run lock manager", () => {
   it("serializes exclusive access to the same resource", async () => {
@@ -12,8 +13,7 @@ describe("run lock manager", () => {
       root,
       runId: "run-1",
       timeoutMs: 1000,
-      staleAfterMs: 6000,
-      logger: noopRunLogger
+      staleAfterMs: 6000
     });
 
     const release = await manager.acquire("repository:repo", "exclusive");
@@ -35,8 +35,7 @@ describe("run lock manager", () => {
       runId: "run-1",
       flueRunId: "flue-1",
       timeoutMs: 1000,
-      staleAfterMs: 6000,
-      logger: noopRunLogger
+      staleAfterMs: 6000
     });
 
     const release = await manager.acquire("repository:repo", "exclusive");
@@ -70,8 +69,7 @@ describe("run lock manager", () => {
       root,
       runId: "run-1",
       timeoutMs: 20,
-      staleAfterMs: 3000,
-      logger: noopRunLogger
+      staleAfterMs: 3000
     });
 
     await expect(
@@ -91,8 +89,7 @@ describe("run lock manager", () => {
       root,
       runId: "run-1",
       timeoutMs: 20,
-      staleAfterMs: 3000,
-      logger: noopRunLogger
+      staleAfterMs: 3000
     });
 
     await expect(
@@ -119,8 +116,7 @@ describe("run lock manager", () => {
       root,
       runId: "run-1",
       timeoutMs: 1000,
-      staleAfterMs: 3000,
-      logger: noopRunLogger
+      staleAfterMs: 3000
     });
 
     const release = await manager.acquire("repository:repo", "exclusive");
@@ -142,8 +138,7 @@ describe("run lock manager", () => {
       root,
       runId: "run-1",
       timeoutMs: 1000,
-      staleAfterMs: 3000,
-      logger: noopRunLogger
+      staleAfterMs: 3000
     });
 
     const release = await manager.acquire("repository:repo", "exclusive");
@@ -160,8 +155,7 @@ describe("run lock manager", () => {
           root: "/tmp/luna-locks",
           runId: "run-1",
           timeoutMs: 0,
-          staleAfterMs: 3000,
-          logger: noopRunLogger
+          staleAfterMs: 3000
         })
     ).toThrow(expect.objectContaining({ code: "lock_config_invalid" }));
   });
@@ -172,8 +166,7 @@ describe("run lock manager", () => {
       root,
       runId: "run-1",
       timeoutMs: 1000,
-      staleAfterMs: 3000,
-      logger: noopRunLogger
+      staleAfterMs: 3000
     });
 
     const release = await manager.acquire("repository:repo", "exclusive");
@@ -202,65 +195,77 @@ describe("run lock manager", () => {
     ).resolves.toContain("replacement-run");
   });
 
-  it("emits stable Luna lock attributes", async () => {
+  it("emits stable Luna lock observability events", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
-    const logger: RunLogger = {
-      info: () => undefined,
-      warn: () => undefined,
-      error: () => undefined
-    };
-    const events: Array<[string, Record<string, unknown> | undefined]> = [];
-    logger.info = (event, attributes) => {
-      events.push([event, attributes]);
-    };
+    const events: LunaObservabilityEvent[] = [];
+    const observability = createLunaObservability({
+      run: { id: "run-1", flueRunId: "flue-1" },
+      workflow: { id: "code-review" },
+      sinks: [
+        {
+          id: "memory",
+          required: true,
+          append: (event) => {
+            events.push(event);
+          }
+        }
+      ]
+    });
     const manager = new RunLockManager({
       root,
       runId: "run-1",
       flueRunId: "flue-1",
       timeoutMs: 1000,
       staleAfterMs: 3000,
-      logger
+      observability
     });
 
     const release = await manager.acquire("repository:repo", "exclusive");
     await release();
+    await observability.close();
 
-    expect(events).toContainEqual([
-      "luna.lock.acquired",
-      expect.objectContaining({
-        "luna.run_id": "run-1",
-        "luna.flue_run_id": "flue-1",
-        "luna.resource": "repository:repo"
-      })
-    ]);
-    expect(events).toContainEqual([
-      "luna.lock.released",
-      expect.objectContaining({
-        "luna.run_id": "run-1",
-        "luna.resource": "repository:repo"
-      })
-    ]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "luna.lock.acquired",
+          run_id: "run-1",
+          flue_run_id: "flue-1",
+          attributes: expect.objectContaining({
+            "luna.resource": "repository:repo"
+          })
+        }),
+        expect.objectContaining({
+          event: "luna.lock.released",
+          run_id: "run-1",
+          attributes: expect.objectContaining({
+            "luna.resource": "repository:repo"
+          })
+        })
+      ])
+    );
   });
 
-  it("does not let logger failures prevent acquire release or timeout behavior", async () => {
+  it("does not let observability failures prevent acquire release or timeout behavior", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
-    const logger: RunLogger = {
-      info: () => {
-        throw new Error("logger failed");
-      },
-      warn: () => {
-        throw new Error("logger failed");
-      },
-      error: () => {
-        throw new Error("logger failed");
-      }
-    };
+    const observability = createLunaObservability({
+      run: { id: "run-1" },
+      workflow: { id: "code-review" },
+      sinks: [
+        {
+          id: "failing",
+          required: true,
+          append: () => {
+            throw new Error("observability failed");
+          }
+        }
+      ]
+    });
     const manager = new RunLockManager({
       root,
       runId: "run-1",
       timeoutMs: 20,
       staleAfterMs: 3000,
-      logger
+      observability
     });
 
     const release = await manager.acquire("repository:repo", "exclusive");

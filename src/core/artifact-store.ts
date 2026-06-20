@@ -1,4 +1,4 @@
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, open, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeJoin } from "./path-security.js";
 import { redactString, redactValue } from "./redactor.js";
@@ -124,6 +124,29 @@ export class ArtifactStore {
       encoding: "utf8",
       mode: 0o600
     });
+    await chmod(artifactPath, 0o600);
+
+    return artifactPath;
+  }
+
+  async touchArtifact(name: string): Promise<string> {
+    const artifactPath = await this.artifactPath(name);
+    const handle = await open(artifactPath, "a", 0o600);
+
+    await handle.close();
+    await chmod(artifactPath, 0o600);
+
+    return artifactPath;
+  }
+
+  async appendLine(name: string, value: unknown): Promise<string> {
+    const artifactPath = await this.artifactPath(name);
+    const line =
+      typeof value === "string"
+        ? `${redactString(value)}\n`
+        : `${JSON.stringify(redactValue(value))}\n`;
+
+    await appendFile(artifactPath, line, { encoding: "utf8", mode: 0o600 });
     await chmod(artifactPath, 0o600);
 
     return artifactPath;

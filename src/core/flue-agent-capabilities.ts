@@ -1,15 +1,13 @@
 import type { AgentProfile, Skill, ToolDefinition } from "@flue/runtime";
-import { readFile, realpath } from "node:fs/promises";
-import path from "node:path";
-import YAML from "yaml";
-import { z } from "zod";
 import type { AgentDefinition } from "./agent-definition.js";
 import { resolveFlueMcpTools } from "./flue-mcp-capabilities.js";
+import { loadFlueSkill } from "./flue-skill-loader.js";
 import { resolveFlueSubagentProfiles } from "./flue-subagent-profiles.js";
 import { resolveFlueTools } from "./flue-tool-registry.js";
 import type { McpConfig } from "./mcp-config.js";
 import type { ResolvedModelProfiles } from "./model-config.js";
-import { isInsideRoot } from "./path-security.js";
+import type { LunaObservability } from "./observability/luna-observability.js";
+import type { ObservabilitySummary } from "./observability/summary.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];
@@ -17,19 +15,6 @@ export type ResolvedFlueAgentCapabilities = {
   subagents: AgentProfile[];
   close(): Promise<void>;
 };
-
-type WorkspaceSkill = {
-  name: string;
-  description: string;
-  __flueWorkspaceSkill: true;
-  directory: string;
-  skillMdPath: string;
-};
-
-const SkillFrontmatterSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1)
-});
 
 function capabilityError(
   message: string,
@@ -64,7 +49,8 @@ function isKnownSubagentError(error: unknown): boolean {
     code === "subagent_self_reference" ||
     code === "subagent_model_profile_missing" ||
     code === "subagent_context_missing" ||
-    code === "subagent_capabilities_unsupported"
+    code === "subagent_capabilities_unsupported" ||
+    code === "subagent_profile_capability_unsupported"
   );
 }
 
@@ -79,51 +65,19 @@ function subagentContextMissingError(
   return error;
 }
 
-function parseSkillFrontmatter(
-  content: string,
-  skillPath: string
-): z.infer<typeof SkillFrontmatterSchema> {
-  const match = content
-    .replace(/^\uFEFF/, "")
-    .match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/);
-
-  if (match === null) {
-    throw new Error(`Skill is missing YAML frontmatter: ${skillPath}`);
-  }
-
-  return SkillFrontmatterSchema.parse(YAML.parse(match[1] ?? ""));
+async function emitCapabilityEvent(
+  observability: LunaObservability | undefined,
+  level: "info" | "error",
+  event: string,
+  attributes: Record<string, unknown>
+): Promise<void> {
+  await observability?.emit(level, event, attributes);
 }
 
-async function loadSkill(
-  agentDirectory: string,
-  skillPath: string
-): Promise<WorkspaceSkill> {
-  if (path.isAbsolute(skillPath)) {
-    throw new Error(
-      `Skill path must be relative to the agent directory: ${skillPath}`
-    );
-  }
+function errorCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown }).code;
 
-  const capabilityRoot = path.dirname(path.dirname(agentDirectory));
-  const skillMdPath = path.resolve(agentDirectory, skillPath);
-  const capabilityRootReal = await realpath(capabilityRoot);
-  const resolvedSkillMdPath = await realpath(skillMdPath);
-
-  if (!isInsideRoot(capabilityRootReal, resolvedSkillMdPath)) {
-    throw new Error(`Skill path resolves outside Luna capability root: ${skillPath}`);
-  }
-
-  const directory = path.dirname(resolvedSkillMdPath);
-  const content = await readFile(resolvedSkillMdPath, "utf8");
-  const frontmatter = parseSkillFrontmatter(content, resolvedSkillMdPath);
-
-  return {
-    name: frontmatter.name,
-    description: frontmatter.description,
-    __flueWorkspaceSkill: true,
-    directory,
-    skillMdPath: resolvedSkillMdPath
-  };
+  return typeof code === "string" ? code : undefined;
 }
 
 export async function resolveFlueAgentCapabilities({
@@ -132,7 +86,10 @@ export async function resolveFlueAgentCapabilities({
   agentsRoot,
   modelProfiles,
   mcpConfig,
-  env
+  env,
+  observability,
+  summary,
+  observabilitySummary
 }: {
   agent: AgentDefinition;
   cwd: string;
@@ -140,11 +97,14 @@ export async function resolveFlueAgentCapabilities({
   modelProfiles?: ResolvedModelProfiles;
   mcpConfig?: McpConfig;
   env?: Record<string, string | undefined>;
+  observability?: LunaObservability;
+  summary?: ObservabilitySummary;
+  observabilitySummary?: ObservabilitySummary;
 }): Promise<ResolvedFlueAgentCapabilities> {
   try {
     const skills = await Promise.all(
       (agent.skills ?? []).map((skillPath) =>
-        loadSkill(agent.directory, skillPath)
+        loadFlueSkill(agent.directory, skillPath)
       )
     );
     const localTools = resolveFlueTools({
@@ -166,7 +126,11 @@ export async function resolveFlueAgentCapabilities({
         agentsRoot,
         parentAgentId: agent.id,
         ids: subagentIds,
-        modelProfiles
+        modelProfiles,
+        cwd,
+        observability,
+        summary,
+        observabilitySummary
       });
     }
     const mcp = await resolveFlueMcpTools({
@@ -176,6 +140,20 @@ export async function resolveFlueAgentCapabilities({
       env: env ?? process.env
     });
 
+    await emitCapabilityEvent(
+      observability,
+      "info",
+      "luna.capabilities.resolved",
+      {
+        agent_id: agent.id,
+        status: "completed",
+        skills: skills.length,
+        local_tools: localTools.length,
+        mcp_tools: mcp.tools.length,
+        subagents: subagents.length
+      }
+    );
+
     return {
       skills,
       tools: [...localTools, ...mcp.tools],
@@ -183,6 +161,18 @@ export async function resolveFlueAgentCapabilities({
       close: mcp.close
     };
   } catch (cause) {
+    await emitCapabilityEvent(
+      observability,
+      "error",
+      "luna.capabilities.failed",
+      {
+        agent_id: agent.id,
+        status: "failed",
+        ...(errorCode(cause) === undefined ? {} : { code: errorCode(cause) }),
+        error: cause
+      }
+    );
+
     if (
       isUnknownToolError(cause) ||
       isKnownMcpError(cause) ||

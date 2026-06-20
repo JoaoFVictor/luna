@@ -209,11 +209,11 @@ graphs pass it repository context and review instructions with the same shape:
 Create a new agent when the responsibility, allowed capabilities, or output
 schema changes. Reuse an existing agent when only the workflow context changes.
 
-Subagents are agent capabilities, not graph nodes. In this phase they use only
-the referenced agent's description, instructions, and model profile. Use graph
-nodes when the result must have its own artifact, schema, workflow gate, tools,
-or MCP access. Use Flue subagents for lightweight internal delegation inside a
-parent agent.
+Subagents are agent capabilities, not graph nodes. They run as read-only Flue
+profiles using the referenced agent's description, instructions, model profile,
+skills, and explicitly safe local tools. Use graph nodes when the result must
+have its own artifact, schema, workflow gate, MCP access, or write access. Use
+Flue subagents for lightweight internal delegation inside a parent agent.
 
 ## MCP Capabilities
 
@@ -276,6 +276,13 @@ Artifact directories are always resolved as:
 
 Workflow YAML does not define a separate artifact namespace. The routed
 `workflow_id` is the only namespace.
+
+Every run writes:
+
+- `run.json` for strict run identity.
+- `events.jsonl` for append-only Luna runtime events.
+- `observability-summary.json` for derived prompt usage, token/cost totals,
+  failed-step counts, and rejected-capability counts.
 
 Workflow YAML can set scheduler concurrency and per-workflow lock timeout:
 

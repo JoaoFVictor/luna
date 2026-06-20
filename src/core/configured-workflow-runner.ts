@@ -31,11 +31,17 @@ import {
   RunLockManager,
   type RunLockManagerOptions
 } from "./run-lock-manager.js";
+import { createJsonlEventSink } from "./observability/jsonl-sink.js";
 import {
-  noopRunLogger,
-  type RunLogAttributes,
-  type RunLogger
-} from "./run-logger.js";
+  createLunaObservability,
+  type LunaObservability,
+  type LunaObservabilitySink
+} from "./observability/luna-observability.js";
+import {
+  createObservabilitySummary,
+  writeSummaryBestEffort,
+  type ObservabilitySummary
+} from "./observability/summary.js";
 import {
   runWorkflowSchedule,
   splitDeferredFinalReportNodes,
@@ -94,6 +100,9 @@ export type RunAgentStepOptions = {
   input: Record<string, unknown>;
   state: WorkflowState;
   mcpConfig?: McpConfig;
+  observability?: LunaObservability;
+  summary?: ObservabilitySummary;
+  artifactStore?: ArtifactStore;
 };
 
 type AgentLoopWorkflowNode = Extract<WorkflowNode, { type: "agent_loop" }>;
@@ -128,6 +137,9 @@ export type RunAgentLoopStepOptions = {
   repair: ResolvedAgentLoopNode["repair"];
   state: WorkflowState;
   mcpConfig?: McpConfig;
+  observability?: LunaObservability;
+  summary?: ObservabilitySummary;
+  artifactStore?: ArtifactStore;
 };
 
 export type ConfiguredWorkflowRunnerDependencies = {
@@ -160,7 +172,7 @@ export type RunConfiguredWorkflowOptions = {
   workflowsRoot?: string;
   agentsRoot?: string;
   flueRunId?: string;
-  runLogger?: RunLogger;
+  observabilitySinks?: LunaObservabilitySink[];
   nonceFactory?: () => string;
   dependencies?: ConfiguredWorkflowRunnerDependencies;
   attempt?: number;
@@ -451,14 +463,52 @@ async function writeJsonBestEffort(
   }
 }
 
-function emitRunLog(
-  logger: RunLogger,
-  level: keyof RunLogger,
+async function createRunObservability({
+  artifactStore,
+  run,
+  workflowId,
+  sinks
+}: {
+  artifactStore: ArtifactStore;
+  run: RunIdentity;
+  workflowId: string;
+  sinks: LunaObservabilitySink[];
+}): Promise<{
+  observability: LunaObservability;
+  summary: ObservabilitySummary;
+}> {
+  const jsonlSink = await createJsonlEventSink(artifactStore);
+  const summary = createObservabilitySummary({
+    runId: run.run_id,
+    workflowId
+  });
+  const observability = createLunaObservability({
+    run: {
+      id: run.run_id,
+      flueRunId: run.flue_run_id,
+      attempt: run.attempt
+    },
+    workflow: { id: workflowId },
+    sinks: [jsonlSink, ...sinks]
+  });
+
+  await writeSummaryBestEffort(artifactStore, summary);
+
+  return { observability, summary };
+}
+
+async function emitObservabilityBestEffort(
+  observability: LunaObservability | undefined,
+  level: "info" | "warn" | "error",
   event: string,
-  attributes: RunLogAttributes
-): void {
+  attributes?: Record<string, unknown>
+): Promise<void> {
+  if (observability === undefined) {
+    return;
+  }
+
   try {
-    logger[level](event, attributes);
+    await observability.emit(level, event, attributes);
   } catch {
     return;
   }
@@ -1070,7 +1120,10 @@ async function runWorkflowNode(
   state: WorkflowState,
   dependencies: ConfiguredWorkflowRunnerDependencies,
   agentsRoot: string,
-  modelProfiles: ResolvedModelProfiles
+  modelProfiles: ResolvedModelProfiles,
+  observability: LunaObservability | undefined,
+  summary: ObservabilitySummary | undefined,
+  artifactStore: ArtifactStore | undefined
 ): Promise<unknown> {
   if (node.type === "built_in") {
     const runBuiltInStep =
@@ -1108,7 +1161,10 @@ async function runWorkflowNode(
       sandbox: resolvedNode.sandbox,
       validation: resolvedNode.validation,
       repair: resolvedNode.repair,
-      state
+      state,
+      observability,
+      summary,
+      artifactStore
     });
   }
 
@@ -1128,7 +1184,10 @@ async function runWorkflowNode(
     agentsRoot,
     modelProfiles,
     input: resolveWorkflowInput(node.input, state),
-    state
+    state,
+    observability,
+    summary,
+    artifactStore
   });
 }
 
@@ -1163,7 +1222,7 @@ export async function runConfiguredWorkflow({
   workflowsRoot,
   agentsRoot,
   flueRunId,
-  runLogger,
+  observabilitySinks = [],
   nonceFactory,
   dependencies = {},
   attempt = 1,
@@ -1175,7 +1234,6 @@ export async function runConfiguredWorkflow({
   const Store = dependencies.ArtifactStore ?? ArtifactStore;
   const date = dependencies.now?.() ?? new Date();
   const nonce = (nonceFactory ?? createRunNonce)();
-  const logger = runLogger ?? noopRunLogger;
   const modelProfiles = resolveModelProfiles(configs.models);
   const resolvedAgentsRoot = await resolveConfiguredDirectoryRoot(
     configRoot,
@@ -1204,6 +1262,8 @@ export async function runConfiguredWorkflow({
   let workspaceRecord: WorkspaceRecord | undefined;
   let persistedWorkspaceRecord: WorkspaceRecord | undefined;
   let lockManager: SchedulerLockManager | undefined;
+  let observability: LunaObservability | undefined;
+  let summary: ObservabilitySummary | undefined;
 
   try {
     workflowId = workflowIdFromRoute(
@@ -1230,10 +1290,17 @@ export async function runConfiguredWorkflow({
     await artifactStore.initializeRunDirectory();
     await artifactStore.writeJson("invocation.json", invocation);
     await artifactStore.writeJson("run.json", run);
-    emitRunLog(logger, "info", "luna.workflow.routed", {
-      "luna.run_id": run.run_id,
-      "luna.flue_run_id": run.flue_run_id,
-      "luna.workflow_id": workflowId
+    ({ observability, summary } = await createRunObservability({
+      artifactStore,
+      run,
+      workflowId,
+      sinks: observabilitySinks
+    }));
+    await observability.emit("info", "luna.workflow.started", {
+      status: "started"
+    });
+    await observability.emit("info", "luna.workflow.routed", {
+      status: "completed"
     });
 
     repository = resolveRepository(
@@ -1257,7 +1324,7 @@ export async function runConfiguredWorkflow({
         configs.app.locks?.timeout_ms ??
         120000,
       staleAfterMs: configs.app.locks?.stale_after_ms ?? 600000,
-      logger
+      observability
     });
 
     const state: SchedulerWorkflowState = {
@@ -1284,14 +1351,18 @@ export async function runConfiguredWorkflow({
       nodes: mainNodes,
       state,
       execution: { max_concurrency: workflow.execution.max_concurrency },
-      logger,
+      observability,
+      summary,
       runNode: async ({ node, state }) =>
         await runWorkflowNode(
           node,
           state,
           dependencies,
           resolvedAgentsRoot,
-          modelProfiles
+          modelProfiles,
+          observability,
+          summary,
+          activeArtifactStore
         ),
       writeNodeArtifact: async (node, output) =>
         await writeNodeArtifact(activeArtifactStore, node, output),
@@ -1365,7 +1436,10 @@ export async function runConfiguredWorkflow({
         state,
         dependencies,
         resolvedAgentsRoot,
-        modelProfiles
+        modelProfiles,
+        observability,
+        summary,
+        artifactStore
       );
 
       state.steps[node.id] = output;
@@ -1373,11 +1447,10 @@ export async function runConfiguredWorkflow({
       report = finalReportFrom(output) ?? report;
     }
 
-    emitRunLog(logger, "info", "luna.run.succeeded", {
-      "luna.run_id": run.run_id,
-      "luna.flue_run_id": run.flue_run_id,
-      "luna.workflow_id": workflowId
+    await observability.emit("info", "luna.workflow.finished", {
+      status: "completed"
     });
+    await writeSummaryBestEffort(artifactStore, summary);
 
     return {
       status: "success",
@@ -1410,24 +1483,38 @@ export async function runConfiguredWorkflow({
     artifactStore = failure.artifactStore;
     run = failure.run;
     workflowId = failure.workflowId;
+    if (observability === undefined || summary === undefined) {
+      try {
+        ({ observability, summary } = await createRunObservability({
+          artifactStore,
+          run,
+          workflowId,
+          sinks: observabilitySinks
+        }));
+      } catch {
+        observability = undefined;
+        summary = undefined;
+      }
+    }
     const failureArtifactStore = artifactStore;
-    emitRunLog(logger, "error", "luna.run.failed", {
-      "luna.run_id": run.run_id,
-      "luna.flue_run_id": run.flue_run_id,
-      "luna.workflow_id": workflowId,
-      "luna.step_id": (error as { details?: ErrorArtifact["details"] })
-        ?.details?.step_id,
-      "error.code": errorCode(error),
-      "error.cause_code": (error as { details?: ErrorArtifact["details"] })
-        ?.details?.cause_code
-    });
-
+    await emitObservabilityBestEffort(
+      observability,
+      "error",
+      "luna.workflow.failed",
+      {
+        status: "failed",
+        step_id: (error as { details?: ErrorArtifact["details"] })?.details
+          ?.step_id,
+        error
+      }
+    );
     const artifact = errorArtifact(run.run_id, error);
     const artifactWriteError = await writeJsonBestEffort(
       artifactStore,
       "error.json",
       artifact
     );
+    await writeSummaryBestEffort(artifactStore, summary);
     let finalWorkspace: WorkspaceRecord | undefined;
     const workspaceWriteError = await (async () => {
       try {

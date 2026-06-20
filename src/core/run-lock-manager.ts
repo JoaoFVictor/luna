@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { RunLogger } from "./run-logger.js";
+import type { LunaObservability } from "./observability/luna-observability.js";
 import { slugify } from "./path-security.js";
 
 export type LockMode = "exclusive";
@@ -12,7 +12,7 @@ export type RunLockManagerOptions = {
   flueRunId?: string;
   timeoutMs: number;
   staleAfterMs: number;
-  logger: RunLogger;
+  observability?: LunaObservability;
 };
 
 export type AcquireLockOptions = {
@@ -124,7 +124,7 @@ export class RunLockManager {
   private readonly timeoutMs: number;
   private readonly staleAfterMs: number;
   private readonly heartbeatIntervalMs: number;
-  private readonly logger: RunLogger;
+  private readonly observability: LunaObservability | undefined;
 
   constructor(options: RunLockManagerOptions) {
     validatePositiveSafeInteger(options.timeoutMs, "Lock timeoutMs");
@@ -146,7 +146,7 @@ export class RunLockManager {
     this.timeoutMs = options.timeoutMs;
     this.staleAfterMs = options.staleAfterMs;
     this.heartbeatIntervalMs = heartbeatIntervalMs;
-    this.logger = options.logger;
+    this.observability = options.observability;
   }
 
   async acquire(
@@ -218,7 +218,7 @@ export class RunLockManager {
 
     heartbeat = setInterval(() => {
       void writeOwner().catch((cause) => {
-        this.log("warn", "luna.lock.heartbeat_failed", {
+        this.log("warn", "luna.lock.heartbeat.failed", {
           "luna.resource": resource,
           mode,
           error: cause instanceof Error ? cause.message : String(cause)
@@ -422,14 +422,12 @@ export class RunLockManager {
     event: string,
     attributes: Record<string, unknown>
   ): void {
-    try {
-      this.logger[level](event, {
-        "luna.run_id": this.runId,
-        "luna.flue_run_id": this.flueRunId,
-        ...attributes
-      });
-    } catch {
-      // Logging is diagnostic only; lock behavior must remain authoritative.
+    if (this.observability === undefined) {
+      return;
     }
+
+    void this.observability.emit(level, event, attributes).catch(() => {
+      // Observability is diagnostic here; lock behavior remains authoritative.
+    });
   }
 }
