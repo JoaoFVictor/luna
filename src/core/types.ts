@@ -169,10 +169,32 @@ export const ArtifactsConfigSchema = z
   .strict();
 export type ArtifactsConfig = z.infer<typeof ArtifactsConfigSchema>;
 
+export const LockConfigSchema = z
+  .object({
+    root: NonEmptyStringSchema.optional(),
+    timeout_ms: z.number().int().positive().optional(),
+    stale_after_ms: z.number().int().positive().optional()
+  })
+  .strict()
+  .superRefine((locks, context) => {
+    if (locks.stale_after_ms !== undefined) {
+      const heartbeat = Math.min(30000, Math.floor(locks.stale_after_ms / 3));
+      if (heartbeat < 1000) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "locks.stale_after_ms must allow heartbeat >= 1000ms",
+          path: ["stale_after_ms"]
+        });
+      }
+    }
+  });
+export type LockConfig = z.infer<typeof LockConfigSchema>;
+
 export const AppConfigSchema = z
   .object({
     workspace: WorkspaceConfigSchema,
-    artifacts: ArtifactsConfigSchema
+    artifacts: ArtifactsConfigSchema,
+    locks: LockConfigSchema.optional()
   })
   .strict();
 export type AppConfig = z.infer<typeof AppConfigSchema>;

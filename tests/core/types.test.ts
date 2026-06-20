@@ -495,6 +495,61 @@ describe("core zod schemas", () => {
     expect(AppConfigSchema.parse(plannedAppConfig)).toEqual(plannedAppConfig);
   });
 
+  it("accepts optional local lock config", () => {
+    expect(
+      AppConfigSchema.parse({
+        workspace: {
+          strategy: "git_worktree",
+          root: ".workspaces",
+          preserve_on_success: false,
+          preserve_on_failure: true
+        },
+        artifacts: { root: ".runs" },
+        locks: {
+          root: ".luna/locks",
+          timeout_ms: 120000,
+          stale_after_ms: 600000
+        }
+      })
+    ).toMatchObject({
+      locks: {
+        root: ".luna/locks",
+        timeout_ms: 120000,
+        stale_after_ms: 600000
+      }
+    });
+  });
+
+  it("rejects invalid lock timing", () => {
+    const result = AppConfigSchema.safeParse({
+      workspace: {
+        strategy: "git_worktree",
+        root: ".workspaces",
+        preserve_on_success: false,
+        preserve_on_failure: true
+      },
+      artifacts: { root: ".runs" },
+      locks: {
+        root: ".luna/locks",
+        timeout_ms: 120000,
+        stale_after_ms: 500
+      }
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      throw new Error("Expected lock config validation to fail");
+    }
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "locks.stale_after_ms must allow heartbeat >= 1000ms",
+          path: ["locks", "stale_after_ms"]
+        })
+      ])
+    );
+  });
+
   it("rejects a ModelsConfig profile that uses env", () => {
     const invalidConfig = {
       model_profiles: {
