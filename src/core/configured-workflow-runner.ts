@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { ArtifactStore } from "./artifact-store.js";
@@ -26,7 +27,10 @@ import {
 import type { McpConfig } from "./mcp-config.js";
 import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
-import { createRunIdentity as defaultCreateRunIdentity } from "./run-identity.js";
+import {
+  createRunIdentity as defaultCreateRunIdentity,
+  type RunIdentityOptions
+} from "./run-identity.js";
 import { assertSafeSegment, safeJoin } from "./path-security.js";
 import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
 import {
@@ -111,8 +115,7 @@ export type RunAgentLoopStepOptions = {
 export type ConfiguredWorkflowRunnerDependencies = {
   createRunIdentity?: (
     invocation: Invocation,
-    attempt: number,
-    date?: Date
+    options: RunIdentityOptions
   ) => RunIdentity;
   routeInvocation?: typeof defaultRouteInvocation;
   resolveRepository?: (
@@ -420,13 +423,13 @@ async function markdownArtifactPath({
   return await safeJoin(artifactRoot, [runId, node.artifact.markdown]);
 }
 
-function artifactRootForWorkflow(root: string, rootNamespace?: string): string {
-  if (rootNamespace === undefined) {
-    return root;
-  }
+function artifactRootForWorkflow(root: string, workflowId: string): string {
+  assertSafeSegment(workflowId);
+  return path.join(root, workflowId);
+}
 
-  assertSafeSegment(rootNamespace);
-  return path.join(root, rootNamespace);
+function createRunNonce(): string {
+  return randomBytes(4).toString("hex");
 }
 
 async function writeJsonBestEffort(
@@ -959,8 +962,22 @@ export async function runConfiguredWorkflow({
   const makeRunIdentity =
     dependencies.createRunIdentity ?? defaultCreateRunIdentity;
   const Store = dependencies.ArtifactStore ?? ArtifactStore;
-  const run = makeRunIdentity(invocation, attempt, dependencies.now?.());
-  let artifactStore = new Store(configs.app.artifacts.root, run.run_id);
+  const workflowId = workflowIdFromRoute(
+    invocation,
+    configs.routing,
+    dependencies
+  );
+  const date = dependencies.now?.() ?? new Date();
+  const run = makeRunIdentity(invocation, {
+    workflowId,
+    attempt,
+    date,
+    nonce: createRunNonce()
+  });
+  const artifactStore = new Store(
+    artifactRootForWorkflow(configs.app.artifacts.root, workflowId),
+    run.run_id
+  );
   const modelProfiles = resolveModelProfiles(configs.models);
   const resolvedAgentsRoot = await resolveConfiguredDirectoryRoot(
     configRoot,
@@ -978,17 +995,11 @@ export async function runConfiguredWorkflow({
     dependencies.cleanupWorktree ?? defaultCleanupWorktree;
   const activeBuiltInStepRegistry =
     dependencies.builtInStepRegistry ?? defaultBuiltInStepRegistry;
-  let workflowId: string | undefined;
   let repository: RepositoryConfig | undefined;
   let workspaceRecord: WorkspaceRecord | undefined;
   let persistedWorkspaceRecord: WorkspaceRecord | undefined;
 
   try {
-    workflowId = workflowIdFromRoute(
-      invocation,
-      configs.routing,
-      dependencies
-    );
     repository = resolveRepository(
       invocation,
       configs.repositories.repositories
@@ -996,13 +1007,6 @@ export async function runConfiguredWorkflow({
     const workflow = await loadConfiguredWorkflow(
       resolvedWorkflowsRoot,
       workflowId
-    );
-    artifactStore = new Store(
-      artifactRootForWorkflow(
-        configs.app.artifacts.root,
-        workflow.artifacts?.root_namespace
-      ),
-      run.run_id
     );
     await artifactStore.writeJson("invocation.json", invocation);
     await artifactStore.writeJson("run.json", run);
@@ -1149,7 +1153,7 @@ export async function runConfiguredWorkflow({
     return {
       status: "failed",
       run,
-      ...(workflowId === undefined ? {} : { workflow_id: workflowId }),
+      workflow_id: workflowId,
       error: artifact,
       ...(finalWorkspace === undefined ? {} : { workspace: finalWorkspace })
     };

@@ -363,6 +363,90 @@ describe("workflow definition loader", () => {
     }
   });
 
+  it("rejects artifacts.root_namespace because workflow id is the only artifact namespace", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-workflow-"));
+    try {
+      await mkdir(path.join(root, "legacy"), { recursive: true });
+      await writeFile(
+        path.join(root, "legacy", "workflow.yaml"),
+        [
+          "id: legacy",
+          "type: workflow",
+          "mode: git_managed_read_only",
+          "input_schema: input.schema.json",
+          "output_schema: output.schema.json",
+          "graph: graph.yaml",
+          "artifacts:",
+          "  root_namespace: old",
+          ""
+        ].join("\n")
+      );
+      await writeFile(
+        path.join(root, "legacy", "graph.yaml"),
+        [
+          "nodes:",
+          "  - id: preflight",
+          "    type: built_in",
+          "    uses: preflight",
+          ""
+        ].join("\n")
+      );
+
+      await expect(loadWorkflowDefinition(root, "legacy")).rejects.toMatchObject({
+        code: "config_schema_invalid"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("parses default execution metadata", async () => {
+    const definition = await loadWorkflowDefinition("workflows", "code-review");
+    expect(definition.execution).toEqual({
+      max_concurrency: 1
+    });
+  });
+
+  it("parses explicit positive execution metadata", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-workflow-"));
+    try {
+      await mkdir(path.join(root, "explicit"), { recursive: true });
+      await writeFile(
+        path.join(root, "explicit", "workflow.yaml"),
+        [
+          "id: explicit",
+          "type: workflow",
+          "mode: git_managed_read_only",
+          "input_schema: input.schema.json",
+          "output_schema: output.schema.json",
+          "graph: graph.yaml",
+          "execution:",
+          "  max_concurrency: 3",
+          "  lock_timeout_ms: 1000",
+          ""
+        ].join("\n")
+      );
+      await writeFile(
+        path.join(root, "explicit", "graph.yaml"),
+        [
+          "nodes:",
+          "  - id: preflight",
+          "    type: built_in",
+          "    uses: preflight",
+          ""
+        ].join("\n")
+      );
+
+      const definition = await loadWorkflowDefinition(root, "explicit");
+      expect(definition.execution).toEqual({
+        max_concurrency: 3,
+        lock_timeout_ms: 1000
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("loads the committed code-review workflow graph", async () => {
     await expect(loadWorkflowDefinition("workflows", "code-review")).resolves.toMatchObject({
       id: "code-review",

@@ -39,12 +39,14 @@ const modelProfiles = {
 
 const githubRun: RunIdentity = {
   run_id: "run-1",
+  workflow_id: "code-review",
   attempt: 1,
   source: "github",
   event: "pull_request",
   action: "selected",
   route_target: { type: "workflow", id: "code-review" },
-  subject: { type: "pull_request", id: "42" }
+  subject: { type: "pull_request", id: "42" },
+  started_at: "2026-06-20T00:00:00.000Z"
 };
 
 async function createImplementationSafeGitSkill(root: string): Promise<void> {

@@ -269,9 +269,13 @@ mode: git_managed_read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
-artifacts:
-  root_namespace: my-workflow
 ```
+
+Artifact directories are always resolved as:
+`<app.artifacts.root>/<workflow-id>/<run-id>/`
+
+Workflow YAML does not define a separate artifact namespace. The routed
+`workflow_id` is the only namespace.
 
 The write-mode implementation workflow uses:
 

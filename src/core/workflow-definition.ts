@@ -7,6 +7,13 @@ import { assertSafeSegment, isInsideRoot } from "./path-security.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
+const WorkflowExecutionSchema = z
+  .object({
+    max_concurrency: z.number().int().positive().optional(),
+    lock_timeout_ms: z.number().int().positive().optional()
+  })
+  .strict();
+
 const WorkflowMetadataSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -15,11 +22,7 @@ const WorkflowMetadataSchema = z
     input_schema: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
     graph: NonEmptyStringSchema,
-    artifacts: z
-      .object({
-        root_namespace: NonEmptyStringSchema.optional()
-      })
-      .optional()
+    execution: WorkflowExecutionSchema.optional()
   })
   .strict();
 
@@ -108,12 +111,20 @@ const WorkflowGraphSchema = z
   .strict();
 
 export type WorkflowMetadata = z.infer<typeof WorkflowMetadataSchema>;
+export type WorkflowExecution = {
+  max_concurrency: number;
+  lock_timeout_ms?: number;
+};
 export type WorkflowGraph = z.infer<typeof WorkflowGraphSchema>;
 export type WorkflowNode = WorkflowGraph["nodes"][number];
 
-export type WorkflowDefinition = Omit<WorkflowMetadata, "graph"> & {
+export type WorkflowDefinition = Omit<
+  WorkflowMetadata,
+  "graph" | "execution"
+> & {
   directory: string;
   graph: WorkflowGraph;
+  execution: WorkflowExecution;
 };
 
 function workflowDefinitionError(message: string, code: string): Error & { code: string } {
@@ -260,6 +271,12 @@ export async function loadWorkflowDefinition(
   return {
     ...metadata,
     directory,
-    graph
+    graph,
+    execution: {
+      max_concurrency: metadata.execution?.max_concurrency ?? 1,
+      ...(metadata.execution?.lock_timeout_ms === undefined
+        ? {}
+        : { lock_timeout_ms: metadata.execution.lock_timeout_ms })
+    }
   };
 }

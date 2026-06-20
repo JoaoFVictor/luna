@@ -4,5 +4,3 @@ mode: git_managed_write
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
-artifacts:
-  root_namespace: implementation

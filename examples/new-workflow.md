@@ -27,8 +27,6 @@ mode: git_managed_read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
-artifacts:
-  root_namespace: my-workflow
 ```
 
 Rules:
@@ -36,8 +34,12 @@ Rules:
 - The directory name and `id` must match.
 - `mode` supports `git_managed_read_only` and `git_managed_write`.
 - Schema and graph paths must stay inside the workflow directory.
-- `artifacts.root_namespace` writes outputs under
-  `.runs/<root_namespace>/<run-id>/`.
+
+Artifact directories are always resolved as:
+`<app.artifacts.root>/<workflow-id>/<run-id>/`
+
+Workflow YAML does not define a separate artifact namespace. The routed
+`workflow_id` is the only namespace.
 
 Use `git_managed_write` only for workflows that intentionally create a writable
 worktree and run trusted local write agents.

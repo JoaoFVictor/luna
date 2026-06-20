@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
+import type { RunIdentityOptions } from "../../src/core/run-identity.js";
 import type { Invocation, RunIdentity, WorkspaceRecord } from "../../src/core/types.js";
 
 const invocation: Invocation = {
@@ -51,23 +52,36 @@ const jiraInvocation: Invocation = {
 
 const githubRun: RunIdentity = {
   run_id: "run-1",
+  workflow_id: "code-review",
   attempt: 1,
   source: "github",
   event: "pull_request",
   action: "selected",
   route_target: { type: "workflow", id: "code-review" },
-  subject: { type: "pull_request", id: "42" }
+  subject: { type: "pull_request", id: "42" },
+  started_at: "2026-06-20T00:00:00.000Z"
 };
 
 const jiraRun: RunIdentity = {
   run_id: "run-1",
+  workflow_id: "implementation",
   attempt: 1,
   source: "jira",
   event: "issue",
   action: "selected",
   route_target: { type: "workflow", id: "implementation" },
-  subject: { type: "jira_issue", id: "ABC-123" }
+  subject: { type: "jira_issue", id: "ABC-123" },
+  started_at: "2026-06-20T00:00:00.000Z"
 };
+
+function staticRunIdentity(run: RunIdentity) {
+  return (_invocation: Invocation, options: RunIdentityOptions): RunIdentity => ({
+    ...run,
+    workflow_id: options.workflowId,
+    attempt: options.attempt,
+    started_at: options.date.toISOString()
+  });
+}
 
 async function writeBaseConfig(
   root: string,
@@ -552,9 +566,23 @@ async function writeTrustedWriteAgent(root: string, id: string): Promise<void> {
   );
 }
 
-async function readJson(root: string, runId: string, name: string): Promise<unknown> {
+function artifactPath(
+  root: string,
+  workflowId: string,
+  runId: string,
+  name: string
+): string {
+  return path.join(root, "artifacts", workflowId, runId, name);
+}
+
+async function readJson(
+  root: string,
+  workflowId: string,
+  runId: string,
+  name: string
+): Promise<unknown> {
   return JSON.parse(
-    await readFile(path.join(root, "artifacts", runId, name), "utf8")
+    await readFile(artifactPath(root, workflowId, runId, name), "utf8")
   ) as unknown;
 }
 
@@ -632,7 +660,7 @@ async function runImplementationLifecycleScenario({
     invocation: jiraInvocation,
     configRoot: root,
     dependencies: {
-      createRunIdentity: () => jiraRun,
+      createRunIdentity: staticRunIdentity(jiraRun),
       runBuiltInStep,
       cleanupWorktree
     }
@@ -738,7 +766,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep
         }
       });
@@ -830,7 +858,7 @@ describe("configured workflow runner", () => {
         invocation: jiraInvocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => jiraRun,
+          createRunIdentity: staticRunIdentity(jiraRun),
           runBuiltInStep,
           cleanupWorktree: vi.fn(async () => cleanedWorkspace)
         }
@@ -839,7 +867,9 @@ describe("configured workflow runner", () => {
       expect(result.status).toBe("success");
       expect(result.workspace).toEqual(cleanedWorkspace);
       expect(finalReportReasons).toEqual(["success_cleanup"]);
-      await expect(readJson(root, "run-1", "final-report.json")).resolves.toMatchObject({
+      await expect(
+        readJson(root, "implementation", "run-1", "final-report.json")
+      ).resolves.toMatchObject({
         workspace: cleanedWorkspace
       });
     } finally {
@@ -897,7 +927,7 @@ describe("configured workflow runner", () => {
         invocation: jiraInvocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => jiraRun,
+          createRunIdentity: staticRunIdentity(jiraRun),
           runBuiltInStep,
           runAgentLoopStep,
           cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
@@ -952,15 +982,15 @@ describe("configured workflow runner", () => {
       );
       expect(result.steps.implementation).toBe(loopOutput);
       expect(result.steps.diff).toEqual({ files: ["src/index.ts"] });
-      await expect(readJson(root, "run-1", "implementation-attempts.json")).resolves.toEqual(
-        loopOutput.attempts
-      );
-      await expect(readJson(root, "run-1", "validation.json")).resolves.toEqual(
-        loopOutput.validation
-      );
-      await expect(readJson(root, "run-1", "implementation-result.json")).resolves.toEqual(
-        loopOutput.result
-      );
+      await expect(
+        readJson(root, "implementation", "run-1", "implementation-attempts.json")
+      ).resolves.toEqual(loopOutput.attempts);
+      await expect(
+        readJson(root, "implementation", "run-1", "validation.json")
+      ).resolves.toEqual(loopOutput.validation);
+      await expect(
+        readJson(root, "implementation", "run-1", "implementation-result.json")
+      ).resolves.toEqual(loopOutput.result);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -980,7 +1010,7 @@ describe("configured workflow runner", () => {
         configRoot: root,
         throwOnError: false,
         dependencies: {
-          createRunIdentity: () => jiraRun,
+          createRunIdentity: staticRunIdentity(jiraRun),
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "prepare_implementation_worktree"
               ? {
@@ -999,7 +1029,9 @@ describe("configured workflow runner", () => {
         throw new Error("Expected failed result");
       }
       expect(result.error).toMatchObject({ code: "agent_loop_runner_missing" });
-      await expect(readJson(root, "run-1", "error.json")).resolves.toMatchObject({
+      await expect(
+        readJson(root, "implementation", "run-1", "error.json")
+      ).resolves.toMatchObject({
         code: "agent_loop_runner_missing"
       });
     } finally {
@@ -1043,7 +1075,7 @@ describe("configured workflow runner", () => {
           configRoot: root,
           throwOnError: false,
           dependencies: {
-            createRunIdentity: () => jiraRun,
+            createRunIdentity: staticRunIdentity(jiraRun),
             runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
               if (uses === "preflight") {
                 return preflight;
@@ -1137,7 +1169,9 @@ describe("configured workflow runner", () => {
           reason
         });
         expect(cleanupWorktree).not.toHaveBeenCalled();
-        await expect(readJson(root, "run-1", "workspace.json")).resolves.toMatchObject({
+        await expect(
+          readJson(root, "implementation", "run-1", "workspace.json")
+        ).resolves.toMatchObject({
           preserved: true,
           reason
         });
@@ -1205,7 +1239,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep,
           runAgentStep,
           cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
@@ -1231,7 +1265,7 @@ describe("configured workflow runner", () => {
           "final-report.md"
         ].map(async (name) => {
           await expect(
-            pathExists(path.join(root, "artifacts", "run-1", name))
+            pathExists(artifactPath(root, "code-review", "run-1", name))
           ).resolves.toBe(true);
         })
       );
@@ -1292,7 +1326,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           builtInStepRegistry: {
             require: (name: string) => ({
               name,
@@ -1384,7 +1418,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           builtInStepRegistry: {
             require: (name: string) => ({
               name,
@@ -1479,7 +1513,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep,
           runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
             agent.id === "change-reviewer"
@@ -1500,11 +1534,13 @@ describe("configured workflow runner", () => {
           persistedWorkspaceRecord: preparedWorkspace
         })
       );
-      await expect(readJson(root, "run-1", "workspace.json")).resolves.toEqual(
-        cleanedWorkspace
-      );
+      await expect(
+        readJson(root, "code-review", "run-1", "workspace.json")
+      ).resolves.toEqual(cleanedWorkspace);
       expect(finalReportWorkspaces).toEqual([cleanedWorkspace]);
-      await expect(readJson(root, "run-1", "final-report.json")).resolves.toMatchObject({
+      await expect(
+        readJson(root, "code-review", "run-1", "final-report.json")
+      ).resolves.toMatchObject({
         workspace: cleanedWorkspace
       });
     } finally {
@@ -1538,7 +1574,7 @@ describe("configured workflow runner", () => {
         agentsRoot: path.join(root, "agents"),
         throwOnError: false,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
             if (uses === "preflight") {
               return { status: "ok" };
@@ -1576,12 +1612,14 @@ describe("configured workflow runner", () => {
       }
       expect(result.error).toMatchObject({ code: "review_failed" });
       expect(result.workspace).toEqual(expectedWorkspace);
-      await expect(readJson(root, "run-1", "error.json")).resolves.toMatchObject({
+      await expect(
+        readJson(root, "code-review", "run-1", "error.json")
+      ).resolves.toMatchObject({
         code: "review_failed"
       });
-      await expect(readJson(root, "run-1", "workspace.json")).resolves.toEqual(
-        expectedWorkspace
-      );
+      await expect(
+        readJson(root, "code-review", "run-1", "workspace.json")
+      ).resolves.toEqual(expectedWorkspace);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -1611,7 +1649,7 @@ describe("configured workflow runner", () => {
         agentsRoot: path.join(root, "agents"),
         throwOnError: false,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
             if (uses === "preflight") {
               return { status: "ok" };
@@ -1654,12 +1692,14 @@ describe("configured workflow runner", () => {
       }
       expect(result.error).toMatchObject({ code: "success_cleanup_failed" });
       expect(result.workspace).toEqual(expectedWorkspace);
-      await expect(readJson(root, "run-1", "error.json")).resolves.toMatchObject({
+      await expect(
+        readJson(root, "code-review", "run-1", "error.json")
+      ).resolves.toMatchObject({
         code: "success_cleanup_failed"
       });
-      await expect(readJson(root, "run-1", "workspace.json")).resolves.toEqual(
-        expectedWorkspace
-      );
+      await expect(
+        readJson(root, "code-review", "run-1", "workspace.json")
+      ).resolves.toEqual(expectedWorkspace);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -1695,7 +1735,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep,
           runAgentStep
         }
@@ -1713,46 +1753,41 @@ describe("configured workflow runner", () => {
       expect(runBuiltInStep).toHaveBeenCalledTimes(2);
       expect(runAgentStep).toHaveBeenCalledTimes(1);
       await expect(
-        readFile(path.join(root, "artifacts", "run-1", "invocation.json"), "utf8")
+        readFile(
+          artifactPath(root, "code-review", "run-1", "invocation.json"),
+          "utf8"
+        )
       ).resolves.toContain('"source": "github"');
       await expect(
-        readFile(path.join(root, "artifacts", "run-1", "run.json"), "utf8")
+        readFile(
+          artifactPath(root, "code-review", "run-1", "run.json"),
+          "utf8"
+        )
       ).resolves.toContain("run-1");
       await expect(
-        readFile(path.join(root, "artifacts", "run-1", "review-plan.json"), "utf8")
+        readFile(
+          artifactPath(root, "code-review", "run-1", "review-plan.json"),
+          "utf8"
+        )
       ).resolves.toContain("Plan");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it("writes artifacts under the configured workflow namespace", async () => {
+  it("writes artifacts under the routed workflow id namespace", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
       await writeBaseConfig(root);
       await writeWorkflow(root);
       await writeReviewPlannerAgent(root);
-      await writeFile(
-        path.join(root, "workflows", "code-review", "workflow.yaml"),
-        [
-          "id: code-review",
-          "type: workflow",
-          "mode: git_managed_read_only",
-          "input_schema: input.schema.json",
-          "output_schema: output.schema.json",
-          "graph: graph.yaml",
-          "artifacts:",
-          "  root_namespace: code-review",
-          ""
-        ].join("\n")
-      );
 
       await runConfiguredWorkflow({
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" },
           runAgentStep: async () => ({
@@ -1792,7 +1827,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: vi.fn(async () => ({ status: "ok" })),
           runAgentStep: vi.fn(async ({ input }: { input: unknown }) => ({
             summary: "Toy workflow executed",
@@ -1813,7 +1848,10 @@ describe("configured workflow runner", () => {
         input: { preflight: { status: "ok" } }
       });
       await expect(
-        readFile(path.join(root, "artifacts", "run-1", "toy-agent.json"), "utf8")
+        readFile(
+          artifactPath(root, "toy-review", "run-1", "toy-agent.json"),
+          "utf8"
+        )
       ).resolves.toContain("Toy workflow executed");
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -1841,7 +1879,7 @@ describe("configured workflow runner", () => {
         workflowsRoot: path.join(root, "workflows"),
         agentsRoot: path.join(root, "agents"),
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? repoContext : { status: "ok" }
           ),
@@ -1902,7 +1940,7 @@ describe("configured workflow runner", () => {
           workflowsRoot: path.join(root, "workflows"),
           agentsRoot: path.join(root, "agents"),
           dependencies: {
-            createRunIdentity: () => githubRun,
+            createRunIdentity: staticRunIdentity(githubRun),
             runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
               uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
             ),
@@ -1927,7 +1965,7 @@ describe("configured workflow runner", () => {
           configRoot: root,
           workflowsRoot: path.join(root, "workflows"),
           dependencies: {
-            createRunIdentity: () => githubRun,
+            createRunIdentity: staticRunIdentity(githubRun),
             runBuiltInStep: vi.fn(),
             runAgentStep: vi.fn()
           }
@@ -1950,7 +1988,7 @@ describe("configured workflow runner", () => {
         workflowsRoot: path.join(root, "workflows"),
         throwOnError: false,
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: vi.fn(),
           runAgentStep: vi.fn()
         }
@@ -1964,7 +2002,9 @@ describe("configured workflow runner", () => {
       expect(result.error).toMatchObject({
         code: "workflow_config_read_failed"
       });
-      await expect(readJson(root, "run-1", "error.json")).resolves.toMatchObject({
+      await expect(
+        readJson(root, "missing-workflow", "run-1", "error.json")
+      ).resolves.toMatchObject({
         code: "workflow_config_read_failed"
       });
     } finally {
@@ -1989,7 +2029,7 @@ describe("configured workflow runner", () => {
         configRoot: root,
         workflowsRoot: path.join(root, "workflows"),
         dependencies: {
-          createRunIdentity: () => githubRun,
+          createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
           ),
@@ -2024,7 +2064,7 @@ describe("configured workflow runner", () => {
           configRoot: root,
           workflowsRoot: path.join(root, "workflows"),
           dependencies: {
-            createRunIdentity: () => githubRun,
+            createRunIdentity: staticRunIdentity(githubRun),
             runBuiltInStep: vi.fn(),
             runAgentStep: vi.fn()
           }

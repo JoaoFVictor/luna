@@ -201,12 +201,14 @@ describe("implementation workflow e2e", () => {
         dependencies: {
           createRunIdentity: () => ({
             run_id: "run-1",
+            workflow_id: "implementation",
             attempt: 1,
             source: "jira",
             event: "issue",
             action: "selected",
             route_target: { type: "workflow", id: "implementation" },
-            subject: { type: "jira_issue", id: "ABC-123" }
+            subject: { type: "jira_issue", id: "ABC-123" },
+            started_at: "2026-06-20T00:00:00.000Z"
           }),
           builtInStepDependencies: {
             runPreflight: vi.fn(async () => {
