@@ -4,10 +4,7 @@ import {
   type AgentProfile,
   type ToolDefinition
 } from "@flue/runtime";
-import {
-  loadAgentDefinition,
-} from "./agent-definition.js";
-import type { AgentSubagentReference } from "./agent-capabilities.js";
+import { loadAgentDefinition } from "./agent-definition.js";
 import { loadFlueSkill } from "./flue-skill-loader.js";
 import { resolveFlueTools } from "./flue-tool-registry.js";
 import {
@@ -20,6 +17,7 @@ import {
   type ObservabilitySummary
 } from "./observability/summary.js";
 import {
+  type AgentSubagentReference,
   resolveSubagentPolicy,
   type ResolvedSubagentPolicy,
   type WorkflowSubagentPolicy

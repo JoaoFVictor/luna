@@ -34,7 +34,7 @@ describe("Luna observability", () => {
         }
       },
       jsonlSink,
-      flueLogSink
+      flueLogSinks: [flueLogSink]
     });
 
     expect(sinks).toEqual([
@@ -60,7 +60,7 @@ describe("Luna observability", () => {
         }
       },
       jsonlSink,
-      flueLogSink
+      flueLogSinks: [flueLogSink]
     });
 
     expect(sinks.map((sink) => sink.id)).toEqual(["jsonl"]);

@@ -4,7 +4,6 @@ import type { LunaObservabilitySink } from "./events.js";
 export type CreateObservabilitySinksOptions = {
   config: WorkflowObservabilityConfig;
   jsonlSink: LunaObservabilitySink;
-  flueLogSink?: LunaObservabilitySink;
   flueLogSinks?: readonly LunaObservabilitySink[];
 };
 
@@ -19,7 +18,6 @@ function withIdentity(
 export function createObservabilitySinks({
   config,
   jsonlSink,
-  flueLogSink,
   flueLogSinks
 }: CreateObservabilitySinksOptions): LunaObservabilitySink[] {
   const sinks: LunaObservabilitySink[] = [
@@ -31,8 +29,7 @@ export function createObservabilitySinks({
     return sinks;
   }
 
-  const providedFlueLogSinks =
-    flueLogSinks ?? (flueLogSink === undefined ? [] : [flueLogSink]);
+  const providedFlueLogSinks = flueLogSinks ?? [];
 
   if (providedFlueLogSinks.length === 0) {
     if (flueLog.required) {

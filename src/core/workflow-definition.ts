@@ -159,6 +159,11 @@ export type WorkflowObservabilityConfig = {
     flue_log: { enabled: boolean; required: boolean };
   };
 };
+export const defaultWorkflowObservabilityConfig: WorkflowObservabilityConfig = {
+  exporters: {
+    flue_log: { enabled: true, required: false }
+  }
+};
 export type WorkflowGraph = z.infer<typeof WorkflowGraphSchema>;
 export type WorkflowNode = WorkflowGraph["nodes"][number];
 
@@ -299,8 +304,8 @@ function normalizeObservabilityConfig(
   return {
     exporters: {
       flue_log: {
-        enabled: config?.exporters?.flue_log?.enabled ?? true,
-        required: config?.exporters?.flue_log?.required ?? false
+        ...defaultWorkflowObservabilityConfig.exporters.flue_log,
+        ...config?.exporters?.flue_log
       }
     }
   };

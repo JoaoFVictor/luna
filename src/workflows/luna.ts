@@ -126,17 +126,17 @@ async function recordPromptCompletion(
     response
   });
 
-  if (usage === undefined) {
-    recordPromptUsageMissing(options.summary);
-    await emitPromptEvent(options, "warn", "luna.prompt.usage_missing", {
-      prompt_id: promptId,
-      status: "completed"
-    });
-  } else {
-    recordPromptUsage(options.summary, usage);
-  }
-
   try {
+    if (usage === undefined) {
+      recordPromptUsageMissing(options.summary);
+      await emitPromptEvent(options, "warn", "luna.prompt.usage_missing", {
+        prompt_id: promptId,
+        status: "completed"
+      });
+    } else {
+      recordPromptUsage(options.summary, usage);
+    }
+
     await emitPromptEvent(options, "info", "luna.prompt.finished", {
       prompt_id: promptId,
       status: "completed",

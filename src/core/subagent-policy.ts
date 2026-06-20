@@ -9,6 +9,11 @@ export type SubagentPolicyOverride = {
   allow_tools?: string[];
 };
 
+export type AgentSubagentReference = {
+  id: string;
+  policy?: SubagentPolicyOverride;
+};
+
 export type ResolvedSubagentPolicy = {
   mode: SubagentMode;
   allow_tools: string[];

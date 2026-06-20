@@ -1,5 +1,8 @@
 import { z } from "zod";
-import type { SubagentPolicyOverride } from "./subagent-policy.js";
+import type {
+  AgentSubagentReference,
+  SubagentPolicyOverride
+} from "./subagent-policy.js";
 
 export const CapabilityIdSchema = z
   .string()
@@ -29,11 +32,6 @@ export const SubagentReferenceSchema = z.union([
   CapabilityIdSchema.transform((id) => ({ id })),
   SubagentReferenceObjectSchema
 ]);
-
-export type AgentSubagentReference = {
-  id: string;
-  policy?: SubagentPolicyOverride;
-};
 
 export const AgentCapabilityFieldsSchema = z.object({
   skills: z.array(SkillPathSchema).optional(),

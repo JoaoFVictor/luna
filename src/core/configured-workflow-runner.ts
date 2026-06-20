@@ -55,6 +55,7 @@ import {
 import { assertSafeSegment, safeJoin } from "./path-security.js";
 import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
 import {
+  defaultWorkflowObservabilityConfig,
   loadWorkflowDefinition,
   type WorkflowObservabilityConfig,
   type WorkflowNode
@@ -92,12 +93,6 @@ type MaybePromise<T> = T | Promise<T>;
 
 type BuiltInMetadataRegistry = {
   require(name: string): { metadata?: BuiltInStepMetadata };
-};
-
-const defaultWorkflowObservabilityConfig: WorkflowObservabilityConfig = {
-  exporters: {
-    flue_log: { enabled: true, required: false }
-  }
 };
 
 export type RunAgentStepOptions = {
@@ -188,6 +183,16 @@ export type RunConfiguredWorkflowOptions = {
   dependencies?: ConfiguredWorkflowRunnerDependencies;
   attempt?: number;
   throwOnError?: boolean;
+};
+
+type WorkflowNodeRuntimeContext = {
+  dependencies: ConfiguredWorkflowRunnerDependencies;
+  agentsRoot: string;
+  modelProfiles: ResolvedModelProfiles;
+  workflowSubagentPolicy: WorkflowSubagentPolicy;
+  observability?: LunaObservability;
+  summary?: ObservabilitySummary;
+  artifactStore?: ArtifactStore;
 };
 
 export type ConfiguredWorkflowSuccessResult = {
@@ -1135,17 +1140,11 @@ function resolveAgentLoopNode(
 async function runWorkflowNode(
   node: WorkflowNode,
   state: WorkflowState,
-  dependencies: ConfiguredWorkflowRunnerDependencies,
-  agentsRoot: string,
-  modelProfiles: ResolvedModelProfiles,
-  workflowSubagentPolicy: WorkflowSubagentPolicy,
-  observability: LunaObservability | undefined,
-  summary: ObservabilitySummary | undefined,
-  artifactStore: ArtifactStore | undefined
+  context: WorkflowNodeRuntimeContext
 ): Promise<unknown> {
   if (node.type === "built_in") {
     const runBuiltInStep =
-      dependencies.runBuiltInStep ?? defaultRunBuiltInStep;
+      context.dependencies.runBuiltInStep ?? defaultRunBuiltInStep;
 
     return await runBuiltInStep({
       uses: node.uses,
@@ -1154,60 +1153,60 @@ async function runWorkflowNode(
         node.input === undefined
           ? undefined
           : resolveWorkflowInput(node.input, state),
-      dependencies: dependencies.builtInStepDependencies
+      dependencies: context.dependencies.builtInStepDependencies
     });
   }
 
   if (node.type === "agent_loop") {
-    if (dependencies.runAgentLoopStep === undefined) {
+    if (context.dependencies.runAgentLoopStep === undefined) {
       throw configuredWorkflowError(
         `No agent loop runner configured for node: ${node.id}`,
         "agent_loop_runner_missing"
       );
     }
 
-    const agent = await loadAgentDefinition(agentsRoot, node.agent);
+    const agent = await loadAgentDefinition(context.agentsRoot, node.agent);
     const resolvedNode = resolveAgentLoopNode(node, state);
 
-    return await dependencies.runAgentLoopStep({
+    return await context.dependencies.runAgentLoopStep({
       agent,
       node: resolvedNode,
-      model: resolveAgentModel(agent, modelProfiles),
-      agentsRoot,
-      modelProfiles,
-      workflowSubagentPolicy,
+      model: resolveAgentModel(agent, context.modelProfiles),
+      agentsRoot: context.agentsRoot,
+      modelProfiles: context.modelProfiles,
+      workflowSubagentPolicy: context.workflowSubagentPolicy,
       input: resolveWorkflowInput(node.input, state),
       sandbox: resolvedNode.sandbox,
       validation: resolvedNode.validation,
       repair: resolvedNode.repair,
       state,
-      observability,
-      summary,
-      artifactStore
+      observability: context.observability,
+      summary: context.summary,
+      artifactStore: context.artifactStore
     });
   }
 
-  if (dependencies.runAgentStep === undefined) {
+  if (context.dependencies.runAgentStep === undefined) {
     throw configuredWorkflowError(
       `No agent step runner configured for node: ${node.id}`,
       "agent_step_runner_missing"
     );
   }
 
-  const agent = await loadAgentDefinition(agentsRoot, node.agent);
+  const agent = await loadAgentDefinition(context.agentsRoot, node.agent);
 
-  return await dependencies.runAgentStep({
+  return await context.dependencies.runAgentStep({
     agent,
     node,
-    model: resolveAgentModel(agent, modelProfiles),
-    agentsRoot,
-    modelProfiles,
-    workflowSubagentPolicy,
+    model: resolveAgentModel(agent, context.modelProfiles),
+    agentsRoot: context.agentsRoot,
+    modelProfiles: context.modelProfiles,
+    workflowSubagentPolicy: context.workflowSubagentPolicy,
     input: resolveWorkflowInput(node.input, state),
     state,
-    observability,
-    summary,
-    artifactStore
+    observability: context.observability,
+    summary: context.summary,
+    artifactStore: context.artifactStore
   });
 }
 
@@ -1369,6 +1368,15 @@ export async function runConfiguredWorkflow({
         (node) => builtInMetadata(node, activeBuiltInStepRegistry)
     );
     const activeArtifactStore = artifactStore;
+    const nodeRuntimeContext: WorkflowNodeRuntimeContext = {
+      dependencies,
+      agentsRoot: resolvedAgentsRoot,
+      modelProfiles,
+      workflowSubagentPolicy: workflow.subagent_policy,
+      observability,
+      summary,
+      artifactStore: activeArtifactStore
+    };
 
     const scheduleResult = await runWorkflowSchedule({
       nodes: mainNodes,
@@ -1377,17 +1385,7 @@ export async function runConfiguredWorkflow({
       observability,
       summary,
       runNode: async ({ node, state }) =>
-        await runWorkflowNode(
-          node,
-          state,
-          dependencies,
-          resolvedAgentsRoot,
-          modelProfiles,
-          workflow.subagent_policy,
-          observability,
-          summary,
-          activeArtifactStore
-        ),
+        await runWorkflowNode(node, state, nodeRuntimeContext),
       writeNodeArtifact: async (node, output) =>
         await writeNodeArtifact(activeArtifactStore, node, output),
       builtInMetadata: (node) => builtInMetadata(node, activeBuiltInStepRegistry),
@@ -1455,17 +1453,10 @@ export async function runConfiguredWorkflow({
         state.reportPath = reportPath;
       }
 
-      const output = await runWorkflowNode(
-        node,
-        state,
-        dependencies,
-        resolvedAgentsRoot,
-        modelProfiles,
-        workflow.subagent_policy,
-        observability,
-        summary,
+      const output = await runWorkflowNode(node, state, {
+        ...nodeRuntimeContext,
         artifactStore
-      );
+      });
 
       state.steps[node.id] = output;
       await writeNodeArtifact(artifactStore, node, output);
