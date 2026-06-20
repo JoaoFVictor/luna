@@ -4,3 +4,6 @@ mode: git_managed_write
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
+execution:
+  max_concurrency: 2
+  lock_timeout_ms: 120000

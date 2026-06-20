@@ -211,6 +211,23 @@ Artifact directories are always resolved as:
 Workflow YAML does not define a separate artifact namespace. The routed
 `workflow_id` is the only namespace.
 
+Workflow YAML may tune scheduler execution:
+
+```yaml
+execution:
+  max_concurrency: 1
+  lock_timeout_ms: 120000
+```
+
+`config/app.yaml` may tune local lock storage and stale-lock recovery:
+
+```yaml
+locks:
+  root: .luna/locks
+  timeout_ms: 120000
+  stale_after_ms: 600000
+```
+
 By default, Luna uses Pi's `openai-codex/...` provider. Running
 `npx @earendil-works/pi-ai login openai-codex` writes `auth.json` in the project
 directory. Luna reads that file at runtime and registers the provider with Flue.

@@ -23,7 +23,12 @@ Rules:
 - Directory name and `workflow.yaml` `id` must match.
 - `mode` is `git_managed_read_only` or `git_managed_write`.
 - Paths must stay inside the workflow directory.
-- `artifacts.root_namespace` controls `.runs/<namespace>/<run-id>/`.
+- Artifact directories always resolve to
+  `<app.artifacts.root>/<workflow-id>/<run-id>/`; workflow YAML must not define
+  a separate artifact namespace.
+- Optional `execution.max_concurrency` controls safe ready-node parallelism.
+  Repository-sensitive built-ins remain serialized by local locks, and
+  `agent`/`agent_loop` nodes stay effectively single-lane.
 
 ## Node Types
 

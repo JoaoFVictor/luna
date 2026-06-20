@@ -400,10 +400,11 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("parses default execution metadata", async () => {
+  it("parses committed workflow execution metadata", async () => {
     const definition = await loadWorkflowDefinition("workflows", "code-review");
     expect(definition.execution).toEqual({
-      max_concurrency: 1
+      max_concurrency: 2,
+      lock_timeout_ms: 120000
     });
   });
 

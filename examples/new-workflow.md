@@ -27,6 +27,9 @@ mode: git_managed_read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
+execution:
+  max_concurrency: 1
+  lock_timeout_ms: 120000
 ```
 
 Rules:
@@ -40,6 +43,11 @@ Artifact directories are always resolved as:
 
 Workflow YAML does not define a separate artifact namespace. The routed
 `workflow_id` is the only namespace.
+
+`execution.max_concurrency` controls how many safe ready nodes the scheduler
+may run at once. Repository-sensitive built-ins are still serialized by local
+locks, and agent nodes stay effectively single-lane until harness isolation is
+proven for broader parallelism.
 
 Use `git_managed_write` only for workflows that intentionally create a writable
 worktree and run trusted local write agents.
