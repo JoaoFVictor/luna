@@ -23,7 +23,9 @@ Current domain files:
 - `implementation.ts` for Jira implementation/write-mode steps.
 
 Create a new domain file only when the capability does not belong to an
-existing domain.
+existing domain. If you create a new domain file, create a matching focused
+test file under `tests/core/`, for example
+`tests/core/built-ins-my-domain.test.ts`.
 
 ## 2. Define the step
 
@@ -156,6 +158,9 @@ describe("my domain built-ins", () => {
 
 For registry/catalog changes, also update
 `tests/core/built-ins-registry.test.ts`.
+
+If the built-in becomes part of Luna's public inventory, update `README.md` and
+`examples/configured-workflows.md` so workflow authors can discover it.
 
 ## 8. Verify
 

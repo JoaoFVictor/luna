@@ -11,6 +11,7 @@ For step-by-step recipes, see:
 - [Create a new workflow](new-workflow.md)
 - [Create a new input adapter](new-adapter.md)
 - [Create a new built-in step](new-built-in.md)
+- [Create a new local tool](new-tool.md)
 
 Choose the guide by intent:
 
@@ -23,13 +24,15 @@ Choose the guide by intent:
   with `new-adapter.md`.
 - If you want a deterministic local workflow capability, start with
   `new-built-in.md`.
+- If you want to expose deterministic local functions to an agent, start with
+  `new-tool.md`.
 
 ## Runtime Model
 
 Luna exposes one generic Flue workflow entrypoint named `luna`.
 
 ```text
-adapter or JSON input -> invocation -> route -> workflow graph -> agents/built-ins -> artifacts
+adapter or JSON input -> invocation -> route -> workflow graph -> built-ins/agents/agent loops -> artifacts
 ```
 
 The workflow id comes from one of these places:
@@ -97,6 +100,11 @@ Built-in steps:
 - `open_pull_request`
 - `final_implementation_report`
 
+Local tools:
+
+- `repository.status`
+- `repository.diff-summary`
+
 Model profiles:
 
 - `default`
@@ -161,6 +169,31 @@ and instructions make sense in both places.
 
 Configured workflows do not attach tools directly. The graph picks agents; each
 agent declares its own skills and tools.
+
+## Reusing Agents Across Workflows
+
+Agents are meant to be reused when the role and input contract still make
+sense. For example, `change-reviewer` can be used by the bundled
+`code-review` workflow and by a future `release-risk-review` workflow if both
+graphs pass it repository context and review instructions with the same shape:
+
+```yaml
+- id: release_risk_review
+  type: agent
+  agent: change-reviewer
+  output_schema: code_review_findings
+  artifact: release-risk-review.json
+  input:
+    invocation: $.invocation
+    repo_context: $.steps.repo_context
+    plan: $.steps.release_plan
+  after:
+    - repo_context
+    - release_plan
+```
+
+Create a new agent when the responsibility, allowed capabilities, or output
+schema changes. Reuse an existing agent when only the workflow context changes.
 
 Subagents are agent capabilities, not graph nodes. In this phase they use only
 the referenced agent's description, instructions, and model profile. Use graph
@@ -430,6 +463,7 @@ Use TypeScript for:
 
 - New input adapters.
 - New built-in steps.
+- New local tools.
 - New workspace or repository behavior.
 - New artifact behavior.
 - JSON Schema features outside Luna's supported subset.

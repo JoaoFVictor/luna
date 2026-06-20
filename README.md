@@ -84,8 +84,10 @@ Open the generated report:
 .runs/implementation/<run-id>/final-report.md
 ```
 
-For the complete walkthrough, see
-[examples/review-pr.md](examples/review-pr.md).
+For complete walkthroughs, see:
+
+- [Run a GitHub PR review](examples/review-pr.md)
+- [Implement a Jira task](examples/implementation-jira-task.md)
 
 ## Core Concepts
 
@@ -108,7 +110,7 @@ For the complete walkthrough, see
 ## How Luna Works
 
 ```text
-input adapter -> normalized invocation -> router -> workflow YAML -> agents -> artifacts
+input adapter -> normalized invocation -> router -> workflow graph -> built-ins/agents/agent loops -> artifacts
 ```
 
 There is one generic Flue workflow entrypoint: `luna`.
@@ -288,6 +290,11 @@ Built-in steps:
 - `open_pull_request`
 - `final_implementation_report`
 
+Local tools:
+
+- `repository.status`
+- `repository.diff-summary`
+
 ## Guides And Examples
 
 - [Run a GitHub PR review](examples/review-pr.md)
@@ -296,6 +303,7 @@ Built-in steps:
 - [Create a new workflow](examples/new-workflow.md)
 - [Create a new input adapter](examples/new-adapter.md)
 - [Create a new built-in step](examples/new-built-in.md)
+- [Create a new local tool](examples/new-tool.md)
 - [Configured workflows reference](examples/configured-workflows.md)
 
 Use YAML/config for new agents, new workflow graphs using existing built-ins,
