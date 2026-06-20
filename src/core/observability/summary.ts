@@ -29,6 +29,7 @@ export type ObservabilitySummary = {
   events_path: "events.jsonl";
   prompt_operations: number;
   prompt_duration_ms: number;
+  usage_missing_count: number;
   tokens: LunaTokenSummary;
   cost: LunaCostSummary;
   failed_steps: Array<{
@@ -100,6 +101,7 @@ export function createObservabilitySummary({
     events_path: "events.jsonl" as const,
     prompt_operations: 0,
     prompt_duration_ms: 0,
+    usage_missing_count: 0,
     tokens: emptyTokens(),
     cost: emptyCost(),
     failed_steps: [],
@@ -160,6 +162,16 @@ export function recordPromptUsage(
   summary.cost.cache_write += usage.cost.cache_write;
   summary.cost.total += usage.cost.total;
   summary.cost.unit = usage.cost.unit;
+}
+
+export function recordPromptUsageMissing(
+  summary: ObservabilitySummary | undefined
+): void {
+  if (summary === undefined) {
+    return;
+  }
+
+  summary.usage_missing_count += 1;
 }
 
 export function recordFailedStep(

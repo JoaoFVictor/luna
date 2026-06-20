@@ -27,6 +27,7 @@ import { createFlueLogSink } from "../core/observability/flue-log-sink.js";
 import {
   recordPromptOperation,
   recordPromptUsage,
+  recordPromptUsageMissing,
   usageFromFlueResponse,
   writeSummaryBestEffort
 } from "../core/observability/summary.js";
@@ -96,7 +97,7 @@ function promptErrorAttributes(error: unknown): unknown {
 
 async function emitPromptEvent(
   options: RunAgentStepOptions | RunAgentLoopStepOptions,
-  level: "info" | "error",
+  level: "info" | "warn" | "error",
   event: string,
   attributes: Record<string, unknown>
 ): Promise<void> {
@@ -119,14 +120,22 @@ async function recordPromptCompletion(
 ): Promise<void> {
   const durationMs = Date.now() - startedAtMs;
   recordPromptOperation(options.summary, { durationMs });
-  recordPromptUsage(
-    options.summary,
-    usageFromFlueResponse({
-      promptId,
-      modelProfile: options.agent.model_profile,
-      response
-    })
-  );
+  const usage = usageFromFlueResponse({
+    promptId,
+    modelProfile: options.agent.model_profile,
+    response
+  });
+
+  if (usage === undefined) {
+    recordPromptUsageMissing(options.summary);
+    await emitPromptEvent(options, "warn", "luna.prompt.usage_missing", {
+      prompt_id: promptId,
+      status: "completed"
+    });
+  } else {
+    recordPromptUsage(options.summary, usage);
+  }
+
   try {
     await emitPromptEvent(options, "info", "luna.prompt.finished", {
       prompt_id: promptId,

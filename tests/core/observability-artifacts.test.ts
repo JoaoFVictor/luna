@@ -9,6 +9,7 @@ import {
   recordFailedStep,
   recordPromptOperation,
   recordPromptUsage,
+  recordPromptUsageMissing,
   recordRejectedCapability,
   usageFromFlueResponse
 } from "../../src/core/observability/summary.js";
@@ -210,6 +211,18 @@ describe("observability artifacts", () => {
         }
       ]
     });
+  });
+
+  it("records prompt operations without usage as usage_missing_count", () => {
+    const summary = createObservabilitySummary({
+      runId: "run-1",
+      workflowId: "code-review"
+    });
+
+    recordPromptOperation(summary, { durationMs: 10 });
+    recordPromptUsageMissing(summary);
+
+    expect(summary.usage_missing_count).toBe(1);
   });
 
   it("returns undefined usage when Flue response has no usage or model", () => {
