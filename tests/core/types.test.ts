@@ -13,6 +13,7 @@ import {
   RepositoriesConfigSchema,
   RepoContextSchema,
   ReviewPlanSchema,
+  RunIdentitySchema,
   RoutingConfigSchema,
   ValidationResultSchema
 } from "../../src/core/types.js";
@@ -154,6 +155,20 @@ const validAcceptanceDecision = {
   summary: "One high-confidence authorization issue remains.",
   blocking_reasons: ["Missing authorization check"],
   recommended_action: "request_changes"
+};
+
+const validRunIdentity = {
+  run_id:
+    "20260618t150405123z-code-review-github-pull-request-octo-org-hello-world-pull-request-42-a1-abcdef123456-n9x8",
+  flue_run_id: "flue-run-abcdef123456",
+  workflow_id: "code-review",
+  attempt: 1,
+  source: "github",
+  event: "pull_request",
+  action: "selected",
+  route_target: { type: "workflow", id: "code-review" },
+  subject: { type: "pull_request", id: "42" },
+  started_at: "2026-06-18T15:04:05.123Z"
 };
 
 describe("core zod schemas", () => {
@@ -342,6 +357,22 @@ describe("core zod schemas", () => {
         reason: "validation_failed"
       })
     ).toMatchObject({ skipped: true });
+  });
+
+  it("accepts a run identity with workflow and Flue correlation fields", () => {
+    expect(RunIdentitySchema.parse(validRunIdentity)).toEqual(validRunIdentity);
+  });
+
+  it("requires the explicit run identity contract fields", () => {
+    expect(() =>
+      RunIdentitySchema.parse({
+        run_id:
+          "20260618t150405z-github-pull-request-octo-org-hello-world-pull-request-42-a1",
+        attempt: 1,
+        source: "github",
+        event: "pull_request"
+      })
+    ).toThrow();
   });
 
   it("requires validation and result status on agent loop result artifacts", () => {

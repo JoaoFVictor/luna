@@ -390,6 +390,8 @@ export type RuntimeConfigState = {
 export const RunIdentitySchema = z
   .object({
     run_id: NonEmptyStringSchema,
+    flue_run_id: NonEmptyStringSchema.optional(),
+    workflow_id: NonEmptyStringSchema,
     attempt: z.number().int().positive(),
     source: NonEmptyStringSchema,
     event: NonEmptyStringSchema,
@@ -401,7 +403,8 @@ export const RunIdentitySchema = z
         id: NonEmptyStringSchema
       })
       .strict()
-      .optional()
+      .optional(),
+    started_at: NonEmptyStringSchema
   })
   .strict();
 export type RunIdentity = z.infer<typeof RunIdentitySchema>;

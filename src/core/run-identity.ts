@@ -1,6 +1,14 @@
 import { slugify } from "./path-security.js";
 import type { Invocation, RunIdentity } from "./types.js";
 
+export type RunIdentityOptions = {
+  attempt: number;
+  date: Date;
+  workflowId: string;
+  flueRunId?: string;
+  nonce: string;
+};
+
 function runIdentityError(message: string): Error & { code: "invalid_run_id" } {
   const error = new Error(message) as Error & { code: "invalid_run_id" };
   error.code = "invalid_run_id";
@@ -15,8 +23,9 @@ export function slugTimestamp(date: Date): string {
   const hour = date.getUTCHours().toString().padStart(2, "0");
   const minute = date.getUTCMinutes().toString().padStart(2, "0");
   const second = date.getUTCSeconds().toString().padStart(2, "0");
+  const millisecond = date.getUTCMilliseconds().toString().padStart(3, "0");
 
-  return `${year}${month}${day}t${hour}${minute}${second}z`;
+  return `${year}${month}${day}t${hour}${minute}${second}${millisecond}z`;
 }
 
 function invocationSlug(invocation: Invocation): string {
@@ -33,42 +42,73 @@ function invocationSlug(invocation: Invocation): string {
     .join("-");
 }
 
+function safeIdentityPart(value: string, label: string): string {
+  if (value === "") {
+    throw runIdentityError(`Run id ${label} is invalid`);
+  }
+
+  if (value.includes("/") || value.includes("\\") || value.includes("..")) {
+    throw runIdentityError(`Run id ${label} is invalid`);
+  }
+
+  const slug = slugify(value.replace(/_/g, "-"));
+  if (slug === "unknown" || !/^[a-z0-9._-]+$/.test(slug)) {
+    throw runIdentityError(`Run id ${label} is invalid`);
+  }
+  return slug;
+}
+
+function flueSuffix(flueRunId: string | undefined): string | undefined {
+  if (flueRunId === undefined) {
+    return undefined;
+  }
+
+  const slug = safeIdentityPart(flueRunId, "flue run id");
+  return slug.slice(-12);
+}
+
 export function createRunIdentity(
   invocation: Invocation,
-  attempt: number,
-  date = new Date()
+  options: RunIdentityOptions
 ): RunIdentity {
+  const { attempt, date, workflowId, flueRunId, nonce } = options;
   if (!Number.isSafeInteger(attempt) || attempt < 1) {
     throw runIdentityError("Run attempt must be a positive integer");
   }
 
-  const run_id = `${slugTimestamp(date)}-${invocationSlug(invocation)}-a${attempt}`;
+  const parts = [
+    slugTimestamp(date),
+    safeIdentityPart(workflowId, "workflow id"),
+    invocationSlug(invocation),
+    `a${attempt}`,
+    flueSuffix(flueRunId),
+    safeIdentityPart(nonce, "nonce")
+  ].filter((part): part is string => part !== undefined && part !== "");
 
+  const run_id = parts.join("-");
   if (!/^[a-z0-9._-]+$/.test(run_id)) {
     throw runIdentityError("Run id contains unsafe characters");
   }
 
-  const identity: RunIdentity = {
+  return {
     run_id,
+    ...(flueRunId === undefined ? {} : { flue_run_id: flueRunId }),
+    workflow_id: workflowId,
     attempt,
     source: invocation.source,
-    event: invocation.event
+    event: invocation.event,
+    ...(invocation.action === undefined ? {} : { action: invocation.action }),
+    ...(invocation.target === undefined
+      ? {}
+      : { route_target: invocation.target }),
+    ...(invocation.subject === undefined
+      ? {}
+      : {
+          subject: {
+            type: invocation.subject.type,
+            id: invocation.subject.id
+          }
+        }),
+    started_at: date.toISOString()
   };
-
-  if (invocation.action !== undefined) {
-    identity.action = invocation.action;
-  }
-
-  if (invocation.target !== undefined) {
-    identity.route_target = invocation.target;
-  }
-
-  if (invocation.subject !== undefined) {
-    identity.subject = {
-      type: invocation.subject.type,
-      id: invocation.subject.id
-    };
-  }
-
-  return identity;
 }

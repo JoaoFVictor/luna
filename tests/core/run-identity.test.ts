@@ -16,22 +16,91 @@ const invocation = {
 
 describe("run identity", () => {
   it("formats timestamps as compact UTC slugs", () => {
-    expect(slugTimestamp(fixedDate)).toBe("20260618t150405z");
+    expect(slugTimestamp(fixedDate)).toBe("20260618t150405000z");
   });
 
   it("creates a run identity from normalized invocation fields", () => {
-    const identity = createRunIdentity(invocation, 1, fixedDate);
+    const identity = createRunIdentity(invocation, {
+      attempt: 1,
+      date: fixedDate,
+      workflowId: "code-review",
+      nonce: "one"
+    });
 
     expect(identity).toEqual({
-      run_id: "20260618t150405z-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a1",
+      run_id:
+        "20260618t150405000z-code-review-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a1-one",
+      workflow_id: "code-review",
       attempt: 1,
       source: "github",
       event: "pull_request",
       action: "selected",
       route_target: { type: "workflow", id: "code-review" },
-      subject: { type: "pull_request", id: "313" }
+      subject: { type: "pull_request", id: "313" },
+      started_at: "2026-06-18T15:04:05.000Z"
     });
     expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
+  });
+
+  it("includes workflow id, millisecond timestamp, flue id suffix, and nonce", () => {
+    const identity = createRunIdentity(invocation, {
+      attempt: 1,
+      date: new Date("2026-06-18T15:04:05.123Z"),
+      workflowId: "code-review",
+      flueRunId: "flue-run-abcdef123456",
+      nonce: "n9x8"
+    });
+
+    expect(identity).toEqual({
+      run_id:
+        "20260618t150405123z-code-review-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a1-abcdef123456-n9x8",
+      flue_run_id: "flue-run-abcdef123456",
+      workflow_id: "code-review",
+      attempt: 1,
+      source: "github",
+      event: "pull_request",
+      action: "selected",
+      route_target: { type: "workflow", id: "code-review" },
+      subject: { type: "pull_request", id: "313" },
+      started_at: "2026-06-18T15:04:05.123Z"
+    });
+  });
+
+  it("omits flue_run_id outside Flue and still creates unique path-safe ids", () => {
+    const identity = createRunIdentity(invocation, {
+      attempt: 1,
+      date: new Date("2026-06-18T15:04:05.123Z"),
+      workflowId: "code-review",
+      nonce: "local-1"
+    });
+
+    expect(identity.flue_run_id).toBeUndefined();
+    expect(identity.run_id).toContain("code-review");
+    expect(identity.run_id).toContain("local-1");
+    expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
+  });
+
+  it("rejects unsafe explicit identity parts", () => {
+    const safeOptions = {
+      attempt: 1,
+      date: fixedDate,
+      workflowId: "code-review",
+      flueRunId: "flue-run-abcdef123456",
+      nonce: "one"
+    };
+
+    for (const options of [
+      { ...safeOptions, nonce: "" },
+      { ...safeOptions, nonce: "!!!" },
+      { ...safeOptions, nonce: "ユニコード" },
+      { ...safeOptions, nonce: "../bad" },
+      { ...safeOptions, workflowId: "../code-review" },
+      { ...safeOptions, flueRunId: "flue-run/../abcdef123456" }
+    ]) {
+      expect(() => createRunIdentity(invocation, options)).toThrow(
+        expect.objectContaining({ code: "invalid_run_id" })
+      );
+    }
   });
 
   it("creates stable run identity for jira normalized invocations", () => {
@@ -49,12 +118,16 @@ describe("run identity", () => {
         },
         subject: { type: "issue", id: "ABC-123" }
       },
-      1,
-      fixedDate
+      {
+        attempt: 1,
+        date: fixedDate,
+        workflowId: "implementation",
+        nonce: "one"
+      }
     );
 
     expect(identity.run_id).toBe(
-      "20260618t150405z-jira-issue-swinggo-dev-swg-front-nuxt-issue-abc-123-a1"
+      "20260618t150405000z-implementation-jira-issue-swinggo-dev-swg-front-nuxt-issue-abc-123-a1-one"
     );
     expect(identity.route_target).toEqual({
       type: "workflow",
@@ -75,10 +148,15 @@ describe("run identity", () => {
       subject: { type: "Pull Request", id: "313/../../Main" }
     } as const satisfies Invocation;
 
-    const identity = createRunIdentity(unsafeInvocation, 1, fixedDate);
+    const identity = createRunIdentity(unsafeInvocation, {
+      attempt: 1,
+      date: fixedDate,
+      workflowId: "Code Review",
+      nonce: "nonce_one"
+    });
 
     expect(identity.run_id).toBe(
-      "20260618t150405z-git-hub-pull-request-octo-org-repo-name-touch-pwned-pull-request-313-main-a1"
+      "20260618t150405000z-code-review-git-hub-pull-request-octo-org-repo-name-touch-pwned-pull-request-313-main-a1-nonce-one"
     );
     expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
     expect(identity.run_id).not.toMatch(/[A-Z]/);
@@ -92,28 +170,59 @@ describe("run identity", () => {
   });
 
   it("represents incrementing attempts as a1, a2, and later values", () => {
-    expect(createRunIdentity(invocation, 1, fixedDate).run_id).toMatch(/-a1$/);
-    expect(createRunIdentity(invocation, 2, fixedDate).run_id).toMatch(/-a2$/);
-    expect(createRunIdentity(invocation, 12, fixedDate).run_id).toMatch(/-a12$/);
+    expect(
+      createRunIdentity(invocation, {
+        attempt: 1,
+        date: fixedDate,
+        workflowId: "code-review",
+        nonce: "one"
+      }).run_id
+    ).toMatch(/-a1-one$/);
+    expect(
+      createRunIdentity(invocation, {
+        attempt: 2,
+        date: fixedDate,
+        workflowId: "code-review",
+        nonce: "one"
+      }).run_id
+    ).toMatch(/-a2-one$/);
+    expect(
+      createRunIdentity(invocation, {
+        attempt: 12,
+        date: fixedDate,
+        workflowId: "code-review",
+        nonce: "one"
+      }).run_id
+    ).toMatch(/-a12-one$/);
   });
 
   it("rejects non-positive and non-integer attempts", () => {
     for (const attempt of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(() => createRunIdentity(invocation, attempt, fixedDate)).toThrow(
-        expect.objectContaining({ code: "invalid_run_id" })
-      );
+      expect(() =>
+        createRunIdentity(invocation, {
+          attempt,
+          date: fixedDate,
+          workflowId: "code-review",
+          nonce: "one"
+        })
+      ).toThrow(expect.objectContaining({ code: "invalid_run_id" }));
     }
   });
 
   it("keeps the exact run_id shape and relies on attempt increments for same-second uniqueness", () => {
-    const first = createRunIdentity(invocation, 1, fixedDate);
-    const sameAttempt = createRunIdentity(invocation, 1, fixedDate);
-    const retry = createRunIdentity(invocation, 2, fixedDate);
+    const first = createRunIdentity(invocation, {
+      attempt: 1,
+      date: fixedDate,
+      workflowId: "code-review",
+      nonce: "one"
+    });
+    const second = createRunIdentity(invocation, {
+      attempt: 1,
+      date: fixedDate,
+      workflowId: "code-review",
+      nonce: "two"
+    });
 
-    expect(first.run_id).toBe(sameAttempt.run_id);
-    expect(retry.run_id).toBe(
-      "20260618t150405z-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a2"
-    );
-    expect(retry.run_id).not.toBe(first.run_id);
+    expect(first.run_id).not.toBe(second.run_id);
   });
 });
