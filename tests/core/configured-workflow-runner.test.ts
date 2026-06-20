@@ -202,6 +202,97 @@ async function writeWorkflow(root: string): Promise<void> {
   );
 }
 
+async function writePreflightWorkflow(
+  root: string,
+  workflowId = "lock-options",
+  execution: string[] = []
+): Promise<void> {
+  await mkdir(path.join(root, "workflows", workflowId), { recursive: true });
+  await writeFile(
+    path.join(root, "workflows", workflowId, "workflow.yaml"),
+    [
+      `id: ${workflowId}`,
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ...execution,
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", workflowId, "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: preflight",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifact: preflight.json",
+      ""
+    ].join("\n")
+  );
+}
+
+async function writeLockingWorkflow(
+  root: string,
+  workflowId = "lock-review"
+): Promise<void> {
+  await mkdir(path.join(root, "workflows", workflowId), { recursive: true });
+  await writeFile(
+    path.join(root, "workflows", workflowId, "workflow.yaml"),
+    [
+      `id: ${workflowId}`,
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", workflowId, "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: workspace",
+      "    type: built_in",
+      "    uses: prepare_worktree",
+      "    artifact: workspace.json",
+      ""
+    ].join("\n")
+  );
+}
+
+async function writeAppConfigWithLocks(
+  root: string,
+  locks: { root?: string; timeoutMs?: number; staleAfterMs?: number }
+): Promise<void> {
+  await writeFile(
+    path.join(root, "app.yaml"),
+    [
+      "workspace:",
+      "  strategy: git_worktree",
+      `  root: ${JSON.stringify(path.join(root, "workspaces"))}`,
+      "  preserve_on_success: false",
+      "  preserve_on_failure: true",
+      "artifacts:",
+      `  root: ${JSON.stringify(path.join(root, "artifacts"))}`,
+      "locks:",
+      ...(locks.root === undefined
+        ? []
+        : [`  root: ${JSON.stringify(locks.root)}`]),
+      ...(locks.timeoutMs === undefined
+        ? []
+        : [`  timeout_ms: ${locks.timeoutMs}`]),
+      ...(locks.staleAfterMs === undefined
+        ? []
+        : [`  stale_after_ms: ${locks.staleAfterMs}`]),
+      ""
+    ].join("\n")
+  );
+}
+
 async function writeToyWorkflow(root: string): Promise<void> {
   await mkdir(path.join(root, "workflows", "toy-review"), { recursive: true });
   await writeFile(
@@ -1110,6 +1201,148 @@ describe("configured workflow runner", () => {
       );
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("creates lock manager with lock root resolved from projectRoot and app lock config", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-project-root-"));
+
+    try {
+      await writeBaseConfig(root, "lock-options");
+      await writeAppConfigWithLocks(root, {
+        root: "locks/app",
+        timeoutMs: 3456,
+        staleAfterMs: 9000
+      });
+      await writePreflightWorkflow(root);
+
+      const lockManagerFactory = vi.fn(() => ({
+        acquire: vi.fn(async () => async () => undefined)
+      }));
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        projectRoot,
+        flueRunId: "flue-lock",
+        dependencies: {
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            flue_run_id: "flue-lock"
+          }),
+          lockManagerFactory,
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(lockManagerFactory).toHaveBeenCalledWith({
+        root: path.join(projectRoot, "locks/app"),
+        runId: "run-1",
+        flueRunId: "flue-lock",
+        timeoutMs: 3456,
+        staleAfterMs: 9000,
+        logger: expect.any(Object)
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("acquires repository locks for repository-sensitive built-ins before execution", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "lock-review");
+      await writeLockingWorkflow(root);
+
+      const events: string[] = [];
+      const workspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          lockManagerFactory: () => ({
+            acquire: async (resource) => {
+              events.push(`acquire:${resource}`);
+              return async () => {
+                events.push(`release:${resource}`);
+              };
+            }
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
+            events.push(`run:${uses}`);
+            return workspace;
+          }),
+          cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
+            ...workspaceRecord,
+            preserved: false,
+            reason: "success_cleanup"
+          }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(events).toEqual([
+        "acquire:repository:repo",
+        "run:prepare_worktree",
+        "release:repository:repo"
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses workflow lock timeout over app lock timeout when creating the manager", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-project-root-"));
+
+    try {
+      await writeBaseConfig(root, "lock-options");
+      await writeAppConfigWithLocks(root, {
+        timeoutMs: 1111,
+        staleAfterMs: 12000
+      });
+      await writePreflightWorkflow(root, "lock-options", [
+        "execution:",
+        "  lock_timeout_ms: 2222"
+      ]);
+
+      const lockManagerFactory = vi.fn(() => ({
+        acquire: vi.fn(async () => async () => undefined)
+      }));
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        projectRoot,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          lockManagerFactory,
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(lockManagerFactory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          root: path.join(projectRoot, ".luna", "locks"),
+          timeoutMs: 2222,
+          staleAfterMs: 12000
+        })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(projectRoot, { recursive: true, force: true });
     }
   });
 

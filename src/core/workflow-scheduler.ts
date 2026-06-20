@@ -7,11 +7,20 @@ export type SchedulerExecution = {
   max_concurrency: number;
 };
 
+export type SchedulerLockManager = {
+  acquire(
+    resource: string,
+    mode: "exclusive",
+    options?: { timeoutMs?: number }
+  ): Promise<() => Promise<void>>;
+};
+
 export type WorkflowScheduleOptions = {
   nodes: WorkflowNode[];
   state: SchedulerWorkflowState;
   execution: SchedulerExecution;
   logger: RunLogger;
+  lockManager?: SchedulerLockManager;
   runNode: (options: {
     node: WorkflowNode;
     state: SchedulerWorkflowState;
@@ -136,6 +145,78 @@ function duplicateWorkspaceError(stepId: string): Error & { code: string } {
   );
 }
 
+async function withLocks<T>(
+  _node: WorkflowNode,
+  state: SchedulerWorkflowState,
+  metadata: BuiltInStepMetadata,
+  lockManager: SchedulerLockManager | undefined,
+  run: () => Promise<T>
+): Promise<T> {
+  const releases: (() => Promise<void>)[] = [];
+  let operationError: unknown;
+
+  try {
+    for (const lock of metadata.locks ?? []) {
+      if (lock.resource === "repository") {
+        if (state.repository === undefined) {
+          throw schedulerError(
+            "Repository lock resource is missing",
+            "lock_resource_missing"
+          );
+        }
+
+        if (lockManager === undefined) {
+          throw schedulerError(
+            "Lock manager is missing",
+            "lock_manager_missing"
+          );
+        }
+
+        releases.push(
+          await lockManager.acquire(
+            `repository:${state.repository.id}`,
+            lock.mode
+          )
+        );
+      }
+    }
+
+    return await run();
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    const releaseErrors: unknown[] = [];
+
+    for (const release of releases.reverse()) {
+      try {
+        await release();
+      } catch (error) {
+        releaseErrors.push(error);
+      }
+    }
+
+    if (releaseErrors.length > 0) {
+      if (operationError !== undefined) {
+        if (
+          (typeof operationError === "object" && operationError !== null) ||
+          typeof operationError === "function"
+        ) {
+          Object.defineProperty(operationError, "releaseErrors", {
+            configurable: true,
+            value: releaseErrors
+          });
+        }
+      } else {
+        throw schedulerError(
+          "Failed to release workflow lock",
+          "lock_release_failed"
+        );
+      }
+    }
+  }
+}
+
 export function schedulerStepFailed(
   stepId: string,
   cause: unknown
@@ -158,6 +239,7 @@ export async function runWorkflowSchedule({
   state,
   execution: _execution,
   logger,
+  lockManager,
   runNode,
   writeNodeArtifact,
   builtInMetadata
@@ -220,11 +302,20 @@ export async function runWorkflowSchedule({
       });
 
       try {
-        const output = await runNode({
+        const metadata = builtInMetadata(node);
+        const snapshot = snapshotState(scheduleState);
+        const output = await withLocks(
           node,
-          state: snapshotState(scheduleState)
-        });
-        const capturesWorkspace = builtInMetadata(node).capturesWorkspace === true;
+          snapshot,
+          metadata,
+          lockManager,
+          async () =>
+            await runNode({
+              node,
+              state: snapshot
+            })
+        );
+        const capturesWorkspace = metadata.capturesWorkspace === true;
         const capturedWorkspace =
           capturesWorkspace && isWorkspaceRecord(output) ? output : undefined;
 
@@ -251,6 +342,13 @@ export async function runWorkflowSchedule({
           "luna.step_id": node.id
         });
       } catch (cause) {
+        if (
+          errorCode(cause) === "lock_resource_missing" ||
+          errorCode(cause) === "lock_manager_missing"
+        ) {
+          throw cause;
+        }
+
         const failure = schedulerStepFailed(node.id, cause);
         steps[node.id] = failure;
         scheduleState.steps[node.id] = failure;

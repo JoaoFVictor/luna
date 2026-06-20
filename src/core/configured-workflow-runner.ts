@@ -28,11 +28,18 @@ import type { McpConfig } from "./mcp-config.js";
 import type { FinalReportJson } from "./report-builder.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import {
+  RunLockManager,
+  type RunLockManagerOptions
+} from "./run-lock-manager.js";
+import {
   noopRunLogger,
   type RunLogAttributes,
   type RunLogger
 } from "./run-logger.js";
-import { runWorkflowSchedule } from "./workflow-scheduler.js";
+import {
+  runWorkflowSchedule,
+  type SchedulerLockManager
+} from "./workflow-scheduler.js";
 import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
@@ -140,6 +147,7 @@ export type ConfiguredWorkflowRunnerDependencies = {
   cleanupWorktree?: typeof defaultCleanupWorktree;
   builtInStepRegistry?: BuiltInMetadataRegistry;
   builtInStepDependencies?: BuiltInStepDependencies;
+  lockManagerFactory?: (options: RunLockManagerOptions) => SchedulerLockManager;
   ArtifactStore?: typeof ArtifactStore;
   now?: () => Date;
 };
@@ -384,10 +392,7 @@ function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
 function builtInMetadata(
   node: WorkflowNode,
   activeRegistry: BuiltInMetadataRegistry
-): {
-  deferUntilAfterWorkspaceLifecycle?: boolean;
-  capturesWorkspace?: boolean;
-} {
+): BuiltInStepMetadata {
   if (node.type !== "built_in") {
     return {};
   }
@@ -1058,6 +1063,7 @@ function firstSchedulerFailure(
 export async function runConfiguredWorkflow({
   invocation,
   configRoot = resolveConfigRoot(),
+  projectRoot,
   workflowsRoot,
   agentsRoot,
   flueRunId,
@@ -1132,6 +1138,25 @@ export async function runConfiguredWorkflow({
       invocation,
       configs.repositories.repositories
     );
+    const configuredLockRoot = configs.app.locks?.root ?? ".luna/locks";
+    const runtimeRoot = projectRoot ?? process.cwd();
+    const lockRoot = path.isAbsolute(configuredLockRoot)
+      ? configuredLockRoot
+      : path.resolve(runtimeRoot, configuredLockRoot);
+    const createLockManager =
+      dependencies.lockManagerFactory ??
+      ((options: RunLockManagerOptions) => new RunLockManager(options));
+    const lockManager = createLockManager({
+      root: lockRoot,
+      runId: run.run_id,
+      flueRunId: run.flue_run_id,
+      timeoutMs:
+        workflow.execution.lock_timeout_ms ??
+        configs.app.locks?.timeout_ms ??
+        120000,
+      staleAfterMs: configs.app.locks?.stale_after_ms ?? 600000,
+      logger
+    });
 
     const state: SchedulerWorkflowState = {
       invocation,
@@ -1173,7 +1198,8 @@ export async function runConfiguredWorkflow({
         ),
       writeNodeArtifact: async (node, output) =>
         await writeNodeArtifact(activeArtifactStore, node, output),
-      builtInMetadata: (node) => builtInMetadata(node, activeBuiltInStepRegistry)
+      builtInMetadata: (node) => builtInMetadata(node, activeBuiltInStepRegistry),
+      lockManager
     });
 
     Object.assign(state.steps, scheduleResult.steps);

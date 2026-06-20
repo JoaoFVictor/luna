@@ -95,6 +95,152 @@ describe("workflow scheduler", () => {
     expect(completed).toEqual(["a", "b"]);
   });
 
+  it("wraps repository-locked built-ins with repository lock", async () => {
+    const events: string[] = [];
+    await runWorkflowSchedule({
+      nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
+      state: baseState(),
+      execution: { max_concurrency: 1 },
+      logger: noopRunLogger,
+      lockManager: {
+        acquire: async (resource) => {
+          events.push(`acquire:${resource}`);
+          return async () => {
+            events.push(`release:${resource}`);
+          };
+        }
+      },
+      runNode: async () => {
+        events.push("run");
+        return { ok: true };
+      },
+      writeNodeArtifact: async () => undefined,
+      builtInMetadata: () => ({
+        locks: [{ resource: "repository", mode: "exclusive" }]
+      })
+    });
+
+    expect(events).toEqual([
+      "acquire:repository:repo",
+      "run",
+      "release:repository:repo"
+    ]);
+  });
+
+  it("fails before execution when repository lock metadata cannot resolve a repository", async () => {
+    const state = baseState();
+    delete state.repository;
+
+    await expect(
+      runWorkflowSchedule({
+        nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
+        state,
+        execution: { max_concurrency: 1 },
+        logger: noopRunLogger,
+        runNode: async () => ({ ok: true }),
+        writeNodeArtifact: async () => undefined,
+        builtInMetadata: () => ({
+          locks: [{ resource: "repository", mode: "exclusive" }]
+        })
+      })
+    ).rejects.toMatchObject({ code: "lock_resource_missing" });
+  });
+
+  it("fails before execution when repository lock metadata has no lock manager", async () => {
+    await expect(
+      runWorkflowSchedule({
+        nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
+        state: baseState(),
+        execution: { max_concurrency: 1 },
+        logger: noopRunLogger,
+        runNode: async () => ({ ok: true }),
+        writeNodeArtifact: async () => undefined,
+        builtInMetadata: () => ({
+          locks: [{ resource: "repository", mode: "exclusive" }]
+        })
+      })
+    ).rejects.toMatchObject({ code: "lock_manager_missing" });
+  });
+
+  it("attempts every acquired release and preserves the node failure", async () => {
+    const cause = new Error("node exploded") as Error & {
+      releaseErrors?: unknown[];
+    };
+    const events: string[] = [];
+
+    const result = await runWorkflowSchedule({
+      nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
+      state: baseState(),
+      execution: { max_concurrency: 1 },
+      logger: noopRunLogger,
+      lockManager: {
+        acquire: async () => {
+          const releaseId = events.length;
+          events.push(`acquire:${releaseId}`);
+          return async () => {
+            events.push(`release:${releaseId}`);
+            if (releaseId === 1) {
+              throw new Error("release failed");
+            }
+          };
+        }
+      },
+      runNode: async () => {
+        throw cause;
+      },
+      writeNodeArtifact: async () => undefined,
+      builtInMetadata: () => ({
+        locks: [
+          { resource: "repository", mode: "exclusive" },
+          { resource: "repository", mode: "exclusive" }
+        ]
+      })
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.steps.prepare).toMatchObject({
+      status: "failed",
+      code: "scheduler_step_failed",
+      message: "node exploded"
+    });
+    expect(cause.releaseErrors).toHaveLength(1);
+    expect(events).toEqual([
+      "acquire:0",
+      "acquire:1",
+      "release:1",
+      "release:0"
+    ]);
+  });
+
+  it("fails the step when lock release fails after node success", async () => {
+    const result = await runWorkflowSchedule({
+      nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
+      state: baseState(),
+      execution: { max_concurrency: 1 },
+      logger: noopRunLogger,
+      lockManager: {
+        acquire: async () => async () => {
+          throw new Error("release failed");
+        }
+      },
+      runNode: async () => ({ ok: true }),
+      writeNodeArtifact: async () => undefined,
+      builtInMetadata: () => ({
+        locks: [{ resource: "repository", mode: "exclusive" }]
+      })
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.steps.prepare).toMatchObject({
+      status: "failed",
+      code: "scheduler_step_failed",
+      details: {
+        step_id: "prepare",
+        cause_code: "lock_release_failed"
+      }
+    });
+  });
+
   it("wraps node failures as scheduler step failures and skips dependents", async () => {
     const cause = new Error("node exploded") as Error & { code: string };
     cause.code = "node_exploded";
