@@ -1146,6 +1146,68 @@ describe("configured workflow runner", () => {
     }
   });
 
+  it("keeps events.jsonl when flue_log exporter is disabled", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writePreflightWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    flue_log:",
+        "      enabled: false",
+        "      required: false"
+      ]);
+
+      const optionalEvents: LunaObservabilityEvent[] = [];
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        flueRunId: "flue-disabled",
+        nonceFactory: () => "disabled",
+        observabilitySinks: [
+          {
+            id: "optional-disabled",
+            required: false,
+            append: (event) => {
+              optionalEvents.push(event);
+              throw new Error("disabled sink should not run");
+            }
+          }
+        ],
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z"),
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-disabled",
+            flue_run_id: "flue-disabled"
+          }),
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(optionalEvents).toEqual([]);
+
+      const eventsPath = artifactPath(
+        root,
+        "code-review",
+        "run-disabled",
+        "events.jsonl"
+      );
+      const events = (await readFile(eventsPath, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+
+      expect(events.map((event) => event.event)).toContain(
+        "luna.workflow.finished"
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not let optional observability sink failures mask successful runs", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 

@@ -32,6 +32,7 @@ import {
   type RunLockManagerOptions
 } from "./run-lock-manager.js";
 import { createJsonlEventSink } from "./observability/jsonl-sink.js";
+import { createObservabilitySinks } from "./observability/exporter-config.js";
 import {
   createLunaObservability,
   type LunaObservability,
@@ -55,6 +56,7 @@ import { assertSafeSegment, safeJoin } from "./path-security.js";
 import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
 import {
   loadWorkflowDefinition,
+  type WorkflowObservabilityConfig,
   type WorkflowNode
 } from "./workflow-definition.js";
 import {
@@ -89,6 +91,12 @@ type MaybePromise<T> = T | Promise<T>;
 
 type BuiltInMetadataRegistry = {
   require(name: string): { metadata?: BuiltInStepMetadata };
+};
+
+const defaultWorkflowObservabilityConfig: WorkflowObservabilityConfig = {
+  exporters: {
+    flue_log: { enabled: true, required: false }
+  }
 };
 
 export type RunAgentStepOptions = {
@@ -467,11 +475,13 @@ async function createRunObservability({
   artifactStore,
   run,
   workflowId,
+  observabilityConfig,
   sinks
 }: {
   artifactStore: ArtifactStore;
   run: RunIdentity;
   workflowId: string;
+  observabilityConfig: WorkflowObservabilityConfig;
   sinks: LunaObservabilitySink[];
 }): Promise<{
   observability: LunaObservability;
@@ -489,7 +499,11 @@ async function createRunObservability({
       attempt: run.attempt
     },
     workflow: { id: workflowId },
-    sinks: [jsonlSink, ...sinks]
+    sinks: createObservabilitySinks({
+      config: observabilityConfig,
+      jsonlSink,
+      flueLogSinks: sinks
+    })
   });
 
   await writeSummaryBestEffort(artifactStore, summary);
@@ -1264,6 +1278,7 @@ export async function runConfiguredWorkflow({
   let lockManager: SchedulerLockManager | undefined;
   let observability: LunaObservability | undefined;
   let summary: ObservabilitySummary | undefined;
+  let workflowObservabilityConfig = defaultWorkflowObservabilityConfig;
 
   try {
     workflowId = workflowIdFromRoute(
@@ -1275,6 +1290,7 @@ export async function runConfiguredWorkflow({
       resolvedWorkflowsRoot,
       workflowId
     );
+    workflowObservabilityConfig = workflow.observability;
     workflowMode = workflow.mode;
     run = makeRunIdentity(invocation, {
       workflowId,
@@ -1294,6 +1310,7 @@ export async function runConfiguredWorkflow({
       artifactStore,
       run,
       workflowId,
+      observabilityConfig: workflowObservabilityConfig,
       sinks: observabilitySinks
     }));
     await observability.emit("info", "luna.workflow.started", {
@@ -1489,6 +1506,7 @@ export async function runConfiguredWorkflow({
           artifactStore,
           run,
           workflowId,
+          observabilityConfig: workflowObservabilityConfig,
           sinks: observabilitySinks
         }));
       } catch {

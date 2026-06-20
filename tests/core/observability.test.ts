@@ -4,6 +4,7 @@ import {
   type LunaObservabilityEvent,
   type LunaObservabilitySink
 } from "../../src/core/observability/luna-observability.js";
+import { createObservabilitySinks } from "../../src/core/observability/exporter-config.js";
 
 function baseOptions(sinks: LunaObservabilitySink[]) {
   return {
@@ -16,6 +17,74 @@ function baseOptions(sinks: LunaObservabilitySink[]) {
 }
 
 describe("Luna observability", () => {
+  it("always includes jsonl as required and appends enabled flue_log", () => {
+    const jsonlSink: LunaObservabilitySink = {
+      id: "original-jsonl",
+      append: async () => undefined
+    };
+    const flueLogSink: LunaObservabilitySink = {
+      id: "original-flue",
+      append: async () => undefined
+    };
+
+    const sinks = createObservabilitySinks({
+      config: {
+        exporters: {
+          flue_log: { enabled: true, required: false }
+        }
+      },
+      jsonlSink,
+      flueLogSink
+    });
+
+    expect(sinks).toEqual([
+      expect.objectContaining({ id: "jsonl", required: true }),
+      expect.objectContaining({ id: "flue_log", required: false })
+    ]);
+  });
+
+  it("omits disabled flue_log but keeps jsonl", () => {
+    const jsonlSink: LunaObservabilitySink = {
+      id: "original-jsonl",
+      append: async () => undefined
+    };
+    const flueLogSink: LunaObservabilitySink = {
+      id: "original-flue",
+      append: async () => undefined
+    };
+
+    const sinks = createObservabilitySinks({
+      config: {
+        exporters: {
+          flue_log: { enabled: false, required: false }
+        }
+      },
+      jsonlSink,
+      flueLogSink
+    });
+
+    expect(sinks.map((sink) => sink.id)).toEqual(["jsonl"]);
+    expect(sinks[0]).toMatchObject({ required: true });
+  });
+
+  it("fails when flue_log is required but unavailable", () => {
+    const jsonlSink: LunaObservabilitySink = {
+      id: "original-jsonl",
+      append: async () => undefined
+    };
+
+    expect(() =>
+      createObservabilitySinks({
+        config: {
+          exporters: {
+            flue_log: { enabled: true, required: true }
+          }
+        },
+        jsonlSink
+      })
+    ).toThrow("Required observability exporter flue_log is unavailable");
+  });
+
   it("decorates events with the flat Luna event contract", async () => {
     const events: LunaObservabilityEvent[] = [];
     const observability = createLunaObservability(
