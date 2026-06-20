@@ -26,8 +26,32 @@ const allAgentModes: readonly AgentMode[] = [
   "trusted_host_local_write"
 ];
 
+function toolError(message: string, code: string): Error & { code: string } {
+  const error = new Error(message) as Error & { code: string };
+  error.code = code;
+  return error;
+}
+
+export function assertToolSafety(safety: ToolSafety): void {
+  if (
+    safety.subagent_read_only_allowed &&
+    (safety.writes || safety.network || safety.side_effects)
+  ) {
+    throw toolError(
+      "subagent_read_only_allowed requires a read-only, no-network, no-side-effect tool",
+      "flue_tool_safety_invalid"
+    );
+  }
+}
+
+function defineRegisteredTool(tool: RegisteredTool): RegisteredTool {
+  assertToolSafety(tool.safety);
+
+  return tool;
+}
+
 const toolRegistry: Record<string, RegisteredTool> = {
-  "repository.status": {
+  "repository.status": defineRegisteredTool({
     factory: repositoryStatusTool,
     allowedAgentModes: allAgentModes,
     safety: {
@@ -36,8 +60,8 @@ const toolRegistry: Record<string, RegisteredTool> = {
       side_effects: false,
       subagent_read_only_allowed: true
     }
-  },
-  "repository.diff-summary": {
+  }),
+  "repository.diff-summary": defineRegisteredTool({
     factory: repositoryDiffSummaryTool,
     allowedAgentModes: allAgentModes,
     safety: {
@@ -46,13 +70,13 @@ const toolRegistry: Record<string, RegisteredTool> = {
       side_effects: false,
       subagent_read_only_allowed: true
     }
-  }
+  })
 };
 
-function toolError(message: string, code: string): Error & { code: string } {
-  const error = new Error(message) as Error & { code: string };
-  error.code = code;
-  return error;
+export function registeredFlueToolSafety(): Record<string, ToolSafety> {
+  return Object.fromEntries(
+    Object.entries(toolRegistry).map(([id, tool]) => [id, tool.safety])
+  );
 }
 
 export function resolveFlueTools({

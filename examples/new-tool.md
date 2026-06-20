@@ -17,6 +17,21 @@ A good local tool:
 - validates parameters with Valibot;
 - returns compact, model-readable output;
 - is allowed only for agent modes that should use it.
+- declares explicit safety metadata.
+
+Start with the most conservative safety metadata:
+
+```yaml
+safety:
+  writes: false
+  network: false
+  side_effects: false
+  subagent_read_only_allowed: false
+```
+
+Set `subagent_read_only_allowed: true` only when `writes`, `network`, and
+`side_effects` are all `false`. Luna enforces this invariant when tools are
+registered.
 
 Current examples live in `src/tools/repository-tools.ts`.
 
