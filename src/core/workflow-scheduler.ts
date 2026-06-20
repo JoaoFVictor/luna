@@ -145,6 +145,73 @@ function duplicateWorkspaceError(stepId: string): Error & { code: string } {
   );
 }
 
+function artifactTargets(node: WorkflowNode): string[] {
+  if (node.artifact === undefined) {
+    return [];
+  }
+
+  if (typeof node.artifact === "string") {
+    return [node.artifact];
+  }
+
+  return Object.values(node.artifact);
+}
+
+function isAgentLike(node: WorkflowNode): boolean {
+  return node.type === "agent" || node.type === "agent_loop";
+}
+
+function selectReadyBatch(
+  ready: WorkflowNode[],
+  maxConcurrency: number,
+  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata
+): WorkflowNode[] {
+  const selected: WorkflowNode[] = [];
+  const selectedTargets = new Set<string>();
+  let hasAgentLike = false;
+  let hasWorkspaceCapture = false;
+
+  for (const node of ready) {
+    if (selected.length >= maxConcurrency) {
+      break;
+    }
+
+    const nodeTargets = artifactTargets(node);
+    if (nodeTargets.some((target) => selectedTargets.has(target))) {
+      continue;
+    }
+
+    if (isAgentLike(node) && hasAgentLike) {
+      continue;
+    }
+
+    const metadata = builtInMetadata(node);
+    if (metadata.capturesWorkspace === true && hasWorkspaceCapture) {
+      continue;
+    }
+
+    selected.push(node);
+    for (const target of nodeTargets) {
+      selectedTargets.add(target);
+    }
+
+    if (isAgentLike(node)) {
+      hasAgentLike = true;
+    }
+    if (metadata.capturesWorkspace === true) {
+      hasWorkspaceCapture = true;
+    }
+  }
+
+  return selected.length > 0 ? selected : ready.slice(0, 1);
+}
+
+function normalizedMaxConcurrency(maxConcurrency: number): number {
+  return Number.isSafeInteger(maxConcurrency) && maxConcurrency > 0
+    ? maxConcurrency
+    : 1;
+}
+
 export function splitDeferredFinalReportNodes(
   nodes: WorkflowNode[],
   builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata
@@ -251,6 +318,28 @@ async function withLocks<T>(
   }
 }
 
+function preflightLocks(
+  batch: WorkflowNode[],
+  state: SchedulerWorkflowState,
+  lockManager: SchedulerLockManager | undefined,
+  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata
+): void {
+  for (const node of batch) {
+    for (const lock of builtInMetadata(node).locks ?? []) {
+      if (lock.resource === "repository" && state.repository === undefined) {
+        throw schedulerError(
+          "Repository lock resource is missing",
+          "lock_resource_missing"
+        );
+      }
+
+      if (lock.resource === "repository" && lockManager === undefined) {
+        throw schedulerError("Lock manager is missing", "lock_manager_missing");
+      }
+    }
+  }
+}
+
 export function schedulerStepFailed(
   stepId: string,
   cause: unknown
@@ -271,7 +360,7 @@ export function schedulerStepFailed(
 export async function runWorkflowSchedule({
   nodes,
   state,
-  execution: _execution,
+  execution,
   logger,
   lockManager,
   runNode,
@@ -288,6 +377,49 @@ export async function runWorkflowSchedule({
     steps: { ...state.steps },
     ...(workspace === undefined ? {} : { workspace })
   };
+  const maxConcurrency = normalizedMaxConcurrency(execution.max_concurrency);
+
+  async function runOneNode(node: WorkflowNode): Promise<{
+    node: WorkflowNode;
+    output: unknown;
+    capturedWorkspace?: SchedulerWorkflowState["workspace"];
+  }> {
+    emitRunLog(logger, "info", "luna.scheduler.step_started", {
+      "luna.run_id": state.run.run_id,
+      "luna.flue_run_id": state.run.flue_run_id,
+      "luna.workflow_id": state.workflow.id,
+      "luna.step_id": node.id
+    });
+
+    const metadata = builtInMetadata(node);
+    const snapshot = snapshotState(scheduleState);
+    const output = await withLocks(
+      node,
+      snapshot,
+      metadata,
+      lockManager,
+      async () =>
+        await runNode({
+          node,
+          state: snapshot
+        })
+    );
+    const capturesWorkspace = metadata.capturesWorkspace === true;
+    const capturedWorkspace =
+      capturesWorkspace && isWorkspaceRecord(output) ? output : undefined;
+
+    if (capturesWorkspace && workspace !== undefined) {
+      throw duplicateWorkspaceError(node.id);
+    }
+
+    await writeNodeArtifact(node, output);
+
+    return {
+      node,
+      output,
+      ...(capturedWorkspace === undefined ? {} : { capturedWorkspace })
+    };
+  }
 
   while (pending.size > 0) {
     let skippedDependency = false;
@@ -317,8 +449,7 @@ export async function runWorkflowSchedule({
     const ready = [...pending.values()]
       .filter((node) =>
         (node.after ?? []).every((dependency) => completed.has(dependency))
-      )
-      .slice(0, 1);
+      );
 
     if (ready.length === 0) {
       throw schedulerError(
@@ -327,43 +458,45 @@ export async function runWorkflowSchedule({
       );
     }
 
-    for (const node of ready) {
-      emitRunLog(logger, "info", "luna.scheduler.step_started", {
-        "luna.run_id": state.run.run_id,
-        "luna.flue_run_id": state.run.flue_run_id,
-        "luna.workflow_id": state.workflow.id,
-        "luna.step_id": node.id
-      });
+    const batch = selectReadyBatch(ready, maxConcurrency, builtInMetadata);
+    preflightLocks(batch, scheduleState, lockManager, builtInMetadata);
+    const settled = await Promise.allSettled(
+      batch.map(async (node) => await runOneNode(node))
+    );
+    let hardError: unknown;
 
-      try {
-        const metadata = builtInMetadata(node);
-        const snapshot = snapshotState(scheduleState);
-        const output = await withLocks(
-          node,
-          snapshot,
-          metadata,
-          lockManager,
-          async () =>
-            await runNode({
-              node,
-              state: snapshot
-            })
-        );
-        const capturesWorkspace = metadata.capturesWorkspace === true;
-        const capturedWorkspace =
-          capturesWorkspace && isWorkspaceRecord(output) ? output : undefined;
+    for (const [index, result] of settled.entries()) {
+      const node = batch[index];
 
-        if (capturesWorkspace) {
-          if (workspace !== undefined) {
-            throw duplicateWorkspaceError(node.id);
-          }
-        }
+      if (result.status === "fulfilled") {
+        const { output, capturedWorkspace } = result.value;
 
-        await writeNodeArtifact(node, output);
         if (capturedWorkspace !== undefined) {
+          if (workspace !== undefined) {
+            const failure = schedulerStepFailed(
+              node.id,
+              duplicateWorkspaceError(node.id)
+            );
+            steps[node.id] = failure;
+            scheduleState.steps[node.id] = failure;
+            blocked.add(node.id);
+            pending.delete(node.id);
+
+            emitRunLog(logger, "error", "luna.scheduler.step_failed", {
+              "luna.run_id": state.run.run_id,
+              "luna.flue_run_id": state.run.flue_run_id,
+              "luna.workflow_id": state.workflow.id,
+              "luna.step_id": node.id,
+              "error.code": failure.code,
+              "error.cause_code": failure.details.cause_code
+            });
+            continue;
+          }
+
           workspace = capturedWorkspace;
           scheduleState.workspace = capturedWorkspace;
         }
+
         steps[node.id] = output;
         scheduleState.steps[node.id] = output;
         completed.add(node.id);
@@ -375,29 +508,36 @@ export async function runWorkflowSchedule({
           "luna.workflow_id": state.workflow.id,
           "luna.step_id": node.id
         });
-      } catch (cause) {
-        if (
-          errorCode(cause) === "lock_resource_missing" ||
-          errorCode(cause) === "lock_manager_missing"
-        ) {
-          throw cause;
-        }
-
-        const failure = schedulerStepFailed(node.id, cause);
-        steps[node.id] = failure;
-        scheduleState.steps[node.id] = failure;
-        blocked.add(node.id);
-        pending.delete(node.id);
-
-        emitRunLog(logger, "error", "luna.scheduler.step_failed", {
-          "luna.run_id": state.run.run_id,
-          "luna.flue_run_id": state.run.flue_run_id,
-          "luna.workflow_id": state.workflow.id,
-          "luna.step_id": node.id,
-          "error.code": failure.code,
-          "error.cause_code": failure.details.cause_code
-        });
+        continue;
       }
+
+      const cause = result.reason;
+      if (
+        errorCode(cause) === "lock_resource_missing" ||
+        errorCode(cause) === "lock_manager_missing"
+      ) {
+        hardError ??= cause;
+        continue;
+      }
+
+      const failure = schedulerStepFailed(node.id, cause);
+      steps[node.id] = failure;
+      scheduleState.steps[node.id] = failure;
+      blocked.add(node.id);
+      pending.delete(node.id);
+
+      emitRunLog(logger, "error", "luna.scheduler.step_failed", {
+        "luna.run_id": state.run.run_id,
+        "luna.flue_run_id": state.run.flue_run_id,
+        "luna.workflow_id": state.workflow.id,
+        "luna.step_id": node.id,
+        "error.code": failure.code,
+        "error.cause_code": failure.details.cause_code
+      });
+    }
+
+    if (hardError !== undefined) {
+      throw hardError;
     }
   }
 

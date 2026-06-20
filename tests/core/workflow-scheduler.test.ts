@@ -8,6 +8,8 @@ import { noopRunLogger } from "../../src/core/run-logger.js";
 import type { WorkflowNode } from "../../src/core/workflow-definition.js";
 import type { SchedulerWorkflowState } from "../../src/core/workflow-state.js";
 
+type BuiltInWorkflowNode = Extract<WorkflowNode, { type: "built_in" }>;
+
 function baseState(): SchedulerWorkflowState {
   return {
     invocation: { version: "2026-06", source: "github", event: "pull_request" },
@@ -34,13 +36,40 @@ function baseState(): SchedulerWorkflowState {
   };
 }
 
-function builtInNode(id: string, after?: string[]): WorkflowNode {
+function builtInNode(id: string, after?: string[]): BuiltInWorkflowNode {
   return {
     id,
     type: "built_in",
     uses: "preflight",
     ...(after === undefined ? {} : { after })
   };
+}
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
+async function settlesTrueWithin(
+  promise: Promise<unknown>,
+  timeoutMs = 50
+): Promise<boolean> {
+  return await Promise.race([
+    promise.then(() => true),
+    new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(false), timeoutMs);
+    })
+  ]);
 }
 
 describe("workflow scheduler", () => {
@@ -71,14 +100,44 @@ describe("workflow scheduler", () => {
     expect(callOrder).toEqual(["a", "b"]);
   });
 
-  it("keeps sequential execution even when max_concurrency is greater than 1", async () => {
+  it("runs independent nodes concurrently when max_concurrency is greater than 1", async () => {
+    const started: string[] = [];
+    const bothStarted = deferred();
+    const release = deferred();
+
+    const schedule = runWorkflowSchedule({
+      nodes: [builtInNode("a"), builtInNode("b")],
+      state: baseState(),
+      execution: { max_concurrency: 2 },
+      logger: noopRunLogger,
+      runNode: async ({ node }) => {
+        started.push(node.id);
+        if (started.length === 2) {
+          bothStarted.resolve();
+        }
+        await release.promise;
+        return { id: node.id };
+      },
+      writeNodeArtifact: vi.fn(async () => undefined),
+      builtInMetadata: () => ({})
+    });
+
+    expect(await settlesTrueWithin(bothStarted.promise)).toBe(true);
+    expect(started).toEqual(["a", "b"]);
+    release.resolve();
+
+    const result = await schedule;
+    expect(result.status).toBe("success");
+  });
+
+  it("falls back to sequential execution for invalid direct max_concurrency", async () => {
     const running: string[] = [];
     const completed: string[] = [];
 
     const result = await runWorkflowSchedule({
       nodes: [builtInNode("a"), builtInNode("b")],
       state: baseState(),
-      execution: { max_concurrency: 2 },
+      execution: { max_concurrency: Number.NaN },
       logger: noopRunLogger,
       runNode: async ({ node }) => {
         expect(running).toHaveLength(0);
@@ -94,6 +153,211 @@ describe("workflow scheduler", () => {
 
     expect(result.status).toBe("success");
     expect(completed).toEqual(["a", "b"]);
+  });
+
+  it("does not run duplicate artifact writers concurrently", async () => {
+    const firstBatchStarted: string[] = [];
+    const firstBatchReady = deferred();
+    const release = deferred();
+
+    const schedule = runWorkflowSchedule({
+      nodes: [
+        { ...builtInNode("a"), artifact: "shared.json" },
+        { ...builtInNode("b"), artifact: "shared.json" },
+        { ...builtInNode("c"), artifact: "other.json" }
+      ],
+      state: baseState(),
+      execution: { max_concurrency: 3 },
+      logger: noopRunLogger,
+      runNode: async ({ node }) => {
+        firstBatchStarted.push(node.id);
+        if (
+          firstBatchStarted.includes("a") &&
+          firstBatchStarted.includes("c")
+        ) {
+          firstBatchReady.resolve();
+        }
+        await release.promise;
+        return { id: node.id };
+      },
+      writeNodeArtifact: vi.fn(async () => undefined),
+      builtInMetadata: () => ({})
+    });
+
+    expect(await settlesTrueWithin(firstBatchReady.promise)).toBe(true);
+    expect(firstBatchStarted).toEqual(["a", "c"]);
+    release.resolve();
+
+    const result = await schedule;
+    expect(result.status).toBe("success");
+    expect(firstBatchStarted).toEqual(["a", "c", "b"]);
+  });
+
+  it("does not run workspace-capturing nodes concurrently", async () => {
+    const started: string[] = [];
+    const firstStarted = deferred();
+    const release = deferred();
+
+    const schedule = runWorkflowSchedule({
+      nodes: [
+        { id: "workspace_a", type: "built_in", uses: "prepare_worktree" },
+        { id: "workspace_b", type: "built_in", uses: "prepare_worktree" },
+        builtInNode("free")
+      ],
+      state: baseState(),
+      execution: { max_concurrency: 3 },
+      logger: noopRunLogger,
+      runNode: async ({ node }) => {
+        started.push(node.id);
+        if (
+          started.includes("workspace_a") &&
+          started.includes("free") &&
+          !started.includes("workspace_b")
+        ) {
+          firstStarted.resolve();
+        }
+        await release.promise;
+        return {
+          run_id: "run-1",
+          path: `/tmp/${node.id}`,
+          preserved: true,
+          reason: "prepared"
+        };
+      },
+      writeNodeArtifact: vi.fn(async () => undefined),
+      builtInMetadata: (node) =>
+        node.id.startsWith("workspace_") ? { capturesWorkspace: true } : {}
+    });
+
+    expect(await settlesTrueWithin(firstStarted.promise)).toBe(true);
+    expect(started).toEqual(["workspace_a", "free"]);
+    release.resolve();
+
+    const result = await schedule;
+    expect(result.status).toBe("failed");
+    expect(started).toEqual(["workspace_a", "free", "workspace_b"]);
+    expect(result.steps.workspace_b).toMatchObject({
+      status: "failed",
+      details: {
+        cause_code: "workflow_workspace_duplicate",
+        step_id: "workspace_b"
+      }
+    });
+  });
+
+  it("allows parallel ready nodes but serializes shared repository locks", async () => {
+    const events: string[] = [];
+    const releaseFirstLock = deferred();
+    const secondLockReleased = deferred();
+    const freeNodeStarted = deferred();
+    let activeRepositoryLock = false;
+
+    const schedule = runWorkflowSchedule({
+      nodes: [
+        { id: "locked_a", type: "built_in", uses: "prepare_worktree" },
+        { id: "locked_b", type: "built_in", uses: "prepare_worktree" },
+        builtInNode("free")
+      ],
+      state: baseState(),
+      execution: { max_concurrency: 3 },
+      logger: noopRunLogger,
+      lockManager: {
+        acquire: async (resource) => {
+          events.push(`acquire:${resource}`);
+          if (activeRepositoryLock) {
+            await releaseFirstLock.promise;
+          }
+          activeRepositoryLock = true;
+
+          return async () => {
+            activeRepositoryLock = false;
+            events.push(`release:${resource}`);
+            releaseFirstLock.resolve();
+            secondLockReleased.resolve();
+          };
+        }
+      },
+      runNode: async ({ node }) => {
+        events.push(`run:${node.id}`);
+        if (node.id === "free") {
+          freeNodeStarted.resolve();
+        }
+        if (node.id === "locked_a") {
+          await freeNodeStarted.promise;
+        }
+        return { id: node.id };
+      },
+      writeNodeArtifact: vi.fn(async () => undefined),
+      builtInMetadata: (node) =>
+        node.id.startsWith("locked")
+          ? { locks: [{ resource: "repository", mode: "exclusive" }] }
+          : {}
+    });
+
+    expect(await settlesTrueWithin(freeNodeStarted.promise)).toBe(true);
+    await secondLockReleased.promise;
+    const result = await schedule;
+
+    expect(result.status).toBe("success");
+    expect(events.indexOf("run:free")).toBeLessThan(
+      events.indexOf("release:repository:repo")
+    );
+    expect(events.indexOf("run:locked_b")).toBeGreaterThan(
+      events.indexOf("release:repository:repo")
+    );
+  });
+
+  it("keeps agent-like nodes effectively sequential while built-ins can share the batch", async () => {
+    const started: string[] = [];
+    const firstBatchReady = deferred();
+    const release = deferred();
+
+    const schedule = runWorkflowSchedule({
+      nodes: [
+        {
+          id: "agent_a",
+          type: "agent",
+          agent: "reviewer",
+          output_schema: "review"
+        },
+        builtInNode("preflight"),
+        {
+          id: "agent_b",
+          type: "agent_loop",
+          agent: "implementer",
+          output_schema: "result",
+          artifact: { report: "report.json" },
+          sandbox: {
+            type: "trusted_host_local",
+            cwd: ".",
+            env_allowlist: []
+          },
+          validation: { commands: "npm test", max_output_bytes: 1024 },
+          repair: { attempts: 1 }
+        }
+      ],
+      state: baseState(),
+      execution: { max_concurrency: 3 },
+      logger: noopRunLogger,
+      runNode: async ({ node }) => {
+        started.push(node.id);
+        if (started.includes("agent_a") && started.includes("preflight")) {
+          firstBatchReady.resolve();
+        }
+        await release.promise;
+        return { id: node.id };
+      },
+      writeNodeArtifact: vi.fn(async () => undefined),
+      builtInMetadata: () => ({})
+    });
+
+    expect(await settlesTrueWithin(firstBatchReady.promise)).toBe(true);
+    expect(started).toEqual(["agent_a", "preflight"]);
+    release.resolve();
+
+    const result = await schedule;
+    expect(result.status).toBe("success");
+    expect(started).toEqual(["agent_a", "preflight", "agent_b"]);
   });
 
   it("wraps repository-locked built-ins with repository lock", async () => {
@@ -161,6 +425,35 @@ describe("workflow scheduler", () => {
         })
       })
     ).rejects.toMatchObject({ code: "lock_manager_missing" });
+  });
+
+  it("does not run sibling nodes when a selected lock preflight fails", async () => {
+    const runNode = vi.fn(async () => ({ ok: true }));
+    const writeNodeArtifact = vi.fn(async () => undefined);
+
+    const state = baseState();
+    delete state.repository;
+
+    await expect(
+      runWorkflowSchedule({
+        nodes: [builtInNode("locked"), builtInNode("free")],
+        state,
+        execution: { max_concurrency: 2 },
+        logger: noopRunLogger,
+        lockManager: {
+          acquire: async () => async () => undefined
+        },
+        runNode,
+        writeNodeArtifact,
+        builtInMetadata: (node) =>
+          node.id === "locked"
+            ? { locks: [{ resource: "repository", mode: "exclusive" }] }
+            : {}
+      })
+    ).rejects.toMatchObject({ code: "lock_resource_missing" });
+
+    expect(runNode).not.toHaveBeenCalled();
+    expect(writeNodeArtifact).not.toHaveBeenCalled();
   });
 
   it("attempts every acquired release and preserves the node failure", async () => {
