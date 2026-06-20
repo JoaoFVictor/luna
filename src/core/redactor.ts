@@ -30,6 +30,24 @@ function isSecretKey(key: string): boolean {
   return words.includes("key") && words.some((word) => word !== "key");
 }
 
+function isExtraSensitiveKey(
+  key: string,
+  extraSensitiveKeys: readonly string[]
+): boolean {
+  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+  return extraSensitiveKeys.some((sensitiveKey) => {
+    const normalizedSensitiveKey = sensitiveKey
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
+
+    return (
+      normalizedKey === normalizedSensitiveKey ||
+      normalizedKey.endsWith(normalizedSensitiveKey)
+    );
+  });
+}
+
 export function redactString(value: string): string {
   return value
     .replace(
@@ -64,22 +82,27 @@ export function redactString(value: string): string {
     );
 }
 
-export function redactValue(value: unknown): unknown {
+export function redactValue(
+  value: unknown,
+  options: { extraSensitiveKeys?: readonly string[] } = {}
+): unknown {
+  const extraSensitiveKeys = options.extraSensitiveKeys ?? [];
+
   if (typeof value === "string") {
     return redactString(value);
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item));
+    return value.map((item) => redactValue(item, options));
   }
 
   if (value !== null && typeof value === "object") {
     const redacted: Record<string, unknown> = {};
 
     for (const [key, nestedValue] of Object.entries(value)) {
-      redacted[key] = isSecretKey(key)
+      redacted[key] = isSecretKey(key) || isExtraSensitiveKey(key, extraSensitiveKeys)
         ? REDACTED
-        : redactValue(nestedValue);
+        : redactValue(nestedValue, options);
     }
 
     return redacted;

@@ -1,5 +1,10 @@
 import { readFile } from "node:fs/promises";
-import { createAgent, type FlueContext } from "@flue/runtime";
+import {
+  createAgent,
+  type FlueContext,
+  type PromptModel,
+  type PromptUsage
+} from "@flue/runtime";
 import { local } from "@flue/runtime/node";
 import * as v from "valibot";
 import type { GenericSchema } from "valibot";
@@ -18,8 +23,14 @@ import {
   type ResolvedFlueAgentCapabilities
 } from "../core/flue-agent-capabilities.js";
 import { loadMcpConfig } from "../core/mcp-config.js";
+import { createFlueLogSink } from "../core/observability/flue-log-sink.js";
+import {
+  recordPromptOperation,
+  recordPromptUsage,
+  usageFromFlueResponse,
+  writeSummaryBestEffort
+} from "../core/observability/summary.js";
 import { registerConfiguredPiOAuthProviders } from "../core/pi-auth.js";
-import { createFlueRunLogger } from "../core/run-logger.js";
 import type { Invocation } from "../core/types.js";
 import { runValidationCommands } from "../core/validation-runner.js";
 import { collectWorktreeDiff } from "../core/worktree-diff-collector.js";
@@ -64,6 +75,87 @@ function repositoryPath(value: unknown): string | undefined {
 
   const pathValue = (value as { path?: unknown }).path;
   return typeof pathValue === "string" ? pathValue : undefined;
+}
+
+type PromptResponseWithUsage = {
+  usage?: PromptUsage;
+  model?: PromptModel;
+};
+
+function promptErrorAttributes(error: unknown): unknown {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      code: (error as { code?: unknown }).code
+    };
+  }
+
+  return error;
+}
+
+async function emitPromptEvent(
+  options: RunAgentStepOptions | RunAgentLoopStepOptions,
+  level: "info" | "error",
+  event: string,
+  attributes: Record<string, unknown>
+): Promise<void> {
+  if (options.observability === undefined) {
+    return;
+  }
+
+  await options.observability.emit(level, event, {
+    step_id: options.node.id,
+    agent_id: options.agent.id,
+    ...attributes
+  });
+}
+
+async function recordPromptCompletion(
+  options: RunAgentStepOptions | RunAgentLoopStepOptions,
+  promptId: string,
+  startedAtMs: number,
+  response: PromptResponseWithUsage | undefined
+): Promise<void> {
+  const durationMs = Date.now() - startedAtMs;
+  recordPromptOperation(options.summary, { durationMs });
+  recordPromptUsage(
+    options.summary,
+    usageFromFlueResponse({
+      promptId,
+      modelProfile: options.agent.model_profile,
+      response
+    })
+  );
+  try {
+    await emitPromptEvent(options, "info", "luna.prompt.finished", {
+      prompt_id: promptId,
+      status: "completed",
+      duration_ms: durationMs
+    });
+  } finally {
+    await writeSummaryBestEffort(options.artifactStore, options.summary);
+  }
+}
+
+async function recordPromptFailure(
+  options: RunAgentStepOptions | RunAgentLoopStepOptions,
+  promptId: string,
+  startedAtMs: number,
+  error: unknown
+): Promise<void> {
+  const durationMs = Date.now() - startedAtMs;
+  recordPromptOperation(options.summary, { durationMs });
+  try {
+    await emitPromptEvent(options, "error", "luna.prompt.failed", {
+      prompt_id: promptId,
+      status: "failed",
+      duration_ms: durationMs,
+      error: promptErrorAttributes(error)
+    });
+  } finally {
+    await writeSummaryBestEffort(options.artifactStore, options.summary);
+  }
 }
 
 function capabilityCwdFor(options: RunAgentStepOptions): string {
@@ -252,7 +344,7 @@ function fakeAgentOutput(agentId: string): unknown {
   throw codedError(`No fake output configured for ${agentId}`, "fake_agent_missing");
 }
 
-async function runFlueAgentStep(
+export async function runFlueAgentStep(
   ctx: FlueContext<Invocation>,
   options: RunAgentStepOptions
 ): Promise<unknown> {
@@ -264,14 +356,17 @@ async function runFlueAgentStep(
   }
 
   const capabilityCwd = capabilityCwdFor(options);
-  const capabilities = await resolveFlueAgentCapabilities({
+  const capabilityOptions = {
     agent: options.agent,
     cwd: capabilityCwd,
     agentsRoot: options.agentsRoot,
     modelProfiles: options.modelProfiles,
     mcpConfig: options.mcpConfig,
+    observability: options.observability,
+    summary: options.summary,
     env: process.env
-  });
+  };
+  const capabilities = await resolveFlueAgentCapabilities(capabilityOptions);
 
   try {
     const agent = createAgent(async () => ({
@@ -284,18 +379,31 @@ async function runFlueAgentStep(
     }));
     const harness = await ctx.init(agent, { name: options.agent.id });
     const session = await harness.session();
-    const response = await session.prompt(
-      [
-        options.agent.description,
-        "Use only the provided workflow input and return structured output matching the configured schema.",
-        promptBody(options.input)
-      ].join("\n\n"),
-      {
-        result: await resultSchema(options.agent.outputSchemaPath),
-        ...options.model
-      }
-    );
+    const promptId = `agent:${options.node.id}`;
+    const startedAtMs = Date.now();
+    await emitPromptEvent(options, "info", "luna.prompt.started", {
+      prompt_id: promptId,
+      status: "started"
+    });
+    let response: PromptResponseWithUsage & { data?: unknown };
+    try {
+      response = await session.prompt(
+        [
+          options.agent.description,
+          "Use only the provided workflow input and return structured output matching the configured schema.",
+          promptBody(options.input)
+        ].join("\n\n"),
+        {
+          result: await resultSchema(options.agent.outputSchemaPath),
+          ...options.model
+        }
+      );
+    } catch (error) {
+      await recordPromptFailure(options, promptId, startedAtMs, error);
+      throw error;
+    }
 
+    await recordPromptCompletion(options, promptId, startedAtMs, response);
     return response.data;
   } finally {
     await capabilities.close();
@@ -341,11 +449,28 @@ async function runWritableAgent(
   }));
   const harness = await ctx.init(agent, { name: options.agent.id });
   const session = await harness.session();
-  const response = await session.prompt(writableAgentPrompt(options, input), {
-    result: await resultSchema(options.agent.outputSchemaPath),
-    ...options.model
+  const promptId = `agent_loop:${options.node.id}:${input.phase}:${input.attempt}`;
+  const startedAtMs = Date.now();
+  await emitPromptEvent(options, "info", "luna.prompt.started", {
+    prompt_id: promptId,
+    status: "started",
+    attributes: {
+      phase: input.phase,
+      attempt: input.attempt
+    }
   });
+  let response: PromptResponseWithUsage & { data?: unknown };
+  try {
+    response = await session.prompt(writableAgentPrompt(options, input), {
+      result: await resultSchema(options.agent.outputSchemaPath),
+      ...options.model
+    });
+  } catch (error) {
+    await recordPromptFailure(options, promptId, startedAtMs, error);
+    throw error;
+  }
 
+  await recordPromptCompletion(options, promptId, startedAtMs, response);
   return response.data;
 }
 
@@ -367,14 +492,17 @@ async function runFlueAgentLoopStep(
     );
   }
 
-  const capabilities = await resolveFlueAgentCapabilities({
+  const capabilityOptions = {
     agent: options.agent,
     cwd: options.sandbox.cwd,
     agentsRoot: options.agentsRoot,
     modelProfiles: options.modelProfiles,
     mcpConfig: options.mcpConfig,
+    observability: options.observability,
+    summary: options.summary,
     env: process.env
-  });
+  };
+  const capabilities = await resolveFlueAgentCapabilities(capabilityOptions);
 
   try {
     return await runAgentLoopStateMachine({
@@ -415,7 +543,7 @@ export async function runWithFlue(
     configRoot,
     projectRoot,
     flueRunId: ctx.id,
-    runLogger: createFlueRunLogger(ctx),
+    observabilitySinks: [createFlueLogSink(ctx.log)],
     dependencies: {
       runAgentStep: async (agentStepOptions) =>
         await runFlueAgentStep(ctx, { ...agentStepOptions, mcpConfig }),

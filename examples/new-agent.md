@@ -133,10 +133,12 @@ Create or reuse a valid `agents/change-reviewer/` directory with
 `agent.yaml`, `instructions_file`, `output_schema`, and a configured
 `model_profile`. No TypeScript is needed for each new subagent.
 
-Subagents use only the referenced agent's description, instructions, and model
-profile. Do not put `skills`, `tools`, `mcp_servers`, or nested `subagents` on
-an agent you intend to call as a Flue subagent. Use a workflow graph node when
-the delegated work needs its own tools, MCP access, schema, artifact, or gate.
+Subagents must be `read_only`. They may declare skills and local tools that
+Luna marks as safe for read-only subagent use, such as repository inspection
+tools. Do not put `trusted_host_local_write`, `mcp_servers`, or nested
+`subagents` on an agent you intend to call as a Flue subagent. Use a workflow
+graph node when the delegated work needs MCP access, writes, its own schema,
+artifact, or gate.
 
 ## 5. Use The Agent In A Workflow
 

@@ -25,6 +25,7 @@ was the first concrete workflow used to prove the architecture.
   git built-ins.
 - Add new input sources by implementing CLI adapters selected with `--from`.
 - Inspect every run through local artifacts under `.runs/`.
+- Inspect runtime events and prompt usage through local observability artifacts.
 
 ## Quick Start
 
@@ -105,7 +106,8 @@ For complete walkthroughs, see:
 - **Trusted local write mode**: `trusted_host_local` workflow sandbox plus a
   `trusted_host_local_write` agent. This is trusted-operator mode for local
   writes, not a sandbox security boundary.
-- **Artifact**: a JSON or Markdown file written for a run under `.runs/`.
+- **Artifact**: a JSON, Markdown, or JSONL file written for a run under
+  `.runs/`.
 
 ## How Luna Works
 
@@ -167,11 +169,11 @@ The referenced ID must resolve to a valid Luna agent directory under
 Flue subagents run inside the parent agent session. They are not workflow graph
 nodes and do not create separate Luna artifacts automatically.
 
-In this phase, subagents are lightweight Flue profiles: Luna uses the referenced
-agent's description, instructions, and model profile only. Referenced subagents
-must not declare their own `skills`, `tools`, `mcp_servers`, or nested
-`subagents`; use a workflow graph node when that work needs its own tools, MCP
-access, schema, artifact, or workflow gate.
+Subagents are read-only Flue profiles. Luna uses the referenced agent's
+description, instructions, model profile, skills, and explicitly safe local
+tools. Referenced subagents must not declare `trusted_host_local_write`,
+`mcp_servers`, or nested `subagents`; use a workflow graph node when delegated
+work needs MCP access, writes, its own artifact, schema, or workflow gate.
 
 ## Project Structure
 
@@ -210,6 +212,16 @@ Artifact directories are always resolved as:
 
 Workflow YAML does not define a separate artifact namespace. The routed
 `workflow_id` is the only namespace.
+
+Each run also writes Luna-owned observability artifacts:
+
+- `run.json`: strict run identity.
+- `events.jsonl`: append-only runtime events with stable run/workflow/step ids.
+- `observability-summary.json`: derived prompt, token, cost, failure, and
+  rejected-capability counters.
+
+Flue receives these events through an optional log sink when Luna runs inside
+Flue, but Luna's local artifacts are the runtime contract.
 
 Workflow YAML may tune scheduler execution:
 

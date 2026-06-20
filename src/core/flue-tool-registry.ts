@@ -8,9 +8,17 @@ import type { AgentDefinition } from "./agent-definition.js";
 type ToolFactory = (cwd: string) => ToolDefinition;
 type AgentMode = AgentDefinition["mode"];
 
+export type ToolSafety = {
+  writes: boolean;
+  network: boolean;
+  side_effects: boolean;
+  subagent_read_only_allowed: boolean;
+};
+
 type RegisteredTool = {
   factory: ToolFactory;
   allowedAgentModes: readonly AgentMode[];
+  safety: ToolSafety;
 };
 
 const allAgentModes: readonly AgentMode[] = [
@@ -21,11 +29,23 @@ const allAgentModes: readonly AgentMode[] = [
 const toolRegistry: Record<string, RegisteredTool> = {
   "repository.status": {
     factory: repositoryStatusTool,
-    allowedAgentModes: allAgentModes
+    allowedAgentModes: allAgentModes,
+    safety: {
+      writes: false,
+      network: false,
+      side_effects: false,
+      subagent_read_only_allowed: true
+    }
   },
   "repository.diff-summary": {
     factory: repositoryDiffSummaryTool,
-    allowedAgentModes: allAgentModes
+    allowedAgentModes: allAgentModes,
+    safety: {
+      writes: false,
+      network: false,
+      side_effects: false,
+      subagent_read_only_allowed: true
+    }
   }
 };
 
@@ -38,11 +58,13 @@ function toolError(message: string, code: string): Error & { code: string } {
 export function resolveFlueTools({
   ids,
   agentMode,
-  cwd
+  cwd,
+  forSubagent = false
 }: {
   ids: readonly string[];
   agentMode: AgentMode;
   cwd: string;
+  forSubagent?: boolean;
 }): ToolDefinition[] {
   return ids.map((id) => {
     const tool = toolRegistry[id];
@@ -56,6 +78,22 @@ export function resolveFlueTools({
         `Flue tool ${id} is not allowed for agent mode ${agentMode}`,
         "flue_tool_mode_not_allowed"
       );
+    }
+
+    if (forSubagent) {
+      const isSubagentSafe =
+        agentMode === "read_only" &&
+        !tool.safety.writes &&
+        !tool.safety.network &&
+        !tool.safety.side_effects &&
+        tool.safety.subagent_read_only_allowed;
+
+      if (!isSubagentSafe) {
+        throw toolError(
+          `Flue tool ${id} is not allowed for read-only subagents`,
+          "flue_tool_subagent_not_allowed"
+        );
+      }
     }
 
     return tool.factory(cwd);

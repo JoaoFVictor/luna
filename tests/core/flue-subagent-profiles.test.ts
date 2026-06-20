@@ -1,8 +1,68 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveFlueSubagentProfiles } from "../../src/core/flue-subagent-profiles.js";
+import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
+import { createObservabilitySummary } from "../../src/core/observability/summary.js";
+
+async function writeSkillFixture(root: string): Promise<void> {
+  const skillDir = path.join(root, "skills", "repo-inspection");
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
+    [
+      "---",
+      "name: repo-inspection",
+      "description: Inspect repository state without changing files.",
+      "---",
+      "",
+      "- Read local repository context.",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
+async function writeSubagentFixture({
+  root,
+  id = "change-reviewer",
+  mode = "read_only",
+  extraYaml = []
+}: {
+  root: string;
+  id?: string;
+  mode?: "read_only" | "trusted_host_local_write";
+  extraYaml?: string[];
+}): Promise<void> {
+  const reviewerDir = path.join(root, id);
+  await mkdir(reviewerDir, { recursive: true });
+  await writeFile(
+    path.join(reviewerDir, "agent.yaml"),
+    [
+      `id: ${id}`,
+      "description: Reviews implementation diffs",
+      "model_profile: deep",
+      `mode: ${mode}`,
+      "instructions_file: instructions.md",
+      "output_schema: output.schema.json",
+      ...extraYaml,
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(path.join(reviewerDir, "instructions.md"), "Review the diff.\n");
+  await writeFile(path.join(reviewerDir, "output.schema.json"), "{}\n");
+}
+
+function fakeObservability(): LunaObservability {
+  return {
+    emit: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
+    isHardFailed: () => false,
+    hardFailure: () => undefined
+  };
+}
 
 describe("flue subagent profiles", () => {
   it("resolves existing Luna agents into Flue subagent profiles", async () => {
@@ -97,45 +157,153 @@ describe("flue subagent profiles", () => {
     }
   });
 
-  it("rejects subagents that declare their own capabilities", async () => {
+  it("allows read-only subagents with skills and safe local repository tools", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+    const agentsRoot = path.join(root, "agents");
+
+    try {
+      await writeSkillFixture(root);
+      await writeSubagentFixture({
+        root: agentsRoot,
+        extraYaml: [
+          "skills:",
+          "  - ../../skills/repo-inspection/SKILL.md",
+          "tools:",
+          "  - repository.status"
+        ]
+      });
+
+      const profiles = await resolveFlueSubagentProfiles({
+        agentsRoot,
+        ids: ["change-reviewer"],
+        cwd: "/repo/worktree",
+        modelProfiles: {
+          deep: { model: "test/deep", reasoning_effort: "high" }
+        }
+      });
+
+      expect(profiles).toHaveLength(1);
+      expect(profiles[0]?.skills).toEqual([
+        expect.objectContaining({
+          name: "repo-inspection",
+          description: "Inspect repository state without changing files."
+        })
+      ]);
+      expect(profiles[0]?.tools?.map((tool) => tool.name)).toEqual([
+        "repository_status"
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      name: "mcp_servers",
+      extraYaml: ["mcp_servers:", "  - github"],
+      expected: "mcp_servers:github"
+    },
+    {
+      name: "nested subagents",
+      extraYaml: ["subagents:", "  - security-reviewer"],
+      expected: "subagents:security-reviewer"
+    },
+    {
+      name: "trusted_host_local_write mode",
+      mode: "trusted_host_local_write" as const,
+      extraYaml: [],
+      expected: "mode:trusted_host_local_write"
+    },
+    {
+      name: "unknown local tool",
+      extraYaml: ["tools:", "  - repository.missing"],
+      expected: "tools:repository.missing"
+    }
+  ])(
+    "rejects the whole subagent profile for unsupported $name and records observability",
+    async ({ mode = "read_only", extraYaml, expected }) => {
+      const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+      const observability = fakeObservability();
+      const summary = createObservabilitySummary({
+        runId: "run-1",
+        workflowId: "workflow-1"
+      });
+
+      try {
+        await writeSubagentFixture({
+          root,
+          mode: mode as "read_only" | "trusted_host_local_write",
+          extraYaml
+        });
+
+        await expect(
+          resolveFlueSubagentProfiles({
+            agentsRoot: root,
+            ids: ["change-reviewer"],
+            cwd: "/repo/worktree",
+            modelProfiles: {
+              deep: { model: "test/deep", reasoning_effort: "high" }
+            },
+            observability,
+            summary
+          })
+        ).rejects.toMatchObject({
+          code: "subagent_capabilities_unsupported",
+          message: expect.stringContaining(expected)
+        });
+
+        expect(observability.emit).toHaveBeenCalledWith(
+          "warn",
+          "luna.subagent.capability.rejected",
+          expect.objectContaining({
+            agent_id: "change-reviewer",
+            capability: expected.split(":")[0],
+            id: expected.split(":")[1],
+            status: "rejected"
+          })
+        );
+        expect(summary.rejected_capabilities).toEqual([
+          expect.objectContaining({
+            agent_id: "change-reviewer",
+            capability: expected.split(":")[0],
+            id: expected.split(":")[1]
+          })
+        ]);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it("wraps Flue profile capability support failures", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
 
     try {
-      const reviewerDir = path.join(root, "change-reviewer");
-      await mkdir(reviewerDir, { recursive: true });
-      await writeFile(
-        path.join(reviewerDir, "agent.yaml"),
-        [
-          "id: change-reviewer",
-          "description: Reviews implementation diffs",
-          "model_profile: deep",
-          "mode: read_only",
-          "instructions_file: instructions.md",
-          "output_schema: output.schema.json",
-          "tools:",
-          "  - repository.status",
-          ""
-        ].join("\n")
-      );
-      await writeFile(
-        path.join(reviewerDir, "instructions.md"),
-        "Review the diff.\n"
-      );
-      await writeFile(path.join(reviewerDir, "output.schema.json"), "{}\n");
+      await writeSubagentFixture({ root });
+      vi.resetModules();
+      vi.doMock("@flue/runtime", () => ({
+        defineAgentProfile: () => {
+          throw new Error("Flue does not support this profile capability");
+        }
+      }));
+      const { resolveFlueSubagentProfiles: resolveWithMockedFlue } =
+        await import("../../src/core/flue-subagent-profiles.js");
 
       await expect(
-        resolveFlueSubagentProfiles({
+        resolveWithMockedFlue({
           agentsRoot: root,
           ids: ["change-reviewer"],
+          cwd: "/repo/worktree",
           modelProfiles: {
             deep: { model: "test/deep", reasoning_effort: "high" }
           }
         })
       ).rejects.toMatchObject({
-        code: "subagent_capabilities_unsupported",
-        message: expect.stringContaining("tools")
+        code: "subagent_profile_capability_unsupported"
       });
     } finally {
+      vi.doUnmock("@flue/runtime");
+      vi.resetModules();
       await rm(root, { recursive: true, force: true });
     }
   });

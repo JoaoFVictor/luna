@@ -7,6 +7,8 @@ import type { AgentDefinition } from "../../src/core/agent-definition.js";
 import { resolveFlueMcpTools } from "../../src/core/flue-mcp-capabilities.js";
 import { resolveFlueAgentCapabilities } from "../../src/core/flue-agent-capabilities.js";
 import type { McpConfig } from "../../src/core/mcp-config.js";
+import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
+import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
 vi.mock("../../src/core/flue-mcp-capabilities.js", () => ({
   resolveFlueMcpTools: vi.fn()
@@ -14,6 +16,15 @@ vi.mock("../../src/core/flue-mcp-capabilities.js", () => ({
 
 function tool(name: string): ToolDefinition {
   return { name } as ToolDefinition;
+}
+
+function fakeObservability(): LunaObservability {
+  return {
+    emit: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
+    isHardFailed: () => false,
+    hardFailure: () => undefined
+  };
 }
 
 async function writeCodeImplementerFixture(): Promise<{
@@ -116,6 +127,39 @@ describe("flue agent capabilities", () => {
       });
       expect(capabilities.tools).toHaveLength(1);
       expect(capabilities.tools[0]?.name).toBe("repository_status");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits a resolved observability event for parent capabilities", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const observability = fakeObservability();
+    const summary = createObservabilitySummary({
+      runId: "run-1",
+      workflowId: "workflow-1"
+    });
+
+    try {
+      await resolveFlueAgentCapabilities({
+        agent,
+        cwd: "/repo/worktree",
+        observability,
+        summary
+      });
+
+      expect(observability.emit).toHaveBeenCalledWith(
+        "info",
+        "luna.capabilities.resolved",
+        expect.objectContaining({
+          agent_id: "code-implementer",
+          status: "completed",
+          skills: 1,
+          local_tools: 1,
+          mcp_tools: 0,
+          subagents: 0
+        })
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -291,6 +335,33 @@ describe("flue agent capabilities", () => {
     }
   });
 
+  it("emits a failed observability event when parent capability resolution fails", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const observability = fakeObservability();
+
+    try {
+      await expect(
+        resolveFlueAgentCapabilities({
+          agent: { ...agent, subagents: ["change-reviewer"] },
+          cwd: "/repo/worktree",
+          observability
+        })
+      ).rejects.toMatchObject({ code: "subagent_context_missing" });
+
+      expect(observability.emit).toHaveBeenCalledWith(
+        "error",
+        "luna.capabilities.failed",
+        expect.objectContaining({
+          agent_id: "code-implementer",
+          status: "failed",
+          code: "subagent_context_missing"
+        })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("preserves subagent_model_profile_missing through the combined resolver", async () => {
     const { root, agent } = await writeCodeImplementerFixture();
 
@@ -325,6 +396,96 @@ describe("flue agent capabilities", () => {
         })
       ).rejects.toMatchObject({ code: "subagent_self_reference" });
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes cwd observability and summary into subagent capability resolution", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const observability = fakeObservability();
+    const summary = createObservabilitySummary({
+      runId: "run-1",
+      workflowId: "workflow-1"
+    });
+    const resolveFlueSubagentProfiles = vi.fn(async () => []);
+
+    try {
+      vi.resetModules();
+      vi.doMock("../../src/core/flue-mcp-capabilities.js", () => ({
+        resolveFlueMcpTools: vi.fn(async () => ({
+          tools: [],
+          close: async () => {}
+        }))
+      }));
+      vi.doMock("../../src/core/flue-subagent-profiles.js", () => ({
+        resolveFlueSubagentProfiles
+      }));
+      const { resolveFlueAgentCapabilities: resolveWithMockedSubagents } =
+        await import("../../src/core/flue-agent-capabilities.js");
+
+      await resolveWithMockedSubagents({
+        agent: { ...agent, subagents: ["change-reviewer"] },
+        cwd: "/repo/worktree",
+        agentsRoot: path.join(root, "agents"),
+        modelProfiles: {
+          deep: { model: "test/deep", reasoning_effort: "high" }
+        },
+        observability,
+        summary
+      });
+
+      expect(resolveFlueSubagentProfiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/repo/worktree",
+          observability,
+          summary
+        })
+      );
+    } finally {
+      vi.doUnmock("../../src/core/flue-subagent-profiles.js");
+      vi.doUnmock("../../src/core/flue-mcp-capabilities.js");
+      vi.resetModules();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves subagent_profile_capability_unsupported through the combined resolver", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const subagentError = new Error("Unsupported Flue profile capability") as Error & {
+      code: "subagent_profile_capability_unsupported";
+    };
+    subagentError.code = "subagent_profile_capability_unsupported";
+
+    try {
+      vi.resetModules();
+      vi.doMock("../../src/core/flue-mcp-capabilities.js", () => ({
+        resolveFlueMcpTools: vi.fn(async () => ({
+          tools: [],
+          close: async () => {}
+        }))
+      }));
+      vi.doMock("../../src/core/flue-subagent-profiles.js", () => ({
+        resolveFlueSubagentProfiles: vi.fn(async () => {
+          throw subagentError;
+        })
+      }));
+      const { resolveFlueAgentCapabilities: resolveWithMockedSubagents } =
+        await import("../../src/core/flue-agent-capabilities.js");
+
+      await expect(
+        resolveWithMockedSubagents({
+          agent: { ...agent, subagents: ["change-reviewer"] },
+          cwd: "/repo/worktree",
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles: {
+            deep: { model: "test/deep", reasoning_effort: "high" }
+          }
+        })
+      ).rejects.toBe(subagentError);
+    } finally {
+      vi.doUnmock("../../src/core/flue-subagent-profiles.js");
+      vi.doUnmock("../../src/core/flue-mcp-capabilities.js");
+      vi.resetModules();
       await rm(root, { recursive: true, force: true });
     }
   });

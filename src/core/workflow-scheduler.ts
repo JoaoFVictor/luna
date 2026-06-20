@@ -1,5 +1,9 @@
 import type { BuiltInStepMetadata } from "./built-ins/index.js";
-import type { RunLogAttributes, RunLogger } from "./run-logger.js";
+import type { LunaObservability } from "./observability/luna-observability.js";
+import {
+  recordFailedStep,
+  type ObservabilitySummary
+} from "./observability/summary.js";
 import type { WorkflowNode } from "./workflow-definition.js";
 import type { SchedulerWorkflowState } from "./workflow-state.js";
 
@@ -19,7 +23,8 @@ export type WorkflowScheduleOptions = {
   nodes: WorkflowNode[];
   state: SchedulerWorkflowState;
   execution: SchedulerExecution;
-  logger: RunLogger;
+  observability?: LunaObservability;
+  summary?: ObservabilitySummary;
   lockManager?: SchedulerLockManager;
   runNode: (options: {
     node: WorkflowNode;
@@ -65,19 +70,6 @@ function errorMessage(error: unknown): string {
   }
 
   return String(error);
-}
-
-function emitRunLog(
-  logger: RunLogger,
-  level: keyof RunLogger,
-  event: string,
-  attributes: RunLogAttributes
-): void {
-  try {
-    logger[level](event, attributes);
-  } catch {
-    return;
-  }
 }
 
 function isWorkspaceRecord(
@@ -361,7 +353,8 @@ export async function runWorkflowSchedule({
   nodes,
   state,
   execution,
-  logger,
+  observability,
+  summary,
   lockManager,
   runNode,
   writeNodeArtifact,
@@ -379,49 +372,99 @@ export async function runWorkflowSchedule({
   };
   const maxConcurrency = normalizedMaxConcurrency(execution.max_concurrency);
 
+  async function emitSchedulerEvent(
+    level: "info" | "warn" | "error",
+    event: string,
+    attributes: Record<string, unknown>
+  ): Promise<void> {
+    if (observability === undefined) {
+      return;
+    }
+
+    try {
+      await observability.emit(level, event, attributes);
+    } catch (error) {
+      if (observability.isHardFailed()) {
+        throw error;
+      }
+    }
+  }
+
   async function runOneNode(node: WorkflowNode): Promise<{
     node: WorkflowNode;
     output: unknown;
     capturedWorkspace?: SchedulerWorkflowState["workspace"];
   }> {
-    emitRunLog(logger, "info", "luna.scheduler.step_started", {
-      "luna.run_id": state.run.run_id,
-      "luna.flue_run_id": state.run.flue_run_id,
-      "luna.workflow_id": state.workflow.id,
-      "luna.step_id": node.id
+    const startedAt = Date.now();
+    await emitSchedulerEvent("info", "luna.scheduler.step.started", {
+      step_id: node.id,
+      node_type: node.type,
+      status: "started"
     });
 
     const metadata = builtInMetadata(node);
-    const snapshot = snapshotState(scheduleState);
-    const output = await withLocks(
-      node,
-      snapshot,
-      metadata,
-      lockManager,
-      async () =>
-        await runNode({
-          node,
-          state: snapshot
-        })
-    );
-    const capturesWorkspace = metadata.capturesWorkspace === true;
-    const capturedWorkspace =
-      capturesWorkspace && isWorkspaceRecord(output) ? output : undefined;
+    try {
+      const snapshot = snapshotState(scheduleState);
+      const output = await withLocks(
+        node,
+        snapshot,
+        metadata,
+        lockManager,
+        async () =>
+          await runNode({
+            node,
+            state: snapshot
+          })
+      );
+      const capturesWorkspace = metadata.capturesWorkspace === true;
+      const capturedWorkspace =
+        capturesWorkspace && isWorkspaceRecord(output) ? output : undefined;
 
-    if (capturesWorkspace && workspace !== undefined) {
-      throw duplicateWorkspaceError(node.id);
+      if (capturesWorkspace && workspace !== undefined) {
+        throw duplicateWorkspaceError(node.id);
+      }
+
+      await writeNodeArtifact(node, output);
+      try {
+        await emitSchedulerEvent("info", "luna.scheduler.step.finished", {
+          step_id: node.id,
+          node_type: node.type,
+          status: "completed",
+          duration_ms: Date.now() - startedAt
+        });
+      } catch (error) {
+        if (capturedWorkspace !== undefined) {
+          Object.defineProperty(error, "workspaceRecord", {
+            configurable: true,
+            value: capturedWorkspace
+          });
+        }
+
+        throw error;
+      }
+
+      return {
+        node,
+        output,
+        ...(capturedWorkspace === undefined ? {} : { capturedWorkspace })
+      };
+    } catch (error) {
+      await emitSchedulerEvent("error", "luna.scheduler.step.failed", {
+        step_id: node.id,
+        node_type: node.type,
+        status: "failed",
+        duration_ms: Date.now() - startedAt,
+        error
+      });
+      throw error;
     }
-
-    await writeNodeArtifact(node, output);
-
-    return {
-      node,
-      output,
-      ...(capturedWorkspace === undefined ? {} : { capturedWorkspace })
-    };
   }
 
   while (pending.size > 0) {
+    if (observability?.isHardFailed() === true) {
+      throw observability.hardFailure();
+    }
+
     let skippedDependency = false;
 
     for (const node of [...pending.values()]) {
@@ -432,12 +475,19 @@ export async function runWorkflowSchedule({
         blocked.add(node.id);
         pending.delete(node.id);
         skippedDependency = true;
-        emitRunLog(logger, "warn", "luna.scheduler.step_failed", {
-          "luna.run_id": state.run.run_id,
-          "luna.flue_run_id": state.run.flue_run_id,
-          "luna.workflow_id": state.workflow.id,
-          "luna.step_id": node.id,
-          "error.code": skipped.code
+        recordFailedStep(summary, {
+          stepId: node.id,
+          code: skipped.code,
+          message: "Workflow dependency failed"
+        });
+        await emitSchedulerEvent("warn", "luna.scheduler.step.failed", {
+          step_id: node.id,
+          node_type: node.type,
+          status: "skipped",
+          error: {
+            code: skipped.code,
+            message: "Workflow dependency failed"
+          }
         });
       }
     }
@@ -456,6 +506,10 @@ export async function runWorkflowSchedule({
         "Workflow graph cannot be ordered",
         "workflow_graph_unorderable"
       );
+    }
+
+    if (observability?.isHardFailed() === true) {
+      throw observability.hardFailure();
     }
 
     const batch = selectReadyBatch(ready, maxConcurrency, builtInMetadata);
@@ -481,14 +535,21 @@ export async function runWorkflowSchedule({
             scheduleState.steps[node.id] = failure;
             blocked.add(node.id);
             pending.delete(node.id);
+            recordFailedStep(summary, {
+              stepId: node.id,
+              code: failure.details.cause_code ?? failure.code,
+              message: failure.message
+            });
 
-            emitRunLog(logger, "error", "luna.scheduler.step_failed", {
-              "luna.run_id": state.run.run_id,
-              "luna.flue_run_id": state.run.flue_run_id,
-              "luna.workflow_id": state.workflow.id,
-              "luna.step_id": node.id,
-              "error.code": failure.code,
-              "error.cause_code": failure.details.cause_code
+            await emitSchedulerEvent("error", "luna.scheduler.step.failed", {
+              step_id: node.id,
+              node_type: node.type,
+              status: "failed",
+              error: {
+                code: failure.code,
+                cause_code: failure.details.cause_code,
+                message: failure.message
+              }
             });
             continue;
           }
@@ -502,12 +563,6 @@ export async function runWorkflowSchedule({
         completed.add(node.id);
         pending.delete(node.id);
 
-        emitRunLog(logger, "info", "luna.scheduler.step_finished", {
-          "luna.run_id": state.run.run_id,
-          "luna.flue_run_id": state.run.flue_run_id,
-          "luna.workflow_id": state.workflow.id,
-          "luna.step_id": node.id
-        });
         continue;
       }
 
@@ -525,14 +580,21 @@ export async function runWorkflowSchedule({
       scheduleState.steps[node.id] = failure;
       blocked.add(node.id);
       pending.delete(node.id);
+      recordFailedStep(summary, {
+        stepId: node.id,
+        code: failure.details.cause_code ?? failure.code,
+        message: failure.message
+      });
 
-      emitRunLog(logger, "error", "luna.scheduler.step_failed", {
-        "luna.run_id": state.run.run_id,
-        "luna.flue_run_id": state.run.flue_run_id,
-        "luna.workflow_id": state.workflow.id,
-        "luna.step_id": node.id,
-        "error.code": failure.code,
-        "error.cause_code": failure.details.cause_code
+      await emitSchedulerEvent("error", "luna.scheduler.step.failed", {
+        step_id: node.id,
+        node_type: node.type,
+        status: "failed",
+        error: {
+          code: failure.code,
+          cause_code: failure.details.cause_code,
+          message: failure.message
+        }
       });
     }
 

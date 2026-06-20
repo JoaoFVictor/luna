@@ -4,7 +4,8 @@ import {
   schedulerStepFailed,
   splitDeferredFinalReportNodes
 } from "../../src/core/workflow-scheduler.js";
-import { noopRunLogger } from "../../src/core/run-logger.js";
+import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
+import type { LunaObservabilityEvent } from "../../src/core/observability/events.js";
 import type { WorkflowNode } from "../../src/core/workflow-definition.js";
 import type { SchedulerWorkflowState } from "../../src/core/workflow-state.js";
 
@@ -73,6 +74,94 @@ async function settlesTrueWithin(
 }
 
 describe("workflow scheduler", () => {
+  it("stops before selecting the next batch after a required observability sink hard failure", async () => {
+    const events: LunaObservabilityEvent[] = [];
+    const requiredSinkFailure = new Error("required sink offline");
+    const observability = createLunaObservability({
+      run: { id: "run-1" },
+      workflow: { id: "code-review" },
+      sinks: [
+        {
+          id: "required-test",
+          required: true,
+          append: (event) => {
+            events.push(event);
+            if (event.event === "luna.scheduler.step.finished") {
+              throw requiredSinkFailure;
+            }
+          }
+        }
+      ]
+    });
+    const started: string[] = [];
+
+    await expect(
+      runWorkflowSchedule({
+        nodes: [builtInNode("a"), builtInNode("b", ["a"])],
+        state: baseState(),
+        execution: { max_concurrency: 2 },
+        observability,
+        runNode: async ({ node }) => {
+          started.push(node.id);
+          return { id: node.id };
+        },
+        writeNodeArtifact: vi.fn(async () => undefined),
+        builtInMetadata: () => ({})
+      })
+    ).rejects.toMatchObject({
+      code: "observability_append_failed",
+      hardFailure: true,
+      sinkId: "required-test"
+    });
+
+    expect(started).toEqual(["a"]);
+    expect(events.map((event) => event.event)).toContain(
+      "luna.scheduler.step.started"
+    );
+    expect(events.map((event) => event.event)).toContain(
+      "luna.scheduler.step.finished"
+    );
+  });
+
+  it("preserves captured workspace on required observability hard failure after node success", async () => {
+    const workspace = {
+      run_id: "run-1",
+      path: "/tmp/luna-workspace",
+      preserved: true,
+      reason: "prepared"
+    };
+    const observability = createLunaObservability({
+      run: { id: "run-1" },
+      workflow: { id: "code-review" },
+      sinks: [
+        {
+          id: "required-test",
+          required: true,
+          append: (event) => {
+            if (event.event === "luna.scheduler.step.finished") {
+              throw new Error("required sink offline");
+            }
+          }
+        }
+      ]
+    });
+
+    await expect(
+      runWorkflowSchedule({
+        nodes: [{ id: "workspace", type: "built_in", uses: "prepare_worktree" }],
+        state: baseState(),
+        execution: { max_concurrency: 1 },
+        observability,
+        runNode: async () => workspace,
+        writeNodeArtifact: vi.fn(async () => undefined),
+        builtInMetadata: () => ({ capturesWorkspace: true })
+      })
+    ).rejects.toMatchObject({
+      code: "observability_append_failed",
+      workspaceRecord: workspace
+    });
+  });
+
   it("runs ready nodes sequentially when max_concurrency is 1", async () => {
     const callOrder: string[] = [];
     const nodes = [builtInNode("a"), builtInNode("b", ["a"])];
@@ -81,7 +170,6 @@ describe("workflow scheduler", () => {
       nodes,
       state: baseState(),
       execution: { max_concurrency: 1 },
-      logger: noopRunLogger,
       runNode: async ({ node }) => {
         callOrder.push(node.id);
         return { id: node.id };
@@ -109,7 +197,6 @@ describe("workflow scheduler", () => {
       nodes: [builtInNode("a"), builtInNode("b")],
       state: baseState(),
       execution: { max_concurrency: 2 },
-      logger: noopRunLogger,
       runNode: async ({ node }) => {
         started.push(node.id);
         if (started.length === 2) {
@@ -138,7 +225,6 @@ describe("workflow scheduler", () => {
       nodes: [builtInNode("a"), builtInNode("b")],
       state: baseState(),
       execution: { max_concurrency: Number.NaN },
-      logger: noopRunLogger,
       runNode: async ({ node }) => {
         expect(running).toHaveLength(0);
         running.push(node.id);
@@ -168,7 +254,6 @@ describe("workflow scheduler", () => {
       ],
       state: baseState(),
       execution: { max_concurrency: 3 },
-      logger: noopRunLogger,
       runNode: async ({ node }) => {
         firstBatchStarted.push(node.id);
         if (
@@ -206,7 +291,6 @@ describe("workflow scheduler", () => {
       ],
       state: baseState(),
       execution: { max_concurrency: 3 },
-      logger: noopRunLogger,
       runNode: async ({ node }) => {
         started.push(node.id);
         if (
@@ -260,7 +344,6 @@ describe("workflow scheduler", () => {
       ],
       state: baseState(),
       execution: { max_concurrency: 3 },
-      logger: noopRunLogger,
       lockManager: {
         acquire: async (resource) => {
           events.push(`acquire:${resource}`);
@@ -338,7 +421,6 @@ describe("workflow scheduler", () => {
       ],
       state: baseState(),
       execution: { max_concurrency: 3 },
-      logger: noopRunLogger,
       runNode: async ({ node }) => {
         started.push(node.id);
         if (started.includes("agent_a") && started.includes("preflight")) {
@@ -366,7 +448,6 @@ describe("workflow scheduler", () => {
       nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
       state: baseState(),
       execution: { max_concurrency: 1 },
-      logger: noopRunLogger,
       lockManager: {
         acquire: async (resource) => {
           events.push(`acquire:${resource}`);
@@ -401,7 +482,6 @@ describe("workflow scheduler", () => {
         nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
         state,
         execution: { max_concurrency: 1 },
-        logger: noopRunLogger,
         runNode: async () => ({ ok: true }),
         writeNodeArtifact: async () => undefined,
         builtInMetadata: () => ({
@@ -417,7 +497,6 @@ describe("workflow scheduler", () => {
         nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
         state: baseState(),
         execution: { max_concurrency: 1 },
-        logger: noopRunLogger,
         runNode: async () => ({ ok: true }),
         writeNodeArtifact: async () => undefined,
         builtInMetadata: () => ({
@@ -439,7 +518,6 @@ describe("workflow scheduler", () => {
         nodes: [builtInNode("locked"), builtInNode("free")],
         state,
         execution: { max_concurrency: 2 },
-        logger: noopRunLogger,
         lockManager: {
           acquire: async () => async () => undefined
         },
@@ -466,7 +544,6 @@ describe("workflow scheduler", () => {
       nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
       state: baseState(),
       execution: { max_concurrency: 1 },
-      logger: noopRunLogger,
       lockManager: {
         acquire: async () => {
           const releaseId = events.length;
@@ -511,7 +588,6 @@ describe("workflow scheduler", () => {
       nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
       state: baseState(),
       execution: { max_concurrency: 1 },
-      logger: noopRunLogger,
       lockManager: {
         acquire: async () => async () => {
           throw new Error("release failed");
@@ -561,17 +637,26 @@ describe("workflow scheduler", () => {
     const cause = new Error("node exploded") as Error & { code: string };
     cause.code = "node_exploded";
     const writeNodeArtifact = vi.fn(async () => undefined);
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn()
-    };
+    const events: LunaObservabilityEvent[] = [];
+    const observability = createLunaObservability({
+      run: { id: "run-1" },
+      workflow: { id: "code-review" },
+      sinks: [
+        {
+          id: "memory",
+          required: true,
+          append: (event) => {
+            events.push(event);
+          }
+        }
+      ]
+    });
 
     const result = await runWorkflowSchedule({
       nodes: [builtInNode("a"), builtInNode("b", ["a"])],
       state: baseState(),
       execution: { max_concurrency: 1 },
-      logger,
+      observability,
       runNode: async ({ node }) => {
         if (node.id === "a") {
           throw cause;
@@ -595,11 +680,14 @@ describe("workflow scheduler", () => {
       step_id: "b"
     });
     expect(writeNodeArtifact).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
-      "luna.scheduler.step_failed",
+    expect(events).toContainEqual(
       expect.objectContaining({
-        "luna.step_id": "b",
-        "error.code": "scheduler_dependency_failed"
+        event: "luna.scheduler.step.failed",
+        step_id: "b",
+        status: "skipped",
+        error: expect.objectContaining({
+          code: "scheduler_dependency_failed"
+        })
       })
     );
   });
@@ -620,7 +708,6 @@ describe("workflow scheduler", () => {
       nodes: [builtInNode("workspace")],
       state: baseState(),
       execution: { max_concurrency: 1 },
-      logger: noopRunLogger,
       runNode: async () => workspace,
       writeNodeArtifact: async () => {
         throw artifactFailure;
@@ -648,7 +735,6 @@ describe("workflow scheduler", () => {
       nodes: [builtInNode("a")],
       state: baseState(),
       execution: { max_concurrency: 1 },
-      logger: noopRunLogger,
       runNode: async ({ state }) => {
         (state.steps as Record<string, unknown>).mutated = true;
         return { status: "unreachable" };

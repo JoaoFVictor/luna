@@ -54,14 +54,22 @@ import { repositoryLastCommitTool } from "../tools/repository-tools.js";
 const toolRegistry: Record<string, RegisteredTool> = {
   "repository.last-commit": {
     factory: repositoryLastCommitTool,
-    allowedAgentModes: ["read_only", "trusted_host_local_write"]
+    allowedAgentModes: ["read_only", "trusted_host_local_write"],
+    safety: {
+      writes: false,
+      network: false,
+      side_effects: false,
+      subagent_read_only_allowed: true
+    }
   }
 };
 ```
 
 Use `read_only` only when the tool is safe for read-only agents. Reserve
 `trusted_host_local_write` for tools that are useful only inside a trusted local
-write worktree.
+write worktree. `subagent_read_only_allowed` must be explicit; leave it `false`
+unless the tool is deterministic, local, non-writing, non-networked, and safe
+inside a read-only subagent profile.
 
 ## 4. Attach the tool to an agent
 

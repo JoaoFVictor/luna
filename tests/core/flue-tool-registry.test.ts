@@ -96,4 +96,44 @@ describe("flue tool registry", () => {
       message: "Flue tool repository.status is not allowed for agent mode unsupported_mode"
     });
   });
+
+  it("allows safe read-only repository tools for read-only subagents", async () => {
+    const { resolveFlueTools } = await importRegistryWithGitMock();
+
+    const tools = resolveFlueTools({
+      ids: ["repository.status", "repository.diff-summary"],
+      agentMode: "read_only",
+      cwd: "/repo/worktree",
+      forSubagent: true
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "repository_status",
+      "repository_diff_summary"
+    ]);
+  });
+
+  it("default-denies unknown and unsafe tools for subagents", async () => {
+    const { resolveFlueTools } = await importRegistryWithGitMock();
+
+    expect(() =>
+      resolveFlueTools({
+        ids: ["repository.missing"],
+        agentMode: "read_only",
+        cwd: "/repo/worktree",
+        forSubagent: true
+      })
+    ).toThrow(expect.objectContaining({ code: "flue_tool_unknown" }));
+
+    expect(() =>
+      resolveFlueTools({
+        ids: ["repository.status"],
+        agentMode: "trusted_host_local_write",
+        cwd: "/repo/worktree",
+        forSubagent: true
+      })
+    ).toThrow(
+      expect.objectContaining({ code: "flue_tool_subagent_not_allowed" })
+    );
+  });
 });
