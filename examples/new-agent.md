@@ -129,16 +129,32 @@ subagents:
   - change-reviewer
 ```
 
+String references use the default read-only policy. To request a trusted write
+subagent, use object form with an explicit tool allowlist:
+
+```yaml
+subagents:
+  - id: implementer-helper
+    policy:
+      mode: trusted_host_local_write
+      allow_tools:
+        - repository.status
+```
+
 Create or reuse a valid `agents/change-reviewer/` directory with
 `agent.yaml`, `instructions_file`, `output_schema`, and a configured
 `model_profile`. No TypeScript is needed for each new subagent.
 
-Subagents must be `read_only`. They may declare skills and local tools that
-Luna marks as safe for read-only subagent use, such as repository inspection
-tools. Do not put `trusted_host_local_write`, `mcp_servers`, or nested
-`subagents` on an agent you intend to call as a Flue subagent. Use a workflow
-graph node when the delegated work needs MCP access, writes, its own schema,
-artifact, or gate.
+Subagents are `read_only` by default. They may declare skills and local tools
+that Luna marks as safe for read-only subagent use, such as repository
+inspection tools. Trusted write subagents require the workflow to set
+`subagent_policy.allow_write: true`, and Luna only exposes tools named in the
+subagent reference's `policy.allow_tools`.
+
+Flue subagents cannot declare `mcp_servers` or nested `subagents` in Luna. Use a
+workflow graph node when delegated work needs MCP access, another delegation
+tree, writes outside an explicitly allowlisted trusted subagent tool, its own
+schema, artifact, or gate.
 
 ## 5. Use The Agent In A Workflow
 

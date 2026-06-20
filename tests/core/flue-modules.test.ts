@@ -210,6 +210,7 @@ describe("flue modules", () => {
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -242,6 +243,7 @@ describe("flue modules", () => {
           model: { model: "openai/reviewer-test", thinkingLevel: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { review_plan: reviewPlan },
           state: {
             invocation: gitInvocation,
@@ -274,6 +276,7 @@ describe("flue modules", () => {
           model: { model: "openai/acceptance-test", thinkingLevel: "low" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { findings },
           state: {
             invocation: gitInvocation,
@@ -425,6 +428,7 @@ describe("flue modules", () => {
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -528,7 +532,7 @@ describe("flue modules", () => {
             mode: "read_only",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
-            subagents: ["change-reviewer"],
+            subagents: [{ id: "change-reviewer" }],
             directory: agentDir,
             instructionsPath,
             outputSchemaPath
@@ -544,6 +548,7 @@ describe("flue modules", () => {
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -590,6 +595,7 @@ describe("flue modules", () => {
       cwd: process.cwd(),
       agentsRoot: path.join(root, "agents"),
       modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
       mcpConfig: { mcp_servers: [] },
       env: process.env
     });
@@ -651,6 +657,7 @@ describe("flue modules", () => {
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -688,6 +695,7 @@ describe("flue modules", () => {
       cwd: process.cwd(),
       agentsRoot: path.join(root, "agents"),
       modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
       mcpConfig: { mcp_servers: [] },
       env: process.env
     });
@@ -749,6 +757,7 @@ describe("flue modules", () => {
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { repo_context: { files: [] } },
           state: {
             invocation: gitInvocation,
@@ -877,6 +886,7 @@ describe("flue modules", () => {
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { task: "Fix checkout validation" },
           sandbox: {
             type: "trusted_host_local",
@@ -1074,7 +1084,7 @@ describe("flue modules", () => {
             mode: "trusted_host_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
-            subagents: ["change-reviewer"],
+            subagents: [{ id: "change-reviewer" }],
             directory: agentDir,
             instructionsPath,
             outputSchemaPath
@@ -1100,6 +1110,7 @@ describe("flue modules", () => {
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { task: "Fix checkout validation" },
           sandbox: {
             type: "trusted_host_local",
@@ -1154,6 +1165,7 @@ describe("flue modules", () => {
       cwd: worktreePath,
       agentsRoot: path.join(root, "agents"),
       modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
       mcpConfig: { mcp_servers: [] },
       env: process.env
     });
@@ -1267,6 +1279,7 @@ describe("flue modules", () => {
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { task: "Fix checkout validation" },
           sandbox: {
             type: "trusted_host_local",
@@ -1335,6 +1348,7 @@ describe("flue modules", () => {
       cwd: worktreePath,
       agentsRoot: path.join(root, "agents"),
       modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
       mcpConfig: { mcp_servers: [] },
       env: process.env
     });
@@ -1419,6 +1433,7 @@ describe("flue modules", () => {
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: { task: "Fix checkout validation" },
           sandbox: {
             type: "trusted_host_local",
@@ -1503,6 +1518,7 @@ describe("flue modules", () => {
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: {},
           sandbox: {
             type: "trusted_host_local",
@@ -1584,6 +1600,7 @@ describe("flue modules", () => {
           model: { model: "openai/implementer-test", thinkingLevel: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
           input: {},
           sandbox: {
             type: "remote",

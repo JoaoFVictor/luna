@@ -105,6 +105,7 @@ function stepOptions({
     modelProfiles: {
       deep: { model: "openai/gpt-test", reasoning_effort: "medium" }
     },
+    workflowSubagentPolicy: { allow_write: false },
     input: { subject: "hello" },
     state: {
       invocation: { version: "2026-06", source: "github", event: "pull_request" },
@@ -203,6 +204,49 @@ describe("Flue prompt usage observability", () => {
         "utf8"
       )
     ).resolves.toContain("\"prompt_operations\": 1");
+  });
+
+  it("records missing usage when an agent prompt succeeds without usage data", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-prompt-"));
+    const agent = await testAgent(root);
+    const fixture = await observabilityFixture(root);
+    const ctx = await promptHarness({
+      prompt: vi.fn(async () => ({
+        data: { summary: "ok" }
+      }))
+    });
+
+    await expect(
+      runFlueAgentStep(ctx as never, stepOptions({ agent, ...fixture }))
+    ).resolves.toEqual({ summary: "ok" });
+
+    const promptEvents = fixture.events.filter((event) =>
+      event.event.startsWith("luna.prompt.")
+    );
+
+    expect(promptEvents.map((event) => event.event)).toEqual([
+      "luna.prompt.started",
+      "luna.prompt.usage_missing",
+      "luna.prompt.finished"
+    ]);
+    expect(promptEvents[1]).toMatchObject({
+      level: "warn",
+      prompt_id: "agent:review",
+      status: "completed"
+    });
+    expect(fixture.summary).toMatchObject({
+      prompt_operations: 1,
+      usage_missing_count: 1,
+      tokens: {
+        total: 0
+      }
+    });
+    await expect(
+      readFile(
+        path.join(root, "artifacts", "run-1", "observability-summary.json"),
+        "utf8"
+      )
+    ).resolves.toContain("\"usage_missing_count\": 1");
   });
 
   it("records prompt operation duration and failed event when agent prompt has no usage", async () => {

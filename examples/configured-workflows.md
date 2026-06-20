@@ -210,10 +210,14 @@ Create a new agent when the responsibility, allowed capabilities, or output
 schema changes. Reuse an existing agent when only the workflow context changes.
 
 Subagents are agent capabilities, not graph nodes. They run as read-only Flue
-profiles using the referenced agent's description, instructions, model profile,
-skills, and explicitly safe local tools. Use graph nodes when the result must
-have its own artifact, schema, workflow gate, MCP access, or write access. Use
-Flue subagents for lightweight internal delegation inside a parent agent.
+profiles by default using the referenced agent's description, instructions,
+model profile, skills, and explicitly safe local tools. Trusted write subagents
+require workflow-level `subagent_policy.allow_write: true` plus a per-subagent
+tool allowlist on the parent agent. Flue subagents cannot declare `mcp_servers`
+or nested `subagents` in Luna. Use graph nodes when the result must have its own
+artifact, schema, workflow gate, MCP access, another delegation tree, or
+independent write step. Use Flue subagents for lightweight internal delegation
+inside a parent agent.
 
 ## MCP Capabilities
 
@@ -282,15 +286,38 @@ Every run writes:
 - `run.json` for strict run identity.
 - `events.jsonl` for append-only Luna runtime events.
 - `observability-summary.json` for derived prompt usage, token/cost totals,
-  failed-step counts, and rejected-capability counts.
+  failed-step counts, rejected-capability counts, and prompt usage gaps.
+
+`events.jsonl` is mandatory and cannot be disabled. Optional exporters attach
+beside it. Today the accepted optional exporter key is `flue_log`; OpenTelemetry,
+Braintrust, and Sentry are future exporter targets, not accepted workflow config
+keys.
+
+Workflow YAML can set optional observability exporters and the workflow-level
+subagent write policy:
+
+```yaml
+observability:
+  exporters:
+    flue_log:
+      enabled: true
+      required: false
+
+subagent_policy:
+  allow_write: false
+```
 
 Workflow YAML can set scheduler concurrency and per-workflow lock timeout:
 
 ```yaml
 execution:
-  max_concurrency: 1
+  max_concurrency: 4
   lock_timeout_ms: 120000
 ```
+
+`max_concurrency > 1` remains supported. Luna schedules independent workflow
+nodes in parallel according to graph dependencies, while run artifacts and
+observability events stay scoped to the same run.
 
 `app.yaml` can set local lock storage defaults:
 

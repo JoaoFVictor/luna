@@ -163,17 +163,31 @@ subagents:
   - change-reviewer
 ```
 
+String entries use the default read-only policy. Trusted write subagents must be
+declared explicitly and only work when the workflow allows write subagents:
+
+```yaml
+subagents:
+  - id: implementer-helper
+    policy:
+      mode: trusted_host_local_write
+      allow_tools:
+        - repository.status
+```
+
 The referenced ID must resolve to a valid Luna agent directory under
 `agents/<id>/`, including `agent.yaml`, the files referenced by
 `instructions_file` and `output_schema`, and a configured `model_profile`.
 Flue subagents run inside the parent agent session. They are not workflow graph
 nodes and do not create separate Luna artifacts automatically.
 
-Subagents are read-only Flue profiles. Luna uses the referenced agent's
-description, instructions, model profile, skills, and explicitly safe local
-tools. Referenced subagents must not declare `trusted_host_local_write`,
-`mcp_servers`, or nested `subagents`; use a workflow graph node when delegated
-work needs MCP access, writes, its own artifact, schema, or workflow gate.
+Subagents are read-only Flue profiles by default. Luna uses the referenced
+agent's description, instructions, model profile, skills, and explicitly safe
+local tools. Trusted write subagents require both workflow-level
+`subagent_policy.allow_write: true` and a per-subagent `policy.allow_tools`
+allowlist. Flue subagents cannot declare `mcp_servers` or nested `subagents` in
+Luna. Use a workflow graph node when delegated work needs MCP access, another
+delegation tree, its own artifact, schema, or workflow gate.
 
 ## Project Structure
 
@@ -218,10 +232,26 @@ Each run also writes Luna-owned observability artifacts:
 - `run.json`: strict run identity.
 - `events.jsonl`: append-only runtime events with stable run/workflow/step ids.
 - `observability-summary.json`: derived prompt, token, cost, failure, and
-  rejected-capability counters.
+  rejected-capability counters, including prompt usage gaps.
 
-Flue receives these events through an optional log sink when Luna runs inside
-Flue, but Luna's local artifacts are the runtime contract.
+`events.jsonl` is always written and cannot be disabled. Flue receives these
+events through an optional log sink when Luna runs inside Flue, but Luna's local
+artifacts are the runtime contract. OpenTelemetry, Braintrust, and Sentry are
+future exporter targets, not accepted config keys today.
+
+Workflow YAML may configure optional observability exporters and subagent write
+policy:
+
+```yaml
+observability:
+  exporters:
+    flue_log:
+      enabled: true
+      required: false
+
+subagent_policy:
+  allow_write: false
+```
 
 Workflow YAML may tune scheduler execution:
 

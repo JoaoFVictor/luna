@@ -4,6 +4,10 @@ import { z } from "zod";
 import { isBuiltInStepName } from "./built-ins/catalog.js";
 import { loadYamlFile } from "./config-loader.js";
 import { assertSafeSegment, isInsideRoot } from "./path-security.js";
+import {
+  defaultWorkflowSubagentPolicy,
+  type WorkflowSubagentPolicy
+} from "./subagent-policy.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -14,6 +18,39 @@ const WorkflowExecutionSchema = z
   })
   .strict();
 
+const OptionalExporterConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    required: z.boolean().optional()
+  })
+  .strict();
+
+const ObservabilityConfigSchema = z
+  .object({
+    exporters: z
+      .object({
+        jsonl: z
+          .object({
+            enabled: z.boolean().optional(),
+            required: z.boolean().optional()
+          })
+          .strict()
+          .optional(),
+        flue_log: OptionalExporterConfigSchema.optional()
+      })
+      .strict()
+      .optional()
+  })
+  .strict()
+  .optional();
+
+const SubagentPolicySchema = z
+  .object({
+    allow_write: z.boolean().optional()
+  })
+  .strict()
+  .optional();
+
 const WorkflowMetadataSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -22,7 +59,9 @@ const WorkflowMetadataSchema = z
     input_schema: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
     graph: NonEmptyStringSchema,
-    execution: WorkflowExecutionSchema.optional()
+    execution: WorkflowExecutionSchema.optional(),
+    observability: ObservabilityConfigSchema,
+    subagent_policy: SubagentPolicySchema
   })
   .strict();
 
@@ -115,6 +154,16 @@ export type WorkflowExecution = {
   max_concurrency: number;
   lock_timeout_ms?: number;
 };
+export type WorkflowObservabilityConfig = {
+  exporters: {
+    flue_log: { enabled: boolean; required: boolean };
+  };
+};
+export const defaultWorkflowObservabilityConfig: WorkflowObservabilityConfig = {
+  exporters: {
+    flue_log: { enabled: true, required: false }
+  }
+};
 export type WorkflowGraph = z.infer<typeof WorkflowGraphSchema>;
 export type WorkflowNode = WorkflowGraph["nodes"][number];
 
@@ -125,6 +174,8 @@ export type WorkflowDefinition = Omit<
   directory: string;
   graph: WorkflowGraph;
   execution: WorkflowExecution;
+  observability: WorkflowObservabilityConfig;
+  subagent_policy: WorkflowSubagentPolicy;
 };
 
 function workflowDefinitionError(message: string, code: string): Error & { code: string } {
@@ -243,6 +294,32 @@ function validateWorkflowGraph(graph: WorkflowGraph): void {
   assertAcyclic(graph.nodes);
 }
 
+function normalizeObservabilityConfig(
+  config: z.infer<typeof ObservabilityConfigSchema>
+): WorkflowObservabilityConfig {
+  if (config?.exporters?.jsonl !== undefined) {
+    throw new Error("events.jsonl is mandatory and cannot be configured");
+  }
+
+  return {
+    exporters: {
+      flue_log: {
+        ...defaultWorkflowObservabilityConfig.exporters.flue_log,
+        ...config?.exporters?.flue_log
+      }
+    }
+  };
+}
+
+function normalizeSubagentPolicy(
+  policy: z.infer<typeof SubagentPolicySchema>
+): WorkflowSubagentPolicy {
+  return {
+    ...defaultWorkflowSubagentPolicy,
+    ...(policy?.allow_write === undefined ? {} : { allow_write: policy.allow_write })
+  };
+}
+
 export async function loadWorkflowDefinition(
   workflowsRoot: string,
   workflowId: string
@@ -277,6 +354,8 @@ export async function loadWorkflowDefinition(
       ...(metadata.execution?.lock_timeout_ms === undefined
         ? {}
         : { lock_timeout_ms: metadata.execution.lock_timeout_ms })
-    }
+    },
+    observability: normalizeObservabilityConfig(metadata.observability),
+    subagent_policy: normalizeSubagentPolicy(metadata.subagent_policy)
   };
 }

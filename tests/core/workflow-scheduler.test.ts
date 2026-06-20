@@ -74,6 +74,50 @@ async function settlesTrueWithin(
 }
 
 describe("workflow scheduler", () => {
+  it("keeps parallel scheduler runs successful when an optional observability sink fails", async () => {
+    const requiredEvents: LunaObservabilityEvent[] = [];
+    const started: string[] = [];
+    const observability = createLunaObservability({
+      run: { id: "run-1" },
+      workflow: { id: "code-review" },
+      sinks: [
+        {
+          id: "optional-test",
+          required: false,
+          append: () => {
+            throw new Error("optional sink offline");
+          }
+        },
+        {
+          id: "required-test",
+          required: true,
+          append: (event) => {
+            requiredEvents.push(event);
+          }
+        }
+      ]
+    });
+
+    const result = await runWorkflowSchedule({
+      nodes: [builtInNode("a"), builtInNode("b")],
+      state: baseState(),
+      execution: { max_concurrency: 2 },
+      observability,
+      runNode: async ({ node }) => {
+        started.push(node.id);
+        return { id: node.id };
+      },
+      writeNodeArtifact: vi.fn(async () => undefined),
+      builtInMetadata: () => ({})
+    });
+
+    expect(result.status).toBe("success");
+    expect(started).toEqual(expect.arrayContaining(["a", "b"]));
+    expect(requiredEvents.some((event) =>
+      event.event === "luna.observability.sink.warning"
+    )).toBe(true);
+  });
+
   it("stops before selecting the next batch after a required observability sink hard failure", async () => {
     const events: LunaObservabilityEvent[] = [];
     const requiredSinkFailure = new Error("required sink offline");

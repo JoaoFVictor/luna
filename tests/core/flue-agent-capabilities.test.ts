@@ -172,7 +172,7 @@ describe("flue agent capabilities", () => {
       await writeImplementationReviewerFixture(root);
 
       const capabilities = await resolveFlueAgentCapabilities({
-        agent: { ...agent, subagents: ["change-reviewer"] },
+        agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
         cwd: "/repo/worktree",
         agentsRoot: path.join(root, "agents"),
         modelProfiles: {
@@ -326,7 +326,7 @@ describe("flue agent capabilities", () => {
     try {
       await expect(
         resolveFlueAgentCapabilities({
-          agent: { ...agent, subagents: ["change-reviewer"] },
+          agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
           cwd: "/repo/worktree"
         })
       ).rejects.toMatchObject({ code: "subagent_context_missing" });
@@ -342,7 +342,7 @@ describe("flue agent capabilities", () => {
     try {
       await expect(
         resolveFlueAgentCapabilities({
-          agent: { ...agent, subagents: ["change-reviewer"] },
+          agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
           cwd: "/repo/worktree",
           observability
         })
@@ -370,7 +370,7 @@ describe("flue agent capabilities", () => {
 
       await expect(
         resolveFlueAgentCapabilities({
-          agent: { ...agent, subagents: ["change-reviewer"] },
+          agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
           cwd: "/repo/worktree",
           agentsRoot: path.join(root, "agents"),
           modelProfiles: {}
@@ -387,7 +387,7 @@ describe("flue agent capabilities", () => {
     try {
       await expect(
         resolveFlueAgentCapabilities({
-          agent: { ...agent, subagents: [agent.id] },
+          agent: { ...agent, subagents: [{ id: agent.id }] },
           cwd: "/repo/worktree",
           agentsRoot: path.join(root, "agents"),
           modelProfiles: {
@@ -424,21 +424,24 @@ describe("flue agent capabilities", () => {
         await import("../../src/core/flue-agent-capabilities.js");
 
       await resolveWithMockedSubagents({
-        agent: { ...agent, subagents: ["change-reviewer"] },
+        agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
         cwd: "/repo/worktree",
         agentsRoot: path.join(root, "agents"),
         modelProfiles: {
           deep: { model: "test/deep", reasoning_effort: "high" }
         },
         observability,
-        summary
+        summary,
+        workflowSubagentPolicy: { allow_write: true }
       });
 
       expect(resolveFlueSubagentProfiles).toHaveBeenCalledWith(
         expect.objectContaining({
           cwd: "/repo/worktree",
           observability,
-          summary
+          summary,
+          subagents: [{ id: "change-reviewer" }],
+          workflowSubagentPolicy: { allow_write: true }
         })
       );
     } finally {
@@ -474,7 +477,7 @@ describe("flue agent capabilities", () => {
 
       await expect(
         resolveWithMockedSubagents({
-          agent: { ...agent, subagents: ["change-reviewer"] },
+          agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
           cwd: "/repo/worktree",
           agentsRoot: path.join(root, "agents"),
           modelProfiles: {
@@ -519,7 +522,7 @@ describe("flue agent capabilities", () => {
 
       await expect(
         resolveFlueAgentCapabilities({
-          agent: { ...agent, subagents: ["change-reviewer"] },
+          agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
           cwd: "/repo/worktree",
           agentsRoot: path.join(root, "agents"),
           modelProfiles: {
@@ -560,7 +563,7 @@ describe("flue agent capabilities", () => {
           agent: {
             ...agent,
             mode: "read_only",
-            subagents: ["change-reviewer"],
+            subagents: [{ id: "change-reviewer" }],
             mcp_servers: ["github"]
           },
           cwd: "/repo/worktree",

@@ -8,6 +8,7 @@ import type { McpConfig } from "./mcp-config.js";
 import type { ResolvedModelProfiles } from "./model-config.js";
 import type { LunaObservability } from "./observability/luna-observability.js";
 import type { ObservabilitySummary } from "./observability/summary.js";
+import type { WorkflowSubagentPolicy } from "./subagent-policy.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];
@@ -89,7 +90,8 @@ export async function resolveFlueAgentCapabilities({
   env,
   observability,
   summary,
-  observabilitySummary
+  observabilitySummary,
+  workflowSubagentPolicy
 }: {
   agent: AgentDefinition;
   cwd: string;
@@ -100,6 +102,7 @@ export async function resolveFlueAgentCapabilities({
   observability?: LunaObservability;
   summary?: ObservabilitySummary;
   observabilitySummary?: ObservabilitySummary;
+  workflowSubagentPolicy?: WorkflowSubagentPolicy;
 }): Promise<ResolvedFlueAgentCapabilities> {
   try {
     const skills = await Promise.all(
@@ -112,8 +115,8 @@ export async function resolveFlueAgentCapabilities({
       agentMode: agent.mode,
       cwd
     });
-    const subagentIds = agent.subagents ?? [];
-    const hasSubagents = subagentIds.length > 0;
+    const agentSubagents = agent.subagents ?? [];
+    const hasSubagents = agentSubagents.length > 0;
 
     let subagents: AgentProfile[] = [];
 
@@ -125,8 +128,9 @@ export async function resolveFlueAgentCapabilities({
       subagents = await resolveFlueSubagentProfiles({
         agentsRoot,
         parentAgentId: agent.id,
-        ids: subagentIds,
+        subagents: agentSubagents,
         modelProfiles,
+        workflowSubagentPolicy,
         cwd,
         observability,
         summary,

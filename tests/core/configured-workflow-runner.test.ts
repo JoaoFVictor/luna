@@ -162,7 +162,10 @@ async function writeBaseConfig(
   );
 }
 
-async function writeWorkflow(root: string): Promise<void> {
+async function writeWorkflow(
+  root: string,
+  extraMetadata: string[] = []
+): Promise<void> {
   await writeFile(
     path.join(root, "workflows", "code-review", "workflow.yaml"),
     [
@@ -172,6 +175,7 @@ async function writeWorkflow(root: string): Promise<void> {
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
+      ...extraMetadata,
       ""
     ].join("\n")
   );
@@ -803,6 +807,7 @@ async function writeAgentLoopWorkflow(
     commands?: string;
     maxOutputBytes?: string;
     repairAttempts?: string;
+    extraMetadata?: string[];
   } = {}
 ): Promise<void> {
   await mkdir(path.join(root, "workflows", "implementation"), {
@@ -828,6 +833,7 @@ async function writeAgentLoopWorkflow(
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
+      ...(options.extraMetadata ?? []),
       ""
     ].join("\n")
   );
@@ -1141,6 +1147,68 @@ describe("configured workflow runner", () => {
         events_path: "events.jsonl",
         prompt_operations: 0
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps events.jsonl when flue_log exporter is disabled", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writePreflightWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    flue_log:",
+        "      enabled: false",
+        "      required: false"
+      ]);
+
+      const optionalEvents: LunaObservabilityEvent[] = [];
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        flueRunId: "flue-disabled",
+        nonceFactory: () => "disabled",
+        observabilitySinks: [
+          {
+            id: "optional-disabled",
+            required: false,
+            append: (event) => {
+              optionalEvents.push(event);
+              throw new Error("disabled sink should not run");
+            }
+          }
+        ],
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z"),
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-disabled",
+            flue_run_id: "flue-disabled"
+          }),
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(optionalEvents).toEqual([]);
+
+      const eventsPath = artifactPath(
+        root,
+        "code-review",
+        "run-disabled",
+        "events.jsonl"
+      );
+      const events = (await readFile(eventsPath, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+
+      expect(events.map((event) => event.event)).toContain(
+        "luna.workflow.finished"
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -1643,7 +1711,9 @@ describe("configured workflow runner", () => {
 
     try {
       await writeBaseConfig(root, "implementation");
-      await writeAgentLoopWorkflow(root);
+      await writeAgentLoopWorkflow(root, {
+        extraMetadata: ["subagent_policy:", "  allow_write: true"]
+      });
       await writeImplementationConfig(root);
       await writeTrustedWriteAgent(root, "code-implementer");
 
@@ -1722,6 +1792,7 @@ describe("configured workflow runner", () => {
               reasoning_effort: "medium"
             }
           },
+          workflowSubagentPolicy: { allow_write: true },
           input: {
             invocation: jiraInvocation,
             workspace: preparedWorkspace,
@@ -2677,6 +2748,62 @@ describe("configured workflow runner", () => {
           "utf8"
         )
       ).resolves.toContain("Plan");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes workflow subagent policy to agent steps", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root, [
+        "subagent_policy:",
+        "  allow_write: true"
+      ]);
+      await writeReviewPlannerAgent(root);
+
+      const runBuiltInStep = vi.fn(async ({ uses }: { uses: string }) => {
+        if (uses === "preflight") {
+          return { status: "ok" };
+        }
+
+        if (uses === "collect_repo_context") {
+          return { files: [] };
+        }
+
+        return {};
+      });
+      const policies: unknown[] = [];
+      const runAgentStep = vi.fn(
+        async ({
+          workflowSubagentPolicy
+        }: {
+          workflowSubagentPolicy: unknown;
+        }) => {
+          policies.push(workflowSubagentPolicy);
+
+          return {
+            summary: "Plan",
+            focus_areas: [],
+            files_to_review: []
+          };
+        }
+      );
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          runBuiltInStep,
+          runAgentStep
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(policies).toEqual([{ allow_write: true }]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -113,6 +113,40 @@ describe("flue tool registry", () => {
     ]);
   });
 
+  it("exposes safety metadata for every registered Flue tool", async () => {
+    const { registeredFlueToolSafety } = await importRegistryWithGitMock();
+
+    expect(registeredFlueToolSafety()).toEqual({
+      "repository.status": {
+        writes: false,
+        network: false,
+        side_effects: false,
+        subagent_read_only_allowed: true
+      },
+      "repository.diff-summary": {
+        writes: false,
+        network: false,
+        side_effects: false,
+        subagent_read_only_allowed: true
+      }
+    });
+  });
+
+  it("enforces read-only subagent safety invariants", async () => {
+    const { assertToolSafety } = await importRegistryWithGitMock();
+
+    expect(() =>
+      assertToolSafety({
+        writes: true,
+        network: false,
+        side_effects: false,
+        subagent_read_only_allowed: true
+      })
+    ).toThrow(
+      "subagent_read_only_allowed requires a read-only, no-network, no-side-effect tool"
+    );
+  });
+
   it("default-denies unknown and unsafe tools for subagents", async () => {
     const { resolveFlueTools } = await importRegistryWithGitMock();
 
