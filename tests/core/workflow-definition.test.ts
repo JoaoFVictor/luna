@@ -459,6 +459,36 @@ describe("workflow definition loader", () => {
     }
   });
 
+  it("defaults subagent policy to disallow write access", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeMinimalWorkflow(root);
+
+      const definition = await loadWorkflowDefinition(root, "code-review");
+
+      expect(definition.subagent_policy).toEqual({ allow_write: false });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unknown subagent policy fields", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeMinimalWorkflow(root, "code-review", [
+        "subagent_policy:",
+        "  allow_write: false",
+        "  unsupported_key: true"
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toMatchObject({
+        code: "config_schema_invalid"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects attempts to configure the mandatory jsonl exporter", async () => {
     const root = await tempWorkflowRoot();
     try {

@@ -4,6 +4,10 @@ import { z } from "zod";
 import { isBuiltInStepName } from "./built-ins/catalog.js";
 import { loadYamlFile } from "./config-loader.js";
 import { assertSafeSegment, isInsideRoot } from "./path-security.js";
+import {
+  defaultWorkflowSubagentPolicy,
+  type WorkflowSubagentPolicy
+} from "./subagent-policy.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -40,6 +44,13 @@ const ObservabilityConfigSchema = z
   .strict()
   .optional();
 
+const SubagentPolicySchema = z
+  .object({
+    allow_write: z.boolean().optional()
+  })
+  .strict()
+  .optional();
+
 const WorkflowMetadataSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -49,7 +60,8 @@ const WorkflowMetadataSchema = z
     output_schema: NonEmptyStringSchema,
     graph: NonEmptyStringSchema,
     execution: WorkflowExecutionSchema.optional(),
-    observability: ObservabilityConfigSchema
+    observability: ObservabilityConfigSchema,
+    subagent_policy: SubagentPolicySchema
   })
   .strict();
 
@@ -158,6 +170,7 @@ export type WorkflowDefinition = Omit<
   graph: WorkflowGraph;
   execution: WorkflowExecution;
   observability: WorkflowObservabilityConfig;
+  subagent_policy: WorkflowSubagentPolicy;
 };
 
 function workflowDefinitionError(message: string, code: string): Error & { code: string } {
@@ -293,6 +306,15 @@ function normalizeObservabilityConfig(
   };
 }
 
+function normalizeSubagentPolicy(
+  policy: z.infer<typeof SubagentPolicySchema>
+): WorkflowSubagentPolicy {
+  return {
+    ...defaultWorkflowSubagentPolicy,
+    ...(policy?.allow_write === undefined ? {} : { allow_write: policy.allow_write })
+  };
+}
+
 export async function loadWorkflowDefinition(
   workflowsRoot: string,
   workflowId: string
@@ -328,6 +350,7 @@ export async function loadWorkflowDefinition(
         ? {}
         : { lock_timeout_ms: metadata.execution.lock_timeout_ms })
     },
-    observability: normalizeObservabilityConfig(metadata.observability)
+    observability: normalizeObservabilityConfig(metadata.observability),
+    subagent_policy: normalizeSubagentPolicy(metadata.subagent_policy)
   };
 }
