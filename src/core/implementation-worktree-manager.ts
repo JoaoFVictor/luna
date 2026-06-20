@@ -25,7 +25,9 @@ export type ImplementationWorktreeRecord = WorkspaceRecord & {
 
 type ImplementationWorktreeErrorCode =
   | "branch_mismatch"
+  | "branch_collision_retry_exhausted"
   | "invalid_base_ref"
+  | "invalid_branch_length"
   | "invalid_branch_pattern";
 
 type ImplementationWorktreeError = Error & {
@@ -58,6 +60,10 @@ function truncateAtHyphenBoundary(value: string, maxLength: number): string {
   }
 
   return value.slice(0, maxLength).replace(/-+$/g, "");
+}
+
+function runBranchSuffix(runId: string): string {
+  return runId.split("-").slice(-2).join("-").slice(0, 24);
 }
 
 function buildSlug({
@@ -122,6 +128,20 @@ function branchName({
     maxBranchLength === undefined
       ? undefined
       : Math.max(0, maxBranchLength - staticLength - suffix.length);
+  const issueSlug = normalizeSlugPart(issueKey) || "issue";
+
+  if (maxSlugLength !== undefined && maxBranchLength !== undefined) {
+    if (
+      maxSlugLength < issueSlug.length ||
+      staticLength + suffix.length + issueSlug.length > maxBranchLength
+    ) {
+      throw implementationWorktreeError(
+        "Branch pattern and suffix exceed max branch length",
+        "invalid_branch_length"
+      );
+    }
+  }
+
   const slug = buildSlug({
     issueKey,
     summary,
@@ -129,6 +149,36 @@ function branchName({
   });
 
   return branchPattern.replace(placeholder, `${slug}${suffix}`);
+}
+
+function branchSuffix(runId: string, attempt: number): string {
+  const runSuffix = runBranchSuffix(runId);
+  const retrySuffix = attempt === 1 ? "" : `-${attempt}`;
+
+  return runSuffix === "" ? retrySuffix : `-${runSuffix}${retrySuffix}`;
+}
+
+function isBranchAlreadyExistsError(error: unknown): boolean {
+  const errorLike = error as
+    | {
+        code?: unknown;
+        stderr?: unknown;
+        message?: unknown;
+      }
+    | undefined;
+  const causeLike = (error as { cause?: { stderr?: unknown; message?: unknown } })
+    ?.cause;
+  const haystack = [
+    errorLike?.stderr,
+    errorLike?.message,
+    causeLike?.stderr,
+    causeLike?.message
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join("\n")
+    .toLowerCase();
+
+  return errorLike?.code === "branch_exists" || haystack.includes("already exists");
 }
 
 async function branchExists({
@@ -185,6 +235,7 @@ async function availableBranch({
   task,
   repository,
   branchPattern,
+  runId,
   maxBranchLength,
   runGit
 }: {
@@ -194,27 +245,95 @@ async function availableBranch({
   };
   repository: RepositoryConfig;
   branchPattern: string;
+  runId: string;
   maxBranchLength?: number;
   runGit: RunGit;
-}): Promise<string> {
-  let attempt = 1;
-
-  while (true) {
-    const suffix = attempt === 1 ? "" : `-${attempt}`;
+}): Promise<{ branch: string; attempt: number }> {
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
     const branch = branchName({
       issueKey: task.issueKey,
       summary: task.title ?? task.issueKey,
       branchPattern,
-      suffix,
+      suffix: branchSuffix(runId, attempt),
       maxBranchLength
     });
 
     if (!(await branchExists({ repository, branch, runGit }))) {
-      return branch;
+      return { branch, attempt };
     }
-
-    attempt += 1;
   }
+
+  throw implementationWorktreeError(
+    "Branch availability collision retries exhausted",
+    "branch_collision_retry_exhausted"
+  );
+}
+
+async function addWorktreeWithBranchRetry({
+  task,
+  repository,
+  branchPattern,
+  maxBranchLength,
+  runId,
+  worktreePath,
+  baseTarget,
+  initialBranch,
+  initialAttempt,
+  runGit
+}: {
+  task: {
+    issueKey: string;
+    title?: string;
+  };
+  repository: RepositoryConfig;
+  branchPattern: string;
+  maxBranchLength?: number;
+  runId: string;
+  worktreePath: string;
+  baseTarget: string;
+  initialBranch: string;
+  initialAttempt: number;
+  runGit: RunGit;
+}): Promise<string> {
+  let lastCollision: unknown;
+
+  for (let attempt = initialAttempt; attempt <= 5; attempt += 1) {
+    const branch =
+      attempt === initialAttempt
+        ? initialBranch
+        : branchName({
+            issueKey: task.issueKey,
+            summary: task.title ?? task.issueKey,
+            branchPattern,
+            suffix: branchSuffix(runId, attempt),
+            maxBranchLength
+          });
+
+    try {
+      await runGit(repository.path, [
+        "worktree",
+        "add",
+        "-b",
+        branch,
+        worktreePath,
+        baseTarget
+      ]);
+
+      return branch;
+    } catch (error) {
+      if (!isBranchAlreadyExistsError(error)) {
+        throw error;
+      }
+
+      lastCollision = error;
+    }
+  }
+
+  throw implementationWorktreeError(
+    "Branch creation collision retries exhausted",
+    "branch_collision_retry_exhausted",
+    lastCollision
+  );
 }
 
 export async function prepareImplementationWorktree({
@@ -250,31 +369,36 @@ export async function prepareImplementationWorktree({
       `${repository.remote}/${baseRef}`
     ])
   ).trim();
-  const branch = await availableBranch({
+  const { branch, attempt } = await availableBranch({
     task,
     repository,
     branchPattern,
+    runId,
     maxBranchLength,
     runGit
   });
 
-  await runGit(repository.path, [
-    "worktree",
-    "add",
-    "-b",
-    branch,
+  const actualExpectedBranch = await addWorktreeWithBranchRetry({
+    task,
+    repository,
+    branchPattern,
+    maxBranchLength,
+    runId,
     worktreePath,
-    `${repository.remote}/${baseRef}`
-  ]);
+    baseTarget: `${repository.remote}/${baseRef}`,
+    initialBranch: branch,
+    initialAttempt: attempt,
+    runGit
+  });
 
   const actualBranch = (await runGit(worktreePath, [
     "branch",
     "--show-current"
   ])).trim();
 
-  if (actualBranch !== branch) {
+  if (actualBranch !== actualExpectedBranch) {
     throw implementationWorktreeError(
-      `Worktree branch ${actualBranch} did not match expected ${branch}`,
+      `Worktree branch ${actualBranch} did not match expected ${actualExpectedBranch}`,
       "branch_mismatch"
     );
   }
@@ -288,6 +412,6 @@ export async function prepareImplementationWorktree({
     remote: repository.remote,
     base_ref: baseRef,
     base_sha: baseSha,
-    branch
+    branch: actualExpectedBranch
   };
 }
