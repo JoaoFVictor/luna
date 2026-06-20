@@ -295,6 +295,7 @@ Built-in steps:
 - [Create a new agent](examples/new-agent.md)
 - [Create a new workflow](examples/new-workflow.md)
 - [Create a new input adapter](examples/new-adapter.md)
+- [Create a new built-in step](examples/new-built-in.md)
 - [Configured workflows reference](examples/configured-workflows.md)
 
 Use YAML/config for new agents, new workflow graphs using existing built-ins,
@@ -302,7 +303,8 @@ new model profiles, local repository entries, and routing rules.
 
 Use TypeScript for new input adapters, new built-in steps, workspace/repository
 behavior, artifact behavior, or JSON Schema features outside Luna's current
-supported subset.
+supported subset. Built-ins are registered through `src/core/built-ins/catalog.ts`;
+workflow YAML can only use names exported by that catalog.
 
 ## Troubleshooting
 

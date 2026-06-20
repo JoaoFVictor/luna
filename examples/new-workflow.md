@@ -102,6 +102,8 @@ Graph rules:
 
 Some built-ins are workflow-specific. If a workflow needs a new local
 capability, add a built-in in TypeScript and then reference it from YAML.
+See [Create a new built-in step](new-built-in.md) for the registry, metadata,
+and test pattern.
 
 ## 5. Write-Mode Agent Loop
 

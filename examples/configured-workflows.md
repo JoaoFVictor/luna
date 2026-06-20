@@ -10,6 +10,7 @@ For step-by-step recipes, see:
 - [Create a new agent](new-agent.md)
 - [Create a new workflow](new-workflow.md)
 - [Create a new input adapter](new-adapter.md)
+- [Create a new built-in step](new-built-in.md)
 
 Choose the guide by intent:
 
@@ -20,6 +21,8 @@ Choose the guide by intent:
 - If you want a new orchestration shape, start with `new-workflow.md`.
 - If you want Slack, API events, GitHub issues, or another input source, start
   with `new-adapter.md`.
+- If you want a deterministic local workflow capability, start with
+  `new-built-in.md`.
 
 ## Runtime Model
 
@@ -430,6 +433,10 @@ Use TypeScript for:
 - New workspace or repository behavior.
 - New artifact behavior.
 - JSON Schema features outside Luna's supported subset.
+
+Built-ins are registered in `src/core/built-ins/catalog.ts`. The catalog is the
+source of truth for both YAML validation and runtime execution; do not add a
+second handwritten list of built-in names.
 
 ## Testing Checklist
 
