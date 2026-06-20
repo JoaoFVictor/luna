@@ -1000,6 +1000,7 @@ export async function runConfiguredWorkflow({
   let persistedWorkspaceRecord: WorkspaceRecord | undefined;
 
   try {
+    await artifactStore.initializeRunDirectory();
     repository = resolveRepository(
       invocation,
       configs.repositories.repositories
