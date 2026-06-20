@@ -145,6 +145,40 @@ function duplicateWorkspaceError(stepId: string): Error & { code: string } {
   );
 }
 
+export function splitDeferredFinalReportNodes(
+  nodes: WorkflowNode[],
+  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata
+): { mainNodes: WorkflowNode[]; deferredNodes: WorkflowNode[] } {
+  const deferredIds = new Set(
+    nodes
+      .filter(
+        (node) =>
+          builtInMetadata(node).deferUntilAfterWorkspaceLifecycle === true
+      )
+      .map((node) => node.id)
+  );
+
+  for (const node of nodes) {
+    if (deferredIds.has(node.id)) {
+      continue;
+    }
+
+    for (const dependency of node.after ?? []) {
+      if (deferredIds.has(dependency)) {
+        throw schedulerError(
+          "Non-deferred node depends on deferred final report",
+          "workflow_deferred_dependency_invalid"
+        );
+      }
+    }
+  }
+
+  return {
+    mainNodes: nodes.filter((node) => !deferredIds.has(node.id)),
+    deferredNodes: nodes.filter((node) => deferredIds.has(node.id))
+  };
+}
+
 async function withLocks<T>(
   _node: WorkflowNode,
   state: SchedulerWorkflowState,

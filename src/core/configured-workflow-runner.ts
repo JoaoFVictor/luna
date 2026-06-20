@@ -38,6 +38,7 @@ import {
 } from "./run-logger.js";
 import {
   runWorkflowSchedule,
+  splitDeferredFinalReportNodes,
   type SchedulerLockManager
 } from "./workflow-scheduler.js";
 import {
@@ -398,16 +399,6 @@ function builtInMetadata(
   }
 
   return activeRegistry.require(node.uses).metadata ?? {};
-}
-
-function shouldDeferUntilAfterWorkspaceLifecycle(
-  node: WorkflowNode,
-  activeRegistry: BuiltInMetadataRegistry
-): boolean {
-  return (
-    builtInMetadata(node, activeRegistry).deferUntilAfterWorkspaceLifecycle ===
-    true
-  );
 }
 
 function finalReportFrom(output: unknown): FinalReportJson | undefined {
@@ -1282,15 +1273,10 @@ export async function runConfiguredWorkflow({
       steps: {}
     };
     const orderedNodes = topologicalNodes(workflow.graph.nodes);
-    const deferredFinalReportNodes = orderedNodes.filter((node) =>
-      shouldDeferUntilAfterWorkspaceLifecycle(node, activeBuiltInStepRegistry)
-    );
-    const mainNodes = orderedNodes.filter(
-      (node) =>
-        !shouldDeferUntilAfterWorkspaceLifecycle(
-          node,
-          activeBuiltInStepRegistry
-        )
+    const { mainNodes, deferredNodes: deferredFinalReportNodes } =
+      splitDeferredFinalReportNodes(
+        orderedNodes,
+        (node) => builtInMetadata(node, activeBuiltInStepRegistry)
     );
     const activeArtifactStore = artifactStore;
 

@@ -264,6 +264,42 @@ async function writeLockingWorkflow(
   );
 }
 
+async function writeInvalidDeferredDependencyWorkflow(
+  root: string,
+  workflowId = "code-review"
+): Promise<void> {
+  await mkdir(path.join(root, "workflows", workflowId), { recursive: true });
+  await writeFile(
+    path.join(root, "workflows", workflowId, "workflow.yaml"),
+    [
+      `id: ${workflowId}`,
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", workflowId, "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: final",
+      "    type: built_in",
+      "    uses: final_code_review_report",
+      "    artifact: final-report.json",
+      "  - id: after_final",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifact: after-final.json",
+      "    after:",
+      "      - final",
+      ""
+    ].join("\n")
+  );
+}
+
 async function writeAppConfigWithLocks(
   root: string,
   locks: { root?: string; timeoutMs?: number; staleAfterMs?: number }
@@ -1814,6 +1850,42 @@ describe("configured workflow runner", () => {
       }
     }
   );
+
+  it("fails before main graph execution when a non-deferred node depends on final report", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeInvalidDeferredDependencyWorkflow(root);
+      const runBuiltInStep = vi.fn(async () => ({ status: "ok" }));
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        throwOnError: false,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          runBuiltInStep
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") {
+        throw new Error("Expected failed result");
+      }
+      expect(result.error).toMatchObject({
+        code: "workflow_deferred_dependency_invalid"
+      });
+      expect(runBuiltInStep).not.toHaveBeenCalled();
+      await expect(
+        readJson(root, "code-review", "run-1", "error.json")
+      ).resolves.toMatchObject({
+        code: "workflow_deferred_dependency_invalid"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 
   it("preserves code-review artifacts for the configured graph", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
