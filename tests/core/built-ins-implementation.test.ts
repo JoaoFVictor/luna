@@ -1,23 +1,30 @@
 import { describe, expect, it, vi } from "vitest";
-import { runBuiltInStep } from "../../src/core/built-in-steps.js";
+import {
+  collectTaskContextBuiltIn,
+  collectWorktreeDiffBuiltIn,
+  commitChangesBuiltIn,
+  finalImplementationReportBuiltIn,
+  openPullRequestBuiltIn,
+  prepareImplementationWorktreeBuiltIn,
+  pushBranchBuiltIn,
+  runValidationCommandsBuiltIn
+} from "../../src/core/built-ins/implementation.js";
 import type {
-  AcceptanceDecision,
   CommitChangesArtifact,
-  Finding,
   ImplementationConfig,
   Invocation,
   PullRequestArtifact,
   PushBranchArtifact,
-  RepoContext,
   RepositoryConfig,
   ValidationResult,
   WorkspaceRecord
 } from "../../src/core/types.js";
 import type { ImplementationWorktreeRecord } from "../../src/core/implementation-worktree-manager.js";
 import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
+import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";
 import type { WorkflowState } from "../../src/core/workflow-state.js";
 
-const invocation: Invocation = {
+const githubInvocation: Invocation = {
   version: "2026-06",
   source: "github",
   event: "pull_request",
@@ -49,19 +56,6 @@ const invocation: Invocation = {
   }
 };
 
-const repository: RepositoryConfig = {
-  id: "repo",
-  provider: "github",
-  owner: "octo-org",
-  name: "hello-world",
-  path: "/repo",
-  remote: "origin",
-  expected_remote_urls: [
-    "git@github.com:octo-org/hello-world.git",
-    "https://github.com/octo-org/hello-world.git"
-  ]
-};
-
 const jiraInvocation: Invocation = {
   version: "2026-06",
   source: "jira",
@@ -89,6 +83,19 @@ const jiraInvocation: Invocation = {
   }
 };
 
+const repository: RepositoryConfig = {
+  id: "repo",
+  provider: "github",
+  owner: "octo-org",
+  name: "hello-world",
+  path: "/repo",
+  remote: "origin",
+  expected_remote_urls: [
+    "git@github.com:octo-org/hello-world.git",
+    "https://github.com/octo-org/hello-world.git"
+  ]
+};
+
 const workspace: WorkspaceRecord = {
   run_id: "run-123",
   path: "/worktree/repo",
@@ -103,39 +110,6 @@ const implementationWorkspace: ImplementationWorktreeRecord = {
   base_ref: "main",
   base_sha: "abc123",
   branch: "feature/abc-123-fix-checkout-validation"
-};
-
-const repoContext: RepoContext = {
-  repository: {
-    owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
-  },
-  base_sha: "abc123",
-  head_sha: "def456",
-  files: []
-};
-
-const finding: Finding = {
-  title: "Issue",
-  severity: "high",
-  confidence: "high",
-  description: "Issue description.",
-  evidence: [
-    {
-      path: "src/index.ts",
-      line_start: 1,
-      line_end: 1
-    }
-  ],
-  recommendation: "Fix it."
-};
-
-const acceptance: AcceptanceDecision = {
-  status: "rejected",
-  summary: "One issue remains.",
-  blocking_reasons: ["Issue"],
-  recommended_action: "request_changes"
 };
 
 const acceptedImplementation = {
@@ -247,163 +221,45 @@ const implementationConfig: ImplementationConfig["implementation"] = {
   }
 };
 
-function workflowState(overrides: Partial<WorkflowState> = {}): WorkflowState {
+function implementationState(overrides: Partial<WorkflowState> = {}): WorkflowState {
   return {
-    invocation,
+    invocation: jiraInvocation,
     repository,
     run: { run_id: "run-123" },
-    workspace,
+    workspace: implementationWorkspace,
     workspaceRoot: "/tmp/worktrees",
     reportPath: "/tmp/report.md",
     steps: {},
-    ...overrides
-  };
-}
-
-function implementationState(overrides: Partial<WorkflowState> = {}): WorkflowState {
-  return workflowState({
-    invocation: jiraInvocation,
-    repository,
-    workspace: implementationWorkspace,
     config: {
       implementation: implementationConfig
     },
     ...overrides
-  });
+  };
 }
 
-describe("built-in steps", () => {
-  it("runs preflight through injected dependencies", async () => {
-    const runPreflight = vi.fn(async () => ({ status: "ok" }));
+async function runBuiltIn(
+  builtIn: {
+    run(options: BuiltInStepRunOptions): unknown;
+  },
+  options: BuiltInStepRunOptions
+): Promise<unknown> {
+  return await Promise.resolve().then(() => builtIn.run(options));
+}
 
-    await expect(
-      runBuiltInStep({
-        uses: "preflight",
-        state: workflowState(),
-        dependencies: { runPreflight }
-      })
-    ).resolves.toEqual({ status: "ok" });
-
-    expect(runPreflight).toHaveBeenCalledWith({
-      invocation,
-      repository
-    });
-  });
-
-  it("runs prepare_worktree through injected dependencies", async () => {
-    const prepareWorktree = vi.fn(async () => workspace);
-
-    await expect(
-      runBuiltInStep({
-        uses: "prepare_worktree",
-        state: workflowState(),
-        dependencies: { prepareWorktree }
-      })
-    ).resolves.toEqual(workspace);
-
-    expect(prepareWorktree).toHaveBeenCalledWith({
-      invocation,
-      repository,
-      workspaceRoot: "/tmp/worktrees",
-      runId: "run-123"
-    });
-  });
-
-  it("runs collect_repo_context with the workspace path overriding repository path", async () => {
-    const collectRepoContext = vi.fn(async () => repoContext);
-
-    await expect(
-      runBuiltInStep({
-        uses: "collect_repo_context",
-        state: workflowState(),
-        dependencies: { collectRepoContext }
-      })
-    ).resolves.toEqual(repoContext);
-
-    expect(collectRepoContext).toHaveBeenCalledWith({
-      invocation,
-      repository: {
-        ...repository,
-        path: workspace.path
-      }
-    });
-  });
-
-  it("runs validate_code_review_findings through injected dependencies", async () => {
-    const validatedFinding = { ...finding, confidence: "low" as const };
-    const validateFindingEvidence = vi.fn(() => [validatedFinding]);
-
-    await expect(
-      runBuiltInStep({
-        uses: "validate_code_review_findings",
-        state: workflowState({
-          steps: {
-            repo_context: repoContext,
-            code_review: { findings: [finding], summary: "Reviewed." }
-          }
-        }),
-        input: {
-          repo_context: "$.steps.repo_context",
-          findings: "$.steps.code_review"
-        },
-        dependencies: { validateFindingEvidence }
-      })
-    ).resolves.toEqual({
-      findings: [validatedFinding],
-      summary: "Reviewed."
-    });
-
-    expect(validateFindingEvidence).toHaveBeenCalledWith(repoContext, [finding]);
-  });
-
-  it("runs final_code_review_report through injected dependencies", async () => {
-    const buildFinalReportJson = vi.fn(() => ({ report_path: "/tmp/report.md" }));
-    const buildFinalReportMarkdown = vi.fn(() => "# Report\n");
-
-    await expect(
-      runBuiltInStep({
-        uses: "final_code_review_report",
-        state: workflowState({
-          steps: {
-            validated_findings: { findings: [finding] },
-            acceptance
-          }
-        }),
-        input: {
-          findings: "$.steps.validated_findings",
-          acceptance: "$.steps.acceptance"
-        },
-        dependencies: { buildFinalReportJson, buildFinalReportMarkdown }
-      })
-    ).resolves.toEqual({
-      json: { report_path: "/tmp/report.md" },
-      markdown: "# Report\n"
-    });
-
-    expect(buildFinalReportJson).toHaveBeenCalledWith({
-      acceptance,
-      findings: [finding],
-      reportPath: "/tmp/report.md",
-      workspace
-    });
-    expect(buildFinalReportMarkdown).toHaveBeenCalledWith({
-      invocation,
-      findings: [finding],
-      acceptance
-    });
-  });
-
+describe("implementation built-ins", () => {
   it("runs prepare_implementation_worktree through injected dependencies", async () => {
     const prepareImplementationWorktree = vi.fn(async () => implementationWorkspace);
 
     await expect(
-      runBuiltInStep({
-        uses: "prepare_implementation_worktree",
+      prepareImplementationWorktreeBuiltIn.run({
         state: implementationState(),
         dependencies: { prepareImplementationWorktree }
       })
     ).resolves.toEqual(implementationWorkspace);
 
+    expect(prepareImplementationWorktreeBuiltIn.metadata).toEqual({
+      capturesWorkspace: true
+    });
     expect(prepareImplementationWorktree).toHaveBeenCalledWith({
       invocation: jiraInvocation,
       repository,
@@ -416,10 +272,7 @@ describe("built-in steps", () => {
 
   it("collects minimum Jira task context without external calls", async () => {
     await expect(
-      runBuiltInStep({
-        uses: "collect_task_context",
-        state: implementationState()
-      })
+      runBuiltIn(collectTaskContextBuiltIn, { state: implementationState() })
     ).resolves.toEqual({
       jira: {
         issue_key: "ABC-123",
@@ -439,8 +292,7 @@ describe("built-in steps", () => {
     const runValidationCommands = vi.fn(async () => failedValidation);
 
     await expect(
-      runBuiltInStep({
-        uses: "run_validation_commands",
+      runValidationCommandsBuiltIn.run({
         state: implementationState(),
         dependencies: { runValidationCommands }
       })
@@ -457,8 +309,7 @@ describe("built-in steps", () => {
     const collectWorktreeDiff = vi.fn(async () => worktreeDiff);
 
     await expect(
-      runBuiltInStep({
-        uses: "collect_worktree_diff",
+      collectWorktreeDiffBuiltIn.run({
         state: implementationState(),
         dependencies: { collectWorktreeDiff }
       })
@@ -470,12 +321,11 @@ describe("built-in steps", () => {
     });
   });
 
-  it("runs commit_changes through injected dependencies and returns skipped gate artifacts", async () => {
+  it("runs commit_changes through injected dependencies", async () => {
     const commitChanges = vi.fn(async () => skippedCommitArtifact);
 
     await expect(
-      runBuiltInStep({
-        uses: "commit_changes",
+      commitChangesBuiltIn.run({
         state: implementationState({
           config: {
             implementation: {
@@ -514,8 +364,7 @@ describe("built-in steps", () => {
     const pushBranch = vi.fn(async () => pushArtifact);
 
     await expect(
-      runBuiltInStep({
-        uses: "push_branch",
+      pushBranchBuiltIn.run({
         state: implementationState({
           steps: {
             commit: commitArtifact
@@ -539,8 +388,7 @@ describe("built-in steps", () => {
     const openPullRequest = vi.fn(async () => pullRequestArtifact);
 
     await expect(
-      runBuiltInStep({
-        uses: "open_pull_request",
+      openPullRequestBuiltIn.run({
         state: implementationState({
           steps: {
             push: pushArtifact
@@ -563,15 +411,14 @@ describe("built-in steps", () => {
     });
   });
 
-  it("runs final_implementation_report through injected dependencies", async () => {
+  it("runs final_implementation_report as ready_for_pr through injected dependencies", async () => {
     const buildImplementationReportJson = vi.fn(() => ({
       report: "json"
     }));
     const buildImplementationReportMarkdown = vi.fn(() => "# Report\n");
 
     await expect(
-      runBuiltInStep({
-        uses: "final_implementation_report",
+      runBuiltIn(finalImplementationReportBuiltIn, {
         state: implementationState({
           steps: {
             implementation: { final_validation: validation },
@@ -605,61 +452,244 @@ describe("built-in steps", () => {
       pullRequest: pullRequestArtifact,
       trustedHostLocal: true
     };
+    expect(finalImplementationReportBuiltIn.metadata).toEqual({
+      deferUntilAfterWorkspaceLifecycle: true
+    });
     expect(buildImplementationReportJson).toHaveBeenCalledWith(reportInput);
     expect(buildImplementationReportMarkdown).toHaveBeenCalledWith(reportInput);
   });
 
+  it("runs final_implementation_report as validation_failed when validation fails", async () => {
+    const buildImplementationReportJson = vi.fn(() => ({
+      report: "json"
+    }));
+    const buildImplementationReportMarkdown = vi.fn(() => "# Report\n");
+
+    await finalImplementationReportBuiltIn.run({
+      state: implementationState({
+        steps: {
+          implementation: { final_validation: failedValidation },
+          commit: commitArtifact,
+          push: pushArtifact,
+          pull_request: pullRequestArtifact
+        }
+      }),
+      dependencies: {
+        buildImplementationReportJson,
+        buildImplementationReportMarkdown
+      }
+    });
+
+    expect(buildImplementationReportJson).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "validation_failed" })
+    );
+  });
+
+  it("runs final_implementation_report as completed_with_skips when publish steps are skipped", async () => {
+    const buildImplementationReportJson = vi.fn(() => ({
+      report: "json"
+    }));
+    const buildImplementationReportMarkdown = vi.fn(() => "# Report\n");
+
+    await finalImplementationReportBuiltIn.run({
+      state: implementationState({
+        steps: {
+          implementation: { final_validation: validation },
+          commit: skippedCommitArtifact,
+          push: pushArtifact,
+          pull_request: pullRequestArtifact
+        }
+      }),
+      dependencies: {
+        buildImplementationReportJson,
+        buildImplementationReportMarkdown
+      }
+    });
+
+    expect(buildImplementationReportJson).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "completed_with_skips" })
+    );
+  });
+
   it.each([
-    ["preflight", { repository: undefined }, "repository"],
-    ["prepare_worktree", { run: undefined }, "run"],
-    ["prepare_worktree", { workspaceRoot: undefined }, "workspaceRoot"],
-    ["collect_repo_context", { workspace: undefined }, "workspace"]
+    prepareImplementationWorktreeBuiltIn,
+    collectTaskContextBuiltIn,
+    commitChangesBuiltIn,
+    openPullRequestBuiltIn,
+    finalImplementationReportBuiltIn
+  ])("rejects GitHub invocation for Jira-only built-in $name", async (builtIn) => {
+    await expect(
+      runBuiltIn(builtIn, {
+        state: implementationState({
+          invocation: githubInvocation,
+          steps: {
+            implementation: { final_validation: validation },
+            acceptance: acceptedImplementation,
+            worktree_diff: worktreeDiff,
+            commit: commitArtifact,
+            push: pushArtifact,
+            pull_request: pullRequestArtifact
+          }
+        })
+      })
+    ).rejects.toMatchObject({ code: "built_in_unsupported" });
+  });
+
+  it.each([
+    prepareImplementationWorktreeBuiltIn,
+    runValidationCommandsBuiltIn,
+    collectWorktreeDiffBuiltIn,
+    commitChangesBuiltIn,
+    pushBranchBuiltIn,
+    openPullRequestBuiltIn,
+    finalImplementationReportBuiltIn
+  ])("rejects missing implementation config for $name", async (builtIn) => {
+    await expect(
+      runBuiltIn(builtIn, {
+        state: implementationState({
+          config: undefined,
+          steps: {
+            implementation: { final_validation: validation },
+            acceptance: acceptedImplementation,
+            worktree_diff: worktreeDiff,
+            commit: commitArtifact,
+            push: pushArtifact,
+            pull_request: pullRequestArtifact
+          }
+        })
+      })
+    ).rejects.toMatchObject({
+      code: "built_in_state_missing",
+      message: expect.stringContaining("config.implementation")
+    });
+  });
+
+  it.each([
+    ["branch", commitChangesBuiltIn, "workspace.branch"],
+    ["remote", pushBranchBuiltIn, "workspace.remote"],
+    ["base_sha", finalImplementationReportBuiltIn, "workspace.base_sha"]
+  ] as const)("rejects missing workspace.%s", async (field, builtIn, expectedMessage) => {
+    const brokenWorkspace = { ...implementationWorkspace };
+    delete brokenWorkspace[field];
+
+    await expect(
+      runBuiltIn(builtIn, {
+        state: implementationState({
+          workspace: brokenWorkspace,
+          steps: {
+            implementation: { final_validation: validation },
+            acceptance: acceptedImplementation,
+            worktree_diff: worktreeDiff,
+            commit: commitArtifact,
+            push: pushArtifact,
+            pull_request: pullRequestArtifact
+          }
+        })
+      })
+    ).rejects.toMatchObject({
+      code: "built_in_state_missing",
+      message: expect.stringContaining(expectedMessage)
+    });
+  });
+
+  it.each([
+    ["acceptance", commitChangesBuiltIn, "steps.acceptance"],
+    ["diff", commitChangesBuiltIn, "steps.worktree_diff"],
+    ["commit", pushBranchBuiltIn, "steps.commit"],
+    ["push", openPullRequestBuiltIn, "steps.push"],
+    ["pull_request", finalImplementationReportBuiltIn, "steps.pull_request"]
   ] as const)(
-    "throws a typed error when %s is missing required %s state",
-    async (uses, stateOverrides, requiredState) => {
+    "rejects missing %s when input and state.steps fallback are absent",
+    async (_missing, builtIn, expectedMessage) => {
+      const steps =
+        _missing === "pull_request"
+          ? {
+              implementation: { final_validation: validation },
+              commit: commitArtifact,
+              push: pushArtifact
+            }
+          : _missing === "diff"
+            ? {
+                implementation: { final_validation: validation },
+                acceptance: acceptedImplementation
+              }
+          : {
+              implementation: { final_validation: validation }
+            };
+
       await expect(
-        runBuiltInStep({
-          uses,
-          state: workflowState(stateOverrides)
+        runBuiltIn(builtIn, {
+          state: implementationState({
+            steps
+          })
         })
       ).rejects.toMatchObject({
         code: "built_in_state_missing",
-        message: expect.stringContaining(requiredState)
+        message: expect.stringContaining(expectedMessage)
       });
     }
   );
 
-  it("throws a typed error when validate_code_review_findings input is missing", async () => {
-    await expect(
-      runBuiltInStep({
-        uses: "validate_code_review_findings",
-        state: workflowState()
-      })
-    ).rejects.toMatchObject({
-      code: "built_in_input_missing",
-      message: expect.stringContaining("repo_context")
+  it("uses state.steps fallbacks for commit_changes inputs", async () => {
+    const commitChanges = vi.fn(async () => commitArtifact);
+
+    await commitChangesBuiltIn.run({
+      state: implementationState({
+        steps: {
+          implementation: { final_validation: validation },
+          acceptance: acceptedImplementation,
+          worktree_diff: worktreeDiff
+        }
+      }),
+      dependencies: { commitChanges }
     });
+
+    expect(commitChanges).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validation,
+        acceptance: acceptedImplementation,
+        diff: worktreeDiff
+      })
+    );
   });
 
-  it("throws a typed error when final_code_review_report report path state is missing", async () => {
-    await expect(
-      runBuiltInStep({
-        uses: "final_code_review_report",
-        state: workflowState({
-          reportPath: undefined,
-          steps: {
-            validated_findings: { findings: [finding] },
-            acceptance
-          }
-        }),
-        input: {
-          findings: "$.steps.validated_findings",
-          acceptance: "$.steps.acceptance"
-        }
-      })
-    ).rejects.toMatchObject({
-      code: "built_in_state_missing",
-      message: expect.stringContaining("reportPath")
+  it("uses state.steps fallbacks for push_branch, open_pull_request, and final report", async () => {
+    const pushBranch = vi.fn(async () => pushArtifact);
+    const openPullRequest = vi.fn(async () => pullRequestArtifact);
+    const buildImplementationReportJson = vi.fn(() => ({ report: "json" }));
+
+    await pushBranchBuiltIn.run({
+      state: implementationState({ steps: { commit: commitArtifact } }),
+      dependencies: { pushBranch }
     });
+    await openPullRequestBuiltIn.run({
+      state: implementationState({ steps: { push: pushArtifact } }),
+      dependencies: { openPullRequest }
+    });
+    await finalImplementationReportBuiltIn.run({
+      state: implementationState({
+        steps: {
+          implementation: { final_validation: validation },
+          commit: commitArtifact,
+          push: pushArtifact,
+          pull_request: pullRequestArtifact
+        }
+      }),
+      dependencies: {
+        buildImplementationReportJson,
+        buildImplementationReportMarkdown: vi.fn(() => "# Report\n")
+      }
+    });
+
+    expect(pushBranch).toHaveBeenCalledWith(expect.objectContaining({ commit: commitArtifact }));
+    expect(openPullRequest).toHaveBeenCalledWith(expect.objectContaining({ push: pushArtifact }));
+    expect(buildImplementationReportJson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validation,
+        commit: commitArtifact,
+        push: pushArtifact,
+        pullRequest: pullRequestArtifact
+      })
+    );
   });
 });

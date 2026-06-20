@@ -1,6 +1,7 @@
 import path from "node:path";
 import { realpath } from "node:fs/promises";
 import { z } from "zod";
+import { isBuiltInStepName } from "./built-ins/catalog.js";
 import { loadYamlFile } from "./config-loader.js";
 import { assertSafeSegment, isInsideRoot } from "./path-security.js";
 
@@ -26,21 +27,7 @@ const BuiltInNodeSchema = z
   .object({
     id: NonEmptyStringSchema,
     type: z.literal("built_in"),
-    uses: z.enum([
-      "preflight",
-      "prepare_worktree",
-      "collect_repo_context",
-      "validate_code_review_findings",
-      "final_code_review_report",
-      "prepare_implementation_worktree",
-      "collect_task_context",
-      "run_validation_commands",
-      "collect_worktree_diff",
-      "commit_changes",
-      "push_branch",
-      "open_pull_request",
-      "final_implementation_report"
-    ]),
+    uses: NonEmptyStringSchema,
     artifact: z.union([NonEmptyStringSchema, z.record(NonEmptyStringSchema)]).optional(),
     input: z.record(z.unknown()).optional(),
     after: z.array(NonEmptyStringSchema).optional()
@@ -177,6 +164,21 @@ function assertNoDuplicateNodeIds(nodes: WorkflowNode[]): void {
   }
 }
 
+function assertBuiltInNamesRegistered(nodes: WorkflowNode[]): void {
+  for (const node of nodes) {
+    if (node.type !== "built_in") {
+      continue;
+    }
+
+    if (!isBuiltInStepName(node.uses)) {
+      throw workflowDefinitionError(
+        `Unsupported built-in step: ${node.uses}`,
+        "workflow_built_in_unknown"
+      );
+    }
+  }
+}
+
 function assertDependenciesExist(nodes: WorkflowNode[]): void {
   const ids = new Set(nodes.map((node) => node.id));
 
@@ -224,6 +226,7 @@ function assertAcyclic(nodes: WorkflowNode[]): void {
 }
 
 function validateWorkflowGraph(graph: WorkflowGraph): void {
+  assertBuiltInNamesRegistered(graph.nodes);
   assertNoDuplicateNodeIds(graph.nodes);
   assertDependenciesExist(graph.nodes);
   assertAcyclic(graph.nodes);

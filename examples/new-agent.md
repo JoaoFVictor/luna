@@ -85,6 +85,8 @@ tools:
   - repository.diff-summary
 ```
 
+To create a new local tool, see [Create a new local tool](new-tool.md).
+
 ## MCP Capabilities
 
 Agents can opt into configured MCP servers:

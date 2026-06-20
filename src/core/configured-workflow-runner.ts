@@ -3,10 +3,12 @@ import path from "node:path";
 import { ArtifactStore } from "./artifact-store.js";
 import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
 import {
+  builtInStepRegistry as defaultBuiltInStepRegistry,
   runBuiltInStep as defaultRunBuiltInStep,
   type BuiltInStepDependencies,
+  type BuiltInStepMetadata,
   type RunBuiltInStepOptions
-} from "./built-in-steps.js";
+} from "./built-ins/index.js";
 import {
   loadAgentDefinition,
   type AgentDefinition
@@ -56,6 +58,10 @@ import {
 } from "./types.js";
 
 type MaybePromise<T> = T | Promise<T>;
+
+type BuiltInMetadataRegistry = {
+  require(name: string): { metadata?: BuiltInStepMetadata };
+};
 
 export type RunAgentStepOptions = {
   agent: AgentDefinition;
@@ -119,6 +125,7 @@ export type ConfiguredWorkflowRunnerDependencies = {
     options: RunAgentLoopStepOptions
   ) => MaybePromise<unknown>;
   cleanupWorktree?: typeof defaultCleanupWorktree;
+  builtInStepRegistry?: BuiltInMetadataRegistry;
   builtInStepDependencies?: BuiltInStepDependencies;
   ArtifactStore?: typeof ArtifactStore;
   now?: () => Date;
@@ -354,12 +361,35 @@ function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
   );
 }
 
-function isFinalReportNode(node: WorkflowNode): boolean {
+function builtInMetadata(
+  node: WorkflowNode,
+  activeRegistry: BuiltInMetadataRegistry
+): {
+  deferUntilAfterWorkspaceLifecycle?: boolean;
+  capturesWorkspace?: boolean;
+} {
+  if (node.type !== "built_in") {
+    return {};
+  }
+
+  return activeRegistry.require(node.uses).metadata ?? {};
+}
+
+function shouldDeferUntilAfterWorkspaceLifecycle(
+  node: WorkflowNode,
+  activeRegistry: BuiltInMetadataRegistry
+): boolean {
   return (
-    node.type === "built_in" &&
-    (node.uses === "final_code_review_report" ||
-      node.uses === "final_implementation_report")
+    builtInMetadata(node, activeRegistry).deferUntilAfterWorkspaceLifecycle ===
+    true
   );
+}
+
+function capturesWorkspace(
+  node: WorkflowNode,
+  activeRegistry: BuiltInMetadataRegistry
+): boolean {
+  return builtInMetadata(node, activeRegistry).capturesWorkspace === true;
 }
 
 function finalReportFrom(output: unknown): FinalReportJson | undefined {
@@ -946,6 +976,8 @@ export async function runConfiguredWorkflow({
     dependencies.resolveRepository ?? defaultResolveRepository;
   const cleanupWorktree =
     dependencies.cleanupWorktree ?? defaultCleanupWorktree;
+  const activeBuiltInStepRegistry =
+    dependencies.builtInStepRegistry ?? defaultBuiltInStepRegistry;
   let workflowId: string | undefined;
   let repository: RepositoryConfig | undefined;
   let workspaceRecord: WorkspaceRecord | undefined;
@@ -991,7 +1023,12 @@ export async function runConfiguredWorkflow({
     const deferredFinalReportNodes: WorkflowNode[] = [];
 
     for (const node of orderedNodes) {
-      if (isFinalReportNode(node)) {
+      if (
+        shouldDeferUntilAfterWorkspaceLifecycle(
+          node,
+          activeBuiltInStepRegistry
+        )
+      ) {
         deferredFinalReportNodes.push(node);
         continue;
       }
@@ -1005,11 +1042,7 @@ export async function runConfiguredWorkflow({
       );
 
       state.steps[node.id] = output;
-      if (
-        node.type === "built_in" &&
-        (node.uses === "prepare_worktree" ||
-          node.uses === "prepare_implementation_worktree")
-      ) {
+      if (capturesWorkspace(node, activeBuiltInStepRegistry)) {
         if (isWorkspaceRecord(output)) {
           state.workspace = output;
           workspaceRecord = output;
