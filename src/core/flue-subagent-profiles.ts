@@ -176,7 +176,10 @@ export async function resolveFlueSubagentProfiles({
 
     const unsupportedCapability =
       firstDeclaredCapability("mcp_servers", agent.mcp_servers) ??
-      firstDeclaredCapability("subagents", agent.subagents);
+      firstDeclaredCapability(
+        "subagents",
+        (agent.subagents ?? []).map((subagent) => subagent.id)
+      );
 
     if (unsupportedCapability !== undefined) {
       await rejectSubagentCapability({

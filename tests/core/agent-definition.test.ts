@@ -189,7 +189,121 @@ describe("agent definition loader", () => {
       await writeFile(path.join(agentDir, "output.schema.json"), "{}\n", "utf8");
 
       await expect(loadAgentDefinition(root, "code-implementer")).resolves.toMatchObject({
-        subagents: ["change-reviewer", "security-reviewer"]
+        subagents: [{ id: "change-reviewer" }, { id: "security-reviewer" }]
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads object subagents with write policy overrides", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-agent-definition-"));
+    const agentDir = path.join(root, "code-implementer");
+
+    try {
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(
+        path.join(agentDir, "agent.yaml"),
+        [
+          "id: code-implementer",
+          "description: Implements code",
+          "model_profile: deep",
+          "mode: trusted_host_local_write",
+          "instructions_file: instructions.md",
+          "output_schema: output.schema.json",
+          "subagents:",
+          "  - id: implementer-helper",
+          "    policy:",
+          "      mode: trusted_host_local_write",
+          "      allow_tools:",
+          "        - repository.status",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(path.join(agentDir, "instructions.md"), "Implement.\n", "utf8");
+      await writeFile(path.join(agentDir, "output.schema.json"), "{}\n", "utf8");
+
+      await expect(loadAgentDefinition(root, "code-implementer")).resolves.toMatchObject({
+        subagents: [
+          {
+            id: "implementer-helper",
+            policy: {
+              mode: "trusted_host_local_write",
+              allow_tools: ["repository.status"]
+            }
+          }
+        ]
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unknown subagent policy fields", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-agent-definition-"));
+    const agentDir = path.join(root, "code-implementer");
+
+    try {
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(
+        path.join(agentDir, "agent.yaml"),
+        [
+          "id: code-implementer",
+          "description: Implements code",
+          "model_profile: deep",
+          "mode: trusted_host_local_write",
+          "instructions_file: instructions.md",
+          "output_schema: output.schema.json",
+          "subagents:",
+          "  - id: implementer-helper",
+          "    policy:",
+          "      mode: read_only",
+          "      unsupported_key: true",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(path.join(agentDir, "instructions.md"), "Implement.\n", "utf8");
+      await writeFile(path.join(agentDir, "output.schema.json"), "{}\n", "utf8");
+
+      await expect(loadAgentDefinition(root, "code-implementer")).rejects.toMatchObject({
+        code: "config_schema_invalid"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects duplicate object-form subagent ids", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-agent-definition-"));
+    const agentDir = path.join(root, "code-implementer");
+
+    try {
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(
+        path.join(agentDir, "agent.yaml"),
+        [
+          "id: code-implementer",
+          "description: Implements code",
+          "model_profile: deep",
+          "mode: trusted_host_local_write",
+          "instructions_file: instructions.md",
+          "output_schema: output.schema.json",
+          "subagents:",
+          "  - change-reviewer",
+          "  - id: change-reviewer",
+          "    policy:",
+          "      mode: read_only",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(path.join(agentDir, "instructions.md"), "Implement.\n", "utf8");
+      await writeFile(path.join(agentDir, "output.schema.json"), "{}\n", "utf8");
+
+      await expect(loadAgentDefinition(root, "code-implementer")).rejects.toMatchObject({
+        code: "agent_capability_duplicate"
       });
     } finally {
       await rm(root, { recursive: true, force: true });

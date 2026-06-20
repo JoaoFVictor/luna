@@ -528,7 +528,7 @@ describe("flue modules", () => {
             mode: "read_only",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
-            subagents: ["change-reviewer"],
+            subagents: [{ id: "change-reviewer" }],
             directory: agentDir,
             instructionsPath,
             outputSchemaPath
@@ -1074,7 +1074,7 @@ describe("flue modules", () => {
             mode: "trusted_host_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
-            subagents: ["change-reviewer"],
+            subagents: [{ id: "change-reviewer" }],
             directory: agentDir,
             instructionsPath,
             outputSchemaPath

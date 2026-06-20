@@ -112,7 +112,7 @@ export async function resolveFlueAgentCapabilities({
       agentMode: agent.mode,
       cwd
     });
-    const subagentIds = agent.subagents ?? [];
+    const subagentIds = (agent.subagents ?? []).map((subagent) => subagent.id);
     const hasSubagents = subagentIds.length > 0;
 
     let subagents: AgentProfile[] = [];
