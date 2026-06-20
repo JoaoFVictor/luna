@@ -105,6 +105,7 @@ function stepOptions({
     modelProfiles: {
       deep: { model: "openai/gpt-test", reasoning_effort: "medium" }
     },
+    workflowSubagentPolicy: { allow_write: false },
     input: { subject: "hello" },
     state: {
       invocation: { version: "2026-06", source: "github", event: "pull_request" },

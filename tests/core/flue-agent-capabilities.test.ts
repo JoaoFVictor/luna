@@ -431,14 +431,17 @@ describe("flue agent capabilities", () => {
           deep: { model: "test/deep", reasoning_effort: "high" }
         },
         observability,
-        summary
+        summary,
+        workflowSubagentPolicy: { allow_write: true }
       });
 
       expect(resolveFlueSubagentProfiles).toHaveBeenCalledWith(
         expect.objectContaining({
           cwd: "/repo/worktree",
           observability,
-          summary
+          summary,
+          subagents: [{ id: "change-reviewer" }],
+          workflowSubagentPolicy: { allow_write: true }
         })
       );
     } finally {

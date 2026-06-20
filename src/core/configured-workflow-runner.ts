@@ -59,6 +59,7 @@ import {
   type WorkflowObservabilityConfig,
   type WorkflowNode
 } from "./workflow-definition.js";
+import type { WorkflowSubagentPolicy } from "./subagent-policy.js";
 import {
   resolveWorkflowInput,
   type SchedulerWorkflowState,
@@ -105,6 +106,7 @@ export type RunAgentStepOptions = {
   model: ReturnType<typeof toFlueModelOptions>;
   agentsRoot: string;
   modelProfiles: ResolvedModelProfiles;
+  workflowSubagentPolicy: WorkflowSubagentPolicy;
   input: Record<string, unknown>;
   state: WorkflowState;
   mcpConfig?: McpConfig;
@@ -139,6 +141,7 @@ export type RunAgentLoopStepOptions = {
   model: ReturnType<typeof toFlueModelOptions>;
   agentsRoot: string;
   modelProfiles: ResolvedModelProfiles;
+  workflowSubagentPolicy: WorkflowSubagentPolicy;
   input: Record<string, unknown>;
   sandbox: ResolvedAgentLoopNode["sandbox"];
   validation: ResolvedAgentLoopNode["validation"];
@@ -1135,6 +1138,7 @@ async function runWorkflowNode(
   dependencies: ConfiguredWorkflowRunnerDependencies,
   agentsRoot: string,
   modelProfiles: ResolvedModelProfiles,
+  workflowSubagentPolicy: WorkflowSubagentPolicy,
   observability: LunaObservability | undefined,
   summary: ObservabilitySummary | undefined,
   artifactStore: ArtifactStore | undefined
@@ -1171,6 +1175,7 @@ async function runWorkflowNode(
       model: resolveAgentModel(agent, modelProfiles),
       agentsRoot,
       modelProfiles,
+      workflowSubagentPolicy,
       input: resolveWorkflowInput(node.input, state),
       sandbox: resolvedNode.sandbox,
       validation: resolvedNode.validation,
@@ -1197,6 +1202,7 @@ async function runWorkflowNode(
     model: resolveAgentModel(agent, modelProfiles),
     agentsRoot,
     modelProfiles,
+    workflowSubagentPolicy,
     input: resolveWorkflowInput(node.input, state),
     state,
     observability,
@@ -1377,6 +1383,7 @@ export async function runConfiguredWorkflow({
           dependencies,
           resolvedAgentsRoot,
           modelProfiles,
+          workflow.subagent_policy,
           observability,
           summary,
           activeArtifactStore
@@ -1454,6 +1461,7 @@ export async function runConfiguredWorkflow({
         dependencies,
         resolvedAgentsRoot,
         modelProfiles,
+        workflow.subagent_policy,
         observability,
         summary,
         artifactStore

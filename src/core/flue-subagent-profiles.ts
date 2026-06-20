@@ -4,7 +4,10 @@ import {
   type AgentProfile,
   type ToolDefinition
 } from "@flue/runtime";
-import { loadAgentDefinition } from "./agent-definition.js";
+import {
+  loadAgentDefinition,
+} from "./agent-definition.js";
+import type { AgentSubagentReference } from "./agent-capabilities.js";
 import { loadFlueSkill } from "./flue-skill-loader.js";
 import { resolveFlueTools } from "./flue-tool-registry.js";
 import {
@@ -16,6 +19,11 @@ import {
   recordRejectedCapability,
   type ObservabilitySummary
 } from "./observability/summary.js";
+import {
+  resolveSubagentPolicy,
+  type ResolvedSubagentPolicy,
+  type WorkflowSubagentPolicy
+} from "./subagent-policy.js";
 
 function subagentError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };
@@ -132,8 +140,9 @@ function rejectedToolId(cause: unknown, fallback: string): string {
 export async function resolveFlueSubagentProfiles({
   agentsRoot,
   parentAgentId,
-  ids,
+  subagents,
   modelProfiles,
+  workflowSubagentPolicy,
   cwd,
   observability,
   summary,
@@ -141,8 +150,9 @@ export async function resolveFlueSubagentProfiles({
 }: {
   agentsRoot: string;
   parentAgentId?: string;
-  ids: readonly string[];
+  subagents: readonly AgentSubagentReference[];
   modelProfiles: ResolvedModelProfiles;
+  workflowSubagentPolicy?: WorkflowSubagentPolicy;
   cwd?: string;
   observability?: LunaObservability;
   summary?: ObservabilitySummary;
@@ -151,7 +161,8 @@ export async function resolveFlueSubagentProfiles({
   const profiles: AgentProfile[] = [];
   const resolvedSummary = summary ?? observabilitySummary;
 
-  for (const id of ids) {
+  for (const reference of subagents) {
+    const id = reference.id;
     if (id === parentAgentId) {
       throw subagentError(
         `Agent ${id} cannot reference itself as a subagent`,
@@ -160,8 +171,30 @@ export async function resolveFlueSubagentProfiles({
     }
 
     const agent = await loadAgentDefinition(agentsRoot, id);
+    let resolvedPolicy: ResolvedSubagentPolicy;
+    try {
+      resolvedPolicy = resolveSubagentPolicy(
+        workflowSubagentPolicy,
+        reference.policy
+      );
+    } catch (cause) {
+      await rejectSubagentCapability({
+        observability,
+        summary: resolvedSummary,
+        agentId: id,
+        rejection: {
+          capability: "mode",
+          id: reference.policy?.mode ?? "read_only",
+          reason:
+            cause instanceof Error
+              ? cause.message
+              : "Subagent policy could not be resolved"
+        }
+      });
+      throw cause;
+    }
 
-    if (agent.mode !== "read_only") {
+    if (agent.mode !== resolvedPolicy.mode) {
       await rejectSubagentCapability({
         observability,
         summary: resolvedSummary,
@@ -169,7 +202,7 @@ export async function resolveFlueSubagentProfiles({
         rejection: {
           capability: "mode",
           id: agent.mode,
-          reason: "Flue subagents must use read_only mode"
+          reason: `Flue subagent must use policy mode ${resolvedPolicy.mode}`
         }
       });
     }
@@ -208,6 +241,7 @@ export async function resolveFlueSubagentProfiles({
     let tools: ToolDefinition[] = [];
     try {
       const toolIds = agent.tools ?? [];
+      const allowedTools = new Set(resolvedPolicy.allow_tools);
 
       if (toolIds.length > 0 && cwd === undefined) {
         throw subagentError(
@@ -217,12 +251,28 @@ export async function resolveFlueSubagentProfiles({
       }
 
       for (const toolId of toolIds) {
+        if (
+          resolvedPolicy.mode === "trusted_host_local_write" &&
+          !allowedTools.has(toolId)
+        ) {
+          await rejectSubagentCapability({
+            observability,
+            summary: resolvedSummary,
+            agentId: id,
+            rejection: {
+              capability: "tools",
+              id: toolId,
+              reason: "Tool is not allowed by subagent policy"
+            }
+          });
+        }
+
         tools.push(
           ...resolveFlueTools({
             ids: [toolId],
             agentMode: agent.mode,
             cwd: cwd ?? "",
-            forSubagent: true
+            forSubagent: resolvedPolicy.mode === "read_only"
           })
         );
       }

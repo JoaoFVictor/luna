@@ -91,7 +91,7 @@ describe("flue subagent profiles", () => {
 
       const profiles = await resolveFlueSubagentProfiles({
         agentsRoot: root,
-        ids: ["change-reviewer"],
+        subagents: [{ id: "change-reviewer" }],
         modelProfiles: {
           deep: { model: "test/deep", reasoning_effort: "high" }
         }
@@ -115,7 +115,7 @@ describe("flue subagent profiles", () => {
       resolveFlueSubagentProfiles({
         agentsRoot: "/agents",
         parentAgentId: "code-implementer",
-        ids: ["code-implementer"],
+        subagents: [{ id: "code-implementer" }],
         modelProfiles: {}
       })
     ).rejects.toMatchObject({ code: "subagent_self_reference" });
@@ -148,7 +148,7 @@ describe("flue subagent profiles", () => {
       await expect(
         resolveFlueSubagentProfiles({
           agentsRoot: root,
-          ids: ["change-reviewer"],
+          subagents: [{ id: "change-reviewer" }],
           modelProfiles: {}
         })
       ).rejects.toMatchObject({ code: "subagent_model_profile_missing" });
@@ -175,7 +175,7 @@ describe("flue subagent profiles", () => {
 
       const profiles = await resolveFlueSubagentProfiles({
         agentsRoot,
-        ids: ["change-reviewer"],
+        subagents: [{ id: "change-reviewer" }],
         cwd: "/repo/worktree",
         modelProfiles: {
           deep: { model: "test/deep", reasoning_effort: "high" }
@@ -197,6 +197,152 @@ describe("flue subagent profiles", () => {
     }
   });
 
+  it("keeps default subagent policy read-only and allows read-only subagents", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+
+    try {
+      await writeSubagentFixture({ root });
+
+      const profiles = await resolveFlueSubagentProfiles({
+        agentsRoot: root,
+        parentAgentId: "code-implementer",
+        subagents: [{ id: "change-reviewer" }],
+        workflowSubagentPolicy: { allow_write: false },
+        cwd: "/repo/worktree",
+        modelProfiles: {
+          deep: { model: "test/deep", reasoning_effort: "high" }
+        }
+      });
+
+      expect(profiles).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects write-mode subagents when workflow policy disallows write", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+
+    try {
+      await writeSubagentFixture({
+        root,
+        id: "implementer-helper",
+        mode: "trusted_host_local_write",
+        extraYaml: ["tools:", "  - repository.status"]
+      });
+
+      await expect(
+        resolveFlueSubagentProfiles({
+          agentsRoot: root,
+          parentAgentId: "code-implementer",
+          subagents: [
+            {
+              id: "implementer-helper",
+              policy: {
+                mode: "trusted_host_local_write",
+                allow_tools: ["repository.status"]
+              }
+            }
+          ],
+          workflowSubagentPolicy: { allow_write: false },
+          cwd: "/repo/worktree",
+          modelProfiles: {
+            deep: { model: "test/deep", reasoning_effort: "high" }
+          }
+        })
+      ).rejects.toMatchObject({
+        code: "subagent_capabilities_unsupported",
+        message: expect.stringContaining(
+          "Subagent write mode is not allowed by workflow policy"
+        )
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("allows trusted write subagents only with workflow permission and tool allowlist", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+
+    try {
+      await writeSubagentFixture({
+        root,
+        id: "implementer-helper",
+        mode: "trusted_host_local_write",
+        extraYaml: ["tools:", "  - repository.status"]
+      });
+
+      const profiles = await resolveFlueSubagentProfiles({
+        agentsRoot: root,
+        parentAgentId: "code-implementer",
+        subagents: [
+          {
+            id: "implementer-helper",
+            policy: {
+              mode: "trusted_host_local_write",
+              allow_tools: ["repository.status"]
+            }
+          }
+        ],
+        workflowSubagentPolicy: { allow_write: true },
+        cwd: "/repo/worktree",
+        modelProfiles: {
+          deep: { model: "test/deep", reasoning_effort: "high" }
+        }
+      });
+
+      expect(profiles).toHaveLength(1);
+      expect(profiles[0]?.tools?.map((tool) => tool.name)).toEqual([
+        "repository_status"
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects trusted write subagent tools outside allowlist", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+
+    try {
+      await writeSubagentFixture({
+        root,
+        id: "implementer-helper",
+        mode: "trusted_host_local_write",
+        extraYaml: [
+          "tools:",
+          "  - repository.status",
+          "  - repository.diff-summary"
+        ]
+      });
+
+      await expect(
+        resolveFlueSubagentProfiles({
+          agentsRoot: root,
+          parentAgentId: "code-implementer",
+          subagents: [
+            {
+              id: "implementer-helper",
+              policy: {
+                mode: "trusted_host_local_write",
+                allow_tools: ["repository.status"]
+              }
+            }
+          ],
+          workflowSubagentPolicy: { allow_write: true },
+          cwd: "/repo/worktree",
+          modelProfiles: {
+            deep: { model: "test/deep", reasoning_effort: "high" }
+          }
+        })
+      ).rejects.toMatchObject({
+        code: "subagent_capabilities_unsupported",
+        message: expect.stringContaining("tools:repository.diff-summary")
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     {
       name: "mcp_servers",
@@ -209,19 +355,13 @@ describe("flue subagent profiles", () => {
       expected: "subagents:security-reviewer"
     },
     {
-      name: "trusted_host_local_write mode",
-      mode: "trusted_host_local_write" as const,
-      extraYaml: [],
-      expected: "mode:trusted_host_local_write"
-    },
-    {
       name: "unknown local tool",
       extraYaml: ["tools:", "  - repository.missing"],
       expected: "tools:repository.missing"
     }
   ])(
     "rejects the whole subagent profile for unsupported $name and records observability",
-    async ({ mode = "read_only", extraYaml, expected }) => {
+    async ({ extraYaml, expected }) => {
       const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
       const observability = fakeObservability();
       const summary = createObservabilitySummary({
@@ -232,14 +372,13 @@ describe("flue subagent profiles", () => {
       try {
         await writeSubagentFixture({
           root,
-          mode: mode as "read_only" | "trusted_host_local_write",
           extraYaml
         });
 
         await expect(
           resolveFlueSubagentProfiles({
             agentsRoot: root,
-            ids: ["change-reviewer"],
+            subagents: [{ id: "change-reviewer" }],
             cwd: "/repo/worktree",
             modelProfiles: {
               deep: { model: "test/deep", reasoning_effort: "high" }
@@ -292,7 +431,7 @@ describe("flue subagent profiles", () => {
       await expect(
         resolveWithMockedFlue({
           agentsRoot: root,
-          ids: ["change-reviewer"],
+          subagents: [{ id: "change-reviewer" }],
           cwd: "/repo/worktree",
           modelProfiles: {
             deep: { model: "test/deep", reasoning_effort: "high" }

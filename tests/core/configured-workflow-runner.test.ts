@@ -162,7 +162,10 @@ async function writeBaseConfig(
   );
 }
 
-async function writeWorkflow(root: string): Promise<void> {
+async function writeWorkflow(
+  root: string,
+  extraMetadata: string[] = []
+): Promise<void> {
   await writeFile(
     path.join(root, "workflows", "code-review", "workflow.yaml"),
     [
@@ -172,6 +175,7 @@ async function writeWorkflow(root: string): Promise<void> {
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
+      ...extraMetadata,
       ""
     ].join("\n")
   );
@@ -803,6 +807,7 @@ async function writeAgentLoopWorkflow(
     commands?: string;
     maxOutputBytes?: string;
     repairAttempts?: string;
+    extraMetadata?: string[];
   } = {}
 ): Promise<void> {
   await mkdir(path.join(root, "workflows", "implementation"), {
@@ -828,6 +833,7 @@ async function writeAgentLoopWorkflow(
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
+      ...(options.extraMetadata ?? []),
       ""
     ].join("\n")
   );
@@ -1705,7 +1711,9 @@ describe("configured workflow runner", () => {
 
     try {
       await writeBaseConfig(root, "implementation");
-      await writeAgentLoopWorkflow(root);
+      await writeAgentLoopWorkflow(root, {
+        extraMetadata: ["subagent_policy:", "  allow_write: true"]
+      });
       await writeImplementationConfig(root);
       await writeTrustedWriteAgent(root, "code-implementer");
 
@@ -1784,6 +1792,7 @@ describe("configured workflow runner", () => {
               reasoning_effort: "medium"
             }
           },
+          workflowSubagentPolicy: { allow_write: true },
           input: {
             invocation: jiraInvocation,
             workspace: preparedWorkspace,
@@ -2739,6 +2748,62 @@ describe("configured workflow runner", () => {
           "utf8"
         )
       ).resolves.toContain("Plan");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes workflow subagent policy to agent steps", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root, [
+        "subagent_policy:",
+        "  allow_write: true"
+      ]);
+      await writeReviewPlannerAgent(root);
+
+      const runBuiltInStep = vi.fn(async ({ uses }: { uses: string }) => {
+        if (uses === "preflight") {
+          return { status: "ok" };
+        }
+
+        if (uses === "collect_repo_context") {
+          return { files: [] };
+        }
+
+        return {};
+      });
+      const policies: unknown[] = [];
+      const runAgentStep = vi.fn(
+        async ({
+          workflowSubagentPolicy
+        }: {
+          workflowSubagentPolicy: unknown;
+        }) => {
+          policies.push(workflowSubagentPolicy);
+
+          return {
+            summary: "Plan",
+            focus_areas: [],
+            files_to_review: []
+          };
+        }
+      );
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          runBuiltInStep,
+          runAgentStep
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(policies).toEqual([{ allow_write: true }]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
