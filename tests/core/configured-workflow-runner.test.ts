@@ -1240,6 +1240,182 @@ describe("configured workflow runner", () => {
     }
   });
 
+  it("uses injected built-in metadata instead of hardcoded built-in names", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeFullCodeReviewWorkflow(root);
+      await writeAgent(root, "review-planner");
+      await writeAgent(root, "change-reviewer");
+      await writeAgent(root, "change-acceptance-reviewer");
+
+      const workspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+      const runBuiltInStep = vi.fn(async ({ uses }: { uses: string }) => {
+        if (uses === "preflight") {
+          return { status: "ok" };
+        }
+
+        if (uses === "prepare_worktree") {
+          return workspace;
+        }
+
+        if (uses === "collect_repo_context") {
+          return { files: [] };
+        }
+
+        if (uses === "validate_code_review_findings") {
+          return { summary: "Validated", findings: [] };
+        }
+
+        if (uses === "final_code_review_report") {
+          return {
+            json: { report_path: "placeholder", findings: [], workspace },
+            markdown: "# Review\n"
+          };
+        }
+
+        return {};
+      });
+      const cleanupWorktree = vi.fn(async ({ workspaceRecord }) => ({
+        ...workspaceRecord,
+        preserved: false,
+        reason: "success_cleanup"
+      }));
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: () => githubRun,
+          builtInStepRegistry: {
+            require: (name: string) => ({
+              name,
+              metadata: {},
+              run: async () => ({})
+            })
+          },
+          runBuiltInStep,
+          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
+            agent.id === "change-reviewer"
+              ? { summary: "Findings", findings: [] }
+              : { status: "accepted", findings_to_fix: [] }
+          ),
+          cleanupWorktree
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(runBuiltInStep).toHaveBeenCalledWith(
+        expect.objectContaining({ uses: "final_code_review_report" })
+      );
+      expect(cleanupWorktree).not.toHaveBeenCalled();
+      expect(result.workspace).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("captures and defers built-ins when injected metadata requests it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeFullCodeReviewWorkflow(root);
+      await writeAgent(root, "review-planner");
+      await writeAgent(root, "change-reviewer");
+      await writeAgent(root, "change-acceptance-reviewer");
+
+      const preparedWorkspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+      const cleanedWorkspace: WorkspaceRecord = {
+        ...preparedWorkspace,
+        preserved: false,
+        reason: "success_cleanup"
+      };
+      const cleanupWorktree = vi.fn(async () => cleanedWorkspace);
+      const finalReportWorkspaces: unknown[] = [];
+      const runBuiltInStep = vi.fn(
+        async ({
+          uses,
+          state
+        }: {
+          uses: string;
+          state: { workspace?: unknown };
+        }) => {
+          if (uses === "preflight") {
+            return { status: "ok" };
+          }
+
+          if (uses === "prepare_worktree") {
+            return preparedWorkspace;
+          }
+
+          if (uses === "collect_repo_context") {
+            return { files: [] };
+          }
+
+          if (uses === "validate_code_review_findings") {
+            return { summary: "Validated", findings: [] };
+          }
+
+          if (uses === "final_code_review_report") {
+            finalReportWorkspaces.push(state.workspace);
+            return {
+              json: { report_path: "placeholder", findings: [], workspace: state.workspace },
+              markdown: "# Review\n"
+            };
+          }
+
+          return {};
+        }
+      );
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: () => githubRun,
+          builtInStepRegistry: {
+            require: (name: string) => ({
+              name,
+              metadata:
+                name === "prepare_worktree"
+                  ? { capturesWorkspace: true }
+                  : name === "final_code_review_report"
+                    ? { deferUntilAfterWorkspaceLifecycle: true }
+                    : {},
+              run: async () => ({})
+            })
+          },
+          runBuiltInStep,
+          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
+            agent.id === "change-reviewer"
+              ? { summary: "Findings", findings: [] }
+              : { status: "accepted", findings_to_fix: [] }
+          ),
+          cleanupWorktree
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(result.workspace).toEqual(cleanedWorkspace);
+      expect(cleanupWorktree).toHaveBeenCalledTimes(1);
+      expect(finalReportWorkspaces).toEqual([cleanedWorkspace]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("cleans successful workspaces when preserve_on_success is false and rewrites final workspace", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 

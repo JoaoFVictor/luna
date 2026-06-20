@@ -321,6 +321,48 @@ describe("workflow definition loader", () => {
     }
   });
 
+  it("rejects built-in node names that are not registered in the built-in catalog", async () => {
+    const root = await tempWorkflowRoot();
+    const workflowDir = path.join(root, "code-review");
+
+    try {
+      await mkdir(workflowDir, { recursive: true });
+      await writeFile(
+        path.join(workflowDir, "workflow.yaml"),
+        [
+          "id: code-review",
+          "type: workflow",
+          "mode: git_managed_read_only",
+          "input_schema: input.schema.json",
+          "output_schema: output.schema.json",
+          "graph: graph.yaml",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        path.join(workflowDir, "graph.yaml"),
+        [
+          "nodes:",
+          "  - id: unknown",
+          "    type: built_in",
+          "    uses: not_registered",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toThrow(
+        "Unsupported built-in step: not_registered"
+      );
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toMatchObject({
+        code: "workflow_built_in_unknown"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("loads the committed code-review workflow graph", async () => {
     await expect(loadWorkflowDefinition("workflows", "code-review")).resolves.toMatchObject({
       id: "code-review",
