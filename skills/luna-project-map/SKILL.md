@@ -1,0 +1,48 @@
+---
+name: luna-project-map
+description: Use when first working in Luna, orienting to its architecture, deciding where a change belongs, or explaining adapters, workflows, agents, built-ins, tools, MCP, subagents, artifacts, and local-first runtime flow.
+---
+
+# Luna Project Map
+
+Luna is a local-first multi-agent orchestration repo built on Flue. Start by
+reading `README.md` and `examples/configured-workflows.md`.
+
+Runtime flow:
+
+```text
+adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loops -> artifacts
+```
+
+## Extension Points
+
+| Need | Location | Guide |
+| --- | --- | --- |
+| External input source | `src/adapters/<id>/` | `examples/new-adapter.md` |
+| Reusable worker | `agents/<id>/` | `examples/new-agent.md` |
+| Orchestration shape | `workflows/<id>/` | `examples/new-workflow.md` |
+| Deterministic workflow action | `src/core/built-ins/` | `examples/new-built-in.md` |
+| Agent-local callable function | `src/tools/` + registry | `examples/new-tool.md` |
+| LLM/runtime guidance | `skills/<id>/SKILL.md` | existing skills |
+
+## Boundaries
+
+- Adapter: normalize external input into an invocation. Never run workflows.
+- Router: choose workflow deterministically from target/routing config.
+- Workflow: order built-ins, agents, and agent loops.
+- Agent: perform model judgment with a schema output.
+- Built-in: deterministic TypeScript node called by YAML.
+- Tool: deterministic function exposed to an agent.
+- Skill: instructions loaded by an LLM or configured runtime agent.
+
+## Do Not Reintroduce Old Architecture
+
+- Do not add `src/workflows/<workflow>.ts`; use the generic `luna` entrypoint.
+- Do not add one-off CLI commands like `review-pr <url>`.
+- Do not duplicate built-in names outside `src/core/built-ins/catalog.ts`.
+- Do not keep compatibility wrappers or deadcode.
+
+## Verification
+
+Run focused tests for the changed area and `npm run typecheck`. Before finishing
+a broad change, run `npm test` and `npm run build`.

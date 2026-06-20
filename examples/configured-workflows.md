@@ -105,6 +105,20 @@ Local tools:
 - `repository.status`
 - `repository.diff-summary`
 
+Project skills:
+
+- `luna-project-map`
+- `luna-create-agent`
+- `luna-create-workflow`
+- `luna-create-adapter`
+- `luna-create-built-in`
+- `luna-create-tool`
+- `luna-review-change`
+- `implementation-safe-git`
+
+Agent configs reference skills by relative paths to `SKILL.md`, for example
+`../../skills/luna-create-workflow/SKILL.md`.
+
 Model profiles:
 
 - `default`
