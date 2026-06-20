@@ -668,6 +668,111 @@ async function finalizeSuccessWorkspace({
   return finalWorkspace;
 }
 
+function cleanupMayRemoveWorktree({
+  workspaceRecord,
+  repository,
+  workspaceConfig,
+  workflowMode,
+  implementationConfig,
+  steps,
+  success
+}: {
+  workspaceRecord?: WorkspaceRecord;
+  repository?: RepositoryConfig;
+  workspaceConfig: AppConfig["workspace"];
+  workflowMode: "git_managed_read_only" | "git_managed_write";
+  implementationConfig?: RuntimeConfigState["implementation"];
+  steps: Record<string, unknown>;
+  success: boolean;
+}): boolean {
+  if (workspaceRecord === undefined || repository === undefined) {
+    return false;
+  }
+
+  if (!success) {
+    return !workspaceConfig.preserve_on_failure;
+  }
+
+  if (workflowMode === "git_managed_read_only") {
+    return !workspaceConfig.preserve_on_success;
+  }
+
+  return !shouldPreserveWriteWorkspace({
+    commitEnabled: implementationConfig?.commit.enabled ?? false,
+    validationPassed: validationPassedFromSteps(steps),
+    acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
+    commitSkippedOrFailed: commitSkippedOrFailed(
+      implementationConfig?.commit.enabled ?? false,
+      steps.commit ?? steps.commit_changes
+    ),
+    pushSkippedOrFailed: pushSkippedOrFailed(
+      implementationConfig?.push.enabled ?? false,
+      steps.push ?? steps.push_branch
+    ),
+    pullRequestSkippedOrFailed: pullRequestSkippedOrFailed(
+      implementationConfig?.pull_request.enabled ?? false,
+      steps.pull_request ?? steps.open_pull_request
+    )
+  }).preserve;
+}
+
+async function withRepositoryCleanupLock<T>({
+  lockManager,
+  repository,
+  locked,
+  run
+}: {
+  lockManager?: SchedulerLockManager;
+  repository?: RepositoryConfig;
+  locked: boolean;
+  run: () => Promise<T>;
+}): Promise<T> {
+  if (!locked || repository === undefined) {
+    return await run();
+  }
+
+  if (lockManager === undefined) {
+    throw configuredWorkflowError(
+      "Lock manager is missing",
+      "lock_manager_missing"
+    );
+  }
+
+  const release = await lockManager.acquire(
+    `repository:${repository.id}`,
+    "exclusive"
+  );
+  let operationError: unknown;
+
+  try {
+    return await run();
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    try {
+      await release();
+    } catch (error) {
+      if (
+        operationError !== undefined &&
+        ((typeof operationError === "object" && operationError !== null) ||
+          typeof operationError === "function")
+      ) {
+        Object.defineProperty(operationError, "releaseErrors", {
+          configurable: true,
+          value: [error]
+        });
+      } else {
+        throw configuredWorkflowError(
+          "Failed to release workflow lock",
+          "lock_release_failed",
+          error
+        );
+      }
+    }
+  }
+}
+
 async function finalizeWriteSuccessWorkspace({
   artifactStore,
   workspaceRecord,
@@ -1098,11 +1203,16 @@ export async function runConfiguredWorkflow({
   const activeBuiltInStepRegistry =
     dependencies.builtInStepRegistry ?? defaultBuiltInStepRegistry;
   let workflowId: string | undefined;
+  let workflowMode:
+    | "git_managed_read_only"
+    | "git_managed_write"
+    | undefined;
   let run: RunIdentity | undefined;
   let artifactStore: ArtifactStore | undefined;
   let repository: RepositoryConfig | undefined;
   let workspaceRecord: WorkspaceRecord | undefined;
   let persistedWorkspaceRecord: WorkspaceRecord | undefined;
+  let lockManager: SchedulerLockManager | undefined;
 
   try {
     workflowId = workflowIdFromRoute(
@@ -1114,6 +1224,7 @@ export async function runConfiguredWorkflow({
       resolvedWorkflowsRoot,
       workflowId
     );
+    workflowMode = workflow.mode;
     run = makeRunIdentity(invocation, {
       workflowId,
       attempt,
@@ -1146,7 +1257,7 @@ export async function runConfiguredWorkflow({
     const createLockManager =
       dependencies.lockManagerFactory ??
       ((options: RunLockManagerOptions) => new RunLockManager(options));
-    const lockManager = createLockManager({
+    lockManager = createLockManager({
       root: lockRoot,
       runId: run.run_id,
       flueRunId: run.flue_run_id,
@@ -1221,16 +1332,31 @@ export async function runConfiguredWorkflow({
       throw error;
     }
 
-    const finalWorkspace = await finalizeSuccessWorkspace({
-      artifactStore,
-      workspaceRecord,
-      persistedWorkspaceRecord,
+    const successArtifactStore = artifactStore;
+    const finalWorkspace = await withRepositoryCleanupLock({
+      lockManager,
       repository,
-      workspaceConfig: configs.app.workspace,
-      workflowMode: workflow.mode,
-      implementationConfig: configs.runtimeConfig.implementation,
-      steps: state.steps,
-      cleanupWorktree
+      locked: cleanupMayRemoveWorktree({
+        workspaceRecord,
+        repository,
+        workspaceConfig: configs.app.workspace,
+        workflowMode: workflow.mode,
+        implementationConfig: configs.runtimeConfig.implementation,
+        steps: state.steps,
+        success: true
+      }),
+      run: async () =>
+        await finalizeSuccessWorkspace({
+          artifactStore: successArtifactStore,
+          workspaceRecord,
+          persistedWorkspaceRecord,
+          repository,
+          workspaceConfig: configs.app.workspace,
+          workflowMode: workflow.mode,
+          implementationConfig: configs.runtimeConfig.implementation,
+          steps: state.steps,
+          cleanupWorktree
+        })
     });
     if (finalWorkspace !== undefined) {
       workspaceRecord = finalWorkspace;
@@ -1298,6 +1424,7 @@ export async function runConfiguredWorkflow({
     artifactStore = failure.artifactStore;
     run = failure.run;
     workflowId = failure.workflowId;
+    const failureArtifactStore = artifactStore;
     emitRunLog(logger, "error", "luna.run.failed", {
       "luna.run_id": run.run_id,
       "luna.flue_run_id": run.flue_run_id,
@@ -1318,13 +1445,27 @@ export async function runConfiguredWorkflow({
     let finalWorkspace: WorkspaceRecord | undefined;
     const workspaceWriteError = await (async () => {
       try {
-        finalWorkspace = await finalizeFailureWorkspace({
-          artifactStore,
-          workspaceRecord,
-          persistedWorkspaceRecord,
+        finalWorkspace = await withRepositoryCleanupLock({
+          lockManager,
           repository,
-          workspaceConfig: configs.app.workspace,
-          cleanupWorktree
+          locked: cleanupMayRemoveWorktree({
+            workspaceRecord,
+            repository,
+            workspaceConfig: configs.app.workspace,
+            workflowMode: workflowMode ?? "git_managed_read_only",
+            implementationConfig: configs.runtimeConfig.implementation,
+            steps: {},
+            success: false
+          }),
+          run: async () =>
+            await finalizeFailureWorkspace({
+              artifactStore: failureArtifactStore,
+              workspaceRecord,
+              persistedWorkspaceRecord,
+              repository,
+              workspaceConfig: configs.app.workspace,
+              cleanupWorktree
+            })
         });
         return undefined;
       } catch (cause) {

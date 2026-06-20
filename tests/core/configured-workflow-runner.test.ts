@@ -1295,6 +1295,65 @@ describe("configured workflow runner", () => {
       expect(events).toEqual([
         "acquire:repository:repo",
         "run:prepare_worktree",
+        "release:repository:repo",
+        "acquire:repository:repo",
+        "release:repository:repo"
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("acquires repository lock before cleanup can remove a worktree", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "lock-review");
+      await writeLockingWorkflow(root);
+
+      const events: string[] = [];
+      const workspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          lockManagerFactory: () => ({
+            acquire: async (resource) => {
+              events.push(`acquire:${resource}`);
+              return async () => {
+                events.push(`release:${resource}`);
+              };
+            }
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
+            events.push(`run:${uses}`);
+            return workspace;
+          }),
+          cleanupWorktree: vi.fn(async ({ workspaceRecord }) => {
+            events.push("cleanup");
+            return {
+              ...workspaceRecord,
+              preserved: false,
+              reason: "success_cleanup"
+            };
+          })
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(events).toEqual([
+        "acquire:repository:repo",
+        "run:prepare_worktree",
+        "release:repository:repo",
+        "acquire:repository:repo",
+        "cleanup",
         "release:repository:repo"
       ]);
     } finally {
@@ -2199,6 +2258,99 @@ describe("configured workflow runner", () => {
       await expect(
         readJson(root, "code-review", "run-1", "workspace.json")
       ).resolves.toEqual(expectedWorkspace);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("acquires repository lock before failure cleanup can remove a worktree", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeFile(
+        path.join(root, "app.yaml"),
+        [
+          "workspace:",
+          "  strategy: git_worktree",
+          `  root: ${JSON.stringify(path.join(root, "workspaces"))}`,
+          "  preserve_on_success: false",
+          "  preserve_on_failure: false",
+          "artifacts:",
+          `  root: ${JSON.stringify(path.join(root, "artifacts"))}`,
+          ""
+        ].join("\n")
+      );
+      await writeFullCodeReviewWorkflow(root);
+      await writeAgent(root, "review-planner");
+      await writeAgent(root, "change-reviewer");
+      await writeAgent(root, "change-acceptance-reviewer");
+
+      const events: string[] = [];
+      const preparedWorkspace: WorkspaceRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared"
+      };
+      const reviewError = new Error("review failed") as Error & { code: string };
+      reviewError.code = "review_failed";
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        workflowsRoot: path.join(root, "workflows"),
+        agentsRoot: path.join(root, "agents"),
+        throwOnError: false,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          lockManagerFactory: () => ({
+            acquire: async (resource) => {
+              events.push(`acquire:${resource}`);
+              return async () => {
+                events.push(`release:${resource}`);
+              };
+            }
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
+            if (uses === "prepare_worktree") {
+              events.push(`run:${uses}`);
+              return preparedWorkspace;
+            }
+
+            if (uses === "collect_repo_context") {
+              return { files: [] };
+            }
+
+            return { status: "ok" };
+          }),
+          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) => {
+            if (agent.id === "change-reviewer") {
+              throw reviewError;
+            }
+
+            return { summary: "Plan", focus_areas: [], files_to_review: [] };
+          }),
+          cleanupWorktree: vi.fn(async ({ workspaceRecord }) => {
+            events.push("cleanup");
+            return {
+              ...workspaceRecord,
+              preserved: false,
+              reason: "failure_cleanup"
+            };
+          })
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      expect(events).toEqual([
+        "acquire:repository:repo",
+        "run:prepare_worktree",
+        "release:repository:repo",
+        "acquire:repository:repo",
+        "cleanup",
+        "release:repository:repo"
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
