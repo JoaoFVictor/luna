@@ -262,7 +262,10 @@ describe("implementation built-ins", () => {
       locks: [{ resource: "repository", mode: "exclusive" }]
     });
     expect(prepareImplementationWorktree).toHaveBeenCalledWith({
-      invocation: jiraInvocation,
+      subject: {
+        key: "ABC-123",
+        title: "Fix checkout validation"
+      },
       repository,
       workspaceRoot: "/tmp/worktrees",
       runId: "run-123",

@@ -75,7 +75,10 @@ export type BuiltInStepDependencies = {
     acceptance: AcceptanceDecision;
   }) => string;
   prepareImplementationWorktree?: (input: {
-    invocation: Invocation;
+    subject: {
+      key: string;
+      title?: string;
+    };
     repository: RepositoryConfig;
     workspaceRoot: string;
     runId: string;

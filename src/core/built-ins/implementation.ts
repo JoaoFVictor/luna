@@ -75,9 +75,13 @@ export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
       dependencies.prepareImplementationWorktree ??
       defaultPrepareImplementationWorktree;
     const implementation = requiredImplementationFrom(state);
+    const task = jiraIssueContextFrom(jiraIssueInvocationFrom(state));
 
     return await prepareImplementationWorktree({
-      invocation: jiraIssueInvocationFrom(state),
+      subject: {
+        key: task.issueKey,
+        title: task.title
+      },
       repository: repositoryFrom(state),
       workspaceRoot: workspaceRootFrom(state),
       runId: runIdFrom(state),
