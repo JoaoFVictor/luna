@@ -13,6 +13,7 @@ import {
   createRealGitReviewFixture,
   type RealGitReviewFixture
 } from "../fixtures/git-repo.js";
+import { providerAwareWorkflowDependencies } from "./provider-aware-workflow-dependencies.js";
 
 const repoRoot = process.cwd();
 const runId = "20260618t120000z-octo-hello-pr-123-a1";
@@ -291,7 +292,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
       configRoot,
       workflowsRoot: "workflows",
       agentsRoot: "agents",
-      dependencies: {
+      dependencies: providerAwareWorkflowDependencies({
         createRunIdentity: () => ({
           run_id: runId,
           workflow_id: "code-review",
@@ -320,7 +321,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
 
           return acceptance;
         }
-      }
+      })
     });
 
     const repoContext = await readJson<{
@@ -411,7 +412,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
         configRoot,
         workflowsRoot: path.join(repoRoot, "workflows"),
         agentsRoot: path.join(repoRoot, "agents"),
-        dependencies: {
+        dependencies: providerAwareWorkflowDependencies({
           createRunIdentity: () => ({
             run_id: runId,
             workflow_id: "code-review",
@@ -440,14 +441,14 @@ describe("configured code review workflow end-to-end with real Git", () => {
 
             return acceptance;
           }
-        }
+        })
       }),
       runConfiguredWorkflow({
         invocation: implementationInvocation,
         configRoot,
         workflowsRoot: path.join(repoRoot, "workflows"),
         agentsRoot: path.join(repoRoot, "agents"),
-        dependencies: {
+        dependencies: providerAwareWorkflowDependencies({
           createRunIdentity: () => ({
             run_id: implementationRunId,
             workflow_id: "implementation",
@@ -542,7 +543,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
             final_validation: { passed: true },
             result: { status: "passed" }
           })
-        }
+        })
       })
     ]);
 
