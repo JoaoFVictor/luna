@@ -1,5 +1,11 @@
+import type { AgentDefinition } from "../agent-definition.js";
+
+export type LunaToolMode = AgentDefinition["mode"];
+
 export type LunaToolSafety = {
-  writes: boolean;
+  localWrites: boolean;
+  network: boolean;
+  externalSideEffects: boolean;
 };
 
 export type LunaToolDependencies = {
@@ -11,8 +17,10 @@ export type LunaToolDefinition<Input, Output> = {
   description: string;
   parameters: unknown;
   safety: LunaToolSafety;
-  modes: readonly string[];
+  modes: readonly LunaToolMode[];
   createHandler(
     dependencies: LunaToolDependencies
   ): (input: Input) => Promise<Output>;
 };
+
+export type AnyLunaToolDefinition = LunaToolDefinition<any, unknown>;

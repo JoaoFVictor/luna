@@ -125,10 +125,14 @@ describe("flue tool registry", () => {
 
     expect(registeredFlueToolSafety()).toEqual({
       "repository.status": {
-        writes: false
+        localWrites: false,
+        network: false,
+        externalSideEffects: false
       },
       "repository.diff-summary": {
-        writes: false
+        localWrites: false,
+        network: false,
+        externalSideEffects: false
       }
     });
     expect(registeredFlueToolSafety()).toEqual(
@@ -143,9 +147,11 @@ describe("flue tool registry", () => {
 
     expect(() =>
       assertToolSafety({
-        writes: "yes" as never
+        localWrites: "yes" as never,
+        network: false,
+        externalSideEffects: false
       })
-    ).toThrow("tools must declare whether they write");
+    ).toThrow("tools must declare whether they perform local writes");
   });
 
   it("keeps Flue defineTool out of Luna-native tools", async () => {

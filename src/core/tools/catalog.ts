@@ -1,4 +1,4 @@
-import type { LunaToolDefinition } from "./contracts.js";
+import type { AnyLunaToolDefinition } from "./contracts.js";
 import {
   repositoryDiffSummaryTool,
   repositoryStatusTool
@@ -7,4 +7,4 @@ import {
 export const lunaToolCatalog = {
   [repositoryStatusTool.id]: repositoryStatusTool,
   [repositoryDiffSummaryTool.id]: repositoryDiffSummaryTool
-} satisfies Record<string, LunaToolDefinition<Record<string, never>, string>>;
+} satisfies Record<string, AnyLunaToolDefinition>;

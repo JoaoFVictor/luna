@@ -123,7 +123,7 @@ override is used. You do not create a new TypeScript file under
 
 ## Agent Capabilities
 
-Agents can declare Flue skills and local tools in `agent.yaml`:
+Agents can declare runtime skills and Luna-native local tools in `agent.yaml`:
 
 ```yaml
 skills:
@@ -134,9 +134,9 @@ tools:
 ```
 
 Skills are paths to `SKILL.md` files relative to the agent directory. Tools are
-IDs resolved through Luna's TypeScript registry. Workflows do not declare tools
-directly; the workflow chooses agents, and each agent brings its own
-capabilities.
+IDs resolved through Luna's TypeScript catalog and materialized for the current
+agent runtime. Workflows do not declare tools directly; the workflow chooses
+agents, and each agent brings its own capabilities.
 
 ## MCP Capabilities
 

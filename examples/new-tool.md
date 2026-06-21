@@ -1,8 +1,9 @@
 # Create a new local tool
 
-Local tools are deterministic TypeScript functions exposed to Flue agents. Use
-a tool when an agent needs a small, explicit capability such as reading git
-status, summarizing a diff, or querying a local system through controlled code.
+Local tools are deterministic Luna-native TypeScript functions that can be
+materialized for the current agent runtime. Use a tool when an agent needs a
+small, explicit capability such as reading git status, summarizing a diff, or
+querying a local system through controlled code.
 
 Do not use a tool for orchestration. Workflow order belongs in `graph.yaml`.
 Do not use a tool for external input normalization. That belongs in an input
@@ -23,7 +24,9 @@ Start with the most conservative safety metadata:
 
 ```yaml
 safety:
-  writes: false
+  localWrites: false
+  network: false
+  externalSideEffects: false
 ```
 
 Read-only agents may use non-writing tools when the agent declares them.
@@ -52,7 +55,11 @@ export const repositoryLastCommitTool: LunaToolDefinition<
   id: "repository.last-commit",
   description: "Return the latest git commit summary for the bound worktree.",
   parameters: emptyParameters,
-  safety: { writes: false },
+  safety: {
+    localWrites: false,
+    network: false,
+    externalSideEffects: false
+  },
   modes: ["read_only", "trusted_host_local_write"],
   createHandler: ({ cwd }) =>
     async () => await runGit(cwd, ["log", "-1", "--oneline"])

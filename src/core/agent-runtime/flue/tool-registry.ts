@@ -1,6 +1,9 @@
 import { defineTool, type ToolDefinition } from "@flue/runtime";
 import { lunaToolCatalog } from "../../tools/catalog.js";
-import type { LunaToolSafety } from "../../tools/contracts.js";
+import type {
+  AnyLunaToolDefinition,
+  LunaToolSafety
+} from "../../tools/contracts.js";
 import type { AgentDefinition } from "../../agent-definition.js";
 
 type AgentMode = AgentDefinition["mode"];
@@ -25,12 +28,44 @@ function assertFlueParameters(parameters: unknown): asserts parameters is object
 }
 
 export function assertToolSafety(safety: LunaToolSafety): void {
-  if (typeof safety.writes !== "boolean") {
+  if (typeof safety.localWrites !== "boolean") {
     throw toolError(
-      "tools must declare whether they write",
+      "tools must declare whether they perform local writes",
       "flue_tool_safety_invalid"
     );
   }
+  if (typeof safety.network !== "boolean") {
+    throw toolError(
+      "tools must declare whether they use network access",
+      "flue_tool_safety_invalid"
+    );
+  }
+  if (typeof safety.externalSideEffects !== "boolean") {
+    throw toolError(
+      "tools must declare whether they perform external side effects",
+      "flue_tool_safety_invalid"
+    );
+  }
+}
+
+function stringifyToolOutput(output: unknown): string {
+  if (typeof output === "string") {
+    return output;
+  }
+
+  return JSON.stringify(output) ?? String(output);
+}
+
+function createFlueExecute({
+  tool,
+  cwd
+}: {
+  tool: AnyLunaToolDefinition;
+  cwd: string;
+}): ToolDefinition["execute"] {
+  const execute = tool.createHandler({ cwd });
+
+  return async (input) => stringifyToolOutput(await execute(input));
 }
 
 export function registeredFlueToolSafety(): Record<string, LunaToolSafety> {
@@ -64,13 +99,12 @@ export function resolveFlueTools({
 
     assertToolSafety(tool.safety);
     assertFlueParameters(tool.parameters);
-    const execute = tool.createHandler({ cwd });
 
     return defineTool({
       name: flueToolName(tool.id),
       description: tool.description,
       parameters: tool.parameters,
-      execute
+      execute: createFlueExecute({ tool, cwd })
     });
   });
 }

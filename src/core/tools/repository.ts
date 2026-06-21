@@ -21,7 +21,11 @@ export const repositoryStatusTool: RepositoryToolDefinition = {
   id: "repository.status",
   description: "Return short git status for the bound repository worktree.",
   parameters: emptyParameters,
-  safety: { writes: false },
+  safety: {
+    localWrites: false,
+    network: false,
+    externalSideEffects: false
+  },
   modes: allAgentModes,
   createHandler: (dependencies) =>
     repositoryHandler(dependencies, ["status", "--short"])
@@ -31,7 +35,11 @@ export const repositoryDiffSummaryTool: RepositoryToolDefinition = {
   id: "repository.diff-summary",
   description: "Return compact git diff stat for the bound repository worktree.",
   parameters: emptyParameters,
-  safety: { writes: false },
+  safety: {
+    localWrites: false,
+    network: false,
+    externalSideEffects: false
+  },
   modes: allAgentModes,
   createHandler: (dependencies) =>
     repositoryHandler(dependencies, ["diff", "--stat"])
