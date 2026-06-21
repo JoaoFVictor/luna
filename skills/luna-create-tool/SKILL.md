@@ -37,6 +37,9 @@ them into safe model-facing names, like `repository_status`. Do not import
 `@flue/runtime` or call `defineTool` from `src/core/tools/**`; that belongs only
 at the Flue adapter boundary.
 
+Keep Flue-specific tests and imports pointed at `src/core/agent-runtime/flue/**`.
+Do not add forwarding files under old `src/core/flue-*.ts` paths.
+
 ## Testing
 
 Update `tests/core/flue-tool-registry.test.ts`. Cover resolution, execution,

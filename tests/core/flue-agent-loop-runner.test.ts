@@ -289,7 +289,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
         options
       }))
     }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
     vi.doMock("../../src/core/agents/loop-runner.js", async (importOriginal) => ({
@@ -449,7 +449,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
     }));
 
     vi.doMock("@flue/runtime/node", () => ({ local }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
     vi.doMock("../../src/core/validation-runner.js", async (importOriginal) => ({
@@ -609,7 +609,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
     });
 
     vi.doMock("@flue/runtime/node", () => ({ local: vi.fn() }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
     vi.doMock("../../src/core/agents/loop-runner.js", async (importOriginal) => ({

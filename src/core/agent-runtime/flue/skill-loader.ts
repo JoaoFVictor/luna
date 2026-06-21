@@ -3,7 +3,7 @@ import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
-import { isInsideRoot } from "./path-security.js";
+import { isInsideRoot } from "../../path-security.js";
 
 export type WorkspaceSkill = Skill & {
   __flueWorkspaceSkill: true;

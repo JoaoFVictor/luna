@@ -1,5 +1,11 @@
-import type { LunaEvent, LunaObservabilitySink } from "./events.js";
-import { sanitizeAttributes } from "./sanitize.js";
+import type { PromptModel, PromptUsage } from "@flue/runtime";
+import type { LunaEvent, LunaObservabilitySink } from "../../observability/events.js";
+import { sanitizeAttributes } from "../../observability/sanitize.js";
+import type {
+  LunaCostSummary,
+  LunaTokenSummary,
+  LunaUsageRecord
+} from "../../observability/summary.js";
 
 type FlueLogAttributes = Record<string, unknown>;
 
@@ -63,5 +69,52 @@ export function createFlueLogSink(log: FlueLog): LunaObservabilitySink {
     append: async (event) => {
       log[event.severity](event.type, attributesForEvent(event));
     }
+  };
+}
+
+function tokensFromFlueUsage(usage: PromptUsage): LunaTokenSummary {
+  return {
+    input: usage.input,
+    output: usage.output,
+    cache_read: usage.cacheRead,
+    cache_write: usage.cacheWrite,
+    total: usage.totalTokens
+  };
+}
+
+function costFromFlueUsage(usage: PromptUsage): LunaCostSummary {
+  return {
+    input: usage.cost.input,
+    output: usage.cost.output,
+    cache_read: usage.cost.cacheRead,
+    cache_write: usage.cost.cacheWrite,
+    total: usage.cost.total,
+    unit: "provider_cost_unit"
+  };
+}
+
+export function usageFromFlueResponse({
+  promptId,
+  modelProfile,
+  response
+}: {
+  promptId: string;
+  modelProfile: string;
+  response: object | undefined;
+}): LunaUsageRecord | undefined {
+  const usage = (response as { usage?: PromptUsage } | undefined)?.usage;
+  const model = (response as { model?: PromptModel } | undefined)?.model;
+
+  if (usage === undefined || model === undefined) {
+    return undefined;
+  }
+
+  return {
+    prompt_id: promptId,
+    model_profile: modelProfile,
+    provider: model.provider,
+    model: model.id,
+    tokens: tokensFromFlueUsage(usage),
+    cost: costFromFlueUsage(usage)
   };
 }

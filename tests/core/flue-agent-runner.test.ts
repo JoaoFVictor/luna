@@ -367,7 +367,7 @@ describe("read-only Flue agent runner", () => {
       subagents,
       close
     }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
 
@@ -476,7 +476,7 @@ describe("read-only Flue agent runner", () => {
       subagents: [],
       close
     }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
 
@@ -576,7 +576,7 @@ describe("read-only Flue agent runner", () => {
       subagents: [],
       close
     }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
 

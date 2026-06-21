@@ -7,14 +7,14 @@ import {
   inputAdapterRegistry,
   unknownAdapterError,
   type InputAdapterRegistry
-} from "../adapters/registry.js";
-import type { AdapterContext } from "../adapters/types.js";
+} from "../../../adapters/registry.js";
+import type { AdapterContext } from "../../../adapters/types.js";
 import {
   InvocationSchema,
   RouteTargetSchema,
   type Invocation,
   type RouteTarget
-} from "./types.js";
+} from "../../types.js";
 
 export type CliArgs = {
   command: "run";

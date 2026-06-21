@@ -40,6 +40,10 @@ Keep orchestration in `workflows/<id>/graph.yaml`, not in agent instructions.
 - `mcp_servers`: IDs from `config/mcp.yaml`.
 - `subagents`: referenced Luna agent IDs.
 
+Flue materializes skills, tools, MCP servers, and subagent profiles through
+`src/core/agent-runtime/flue/capabilities.ts`; do not import Flue runtime APIs
+from generic agent definition or policy modules.
+
 Subagents are lightweight internal delegation. A referenced subagent may use
 skills as instructions, but must not declare local tools, MCP servers, or nested
 subagents; use a workflow graph node when the delegated work needs artifacts,
@@ -50,9 +54,9 @@ gates, tools, MCP, or another delegation tree.
 Run:
 
 ```sh
-npm test -- tests/core/agent-definition.test.ts
-npm test -- tests/core/flue-agent-capabilities.test.ts tests/core/flue-subagent-profiles.test.ts
-npm run typecheck
+rtk npm test -- tests/core/agent-definition.test.ts
+rtk npm test -- tests/core/flue-agent-capabilities.test.ts tests/core/flue-subagent-profiles.test.ts
+rtk npm run typecheck
 ```
 
 If the agent is wired into a workflow, also run

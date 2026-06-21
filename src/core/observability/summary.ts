@@ -1,4 +1,3 @@
-import type { PromptModel, PromptUsage } from "@flue/runtime";
 import type { ArtifactStore } from "../artifact-store.js";
 
 export type LunaTokenSummary = {
@@ -216,51 +215,4 @@ export function recordRejectedCapability(
     id: rejection.id,
     reason: rejection.reason
   });
-}
-
-function tokensFromFlueUsage(usage: PromptUsage): LunaTokenSummary {
-  return {
-    input: usage.input,
-    output: usage.output,
-    cache_read: usage.cacheRead,
-    cache_write: usage.cacheWrite,
-    total: usage.totalTokens
-  };
-}
-
-function costFromFlueUsage(usage: PromptUsage): LunaCostSummary {
-  return {
-    input: usage.cost.input,
-    output: usage.cost.output,
-    cache_read: usage.cost.cacheRead,
-    cache_write: usage.cost.cacheWrite,
-    total: usage.cost.total,
-    unit: "provider_cost_unit"
-  };
-}
-
-export function usageFromFlueResponse({
-  promptId,
-  modelProfile,
-  response
-}: {
-  promptId: string;
-  modelProfile: string;
-  response: object | undefined;
-}): LunaUsageRecord | undefined {
-  const usage = (response as { usage?: PromptUsage } | undefined)?.usage;
-  const model = (response as { model?: PromptModel } | undefined)?.model;
-
-  if (usage === undefined || model === undefined) {
-    return undefined;
-  }
-
-  return {
-    prompt_id: promptId,
-    model_profile: modelProfile,
-    provider: model.provider,
-    model: model.id,
-    tokens: tokensFromFlueUsage(usage),
-    cost: costFromFlueUsage(usage)
-  };
 }

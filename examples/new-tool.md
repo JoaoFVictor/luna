@@ -87,6 +87,8 @@ Use `read_only` only when the tool is safe for read-only agents. Reserve
 write worktree. Do not import `@flue/runtime` or call `defineTool` from
 `src/core/tools/**`; `src/core/agent-runtime/flue/tool-registry.ts` owns that
 adapter boundary.
+Other Flue runtime wiring, including capability resolution and workflow launch
+assembly, also lives under `src/core/agent-runtime/flue/**`.
 
 ## 4. Attach the tool to an agent
 

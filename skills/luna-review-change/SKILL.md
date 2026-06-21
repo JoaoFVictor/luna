@@ -18,6 +18,9 @@ Review Luna changes as architecture, not just code.
 - Built-ins are registered only through `src/core/built-ins/catalog.ts`.
 - Tools are registered only through `src/core/tools/catalog.ts`; Flue
   materialization stays in `src/core/agent-runtime/flue/tool-registry.ts`.
+- Flue-specific runner, capabilities, MCP, subagent profile, Pi auth, model
+  projection, observability parsing, and workflow factory code stays under
+  `src/core/agent-runtime/flue/**`.
 - Docs/examples changed when public behavior or authoring patterns changed.
 
 ## Review Order
@@ -33,6 +36,7 @@ Review Luna changes as architecture, not just code.
 ```sh
 rg -n "built-in-steps|src/workflows/.*\\.ts|TODO|TBD" AGENTS.md README.md examples skills src tests
 rg -n "from \".*built-in-steps\\.js\"|from \"../../src/core/built-in-steps\\.js\"" src tests
+rg -n "src/core/flue-|src/core/pi-auth|observability/flue-log-sink" src tests examples skills
 ```
 
 Do not add `review-pr <url>` except inside docs as an explicit anti-example.

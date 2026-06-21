@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createFlueLogSink } from "../../src/core/observability/flue-log-sink.js";
+import { createFlueLogSink } from "../../src/core/agent-runtime/flue/observability.js";
 import type { LunaEvent } from "../../src/core/observability/luna-observability.js";
 
 const baseEvent = {

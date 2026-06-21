@@ -15,7 +15,7 @@ import {
   parseCliArgs,
   parseWorkflowTarget,
   resolveFlueCliBin
-} from "../../src/core/flue-cli.js";
+} from "../../src/core/agent-runtime/flue/cli.js";
 
 const validInvocation: Invocation = {
   version: "2026-06",
@@ -347,7 +347,9 @@ describe("flue local CLI wrapper", () => {
       throw new Error("CLI should invoke Flue, not import the workflow");
     });
 
-    const { main: isolatedMain } = await import("../../src/core/flue-cli.js");
+    const { main: isolatedMain } = await import(
+      "../../src/core/agent-runtime/flue/cli.js"
+    );
     const invocationFile = path.join(
       await mkdtemp(path.join(tmpdir(), "luna-cli-workflow-")),
       "invocation.json"

@@ -4,13 +4,13 @@ import path from "node:path";
 import type { ToolDefinition } from "@flue/runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentDefinition } from "../../src/core/agents/definition.js";
-import { resolveFlueMcpTools } from "../../src/core/flue-mcp-capabilities.js";
-import { resolveFlueAgentCapabilities } from "../../src/core/flue-agent-capabilities.js";
+import { resolveFlueMcpTools } from "../../src/core/agent-runtime/flue/mcp-capabilities.js";
+import { resolveFlueAgentCapabilities } from "../../src/core/agent-runtime/flue/capabilities.js";
 import type { McpConfig } from "../../src/core/mcp-config.js";
 import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
-vi.mock("../../src/core/flue-mcp-capabilities.js", () => ({
+vi.mock("../../src/core/agent-runtime/flue/mcp-capabilities.js", () => ({
   resolveFlueMcpTools: vi.fn()
 }));
 
@@ -421,17 +421,17 @@ describe("flue agent capabilities", () => {
 
     try {
       vi.resetModules();
-      vi.doMock("../../src/core/flue-mcp-capabilities.js", () => ({
+      vi.doMock("../../src/core/agent-runtime/flue/mcp-capabilities.js", () => ({
         resolveFlueMcpTools: vi.fn(async () => ({
           tools: [],
           close: async () => {}
         }))
       }));
-      vi.doMock("../../src/core/flue-subagent-profiles.js", () => ({
+      vi.doMock("../../src/core/agent-runtime/flue/subagent-profiles.js", () => ({
         resolveFlueSubagentProfiles
       }));
       const { resolveFlueAgentCapabilities: resolveWithMockedSubagents } =
-        await import("../../src/core/flue-agent-capabilities.js");
+        await import("../../src/core/agent-runtime/flue/capabilities.js");
 
       await resolveWithMockedSubagents({
         agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
@@ -455,8 +455,8 @@ describe("flue agent capabilities", () => {
         })
       );
     } finally {
-      vi.doUnmock("../../src/core/flue-subagent-profiles.js");
-      vi.doUnmock("../../src/core/flue-mcp-capabilities.js");
+      vi.doUnmock("../../src/core/agent-runtime/flue/subagent-profiles.js");
+      vi.doUnmock("../../src/core/agent-runtime/flue/mcp-capabilities.js");
       vi.resetModules();
       await rm(root, { recursive: true, force: true });
     }
@@ -471,19 +471,19 @@ describe("flue agent capabilities", () => {
 
     try {
       vi.resetModules();
-      vi.doMock("../../src/core/flue-mcp-capabilities.js", () => ({
+      vi.doMock("../../src/core/agent-runtime/flue/mcp-capabilities.js", () => ({
         resolveFlueMcpTools: vi.fn(async () => ({
           tools: [],
           close: async () => {}
         }))
       }));
-      vi.doMock("../../src/core/flue-subagent-profiles.js", () => ({
+      vi.doMock("../../src/core/agent-runtime/flue/subagent-profiles.js", () => ({
         resolveFlueSubagentProfiles: vi.fn(async () => {
           throw subagentError;
         })
       }));
       const { resolveFlueAgentCapabilities: resolveWithMockedSubagents } =
-        await import("../../src/core/flue-agent-capabilities.js");
+        await import("../../src/core/agent-runtime/flue/capabilities.js");
 
       await expect(
         resolveWithMockedSubagents({
@@ -496,8 +496,8 @@ describe("flue agent capabilities", () => {
         })
       ).rejects.toBe(subagentError);
     } finally {
-      vi.doUnmock("../../src/core/flue-subagent-profiles.js");
-      vi.doUnmock("../../src/core/flue-mcp-capabilities.js");
+      vi.doUnmock("../../src/core/agent-runtime/flue/subagent-profiles.js");
+      vi.doUnmock("../../src/core/agent-runtime/flue/mcp-capabilities.js");
       vi.resetModules();
       await rm(root, { recursive: true, force: true });
     }

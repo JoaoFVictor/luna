@@ -1,18 +1,18 @@
 import type { AgentProfile, Skill, ToolDefinition } from "@flue/runtime";
-import type { AgentDefinition } from "./agents/definition.js";
-import { resolveFlueMcpTools } from "./flue-mcp-capabilities.js";
-import { loadFlueSkill } from "./flue-skill-loader.js";
-import { resolveFlueSubagentProfiles } from "./flue-subagent-profiles.js";
-import { resolveFlueTools } from "./agent-runtime/flue/tool-registry.js";
-import type { McpConfig } from "./mcp-config.js";
-import type { ResolvedModelProfiles } from "./model-config.js";
+import type { AgentDefinition } from "../../agents/definition.js";
+import { resolveFlueMcpTools } from "./mcp-capabilities.js";
+import { loadFlueSkill } from "./skill-loader.js";
+import { resolveFlueSubagentProfiles } from "./subagent-profiles.js";
+import { resolveFlueTools } from "./tool-registry.js";
+import type { McpConfig } from "../../mcp-config.js";
+import type { ResolvedModelProfiles } from "../../model-config.js";
 import {
   customEvent,
   type LunaObservability
-} from "./observability/luna-observability.js";
-import { sanitizeJsonObject } from "./observability/sanitize.js";
-import type { ObservabilitySummary } from "./observability/summary.js";
-import type { WorkflowSubagentPolicy } from "./agents/subagent-policy.js";
+} from "../../observability/luna-observability.js";
+import { sanitizeJsonObject } from "../../observability/sanitize.js";
+import type { ObservabilitySummary } from "../../observability/summary.js";
+import type { WorkflowSubagentPolicy } from "../../agents/subagent-policy.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];

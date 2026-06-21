@@ -11,7 +11,7 @@ import {
 } from "../../src/core/observability/summary.js";
 import type { RunAgentStepOptions } from "../../src/core/configured-workflow-runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
-import { runFlueAgentStep } from "../../src/core/flue-agent-runner.js";
+import { runFlueAgentStep } from "../../src/core/agent-runtime/flue/runner.js";
 
 async function testAgent(root: string): Promise<AgentDefinition> {
   const directory = path.join(root, "agents", "reviewer");

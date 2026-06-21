@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  resolveModelProfiles,
-  toFlueModelOptions
-} from "../../src/core/model-config.js";
+import { resolveModelProfiles } from "../../src/core/model-config.js";
+import { toFlueModelOptions } from "../../src/core/agent-runtime/flue/model-options.js";
 import type { ModelsConfig } from "../../src/core/types.js";
 
 describe("model config", () => {

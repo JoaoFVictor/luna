@@ -4,28 +4,26 @@ import {
   type AgentProfile,
   type ToolDefinition
 } from "@flue/runtime";
-import { loadAgentDefinition } from "./agents/definition.js";
-import { loadFlueSkill } from "./flue-skill-loader.js";
-import { resolveFlueTools } from "./agent-runtime/flue/tool-registry.js";
-import {
-  toFlueModelOptions,
-  type ResolvedModelProfiles
-} from "./model-config.js";
+import { loadAgentDefinition } from "../../agents/definition.js";
+import { loadFlueSkill } from "./skill-loader.js";
+import { resolveFlueTools } from "./tool-registry.js";
+import { toFlueModelOptions } from "./model-options.js";
+import type { ResolvedModelProfiles } from "../../model-config.js";
 import {
   customEvent,
   type LunaObservability
-} from "./observability/luna-observability.js";
-import { sanitizeJsonObject } from "./observability/sanitize.js";
+} from "../../observability/luna-observability.js";
+import { sanitizeJsonObject } from "../../observability/sanitize.js";
 import {
   recordRejectedCapability,
   type ObservabilitySummary
-} from "./observability/summary.js";
+} from "../../observability/summary.js";
 import {
   type AgentSubagentReference,
   resolveSubagentPolicy,
   type ResolvedSubagentPolicy,
   type WorkflowSubagentPolicy
-} from "./agents/subagent-policy.js";
+} from "../../agents/subagent-policy.js";
 
 function subagentError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };

@@ -12,7 +12,7 @@ import {
   type LunaEvent,
   type LunaObservabilitySink
 } from "../../src/core/observability/luna-observability.js";
-import { createFlueLogSink } from "../../src/core/observability/flue-log-sink.js";
+import { createFlueLogSink } from "../../src/core/agent-runtime/flue/observability.js";
 import { createJsonlEventSink } from "../../src/core/observability/jsonl-sink.js";
 
 type JsonObject = { [key: string]: JsonValue };

@@ -63,76 +63,6 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/flue-agent-capabilities.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-agent-capabilities.ts",
-      "rule": "flue-runtime-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-agent-capabilities.ts",
-      "rule": "legacy-flue-core-path",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-agent-runner.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-agent-runner.ts",
-      "rule": "flue-runtime-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-agent-runner.ts",
-      "rule": "legacy-flue-core-path",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-cli.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-mcp-capabilities.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-mcp-capabilities.ts",
-      "rule": "flue-runtime-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-skill-loader.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-skill-loader.ts",
-      "rule": "flue-runtime-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-subagent-profiles.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-subagent-profiles.ts",
-      "rule": "flue-runtime-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-subagent-profiles.ts",
-      "rule": "legacy-flue-core-path",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/git-failure.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
@@ -168,23 +98,8 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/observability/summary.ts",
-      "rule": "flue-runtime-import",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/path-security.ts",
       "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/pi-auth.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/pi-auth.ts",
-      "rule": "flue-runtime-import",
       "removeByWave": 7
     },
     {
@@ -260,21 +175,6 @@
     {
       "path": "src/core/worktree-diff-collector.ts",
       "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/cli.ts",
-      "rule": "legacy-flue-core-path",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/workflows/luna.ts",
-      "rule": "flue-runtime-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/workflows/luna.ts",
-      "rule": "legacy-flue-core-path",
       "removeByWave": 7
     }
   ]

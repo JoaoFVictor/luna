@@ -13,9 +13,9 @@ import {
   recordPromptOperation,
   recordPromptUsage,
   recordPromptUsageMissing,
-  recordRejectedCapability,
-  usageFromFlueResponse
+  recordRejectedCapability
 } from "../../src/core/observability/summary.js";
+import { usageFromFlueResponse } from "../../src/core/agent-runtime/flue/observability.js";
 
 async function initializedStore(): Promise<{
   root: string;

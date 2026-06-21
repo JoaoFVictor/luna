@@ -11,29 +11,29 @@ import type { GenericSchema } from "valibot";
 import {
   runAgentLoopStateMachine,
   type RunWritableAgentInput
-} from "./agents/loop-runner.js";
+} from "../../agents/loop-runner.js";
 import type {
   RunAgentLoopStepOptions,
   RunAgentStepOptions
-} from "./configured-workflow-runner.js";
+} from "../../configured-workflow-runner.js";
 import {
   resolveFlueAgentCapabilities,
   type ResolvedFlueAgentCapabilities
-} from "./flue-agent-capabilities.js";
-import { toFlueModelOptions } from "./model-config.js";
-import type { McpConfig } from "./mcp-config.js";
-import { customEvent } from "./observability/luna-observability.js";
-import { sanitizeJsonObject } from "./observability/sanitize.js";
+} from "./capabilities.js";
+import { toFlueModelOptions } from "./model-options.js";
+import type { McpConfig } from "../../mcp-config.js";
+import { customEvent } from "../../observability/luna-observability.js";
+import { sanitizeJsonObject } from "../../observability/sanitize.js";
 import {
   recordPromptOperation,
   recordPromptUsage,
   recordPromptUsageMissing,
-  usageFromFlueResponse,
   writeSummaryBestEffort
-} from "./observability/summary.js";
-import type { Invocation } from "./types.js";
-import { runValidationCommands } from "./validation-runner.js";
-import { collectWorktreeDiff } from "./worktree-diff-collector.js";
+} from "../../observability/summary.js";
+import { usageFromFlueResponse } from "./observability.js";
+import type { Invocation } from "../../types.js";
+import { runValidationCommands } from "../../validation-runner.js";
+import { collectWorktreeDiff } from "../../worktree-diff-collector.js";
 
 type FlueAgentRunnerOptions = {
   ctx: FlueContext<Invocation>;

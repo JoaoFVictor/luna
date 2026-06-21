@@ -24,6 +24,7 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 | Deterministic workflow action | `src/core/built-ins/` | `examples/new-built-in.md` |
 | Write-mode git/workspace services | `src/core/write-mode/` | `skills/luna-create-built-in/SKILL.md` |
 | Agent-local callable function | `src/core/tools/` + `src/core/tools/catalog.ts` | `examples/new-tool.md` |
+| Current agent runtime adapter | `src/core/agent-runtime/flue/` | Flue runner, capabilities, CLI launch, model projection, Pi auth, observability bridge |
 | LLM/runtime guidance | `skills/<id>/SKILL.md` | existing skills |
 
 ## Boundaries
@@ -37,6 +38,8 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
   implementation built-ins.
 - Tool: deterministic function exposed to an agent.
 - Skill: instructions loaded by an LLM or configured runtime agent.
+- Runtime adapter: provider-specific materialization for agents, tools, MCP,
+  model options, observability sinks, and workflow launch composition.
 
 ## Do Not Reintroduce Old Architecture
 
@@ -44,6 +47,8 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 - Do not add one-off CLI commands like `review-pr <url>`.
 - Do not duplicate built-in names outside `src/core/built-ins/catalog.ts`.
 - Do not keep compatibility wrappers or deadcode.
+- Do not put Flue-specific implementation files back under `src/core/flue-*` or
+  provider-neutral modules.
 
 ## Verification
 
