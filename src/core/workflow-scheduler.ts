@@ -30,9 +30,10 @@ export type WorkflowScheduleOptions = {
     node: WorkflowNode;
     state: SchedulerWorkflowState;
   }) => unknown | Promise<unknown>;
-  writeNodeArtifact: (
+  writePlannedArtifacts: (
     node: WorkflowNode,
-    output: unknown
+    output: unknown,
+    state: SchedulerWorkflowState
   ) => unknown | Promise<unknown>;
   builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata;
 };
@@ -138,15 +139,7 @@ function duplicateWorkspaceError(stepId: string): Error & { code: string } {
 }
 
 function artifactTargets(node: WorkflowNode): string[] {
-  if (node.artifact === undefined) {
-    return [];
-  }
-
-  if (typeof node.artifact === "string") {
-    return [node.artifact];
-  }
-
-  return Object.values(node.artifact);
+  return (node.artifacts ?? []).map((artifact) => artifact.path);
 }
 
 function isAgentLike(node: WorkflowNode): boolean {
@@ -357,7 +350,7 @@ export async function runWorkflowSchedule({
   summary,
   lockManager,
   runNode,
-  writeNodeArtifact,
+  writePlannedArtifacts,
   builtInMetadata
 }: WorkflowScheduleOptions): Promise<WorkflowScheduleResult> {
   const pending = new Map(nodes.map((node) => [node.id, node]));
@@ -424,7 +417,7 @@ export async function runWorkflowSchedule({
         throw duplicateWorkspaceError(node.id);
       }
 
-      await writeNodeArtifact(node, output);
+      await writePlannedArtifacts(node, output, scheduleState);
       try {
         await emitSchedulerEvent("info", "luna.scheduler.step.finished", {
           step_id: node.id,

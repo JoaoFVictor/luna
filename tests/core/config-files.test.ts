@@ -557,11 +557,23 @@ describe("config definition files", () => {
       expect.objectContaining({
         type: "agent_loop",
         agent: "code-implementer",
-        artifact: {
-          attempts: "implementation-attempts.json",
-          validation: "validation.json",
-          result: "implementation-result.json"
-        }
+        artifacts: expect.arrayContaining([
+          expect.objectContaining({
+            path: "implementation-attempts.json",
+            source: "$.steps.implementation.attempts",
+            format: "json"
+          }),
+          expect.objectContaining({
+            path: "validation.json",
+            source: "$.steps.implementation.validation",
+            format: "json"
+          }),
+          expect.objectContaining({
+            path: "implementation-result.json",
+            source: "$.steps.implementation.result",
+            format: "json"
+          })
+        ])
       })
     );
 

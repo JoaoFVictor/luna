@@ -88,127 +88,127 @@
         "category": "github"
       },
       {
-        "line": 148,
+        "line": 147,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 154,
+        "line": 153,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 213,
+        "line": 212,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 212,
         "marker": "jira",
         "category": "jira"
       },
       {
         "line": 213,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 214,
         "marker": "jira-task-url",
         "category": "jira"
       },
       {
-        "line": 273,
+        "line": 282,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 274,
+        "line": 283,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 278,
+        "line": 287,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 279,
+        "line": 288,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 279,
+        "line": 288,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 285,
+        "line": 294,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 304,
+        "line": 313,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 310,
+        "line": 319,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 311,
+        "line": 320,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 324,
+        "line": 333,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 325,
+        "line": 334,
         "marker": "jira-task-url",
         "category": "jira"
       },
       {
-        "line": 376,
+        "line": 385,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 377,
+        "line": 386,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 377,
+        "line": 386,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 395,
+        "line": 404,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 398,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 403,
+        "line": 407,
         "marker": "github",
         "category": "github"
       },
       {
         "line": 412,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 421,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 420,
+        "line": 429,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 421,
+        "line": 430,
         "marker": "jira",
         "category": "jira"
       }
@@ -314,167 +314,167 @@
         "category": "github"
       },
       {
-        "line": 62,
+        "line": 60,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 62,
+        "line": 60,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 65,
+        "line": 63,
         "marker": "jira-task-url",
         "category": "jira"
       },
       {
-        "line": 65,
+        "line": 63,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 66,
+        "line": 64,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 66,
+        "line": 64,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 72,
+        "line": 70,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 73,
+        "line": 71,
         "marker": "jira-task-url",
         "category": "jira"
       },
       {
-        "line": 228,
+        "line": 229,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 234,
+        "line": 235,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 241,
+        "line": 242,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 243,
+        "line": 244,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 246,
+        "line": 247,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 463,
+        "line": 494,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 463,
+        "line": 494,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 466,
+        "line": 497,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 469,
+        "line": 500,
         "marker": "jira-task-url",
         "category": "jira"
       },
       {
-        "line": 527,
+        "line": 558,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 527,
+        "line": 558,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 561,
+        "line": 592,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 578,
+        "line": 609,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 598,
+        "line": 629,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 604,
+        "line": 635,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 607,
+        "line": 638,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 607,
+        "line": 638,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 607,
+        "line": 638,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 616,
+        "line": 647,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 619,
+        "line": 650,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 625,
+        "line": 656,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 641,
+        "line": 672,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 643,
+        "line": 674,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 651,
+        "line": 682,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 651,
+        "line": 682,
         "marker": "github",
         "category": "github"
       }
@@ -632,62 +632,62 @@
     ],
     "examples/new-adapter.md": [
       {
-        "line": 24,
+        "line": 22,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 25,
+        "line": 23,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 28,
+        "line": 26,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 50,
+        "line": 48,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 50,
+        "line": 48,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 51,
+        "line": 49,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 51,
+        "line": 49,
         "marker": "jira-task-url",
         "category": "jira"
       },
       {
-        "line": 52,
+        "line": 50,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 111,
+        "line": 109,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 112,
+        "line": 110,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 147,
+        "line": 145,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 151,
+        "line": 149,
         "marker": "jira",
         "category": "jira"
       }
@@ -743,32 +743,32 @@
         "category": "jira"
       },
       {
-        "line": 185,
+        "line": 203,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 185,
+        "line": 203,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 188,
+        "line": 206,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 189,
+        "line": 207,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 197,
+        "line": 215,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 200,
+        "line": 218,
         "marker": "jira-task-url",
         "category": "jira"
       }
@@ -1384,17 +1384,17 @@
         "category": "github"
       },
       {
-        "line": 310,
+        "line": 308,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 314,
+        "line": 312,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 327,
+        "line": 325,
         "marker": "github",
         "category": "github"
       }
@@ -1481,42 +1481,42 @@
         "category": "jira"
       },
       {
-        "line": 277,
+        "line": 276,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 281,
+        "line": 280,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 288,
+        "line": 287,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 410,
+        "line": 412,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 445,
+        "line": 447,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 524,
+        "line": 526,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 524,
+        "line": 526,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 528,
+        "line": 530,
         "marker": "github",
         "category": "github"
       }
@@ -1600,87 +1600,67 @@
         "category": "github"
       },
       {
-        "line": 143,
+        "line": 168,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 144,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 149,
+        "line": 265,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 150,
+        "line": 266,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 189,
+        "line": 277,
         "marker": "github-pr-url",
         "category": "github"
       },
       {
-        "line": 285,
-        "marker": "github-pr-url",
-        "category": "github"
-      },
-      {
-        "line": 286,
+        "line": 278,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 297,
-        "marker": "github-pr-url",
-        "category": "github"
-      },
-      {
-        "line": 298,
+        "line": 290,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 310,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 320,
+        "line": 300,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 326,
+        "line": 306,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 328,
+        "line": 308,
         "marker": "jira-task-url",
         "category": "jira"
       },
       {
-        "line": 329,
+        "line": 309,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 338,
+        "line": 318,
         "marker": "jira-task-url",
         "category": "jira"
       },
       {
-        "line": 354,
+        "line": 334,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 360,
+        "line": 340,
         "marker": "github",
         "category": "github"
       }
@@ -1796,14 +1776,64 @@
     ],
     "tests/core/configured-code-review-e2e.test.ts": [
       {
-        "line": 98,
+        "line": 21,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 101,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 164,
+        "line": 163,
         "marker": "github",
         "category": "github"
+      },
+      {
+        "line": 294,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 375,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 380,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 385,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 390,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 414,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 450,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 454,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 482,
+        "marker": "jira",
+        "category": "jira"
       }
     ],
     "tests/core/configured-workflow-runner.test.ts": [
@@ -1868,262 +1898,267 @@
         "category": "jira"
       },
       {
-        "line": 113,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 130,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 132,
-        "marker": "github",
-        "category": "github"
-      },
-      {
         "line": 145,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 158,
+        "line": 162,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 164,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 177,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 190,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 436,
+        "line": 558,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 792,
+        "line": 964,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 795,
+        "line": 967,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1039,
+        "line": 1226,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1105,
+        "line": 1292,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1187,
+        "line": 1374,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1242,
+        "line": 1429,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1293,
+        "line": 1480,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1351,
+        "line": 1538,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1397,
+        "line": 1584,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1439,
+        "line": 1626,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1481,
+        "line": 1668,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1534,
+        "line": 1723,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1596,
+        "line": 1819,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1687,
+        "line": 1881,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 1972,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1690,
+        "line": 1975,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1758,
+        "line": 2043,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1761,
+        "line": 2046,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1791,
+        "line": 2076,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 1797,
+        "line": 2082,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1841,
+        "line": 2126,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1845,
+        "line": 2130,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1916,
+        "line": 2201,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1920,
+        "line": 2205,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2042,
+        "line": 2327,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2123,
+        "line": 2408,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2210,
+        "line": 2495,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2302,
+        "line": 2587,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2397,
+        "line": 2682,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2458,
+        "line": 2743,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2553,
+        "line": 2838,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2630,
+        "line": 2915,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2716,
+        "line": 3001,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2738,
+        "line": 3023,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2799,
+        "line": 3084,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2824,
+        "line": 3109,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2864,
+        "line": 3149,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2916,
+        "line": 3201,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2932,
+        "line": 3217,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 2938,
+        "line": 3223,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 2964,
+        "line": 3249,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 2977,
+        "line": 3262,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3008,
+        "line": 3293,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3031,
+        "line": 3316,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3055,
+        "line": 3340,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3073,
+        "line": 3358,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3108,
+        "line": 3393,
         "marker": "github",
         "category": "github"
       }
@@ -2648,72 +2683,77 @@
     ],
     "tests/core/implementation-git-actions.test.ts": [
       {
-        "line": 30,
+        "line": 34,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 31,
+        "line": 35,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 66,
+        "line": 70,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 211,
+        "line": 273,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 263,
+        "line": 325,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 485,
+        "line": 509,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 543,
+        "line": 886,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 552,
+        "line": 944,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 583,
+        "line": 953,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 589,
+        "line": 984,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 990,
         "marker": "provider_unsupported",
         "category": "provider"
       },
       {
-        "line": 633,
+        "line": 1034,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 672,
+        "line": 1073,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 678,
+        "line": 1079,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 679,
+        "line": 1080,
         "marker": "github",
         "category": "github"
       }
@@ -2787,49 +2827,44 @@
     ],
     "tests/core/implementation-workflow-e2e.test.ts": [
       {
-        "line": 12,
+        "line": 15,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 14,
+        "line": 17,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 19,
+        "line": 22,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 24,
+        "line": 27,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 30,
+        "line": 33,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 60,
+        "line": 63,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 66,
+        "line": 69,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 67,
+        "line": 70,
         "marker": "github",
         "category": "github"
-      },
-      {
-        "line": 87,
-        "marker": "openai-codex",
-        "category": "provider"
       },
       {
         "line": 90,
@@ -2837,22 +2872,32 @@
         "category": "provider"
       },
       {
-        "line": 107,
+        "line": 93,
+        "marker": "openai-codex",
+        "category": "provider"
+      },
+      {
+        "line": 110,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 197,
+        "line": 249,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 206,
+        "line": 452,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 210,
+        "line": 461,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 465,
         "marker": "jira",
         "category": "jira"
       }

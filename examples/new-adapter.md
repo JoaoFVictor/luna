@@ -9,8 +9,6 @@ The CLI shape should stay generic:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from my-adapter value
 ```
 
-`--workflow <id>` is an alias for `--target workflow:<id>`.
-
 Do not add workflow-specific commands such as:
 
 ```bash

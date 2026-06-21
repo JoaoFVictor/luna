@@ -15,7 +15,6 @@ export type WorkflowState = {
   workflow?: unknown;
   workspace?: unknown;
   workspaceRoot?: string;
-  reportPath?: string;
   steps: Record<string, unknown>;
 };
 
@@ -30,7 +29,6 @@ export type SchedulerWorkflowState = WorkflowState & {
   };
   workspaceRoot: AppConfig["workspace"]["root"];
   workspace?: WorkspaceRecord;
-  reportPath?: string;
 };
 
 function workflowStateError(message: string, code: string): Error & { code: string } {

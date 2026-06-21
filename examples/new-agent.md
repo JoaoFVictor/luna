@@ -165,7 +165,10 @@ Add an agent node to a workflow `graph.yaml`:
   type: agent
   agent: my-agent
   output_schema: my_output
-  artifact: my-step.json
+  artifacts:
+    - path: my-step.json
+      source: $.steps.my_step
+      format: json
   input:
     invocation: $.invocation
     repo_context: $.steps.repo_context
@@ -173,7 +176,7 @@ Add an agent node to a workflow `graph.yaml`:
     - repo_context
 ```
 
-`artifact` writes the step output into the run artifact directory.
+`artifacts` writes explicit state sources into the run artifact directory.
 
 ## 6. Test
 

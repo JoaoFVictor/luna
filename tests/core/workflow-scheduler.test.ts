@@ -107,7 +107,7 @@ describe("workflow scheduler", () => {
         started.push(node.id);
         return { id: node.id };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: () => ({})
     });
 
@@ -149,7 +149,7 @@ describe("workflow scheduler", () => {
           started.push(node.id);
           return { id: node.id };
         },
-        writeNodeArtifact: vi.fn(async () => undefined),
+        writePlannedArtifacts: vi.fn(async () => undefined),
         builtInMetadata: () => ({})
       })
     ).rejects.toMatchObject({
@@ -197,7 +197,7 @@ describe("workflow scheduler", () => {
         execution: { max_concurrency: 1 },
         observability,
         runNode: async () => workspace,
-        writeNodeArtifact: vi.fn(async () => undefined),
+        writePlannedArtifacts: vi.fn(async () => undefined),
         builtInMetadata: () => ({ capturesWorkspace: true })
       })
     ).rejects.toMatchObject({
@@ -218,7 +218,7 @@ describe("workflow scheduler", () => {
         callOrder.push(node.id);
         return { id: node.id };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: () => ({})
     });
 
@@ -249,7 +249,7 @@ describe("workflow scheduler", () => {
         await release.promise;
         return { id: node.id };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: () => ({})
     });
 
@@ -277,7 +277,7 @@ describe("workflow scheduler", () => {
         running.pop();
         return { id: node.id };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: () => ({})
     });
 
@@ -292,9 +292,18 @@ describe("workflow scheduler", () => {
 
     const schedule = runWorkflowSchedule({
       nodes: [
-        { ...builtInNode("a"), artifact: "shared.json" },
-        { ...builtInNode("b"), artifact: "shared.json" },
-        { ...builtInNode("c"), artifact: "other.json" }
+        {
+          ...builtInNode("a"),
+          artifacts: [{ path: "shared.json", source: "$.steps.a", format: "json", required: true }]
+        },
+        {
+          ...builtInNode("b"),
+          artifacts: [{ path: "shared.json", source: "$.steps.b", format: "json", required: true }]
+        },
+        {
+          ...builtInNode("c"),
+          artifacts: [{ path: "other.json", source: "$.steps.c", format: "json", required: true }]
+        }
       ],
       state: baseState(),
       execution: { max_concurrency: 3 },
@@ -309,7 +318,7 @@ describe("workflow scheduler", () => {
         await release.promise;
         return { id: node.id };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: () => ({})
     });
 
@@ -352,7 +361,7 @@ describe("workflow scheduler", () => {
           reason: "prepared"
         };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: (node) =>
         node.id.startsWith("workspace_") ? { capturesWorkspace: true } : {}
     });
@@ -414,7 +423,7 @@ describe("workflow scheduler", () => {
         }
         return { id: node.id };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: (node) =>
         node.id.startsWith("locked")
           ? { locks: [{ resource: "repository", mode: "exclusive" }] }
@@ -453,7 +462,14 @@ describe("workflow scheduler", () => {
           type: "agent_loop",
           agent: "implementer",
           output_schema: "result",
-          artifact: { report: "report.json" },
+          artifacts: [
+            {
+              path: "report.json",
+              source: "$.steps.agent_b.report",
+              format: "json",
+              required: true
+            }
+          ],
           sandbox: {
             type: "trusted_host_local",
             cwd: ".",
@@ -473,7 +489,7 @@ describe("workflow scheduler", () => {
         await release.promise;
         return { id: node.id };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: () => ({})
     });
 
@@ -504,7 +520,7 @@ describe("workflow scheduler", () => {
         events.push("run");
         return { ok: true };
       },
-      writeNodeArtifact: async () => undefined,
+      writePlannedArtifacts: async () => undefined,
       builtInMetadata: () => ({
         locks: [{ resource: "repository", mode: "exclusive" }]
       })
@@ -527,7 +543,7 @@ describe("workflow scheduler", () => {
         state,
         execution: { max_concurrency: 1 },
         runNode: async () => ({ ok: true }),
-        writeNodeArtifact: async () => undefined,
+        writePlannedArtifacts: async () => undefined,
         builtInMetadata: () => ({
           locks: [{ resource: "repository", mode: "exclusive" }]
         })
@@ -542,7 +558,7 @@ describe("workflow scheduler", () => {
         state: baseState(),
         execution: { max_concurrency: 1 },
         runNode: async () => ({ ok: true }),
-        writeNodeArtifact: async () => undefined,
+        writePlannedArtifacts: async () => undefined,
         builtInMetadata: () => ({
           locks: [{ resource: "repository", mode: "exclusive" }]
         })
@@ -552,7 +568,7 @@ describe("workflow scheduler", () => {
 
   it("does not run sibling nodes when a selected lock preflight fails", async () => {
     const runNode = vi.fn(async () => ({ ok: true }));
-    const writeNodeArtifact = vi.fn(async () => undefined);
+    const writePlannedArtifacts = vi.fn(async () => undefined);
 
     const state = baseState();
     delete state.repository;
@@ -566,7 +582,7 @@ describe("workflow scheduler", () => {
           acquire: async () => async () => undefined
         },
         runNode,
-        writeNodeArtifact,
+        writePlannedArtifacts,
         builtInMetadata: (node) =>
           node.id === "locked"
             ? { locks: [{ resource: "repository", mode: "exclusive" }] }
@@ -575,7 +591,7 @@ describe("workflow scheduler", () => {
     ).rejects.toMatchObject({ code: "lock_resource_missing" });
 
     expect(runNode).not.toHaveBeenCalled();
-    expect(writeNodeArtifact).not.toHaveBeenCalled();
+    expect(writePlannedArtifacts).not.toHaveBeenCalled();
   });
 
   it("attempts every acquired release and preserves the node failure", async () => {
@@ -603,7 +619,7 @@ describe("workflow scheduler", () => {
       runNode: async () => {
         throw cause;
       },
-      writeNodeArtifact: async () => undefined,
+      writePlannedArtifacts: async () => undefined,
       builtInMetadata: () => ({
         locks: [
           { resource: "repository", mode: "exclusive" },
@@ -638,7 +654,7 @@ describe("workflow scheduler", () => {
         }
       },
       runNode: async () => ({ ok: true }),
-      writeNodeArtifact: async () => undefined,
+      writePlannedArtifacts: async () => undefined,
       builtInMetadata: () => ({
         locks: [{ resource: "repository", mode: "exclusive" }]
       })
@@ -680,7 +696,7 @@ describe("workflow scheduler", () => {
   it("wraps node failures as scheduler step failures and skips dependents", async () => {
     const cause = new Error("node exploded") as Error & { code: string };
     cause.code = "node_exploded";
-    const writeNodeArtifact = vi.fn(async () => undefined);
+    const writePlannedArtifacts = vi.fn(async () => undefined);
     const events: LunaObservabilityEvent[] = [];
     const observability = createLunaObservability({
       run: { id: "run-1" },
@@ -708,7 +724,7 @@ describe("workflow scheduler", () => {
 
         return { id: node.id };
       },
-      writeNodeArtifact,
+      writePlannedArtifacts,
       builtInMetadata: () => ({})
     });
 
@@ -723,7 +739,7 @@ describe("workflow scheduler", () => {
       code: "scheduler_dependency_failed",
       step_id: "b"
     });
-    expect(writeNodeArtifact).not.toHaveBeenCalled();
+    expect(writePlannedArtifacts).not.toHaveBeenCalled();
     expect(events).toContainEqual(
       expect.objectContaining({
         event: "luna.scheduler.step.failed",
@@ -753,7 +769,7 @@ describe("workflow scheduler", () => {
       state: baseState(),
       execution: { max_concurrency: 1 },
       runNode: async () => workspace,
-      writeNodeArtifact: async () => {
+      writePlannedArtifacts: async () => {
         throw artifactFailure;
       },
       builtInMetadata: () => ({ capturesWorkspace: true })
@@ -783,7 +799,7 @@ describe("workflow scheduler", () => {
         (state.steps as Record<string, unknown>).mutated = true;
         return { status: "unreachable" };
       },
-      writeNodeArtifact: vi.fn(async () => undefined),
+      writePlannedArtifacts: vi.fn(async () => undefined),
       builtInMetadata: () => ({})
     });
 

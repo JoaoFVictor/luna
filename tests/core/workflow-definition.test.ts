@@ -42,6 +42,29 @@ async function writeMinimalWorkflow(
   );
 }
 
+async function writeWorkflowGraph(
+  root: string,
+  graphLines: string[],
+  workflowId = "code-review"
+): Promise<void> {
+  const workflowDir = path.join(root, workflowId);
+  await mkdir(workflowDir, { recursive: true });
+  await writeFile(
+    path.join(workflowDir, "workflow.yaml"),
+    [
+      `id: ${workflowId}`,
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(path.join(workflowDir, "graph.yaml"), graphLines.join("\n"), "utf8");
+}
+
 describe("workflow definition loader", () => {
   it("loads workflow.yaml and graph.yaml for a configured workflow", async () => {
     const root = await tempWorkflowRoot();
@@ -122,11 +145,19 @@ describe("workflow definition loader", () => {
           "    type: agent_loop",
           "    agent: code-implementer",
           "    output_schema: implementation_result",
-          "    artifact:",
-          "      attempts: implementation-attempts.json",
-          "      validation: validation.json",
-          "      result: implementation-result.json",
-          "      diff: implementation-diff.json",
+          "    artifacts:",
+          "      - path: implementation-attempts.json",
+          "        source: $.steps.implementation.attempts",
+          "        format: json",
+          "      - path: validation.json",
+          "        source: $.steps.implementation.validation",
+          "        format: json",
+          "      - path: implementation-result.json",
+          "        source: $.steps.implementation.result",
+          "        format: json",
+          "      - path: implementation-diff.json",
+          "        source: $.steps.implementation.diff",
+          "        format: json",
           "    sandbox:",
           "      type: trusted_host_local",
           "      cwd: $.workspace.path",
@@ -149,10 +180,20 @@ describe("workflow definition loader", () => {
             {
               id: "implementation",
               type: "agent_loop",
-              artifact: {
-                validation: "validation.json",
-                diff: "implementation-diff.json"
-              }
+              artifacts: expect.arrayContaining([
+                expect.objectContaining({
+                  path: "validation.json",
+                  source: "$.steps.implementation.validation",
+                  format: "json",
+                  required: true
+                }),
+                expect.objectContaining({
+                  path: "implementation-diff.json",
+                  source: "$.steps.implementation.diff",
+                  format: "json",
+                  required: true
+                })
+              ])
             }
           ]
         }
@@ -162,7 +203,7 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("loads agent_loop artifact maps without requiring specific output keys", async () => {
+  it("loads agent_loop artifact plans without requiring specific output keys", async () => {
     const root = await tempWorkflowRoot();
     const workflowDir = path.join(root, "implementation");
 
@@ -189,9 +230,13 @@ describe("workflow definition loader", () => {
           "    type: agent_loop",
           "    agent: code-implementer",
           "    output_schema: implementation_result",
-          "    artifact:",
-          "      summary: summary.json",
-          "      report: report.md",
+          "    artifacts:",
+          "      - path: summary.json",
+          "        source: $.steps.implementation.summary",
+          "        format: json",
+          "      - path: report.md",
+          "        source: $.steps.implementation.report",
+          "        format: markdown",
           "    sandbox:",
           "      type: trusted_host_local",
           "      cwd: $.workspace.path",
@@ -212,10 +257,20 @@ describe("workflow definition loader", () => {
             {
               id: "implementation",
               type: "agent_loop",
-              artifact: {
-                summary: "summary.json",
-                report: "report.md"
-              }
+              artifacts: expect.arrayContaining([
+                expect.objectContaining({
+                  path: "summary.json",
+                  source: "$.steps.implementation.summary",
+                  format: "json",
+                  required: true
+                }),
+                expect.objectContaining({
+                  path: "report.md",
+                  source: "$.steps.implementation.report",
+                  format: "markdown",
+                  required: true
+                })
+              ])
             }
           ]
         }
@@ -542,6 +597,118 @@ describe("workflow definition loader", () => {
 
       await expect(loadWorkflowDefinition(root, "code-review")).rejects.toMatchObject({
         code: "config_schema_invalid"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads explicit artifact plans and defaults required to true", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeWorkflowGraph(root, [
+        "nodes:",
+        "  - id: preflight",
+        "    type: built_in",
+        "    uses: preflight",
+        "    artifacts:",
+        "      - path: final-report.json",
+        "        source: $.steps.preflight.json",
+        "        format: json",
+        "      - path: final-report.md",
+        "        source: $.steps.preflight.markdown",
+        "        format: markdown",
+        "        required: true",
+        ""
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).resolves.toMatchObject({
+        graph: {
+          nodes: [
+            {
+              id: "preflight",
+              artifacts: [
+                {
+                  path: "final-report.json",
+                  source: "$.steps.preflight.json",
+                  format: "json",
+                  required: true
+                },
+                {
+                  path: "final-report.md",
+                  source: "$.steps.preflight.markdown",
+                  format: "markdown",
+                  required: true
+                }
+              ]
+            }
+          ]
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["duplicate artifact paths", ["  - id: second", "    type: built_in", "    uses: collect_repo_context", "    artifacts:", "      - path: shared.json", "        source: $.steps.second", "        format: json"], "workflow_artifact_path_duplicate"],
+    ["artifact path traversal", [], "path_security_violation", "../escape.json"],
+    ["absolute artifact path", [], "path_security_violation", "/tmp/escape.json"]
+  ])("rejects %s", async (_name, extraNodeLines, code, artifactPath = "shared.json") => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeWorkflowGraph(root, [
+        "nodes:",
+        "  - id: preflight",
+        "    type: built_in",
+        "    uses: preflight",
+        "    artifacts:",
+        `      - path: ${artifactPath}`,
+        "        source: $.steps.preflight",
+        "        format: json",
+        ...extraNodeLines,
+        ""
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toMatchObject({
+        code
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["outside steps", "$.invocation", "workflow_artifact_source_invalid"],
+    ["unknown step id", "$.steps.missing", "workflow_artifact_source_unknown_step"],
+    ["another step id", "$.steps.other", "workflow_artifact_source_wrong_step"],
+    ["wildcard", "$.steps.*.json", "workflow_artifact_source_invalid"],
+    ["filter", "$.steps.preflight[?(@.ok)]", "workflow_artifact_source_invalid"],
+    ["recursive descent", "$..markdown", "workflow_artifact_source_invalid"],
+    ["script expression", "$.steps.preflight[(@.length-1)]", "workflow_artifact_source_invalid"],
+    ["empty source", "", "workflow_artifact_source_invalid"],
+    ["bracket notation", "$.steps.preflight['json']", "workflow_artifact_source_invalid"],
+    ["unsafe segment", "$.steps.preflight.bad.segment$", "workflow_artifact_source_invalid"]
+  ])("rejects artifact source with %s", async (_name, source, code) => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeWorkflowGraph(root, [
+        "nodes:",
+        "  - id: preflight",
+        "    type: built_in",
+        "    uses: preflight",
+        "    artifacts:",
+        "      - path: output.json",
+        `        source: ${JSON.stringify(source)}`,
+        "        format: json",
+        "  - id: other",
+        "    type: built_in",
+        "    uses: collect_repo_context",
+        ""
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toMatchObject({
+        code
       });
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -49,6 +49,10 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
+    "src/core/artifact-write-plan.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
     "src/core/atomic-write.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
@@ -338,84 +342,84 @@
         "category": "github"
       },
       {
-        "line": 59,
+        "line": 58,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 75,
+        "line": 74,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 133,
+        "line": 122,
         "marker": "github",
         "category": "github"
       }
     ],
     "src/core/built-ins/implementation.ts": [
       {
-        "line": 15,
+        "line": 16,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 15,
+        "line": 16,
         "marker": "jira-issue-context",
         "category": "jira"
       },
       {
-        "line": 29,
+        "line": 30,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 40,
+        "line": 41,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 78,
+        "line": 79,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 78,
+        "line": 79,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 97,
+        "line": 98,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 97,
+        "line": 98,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 100,
+        "line": 101,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 149,
+        "line": 150,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 196,
+        "line": 204,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 197,
+        "line": 205,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 240,
+        "line": 248,
         "marker": "jira",
         "category": "jira"
       }
@@ -474,22 +478,17 @@
     ],
     "src/core/configured-workflow-runner.ts": [
       {
-        "line": 76,
+        "line": 77,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 288,
+        "line": 289,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 288,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 290,
+        "line": 289,
         "marker": "jira",
         "category": "jira"
       },
@@ -499,17 +498,22 @@
         "category": "jira"
       },
       {
-        "line": 291,
+        "line": 292,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 296,
+        "line": 292,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 296,
+        "line": 297,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 297,
         "marker": "jira",
         "category": "jira"
       }
@@ -533,22 +537,22 @@
     ],
     "src/core/implementation-git-actions.ts": [
       {
-        "line": 318,
+        "line": 549,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 319,
+        "line": 550,
         "marker": "provider_unsupported",
         "category": "provider"
       },
       {
-        "line": 348,
+        "line": 579,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 354,
+        "line": 585,
         "marker": "github",
         "category": "github"
       }
@@ -828,7 +832,7 @@
         "category": "github"
       },
       {
-        "line": 82,
+        "line": 80,
         "marker": "github",
         "category": "github"
       }

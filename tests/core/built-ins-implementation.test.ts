@@ -228,7 +228,6 @@ function implementationState(overrides: Partial<WorkflowState> = {}): WorkflowSt
     run: { run_id: "run-123" },
     workspace: implementationWorkspace,
     workspaceRoot: "/tmp/worktrees",
-    reportPath: "/tmp/report.md",
     steps: {},
     config: {
       implementation: implementationConfig

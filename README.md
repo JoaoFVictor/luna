@@ -96,8 +96,7 @@ For complete walkthroughs, see:
   Luna's normalized invocation format.
 - **Invocation**: the normalized request Luna routes and passes into a workflow.
 - **Router**: chooses the workflow from `--target workflow:<id>`, the
-  invocation `target`, or `config/routing.yaml`. `--workflow <id>` is an alias
-  for `--target workflow:<id>`.
+  invocation `target`, or `config/routing.yaml`.
 - **Workflow**: a YAML graph of ordered nodes under `workflows/<workflow-id>/`.
 - **Agent**: a configured Flue agent under `agents/<agent-id>/`, with YAML
   metadata, Markdown instructions, and a JSON Schema output contract.
@@ -227,6 +226,16 @@ Artifact directories are always resolved as:
 Workflow YAML does not define a separate artifact namespace. The routed
 `workflow_id` is the only namespace.
 
+Workflow nodes write explicit artifact plans:
+
+```yaml
+artifacts:
+  - path: output.json
+    source: $.steps.node_id
+    format: json
+    required: true
+```
+
 Each run also writes Luna-owned observability artifacts:
 
 - `run.json`: strict run identity.
@@ -257,7 +266,7 @@ Workflow YAML may tune scheduler execution:
 
 ```yaml
 execution:
-  max_concurrency: 1
+  max_concurrency: 2
   lock_timeout_ms: 120000
 ```
 

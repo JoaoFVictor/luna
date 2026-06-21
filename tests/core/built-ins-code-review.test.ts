@@ -167,7 +167,6 @@ function workflowState(overrides: Partial<WorkflowState> = {}): WorkflowState {
     run: { run_id: "run-123" },
     workspace,
     workspaceRoot: "/tmp/worktrees",
-    reportPath: "/tmp/report.md",
     steps: {},
     ...overrides
   };
@@ -265,7 +264,7 @@ describe("code review built-ins", () => {
   });
 
   it("runs final_code_review_report through injected dependencies and declares deferral metadata", async () => {
-    const buildFinalReportJson = vi.fn(() => ({ report_path: "/tmp/report.md" }));
+    const buildFinalReportJson = vi.fn(() => ({ findings: [] }));
     const buildFinalReportMarkdown = vi.fn(() => "# Report\n");
 
     await expect(
@@ -283,7 +282,7 @@ describe("code review built-ins", () => {
         dependencies: { buildFinalReportJson, buildFinalReportMarkdown }
       })
     ).resolves.toEqual({
-      json: { report_path: "/tmp/report.md" },
+      json: { findings: [] },
       markdown: "# Report\n"
     });
 
@@ -293,7 +292,6 @@ describe("code review built-ins", () => {
     expect(buildFinalReportJson).toHaveBeenCalledWith({
       acceptance,
       findings: [finding],
-      reportPath: "/tmp/report.md",
       workspace
     });
     expect(buildFinalReportMarkdown).toHaveBeenCalledWith({
@@ -401,24 +399,4 @@ describe("code review built-ins", () => {
     }
   );
 
-  it("throws a typed error when final_code_review_report report path state is missing", async () => {
-    await expect(
-      finalCodeReviewReportBuiltIn.run({
-        state: workflowState({
-          reportPath: undefined,
-          steps: {
-            validated_findings: { findings: [finding] },
-            acceptance
-          }
-        }),
-        input: {
-          findings: "$.steps.validated_findings",
-          acceptance: "$.steps.acceptance"
-        }
-      })
-    ).rejects.toMatchObject({
-      code: "built_in_state_missing",
-      message: expect.stringContaining("reportPath")
-    });
-  });
 });

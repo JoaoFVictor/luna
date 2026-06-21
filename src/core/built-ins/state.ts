@@ -141,10 +141,6 @@ export function workspaceRootFrom(state: WorkflowState): string {
   return requiredState(state.workspaceRoot, "workspaceRoot");
 }
 
-export function reportPathFrom(state: WorkflowState): string {
-  return requiredState(state.reportPath, "reportPath");
-}
-
 export function findingsFrom(value: unknown): readonly Finding[] {
   if (Array.isArray(value)) {
     return value as Finding[];

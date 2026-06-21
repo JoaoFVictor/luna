@@ -28,7 +28,7 @@ input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
 execution:
-  max_concurrency: 1
+  max_concurrency: 2
   lock_timeout_ms: 120000
 ```
 
@@ -59,19 +59,28 @@ nodes:
   - id: preflight
     type: built_in
     uses: preflight
-    artifact: preflight.json
+    artifacts:
+      - path: preflight.json
+        source: $.steps.preflight
+        format: json
 
   - id: workspace
     type: built_in
     uses: prepare_worktree
-    artifact: workspace.json
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
     after:
       - preflight
 
   - id: repo_context
     type: built_in
     uses: collect_repo_context
-    artifact: repo-context.json
+    artifacts:
+      - path: repo-context.json
+        source: $.steps.repo_context
+        format: json
     after:
       - workspace
 
@@ -79,7 +88,10 @@ nodes:
     type: agent
     agent: my-agent
     output_schema: my_output
-    artifact: my-agent-output.json
+    artifacts:
+      - path: my-agent-output.json
+        source: $.steps.my_agent_step
+        format: json
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
@@ -125,10 +137,16 @@ and repair failed validation:
   type: agent_loop
   agent: code-implementer
   output_schema: implementation_result
-  artifact:
-    attempts: implementation-attempts.json
-    validation: validation.json
-    result: implementation-result.json
+  artifacts:
+    - path: implementation-attempts.json
+      source: $.steps.implementation.attempts
+      format: json
+    - path: validation.json
+      source: $.steps.implementation.validation
+      format: json
+    - path: implementation-result.json
+      source: $.steps.implementation.result
+      format: json
   sandbox:
     type: trusted_host_local
     cwd: $.workspace.path

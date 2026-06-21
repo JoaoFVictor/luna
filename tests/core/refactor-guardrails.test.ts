@@ -1,7 +1,9 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import YAML from "yaml";
 import { loadWorkflowDefinition } from "../../src/core/workflow-definition.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -50,7 +52,8 @@ const allowedRuntimeOwners: RuntimeOwner[] = [
 const wave0OversizedFileBaseline = [
   "src/core/configured-workflow-runner.ts",
   "tests/core/configured-workflow-runner.test.ts",
-  "tests/core/flue-modules.test.ts"
+  "tests/core/flue-modules.test.ts",
+  "tests/core/implementation-git-actions.test.ts"
 ];
 
 const ownershipFixturePaths = new Set([
@@ -61,6 +64,25 @@ const ownershipFixturePaths = new Set([
 
 const providerMarkerPattern =
   /github-pr-context|github-pr-url|jira-issue-context|jira-task-url|jira-auth|provider_unsupported|provider_payload|providerPayload|provider\.payload|provider\/model|provider_cost_unit|openai-codex|test-provider|github|jira/gi;
+
+const legacyArtifactShapeAllowlist = new Set([
+  "tests/fixtures/workflows/legacy-artifact-string.graph.yaml",
+  "tests/fixtures/workflows/legacy-artifact-map.graph.yaml"
+]);
+
+const legacyReportPathShapeAllowlist = new Set([
+  "tests/fixtures/workflows/legacy-report-path.graph.yaml"
+]);
+
+const legacyArtifactTestContractAllowlist = new Set([
+  "tests/core/workflow-definition-legacy-artifacts.test.ts",
+  "tests/core/workflow-definition-legacy-report-path.test.ts",
+  "tests/core/refactor-guardrails.test.ts"
+]);
+
+const legacyReportPathRuntimeAllowlist = new Set([
+  "src/core/workflow-definition.ts"
+]);
 
 async function readJson<T>(relativePath: string): Promise<T> {
   return JSON.parse(await readFile(path.join(repoRoot, relativePath), "utf8")) as T;
@@ -220,6 +242,148 @@ async function oversizedTypeScriptFiles(): Promise<Record<string, number>> {
   return oversizedFiles;
 }
 
+function objectHasLegacyArtifactKey(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => objectHasLegacyArtifactKey(item));
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, "artifact")) {
+    return true;
+  }
+
+  return Object.values(value).some((nested) => objectHasLegacyArtifactKey(nested));
+}
+
+function objectHasLegacyReportPathKey(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => objectHasLegacyReportPathKey(item));
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(value, "report_path") ||
+    Object.prototype.hasOwnProperty.call(value, "reportPath")
+  ) {
+    return true;
+  }
+
+  return Object.values(value).some((nested) => objectHasLegacyReportPathKey(nested));
+}
+
+function yamlFenceBodies(content: string): string[] {
+  return [...content.matchAll(/```ya?ml\n([\s\S]*?)```/g)].map(
+    (match) => match[1]
+  );
+}
+
+function parsedYamlHasLegacyArtifact(content: string): boolean {
+  const documents = YAML.parseAllDocuments(content);
+
+  return documents.some((document) => {
+    if (document.errors.length > 0) {
+      return false;
+    }
+
+    return objectHasLegacyArtifactKey(document.toJSON());
+  });
+}
+
+function parsedYamlHasLegacyReportPath(content: string): boolean {
+  const documents = YAML.parseAllDocuments(content);
+
+  return documents.some((document) => {
+    if (document.errors.length > 0) {
+      return false;
+    }
+
+    return objectHasLegacyReportPathKey(document.toJSON());
+  });
+}
+
+function propertyNameText(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name)) {
+    return name.text;
+  }
+
+  return undefined;
+}
+
+function hasLegacyArtifactTypeContract(sourceFile: ts.SourceFile): boolean {
+  let found = false;
+
+  function visit(node: ts.Node): void {
+    if (found) {
+      return;
+    }
+
+    if (
+      (ts.isPropertyAssignment(node) || ts.isPropertySignature(node)) &&
+      propertyNameText(node.name) === "artifact"
+    ) {
+      found = true;
+      return;
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return found;
+}
+
+function hasLegacyArtifactStringContract(sourceFile: ts.SourceFile): boolean {
+  let found = false;
+
+  function visit(node: ts.Node): void {
+    if (found) {
+      return;
+    }
+
+    if (
+      ts.isStringLiteralLike(node) &&
+      /^\s*artifact\s*:/.test(node.text)
+    ) {
+      found = true;
+      return;
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return found;
+}
+
+function hasLegacyReportPathStringContract(sourceFile: ts.SourceFile): boolean {
+  let found = false;
+
+  function visit(node: ts.Node): void {
+    if (found) {
+      return;
+    }
+
+    if (
+      ts.isStringLiteralLike(node) &&
+      (/^\s*report_path\s*:/.test(node.text) || /\breportPath\b/.test(node.text))
+    ) {
+      found = true;
+      return;
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return found;
+}
+
 describe("refactor guardrails", () => {
   it("requires wave gates for waves 0, A, B, C, and D", async () => {
     const manifest = await readJson<{ waves: Record<string, RefactorWave> }>(
@@ -312,6 +476,96 @@ describe("refactor guardrails", () => {
         id: "implementation",
         graph: { nodes: expect.any(Array) }
       });
+  });
+
+  it("rejects legacy workflow artifact shape outside fixed negative coverage", async () => {
+    const workflowGraphs = (await listFiles("workflows")).filter((file) =>
+      file.endsWith("/graph.yaml")
+    );
+    const artifactFixtureGraphs = (await listFiles("tests/fixtures/workflows")).filter(
+      (file) => file.endsWith(".yaml") && !legacyArtifactShapeAllowlist.has(file)
+    );
+    const reportPathFixtureGraphs = (await listFiles("tests/fixtures/workflows")).filter(
+      (file) => file.endsWith(".yaml") && !legacyReportPathShapeAllowlist.has(file)
+    );
+
+    for (const relativePath of [...workflowGraphs, ...artifactFixtureGraphs]) {
+      expect(parsedYamlHasLegacyArtifact(await readText(relativePath))).toBe(false);
+    }
+
+    for (const relativePath of [...workflowGraphs, ...reportPathFixtureGraphs]) {
+      expect(parsedYamlHasLegacyReportPath(await readText(relativePath))).toBe(false);
+    }
+  });
+
+  it("keeps public docs and examples on explicit artifacts only", async () => {
+    const docs = [
+      "README.md",
+      "skills/luna-create-workflow/SKILL.md",
+      ...(await listFiles("examples")).filter((file) => file.endsWith(".md"))
+    ];
+
+    for (const relativePath of docs) {
+      const content = await readText(relativePath);
+      for (const yamlBody of yamlFenceBodies(content)) {
+        expect(parsedYamlHasLegacyArtifact(yamlBody)).toBe(false);
+        expect(parsedYamlHasLegacyReportPath(yamlBody)).toBe(false);
+      }
+    }
+  });
+
+  it("does not expose the legacy artifact shape in workflow TypeScript contracts", async () => {
+    const checkedFiles = [
+      "src/core/workflow-definition.ts",
+      "src/core/workflow-scheduler.ts",
+      "src/core/configured-workflow-runner.ts"
+    ];
+
+    for (const relativePath of checkedFiles) {
+      const sourceFile = ts.createSourceFile(
+        relativePath,
+        await readText(relativePath),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
+      );
+      expect(hasLegacyArtifactTypeContract(sourceFile)).toBe(false);
+    }
+  });
+
+  it("does not expose legacy report path strings in runtime source", async () => {
+    const checkedFiles = (await listFiles("src"))
+      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => !legacyReportPathRuntimeAllowlist.has(file));
+
+    for (const relativePath of checkedFiles) {
+      const sourceFile = ts.createSourceFile(
+        relativePath,
+        await readText(relativePath),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
+      );
+      expect(hasLegacyReportPathStringContract(sourceFile)).toBe(false);
+    }
+  });
+
+  it("keeps test workflow fixtures on explicit artifacts only", async () => {
+    const checkedFiles = (await listFiles("tests/core"))
+      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => !legacyArtifactTestContractAllowlist.has(file));
+
+    for (const relativePath of checkedFiles) {
+      const sourceFile = ts.createSourceFile(
+        relativePath,
+        await readText(relativePath),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
+      );
+      expect(hasLegacyArtifactStringContract(sourceFile)).toBe(false);
+      expect(hasLegacyReportPathStringContract(sourceFile)).toBe(false);
+    }
   });
 
   it("records provider-boundary inventory in non-enforcing Wave 0 mode", async () => {

@@ -2,19 +2,28 @@ nodes:
   - id: preflight
     type: built_in
     uses: preflight
-    artifact: preflight.json
+    artifacts:
+      - path: preflight.json
+        source: $.steps.preflight
+        format: json
 
   - id: workspace
     type: built_in
     uses: prepare_implementation_worktree
-    artifact: workspace.json
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
     after:
       - preflight
 
   - id: task_context
     type: built_in
     uses: collect_task_context
-    artifact: task-context.json
+    artifacts:
+      - path: task-context.json
+        source: $.steps.task_context
+        format: json
     after:
       - workspace
 
@@ -22,7 +31,10 @@ nodes:
     type: agent
     agent: implementation-planner
     output_schema: implementation_plan
-    artifact: implementation-plan.json
+    artifacts:
+      - path: implementation-plan.json
+        source: $.steps.implementation_plan
+        format: json
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
@@ -33,10 +45,16 @@ nodes:
     type: agent_loop
     agent: code-implementer
     output_schema: implementation_result
-    artifact:
-      attempts: implementation-attempts.json
-      validation: validation.json
-      result: implementation-result.json
+    artifacts:
+      - path: implementation-attempts.json
+        source: $.steps.implementation.attempts
+        format: json
+      - path: validation.json
+        source: $.steps.implementation.validation
+        format: json
+      - path: implementation-result.json
+        source: $.steps.implementation.result
+        format: json
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
@@ -57,7 +75,10 @@ nodes:
   - id: worktree_diff
     type: built_in
     uses: collect_worktree_diff
-    artifact: worktree-diff.json
+    artifacts:
+      - path: worktree-diff.json
+        source: $.steps.worktree_diff
+        format: json
     after:
       - implementation
 
@@ -65,7 +86,10 @@ nodes:
     type: agent
     agent: change-reviewer
     output_schema: implementation_review
-    artifact: implementation-review.json
+    artifacts:
+      - path: implementation-review.json
+        source: $.steps.implementation_review
+        format: json
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
@@ -78,7 +102,10 @@ nodes:
     type: agent
     agent: change-acceptance-reviewer
     output_schema: acceptance_decision
-    artifact: acceptance-review.json
+    artifacts:
+      - path: acceptance-review.json
+        source: $.steps.acceptance
+        format: json
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
@@ -90,29 +117,42 @@ nodes:
   - id: commit
     type: built_in
     uses: commit_changes
-    artifact: commit.json
+    artifacts:
+      - path: commit.json
+        source: $.steps.commit
+        format: json
     after:
       - acceptance
 
   - id: push
     type: built_in
     uses: push_branch
-    artifact: push.json
+    artifacts:
+      - path: push.json
+        source: $.steps.push
+        format: json
     after:
       - commit
 
   - id: pull_request
     type: built_in
     uses: open_pull_request
-    artifact: pull-request.json
+    artifacts:
+      - path: pull-request.json
+        source: $.steps.pull_request
+        format: json
     after:
       - push
 
   - id: final_report
     type: built_in
     uses: final_implementation_report
-    artifact:
-      json: final-report.json
-      markdown: final-report.md
+    artifacts:
+      - path: final-report.json
+        source: $.steps.final_report.json
+        format: json
+      - path: final-report.md
+        source: $.steps.final_report.markdown
+        format: markdown
     after:
       - pull_request

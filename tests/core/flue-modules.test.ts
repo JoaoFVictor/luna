@@ -205,7 +205,7 @@ describe("flue modules", () => {
             agent: "review-planner",
             output_schema: "review_plan",
             input: {},
-            artifact: "review-plan.json"
+            artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
@@ -238,7 +238,7 @@ describe("flue modules", () => {
             agent: "change-reviewer",
             output_schema: "code_review_findings",
             input: {},
-            artifact: "code-review-findings.json"
+            artifacts: [{ path: "code-review-findings.json", source: "$.steps.code_review", format: "json", required: true }]
           },
           model: { model: "openai/reviewer-test", thinkingLevel: "high" },
           agentsRoot: path.join(root, "agents"),
@@ -271,7 +271,7 @@ describe("flue modules", () => {
             agent: "change-acceptance-reviewer",
             output_schema: "acceptance_decision",
             input: {},
-            artifact: "acceptance-review.json"
+            artifacts: [{ path: "acceptance-review.json", source: "$.steps.acceptance", format: "json", required: true }]
           },
           model: { model: "openai/acceptance-test", thinkingLevel: "low" },
           agentsRoot: path.join(root, "agents"),
@@ -423,7 +423,7 @@ describe("flue modules", () => {
             agent: "review-planner",
             output_schema: "review_plan",
             input: {},
-            artifact: "review-plan.json"
+            artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
@@ -543,7 +543,7 @@ describe("flue modules", () => {
             agent: "review-planner",
             output_schema: "review_plan",
             input: {},
-            artifact: "review-plan.json"
+            artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
@@ -652,7 +652,7 @@ describe("flue modules", () => {
             agent: "review-planner",
             output_schema: "review_plan",
             input: {},
-            artifact: "review-plan.json"
+            artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
@@ -752,7 +752,7 @@ describe("flue modules", () => {
             agent: "review-planner",
             output_schema: "review_plan",
             input: {},
-            artifact: "review-plan.json"
+            artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
           model: { model: "openai/planner-test", thinkingLevel: "medium" },
           agentsRoot: path.join(root, "agents"),
@@ -863,11 +863,11 @@ describe("flue modules", () => {
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
-            artifact: {
-              attempts: "implementation-attempts.json",
-              validation: "validation.json",
-              result: "implementation-result.json"
-            },
+            artifacts: [
+              { path: "implementation-attempts.json", source: "$.steps.implementation.attempts", format: "json", required: true },
+              { path: "validation.json", source: "$.steps.implementation.validation", format: "json", required: true },
+              { path: "implementation-result.json", source: "$.steps.implementation.result", format: "json", required: true }
+            ],
             sandbox: {
               type: "trusted_host_local",
               cwd: worktreePath,
@@ -1095,7 +1095,7 @@ describe("flue modules", () => {
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
-            artifact: { result: "implementation-result.json" },
+            artifacts: [{ path: "implementation-result.json", source: "$.steps.implementation.result", format: "json", required: true }],
             sandbox: {
               type: "trusted_host_local",
               cwd: worktreePath,
@@ -1264,7 +1264,7 @@ describe("flue modules", () => {
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
-            artifact: { result: "implementation-result.json" },
+            artifacts: [{ path: "implementation-result.json", source: "$.steps.implementation.result", format: "json", required: true }],
             sandbox: {
               type: "trusted_host_local",
               cwd: worktreePath,
@@ -1418,7 +1418,7 @@ describe("flue modules", () => {
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
-            artifact: { result: "implementation-result.json" },
+            artifacts: [{ path: "implementation-result.json", source: "$.steps.implementation.result", format: "json", required: true }],
             sandbox: {
               type: "trusted_host_local",
               cwd: worktreePath,
@@ -1503,7 +1503,7 @@ describe("flue modules", () => {
             agent: "review-planner",
             output_schema: "implementation_result",
             input: {},
-            artifact: { result: "implementation-result.json" },
+            artifacts: [{ path: "implementation-result.json", source: "$.steps.implementation.result", format: "json", required: true }],
             sandbox: {
               type: "trusted_host_local",
               cwd: root,
@@ -1585,7 +1585,7 @@ describe("flue modules", () => {
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
-            artifact: { result: "implementation-result.json" },
+            artifacts: [{ path: "implementation-result.json", source: "$.steps.implementation.result", format: "json", required: true }],
             sandbox: {
               type: "remote",
               cwd: root,

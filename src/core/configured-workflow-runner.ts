@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { writePlannedArtifacts } from "./artifact-write-plan.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
 import {
@@ -55,7 +56,7 @@ import {
 import {
   implementationLifecycleEvidenceFromSteps
 } from "./implementation-lifecycle.js";
-import { assertSafeSegment, safeJoin } from "./path-security.js";
+import { assertSafeSegment } from "./path-security.js";
 import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
 import {
   defaultWorkflowObservabilityConfig,
@@ -377,36 +378,6 @@ function topologicalNodes(nodes: WorkflowNode[]): WorkflowNode[] {
   return ordered;
 }
 
-async function writeNodeArtifact(
-  artifactStore: ArtifactStore,
-  node: WorkflowNode,
-  output: unknown
-): Promise<void> {
-  if (typeof node.artifact === "string") {
-    await artifactStore.writeJson(node.artifact, output);
-    return;
-  }
-
-  if (
-    node.artifact !== undefined &&
-    typeof output === "object" &&
-    output !== null &&
-    !Array.isArray(output)
-  ) {
-    const outputRecord = output as Record<string, unknown>;
-
-    for (const [outputKey, artifactName] of Object.entries(node.artifact)) {
-      const value = outputRecord[outputKey];
-
-      if (outputKey === "markdown") {
-        await artifactStore.writeMarkdown(artifactName, String(value ?? ""));
-      } else {
-        await artifactStore.writeJson(artifactName, value);
-      }
-    }
-  }
-}
-
 function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
   if (typeof output !== "object" || output === null || Array.isArray(output)) {
     return false;
@@ -438,26 +409,6 @@ function finalReportFrom(output: unknown): FinalReportJson | undefined {
   }
 
   return (output as { json?: FinalReportJson }).json;
-}
-
-async function markdownArtifactPath({
-  artifactRoot,
-  runId,
-  node
-}: {
-  artifactRoot: string;
-  runId: string;
-  node: WorkflowNode;
-}): Promise<string | undefined> {
-  if (
-    node.artifact === undefined ||
-    typeof node.artifact === "string" ||
-    typeof node.artifact.markdown !== "string"
-  ) {
-    return undefined;
-  }
-
-  return await safeJoin(artifactRoot, [runId, node.artifact.markdown]);
 }
 
 function artifactRootForWorkflow(root: string, workflowId: string): string {
@@ -1286,8 +1237,13 @@ export async function runConfiguredWorkflow({
       summary,
       runNode: async ({ node, state }) =>
         await runWorkflowNode(node, state, nodeRuntimeContext),
-      writeNodeArtifact: async (node, output) =>
-        await writeNodeArtifact(activeArtifactStore, node, output),
+      writePlannedArtifacts: async (node, output, state) =>
+        await writePlannedArtifacts({
+          artifactStore: activeArtifactStore,
+          node,
+          output,
+          state
+        }),
       builtInMetadata: (node) => builtInMetadata(node, activeBuiltInStepRegistry),
       lockManager
     });
@@ -1344,22 +1300,18 @@ export async function runConfiguredWorkflow({
 
     let report: FinalReportJson | undefined;
     for (const node of deferredFinalReportNodes) {
-      const reportPath = await markdownArtifactPath({
-        artifactRoot: artifactStore.artifactRoot,
-        runId: run.run_id,
-        node
-      });
-      if (reportPath !== undefined) {
-        state.reportPath = reportPath;
-      }
-
       const output = await runWorkflowNode(node, state, {
         ...nodeRuntimeContext,
         artifactStore
       });
 
+      await writePlannedArtifacts({
+        artifactStore,
+        node,
+        output,
+        state
+      });
       state.steps[node.id] = output;
-      await writeNodeArtifact(artifactStore, node, output);
       report = finalReportFrom(output) ?? report;
     }
 

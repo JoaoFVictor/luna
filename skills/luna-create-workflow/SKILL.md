@@ -39,6 +39,22 @@ Rules:
 Use `after` dependencies for ordering. Duplicate ids, unknown dependencies, and
 cycles are invalid.
 
+## Artifacts
+
+Workflow nodes write files through explicit `artifacts` plans:
+
+```yaml
+artifacts:
+  - path: output.json
+    source: $.steps.node_id
+    format: json
+    required: true
+```
+
+`format` is `json` or `markdown`. `required` defaults to `true`.
+Artifact sources must start with `$.steps.<node-id>` and may use plain dot
+property segments such as `$.steps.final_report.markdown`.
+
 ## State References
 
 Node `input` can reference:

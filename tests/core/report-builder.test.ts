@@ -120,7 +120,6 @@ describe("final report builder", () => {
     const json = buildFinalReportJson({
       acceptance,
       findings: [],
-      reportPath: "/tmp/report.md",
       workspace: undefined
     });
 
@@ -140,7 +139,6 @@ describe("final report builder", () => {
     const json = buildFinalReportJson({
       acceptance,
       findings: [],
-      reportPath: "/tmp/report.md",
       workspace
     });
 

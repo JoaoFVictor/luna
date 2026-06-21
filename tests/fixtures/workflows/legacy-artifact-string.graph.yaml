@@ -1,0 +1,5 @@
+nodes:
+  - id: legacy
+    type: built_in
+    uses: preflight
+    artifact: legacy.json

@@ -66,7 +66,6 @@ export type BuiltInStepDependencies = {
   buildFinalReportJson?: (input: {
     acceptance: AcceptanceDecision;
     findings: readonly Finding[];
-    reportPath: string;
     workspace?: WorkspaceRecord;
   }) => unknown;
   buildFinalReportMarkdown?: (input: {

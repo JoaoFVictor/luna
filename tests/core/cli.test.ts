@@ -133,24 +133,6 @@ describe("flue local CLI wrapper", () => {
     });
   });
 
-  it("parses workflow as a target alias for input adapter arguments", () => {
-    expect(
-      parseCliArgs([
-        "run",
-        "--workflow",
-        "code-review",
-        "--from",
-        "github-pr-url",
-        "https://github.com/withastro/luna/pull/123"
-      ])
-    ).toEqual({
-      command: "run",
-      target: { type: "workflow", id: "code-review" },
-      from: "github-pr-url",
-      value: "https://github.com/withastro/luna/pull/123"
-    });
-  });
-
   it("parses workflow targets", () => {
     expect(parseWorkflowTarget("workflow:implementation")).toEqual({
       type: "workflow",
@@ -164,18 +146,10 @@ describe("flue local CLI wrapper", () => {
     );
   });
 
-  it("throws ambiguous_target when workflow and target are both provided", () => {
+  it("rejects the legacy workflow flag", () => {
     expect(() =>
-      parseCliArgs([
-        "run",
-        "--workflow",
-        "code-review",
-        "--target",
-        "workflow:implementation",
-        "--input",
-        "input.json"
-      ])
-    ).toThrow(expect.objectContaining({ code: "ambiguous_target" }));
+      parseCliArgs(["run", "--workflow", "code-review"])
+    ).toThrow(expect.objectContaining({ code: "unsupported_flag" }));
   });
 
   it("throws missing_input when run input is missing", () => {
@@ -186,7 +160,13 @@ describe("flue local CLI wrapper", () => {
 
   it("throws missing_from_value when an input adapter value is missing", () => {
     expect(() =>
-      parseCliArgs(["run", "--workflow", "code-review", "--from", "github-pr-url"])
+      parseCliArgs([
+        "run",
+        "--target",
+        "workflow:code-review",
+        "--from",
+        "github-pr-url"
+      ])
     ).toThrow(
       expect.objectContaining({ code: "missing_from_value" })
     );
@@ -291,8 +271,8 @@ describe("flue local CLI wrapper", () => {
       main(
         [
           "run",
-          "--workflow",
-          "code-review",
+          "--target",
+          "workflow:code-review",
           "--from",
           "github-pr-url",
           "https://github.com/octo-org/hello-world/pull/42"

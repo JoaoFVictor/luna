@@ -18,7 +18,6 @@ import {
   findingsFrom,
   githubPullRequestInvocationFrom,
   repositoryFrom,
-  reportPathFrom,
   requiredInput,
   requiredState,
   resolvedInput,
@@ -120,17 +119,16 @@ export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
       resolved.acceptance as AcceptanceDecision | undefined,
       "acceptance"
     );
-    const reportPath = reportPathFrom(state);
+    const invocation = githubPullRequestInvocationFrom(state);
 
     return {
       json: buildFinalReportJson({
         acceptance,
         findings,
-        reportPath,
         workspace: state.workspace as WorkspaceRecord | undefined
       }),
       markdown: buildFinalReportMarkdown({
-        invocation: githubPullRequestInvocationFrom(state),
+        invocation,
         findings,
         acceptance
       })

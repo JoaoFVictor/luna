@@ -56,19 +56,19 @@ describe("artifact store", () => {
       subject: { type: "pull_request", id: "1" }
     });
     const runPath = await store.writeJson("run.json", { run_id: "run-1" });
-    const reportPath = await store.writeMarkdown("report.md", "# Review\n");
+    const markdownPath = await store.writeMarkdown("report.md", "# Review\n");
     const errorPath = await store.writeError(new Error("boom"));
 
     const runDir = path.join(root, "20260618T150405Z-org-repo-pr-1-a1");
     expect(invocationPath).toBe(path.join(runDir, "invocation.json"));
     expect(runPath).toBe(path.join(runDir, "run.json"));
-    expect(reportPath).toBe(path.join(runDir, "report.md"));
+    expect(markdownPath).toBe(path.join(runDir, "report.md"));
     expect(errorPath).toBe(path.join(runDir, "error.json"));
 
     await expect(readFile(invocationPath, "utf8")).resolves.toContain(
       "\"source\": \"github\""
     );
-    await expect(readFile(reportPath, "utf8")).resolves.toBe("# Review\n");
+    await expect(readFile(markdownPath, "utf8")).resolves.toBe("# Review\n");
     await expect(readFile(errorPath, "utf8")).resolves.toContain("\"message\"");
   });
 

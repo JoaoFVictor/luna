@@ -1,0 +1,10 @@
+nodes:
+  - id: final_report
+    type: built_in
+    uses: final_code_review_report
+    input:
+      reportPath: $.state.reportPath
+    artifacts:
+      - path: final-report.md
+        source: $.steps.final_report.markdown
+        format: markdown

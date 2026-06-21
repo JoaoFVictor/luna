@@ -50,8 +50,6 @@ The common command shape is:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --from <adapter> <value>
 ```
 
-`--workflow <id>` is an alias for `--target workflow:<id>`.
-
 The lower-level JSON path is useful for tests and automation:
 
 ```bash
@@ -196,7 +194,10 @@ graphs pass it repository context and review instructions with the same shape:
   type: agent
   agent: change-reviewer
   output_schema: code_review_findings
-  artifact: release-risk-review.json
+  artifacts:
+    - path: release-risk-review.json
+      source: $.steps.release_risk_review
+      format: json
   input:
     invocation: $.invocation
     repo_context: $.steps.repo_context
@@ -341,19 +342,28 @@ nodes:
   - id: preflight
     type: built_in
     uses: preflight
-    artifact: preflight.json
+    artifacts:
+      - path: preflight.json
+        source: $.steps.preflight
+        format: json
 
   - id: workspace
     type: built_in
     uses: prepare_worktree
-    artifact: workspace.json
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
     after:
       - preflight
 
   - id: repo_context
     type: built_in
     uses: collect_repo_context
-    artifact: repo-context.json
+    artifacts:
+      - path: repo-context.json
+        source: $.steps.repo_context
+        format: json
     after:
       - workspace
 
@@ -361,7 +371,10 @@ nodes:
     type: agent
     agent: my-agent
     output_schema: my_output
-    artifact: my-agent-output.json
+    artifacts:
+      - path: my-agent-output.json
+        source: $.steps.my_agent_step
+        format: json
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
@@ -379,7 +392,10 @@ Built-in node:
 - id: repo_context
   type: built_in
   uses: collect_repo_context
-  artifact: repo-context.json
+  artifacts:
+    - path: repo-context.json
+      source: $.steps.repo_context
+      format: json
   after:
     - workspace
 ```
@@ -391,7 +407,10 @@ Agent node:
   type: agent
   agent: change-reviewer
   output_schema: code_review_findings
-  artifact: code-review-findings.json
+  artifacts:
+    - path: code-review-findings.json
+      source: $.steps.code_review
+      format: json
   input:
     invocation: $.invocation
     repo_context: $.steps.repo_context
@@ -406,10 +425,16 @@ Agent loop node:
   type: agent_loop
   agent: code-implementer
   output_schema: implementation_result
-  artifact:
-    attempts: implementation-attempts.json
-    validation: validation.json
-    result: implementation-result.json
+  artifacts:
+    - path: implementation-attempts.json
+      source: $.steps.implementation.attempts
+      format: json
+    - path: validation.json
+      source: $.steps.implementation.validation
+      format: json
+    - path: implementation-result.json
+      source: $.steps.implementation.result
+      format: json
   sandbox:
     type: trusted_host_local
     cwd: $.workspace.path
@@ -421,12 +446,18 @@ Agent loop node:
     attempts: $.config.implementation.validation.repair_attempts
 ```
 
-`artifact` can be a string or, for built-ins that write multiple files, a map:
+`artifacts` maps explicit state sources to files in the run artifact directory:
 
 ```yaml
-artifact:
-  json: final-report.json
-  markdown: final-report.md
+artifacts:
+  - path: final-report.json
+    source: $.steps.final_report.json
+    format: json
+    required: true
+  - path: final-report.md
+    source: $.steps.final_report.markdown
+    format: markdown
+    required: true
 ```
 
 ## Workflow Input References
