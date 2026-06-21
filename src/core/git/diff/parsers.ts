@@ -24,12 +24,6 @@ export type NumstatEntry = {
   binary: boolean;
 };
 
-export type NameStatusEntry = {
-  path: string;
-  previousPath?: string;
-  status: GitDiffFileStatus;
-};
-
 export function nulFields(output: string): string[] {
   const fields = output.split("\0");
 
@@ -97,18 +91,6 @@ export function parseRawDiff(raw: string): Map<string, RawDiffEntry> {
   return entries;
 }
 
-export function parseRawSubmodules(raw: string): Set<string> {
-  const submodules = new Set<string>();
-
-  for (const entry of parseRawDiff(raw).values()) {
-    if (entry.isSubmodule) {
-      submodules.add(entry.path);
-    }
-  }
-
-  return submodules;
-}
-
 function parseCount(value: string): number {
   return value === "-" ? 0 : Number.parseInt(value, 10);
 }
@@ -145,28 +127,6 @@ export function parseNumstat(numstat: string): Map<string, NumstatEntry> {
       deletions: parseCount(deletions),
       binary: additions === "-" && deletions === "-"
     });
-  }
-
-  return entries;
-}
-
-export function parseNameStatus(nameStatus: string): NameStatusEntry[] {
-  const entries: NameStatusEntry[] = [];
-  const fields = nulFields(nameStatus);
-
-  for (let index = 0; index < fields.length; ) {
-    const statusCode = fields[index++];
-    const status = gitFileStatusFromCode(statusCode);
-    const firstPath = fields[index++];
-    const secondPath = status === "renamed" || status === "copied" ? fields[index++] : undefined;
-    const path = status === "renamed" || status === "copied" ? secondPath : firstPath;
-    const previousPath = status === "renamed" ? firstPath : undefined;
-
-    if (!path) {
-      continue;
-    }
-
-    entries.push({ path, previousPath, status });
   }
 
   return entries;

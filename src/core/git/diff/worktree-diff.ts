@@ -5,7 +5,7 @@ import { redactString } from "../../redactor.js";
 import {
   nulFields,
   parseNumstat,
-  parseRawSubmodules,
+  parseRawDiff,
   type NumstatEntry
 } from "./parsers.js";
 
@@ -144,6 +144,18 @@ function parseStatus(status: string): WorktreeDiffFile[] {
   }
 
   return files;
+}
+
+function parseRawSubmodules(raw: string): Set<string> {
+  const submodules = new Set<string>();
+
+  for (const entry of parseRawDiff(raw).values()) {
+    if (entry.isSubmodule) {
+      submodules.add(entry.path);
+    }
+  }
+
+  return submodules;
 }
 
 function truncateUtf8ToBytes(content: string, maxBytes: number): string {

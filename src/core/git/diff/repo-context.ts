@@ -1,6 +1,7 @@
 import { runGit as defaultRunGit } from "../client.js";
 import {
-  parseNameStatus,
+  gitFileStatusFromCode,
+  nulFields,
   parseNumstat,
   parseRawDiff
 } from "./parsers.js";
@@ -12,6 +13,7 @@ import type {
 } from "../../types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
+type FileStatus = ChangedFile["status"];
 
 type CollectRepoContextOptions = {
   repository: RepositoryConfig;
@@ -28,10 +30,38 @@ type PatchBudgetResult = {
   truncated: boolean;
 };
 
+type NameStatusEntry = {
+  path: string;
+  previousPath?: string;
+  status: FileStatus;
+};
+
 const DEFAULT_MAX_CHANGED_FILES = 100;
 const DEFAULT_MAX_DIFF_BYTES = 200_000;
 const DEFAULT_MAX_EXCERPT_BYTES = 8_000;
 const LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1";
+
+function parseNameStatus(nameStatus: string): NameStatusEntry[] {
+  const entries: NameStatusEntry[] = [];
+  const fields = nulFields(nameStatus);
+
+  for (let index = 0; index < fields.length; ) {
+    const statusCode = fields[index++];
+    const status = gitFileStatusFromCode(statusCode);
+    const firstPath = fields[index++];
+    const secondPath = status === "renamed" || status === "copied" ? fields[index++] : undefined;
+    const path = status === "renamed" || status === "copied" ? secondPath : firstPath;
+    const previousPath = status === "renamed" ? firstPath : undefined;
+
+    if (!path) {
+      continue;
+    }
+
+    entries.push({ path, previousPath, status });
+  }
+
+  return entries;
+}
 
 function lineCount(content: string): number {
   if (content.length === 0) {
