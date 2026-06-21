@@ -540,7 +540,7 @@ describe("flue agent capabilities", () => {
           }
         })
       ).rejects.toMatchObject({
-        code: "subagent_capabilities_unsupported",
+        code: "subagent_mcp_not_allowed",
         message: expect.stringContaining("mcp_servers")
       });
     } finally {

@@ -212,12 +212,12 @@ schema changes. Reuse an existing agent when only the workflow context changes.
 
 Subagents are agent capabilities, not graph nodes. They run as read-only Flue
 profiles by default using the referenced agent's description, instructions,
-model profile, skills, and explicitly safe local tools. Trusted write subagents
-require workflow-level `subagent_policy.allow_write: true` plus a per-subagent
-tool allowlist on the parent agent. Flue subagents cannot declare `mcp_servers`
-or nested `subagents` in Luna. Use graph nodes when the result must have its own
-artifact, schema, workflow gate, MCP access, another delegation tree, or
-independent write step. Use Flue subagents for lightweight internal delegation
+model profile, and skills. Read-only subagents cannot declare local tools, MCP
+servers, or nested subagents. Trusted write subagents require workflow-level
+`subagent_policy.allow_write: true` plus a per-subagent tool allowlist on the
+parent agent. Use graph nodes when the result must have its own artifact,
+schema, workflow gate, MCP access, another delegation tree, or independent write
+step. Use Flue subagents for lightweight internal delegation
 inside a parent agent.
 
 ## MCP Capabilities

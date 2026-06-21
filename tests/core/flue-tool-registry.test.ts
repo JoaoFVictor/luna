@@ -97,22 +97,6 @@ describe("flue tool registry", () => {
     });
   });
 
-  it("allows safe read-only repository tools for read-only subagents", async () => {
-    const { resolveFlueTools } = await importRegistryWithGitMock();
-
-    const tools = resolveFlueTools({
-      ids: ["repository.status", "repository.diff-summary"],
-      agentMode: "read_only",
-      cwd: "/repo/worktree",
-      forSubagent: true
-    });
-
-    expect(tools.map((tool) => tool.name)).toEqual([
-      "repository_status",
-      "repository_diff_summary"
-    ]);
-  });
-
   it("exposes safety metadata for every registered Flue tool", async () => {
     const { registeredFlueToolSafety } = await importRegistryWithGitMock();
 
@@ -120,54 +104,27 @@ describe("flue tool registry", () => {
       "repository.status": {
         writes: false,
         network: false,
-        side_effects: false,
-        subagent_read_only_allowed: true
+        side_effects: false
       },
       "repository.diff-summary": {
         writes: false,
         network: false,
-        side_effects: false,
-        subagent_read_only_allowed: true
+        side_effects: false
       }
     });
   });
 
-  it("enforces read-only subagent safety invariants", async () => {
+  it("enforces tool safety invariants", async () => {
     const { assertToolSafety } = await importRegistryWithGitMock();
 
     expect(() =>
       assertToolSafety({
         writes: true,
         network: false,
-        side_effects: false,
-        subagent_read_only_allowed: true
+        side_effects: false
       })
     ).toThrow(
-      "subagent_read_only_allowed requires a read-only, no-network, no-side-effect tool"
-    );
-  });
-
-  it("default-denies unknown and unsafe tools for subagents", async () => {
-    const { resolveFlueTools } = await importRegistryWithGitMock();
-
-    expect(() =>
-      resolveFlueTools({
-        ids: ["repository.missing"],
-        agentMode: "read_only",
-        cwd: "/repo/worktree",
-        forSubagent: true
-      })
-    ).toThrow(expect.objectContaining({ code: "flue_tool_unknown" }));
-
-    expect(() =>
-      resolveFlueTools({
-        ids: ["repository.status"],
-        agentMode: "trusted_host_local_write",
-        cwd: "/repo/worktree",
-        forSubagent: true
-      })
-    ).toThrow(
-      expect.objectContaining({ code: "flue_tool_subagent_not_allowed" })
+      "writing tools must declare side_effects"
     );
   });
 });

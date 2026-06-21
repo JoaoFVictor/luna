@@ -181,12 +181,12 @@ Flue subagents run inside the parent agent session. They are not workflow graph
 nodes and do not create separate Luna artifacts automatically.
 
 Subagents are read-only Flue profiles by default. Luna uses the referenced
-agent's description, instructions, model profile, skills, and explicitly safe
-local tools. Trusted write subagents require both workflow-level
+agent's description, instructions, model profile, and skills. Read-only
+subagents cannot declare local tools, MCP servers, or nested subagents. Trusted
+write subagents require both workflow-level
 `subagent_policy.allow_write: true` and a per-subagent `policy.allow_tools`
-allowlist. Flue subagents cannot declare `mcp_servers` or nested `subagents` in
-Luna. Use a workflow graph node when delegated work needs MCP access, another
-delegation tree, its own artifact, schema, or workflow gate.
+allowlist. Use a workflow graph node when delegated work needs MCP access,
+another delegation tree, its own artifact, schema, or workflow gate.
 
 ## Project Structure
 

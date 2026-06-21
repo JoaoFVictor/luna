@@ -163,7 +163,7 @@ describe("flue subagent profiles", () => {
     }
   });
 
-  it("allows read-only subagents with skills and safe local repository tools", async () => {
+  it("allows read-only subagents with skills but no tools", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
     const agentsRoot = path.join(root, "agents");
 
@@ -173,9 +173,7 @@ describe("flue subagent profiles", () => {
         root: agentsRoot,
         extraYaml: [
           "skills:",
-          "  - ../../skills/repo-inspection/SKILL.md",
-          "tools:",
-          "  - repository.status"
+          "  - ../../skills/repo-inspection/SKILL.md"
         ]
       });
 
@@ -195,9 +193,62 @@ describe("flue subagent profiles", () => {
           description: "Inspect repository state without changing files."
         })
       ]);
-      expect(profiles[0]?.tools?.map((tool) => tool.name)).toEqual([
-        "repository_status"
-      ]);
+      expect(profiles[0]?.tools).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects read-only policy overrides with allow_tools", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+
+    try {
+      await writeSubagentFixture({ root });
+
+      await expect(
+        resolveFlueSubagentProfiles({
+          agentsRoot: root,
+          subagents: [
+            {
+              id: "change-reviewer",
+              policy: { mode: "read_only", allow_tools: ["repository.status"] }
+            }
+          ],
+          workflowSubagentPolicy: { allow_write: true },
+          cwd: "/repo/worktree",
+          modelProfiles: {
+            deep: { model: "test/deep", reasoning_effort: "high" }
+          }
+        })
+      ).rejects.toMatchObject({
+        code: "subagent_read_only_allow_tools_invalid"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects read-only subagents that declare tools", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+
+    try {
+      await writeSubagentFixture({
+        root,
+        extraYaml: ["tools:", "  - repository.status"]
+      });
+
+      await expect(
+        resolveFlueSubagentProfiles({
+          agentsRoot: root,
+          subagents: [{ id: "change-reviewer" }],
+          cwd: "/repo/worktree",
+          modelProfiles: {
+            deep: { model: "test/deep", reasoning_effort: "high" }
+          }
+        })
+      ).rejects.toMatchObject({
+        code: "subagent_read_only_allow_tools_invalid"
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -257,7 +308,7 @@ describe("flue subagent profiles", () => {
           }
         })
       ).rejects.toMatchObject({
-        code: "subagent_capabilities_unsupported",
+        code: "subagent_write_not_allowed",
         message: expect.stringContaining(
           "Subagent write mode is not allowed by workflow policy"
         )
@@ -353,21 +404,24 @@ describe("flue subagent profiles", () => {
     {
       name: "mcp_servers",
       extraYaml: ["mcp_servers:", "  - github"],
-      expected: "mcp_servers:github"
+      expected: "mcp_servers:github",
+      code: "subagent_mcp_not_allowed"
     },
     {
       name: "nested subagents",
       extraYaml: ["subagents:", "  - security-reviewer"],
-      expected: "subagents:security-reviewer"
+      expected: "subagents:security-reviewer",
+      code: "subagent_nested_not_allowed"
     },
     {
       name: "unknown local tool",
       extraYaml: ["tools:", "  - repository.missing"],
-      expected: "tools:repository.missing"
+      expected: "tools:repository.missing",
+      code: "subagent_read_only_allow_tools_invalid"
     }
   ])(
     "rejects the whole subagent profile for unsupported $name and records observability",
-    async ({ extraYaml, expected }) => {
+    async ({ extraYaml, expected, code }) => {
       const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
       const observability = fakeObservability();
       const summary = createObservabilitySummary({
@@ -393,7 +447,7 @@ describe("flue subagent profiles", () => {
             summary
           })
         ).rejects.toMatchObject({
-          code: "subagent_capabilities_unsupported",
+          code,
           message: expect.stringContaining(expected)
         });
 

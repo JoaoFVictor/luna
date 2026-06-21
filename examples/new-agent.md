@@ -145,11 +145,11 @@ Create or reuse a valid `agents/change-reviewer/` directory with
 `agent.yaml`, `instructions_file`, `output_schema`, and a configured
 `model_profile`. No TypeScript is needed for each new subagent.
 
-Subagents are `read_only` by default. They may declare skills and local tools
-that Luna marks as safe for read-only subagent use, such as repository
-inspection tools. Trusted write subagents require the workflow to set
-`subagent_policy.allow_write: true`, and Luna only exposes tools named in the
-subagent reference's `policy.allow_tools`.
+Subagents are `read_only` by default. They may declare skills, but read-only
+subagents cannot declare local tools, MCP servers, or nested subagents. Trusted
+write subagents require the workflow to set `subagent_policy.allow_write: true`,
+and Luna only exposes tools named in the subagent reference's
+`policy.allow_tools`.
 
 Flue subagents cannot declare `mcp_servers` or nested `subagents` in Luna. Use a
 workflow graph node when delegated work needs MCP access, another delegation

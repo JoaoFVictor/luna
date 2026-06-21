@@ -55,7 +55,12 @@ function isKnownSubagentError(error: unknown): boolean {
     code === "subagent_model_profile_missing" ||
     code === "subagent_context_missing" ||
     code === "subagent_capabilities_unsupported" ||
-    code === "subagent_profile_capability_unsupported"
+    code === "subagent_profile_capability_unsupported" ||
+    code === "subagent_read_only_allow_tools_invalid" ||
+    code === "subagent_write_not_allowed" ||
+    code === "subagent_write_allow_tools_required" ||
+    code === "subagent_mcp_not_allowed" ||
+    code === "subagent_nested_not_allowed"
   );
 }
 
