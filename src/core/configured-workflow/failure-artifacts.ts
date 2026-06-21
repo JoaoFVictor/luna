@@ -72,7 +72,7 @@ export function createFailureArtifactWriter({
       );
 
       return {
-        runtimeRunId,
+        ...(runtimeRunId === undefined ? {} : { runtimeRunId }),
         artifactStore: activeArtifactStore,
         run: activeRun,
         workflowId: activeWorkflowId,

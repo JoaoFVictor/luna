@@ -219,11 +219,16 @@ describe("configured workflow runner", () => {
       await expect(
         pathExists(path.join(root, "artifacts", "_failed"))
       ).resolves.toBe(true);
-      await expect(
-        readJson(root, "_failed", result.run.run_id, "run.json")
-      ).resolves.toMatchObject({
+      const runJson = await readJson(
+        root,
+        "_failed",
+        result.run.run_id,
+        "run.json"
+      );
+      expect(runJson).toMatchObject({
         workflow_id: "_failed"
       });
+      expect(runJson).not.toHaveProperty("flue_run_id");
       await expect(
         readJson(root, "_failed", result.run.run_id, "error.json")
       ).resolves.toMatchObject({

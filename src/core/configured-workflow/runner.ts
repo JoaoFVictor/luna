@@ -490,7 +490,7 @@ export async function runConfiguredWorkflow({
       workflowId,
       attempt,
       date,
-      runtimeRunId: runtimeRunId ?? run?.run_id ?? "_failed",
+      runtimeRunId,
       nonce,
       error
     });

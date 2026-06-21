@@ -77,7 +77,8 @@ export type ConfiguredWorkflowFinalizer = {
   ): Promise<WorkspaceRecord | undefined>;
 };
 
-export type FailureArtifactWriteOptions = RuntimeRunRef & {
+export type FailureArtifactWriteOptions = {
+  runtimeRunId?: string;
   artifactStore?: ArtifactStore;
   run?: RunIdentity;
   invocation: Invocation;
@@ -88,7 +89,8 @@ export type FailureArtifactWriteOptions = RuntimeRunRef & {
   error: unknown;
 };
 
-export type FailureArtifactWriteResult = RuntimeRunRef & {
+export type FailureArtifactWriteResult = {
+  runtimeRunId?: string;
   artifactStore: ArtifactStore;
   run: RunIdentity;
   workflowId: string;
