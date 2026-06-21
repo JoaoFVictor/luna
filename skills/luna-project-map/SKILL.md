@@ -46,11 +46,13 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 - Do not add `src/workflows/<workflow>.ts`; use the generic `luna` entrypoint.
 - Do not add one-off CLI commands like `review-pr <url>`.
 - Do not duplicate built-in names outside `src/core/built-ins/catalog.ts`.
+- Do not register local tools outside `src/core/tools/catalog.ts`.
 - Do not keep compatibility wrappers or deadcode.
 - Do not put Flue-specific implementation files back under `src/core/flue-*` or
   provider-neutral modules.
+- Do not add built-in barrel exports such as `built-ins/index.ts`.
 
 ## Verification
 
-Run focused tests for the changed area and `npm run typecheck`. Before finishing
-a broad change, run `npm test` and `npm run build`.
+Run focused tests for the changed area and `rtk npm run typecheck`. Before
+finishing a broad change, run `rtk npm test` and `rtk npm run build`.

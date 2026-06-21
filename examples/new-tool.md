@@ -5,6 +5,10 @@ materialized for the current agent runtime. Use a tool when an agent needs a
 small, explicit capability such as reading git status, summarizing a diff, or
 querying a local system through controlled code.
 
+Local tool contracts, implementations, and catalog registration live under
+`src/core/tools/`. The current Flue runtime adapter materializes those tools
+under `src/core/agent-runtime/flue/`.
+
 Do not use a tool for orchestration. Workflow order belongs in `graph.yaml`.
 Do not use a tool for external input normalization. That belongs in an input
 adapter.

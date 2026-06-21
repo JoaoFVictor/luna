@@ -35,6 +35,7 @@ behavior comes from metadata.
 Add new built-ins to `defaultBuiltInSteps` in `catalog.ts`. Do not create a
 second built-in name list in workflow validation or runner code.
 Do not add barrel exports for new domain files; import owning modules directly.
+Do not create compatibility wrappers for old built-in module paths.
 
 ## Testing
 
@@ -44,9 +45,9 @@ Create focused domain tests under `tests/core/`, and update
 Run:
 
 ```sh
-npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-*.test.ts
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
-npm run typecheck
+rtk npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-*.test.ts
+rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+rtk npm run typecheck
 ```
 
 Update README/examples when adding public built-ins.

@@ -1,6 +1,7 @@
 # Create a new built-in step
 
-Built-ins are reusable local capabilities that workflow YAML can call with:
+Built-ins are deterministic local capabilities under `src/core/built-ins/` that
+workflow YAML can call with:
 
 ```yaml
 - id: my_step
@@ -164,14 +165,14 @@ If the built-in becomes part of Luna's public inventory, update `README.md` and
 Run the focused tests:
 
 ```sh
-npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-code-review.test.ts tests/core/built-ins-implementation.test.ts
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
-npm run typecheck
+rtk npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-code-review.test.ts tests/core/built-ins-implementation.test.ts
+rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+rtk npm run typecheck
 ```
 
 Run the full suite before committing:
 
 ```sh
-npm test
-npm run build
+rtk npm test
+rtk npm run build
 ```

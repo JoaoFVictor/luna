@@ -7,6 +7,7 @@ import YAML from "yaml";
 import { loadWorkflowDefinition } from "../../src/core/workflow/definition.js";
 import {
   assertDocsCatalogDriftGuardrail,
+  deletedPathRecommendationViolations,
   realReviewPrCommandViolations
 } from "./docs-catalog-drift-guardrail.js";
 import { lifecycleStepMapViolations } from "./lifecycle-guardrail.js";
@@ -893,6 +894,21 @@ describe("refactor guardrails", () => {
       realReviewPrCommandViolations(
         "docs.md",
         "Do not add one-off commands like review-pr <url>."
+      )
+    ).toEqual([]);
+  });
+
+  it("detects deleted path recommendations unless they are explicit warnings", () => {
+    expect(
+      deletedPathRecommendationViolations(
+        "docs.md",
+        "Add the shared contract to src/core/types.ts."
+      )
+    ).toEqual(["docs.md:1 recommends deleted core path"]);
+    expect(
+      deletedPathRecommendationViolations(
+        "docs.md",
+        "Do not recommend src/core/types.ts."
       )
     ).toEqual([]);
   });

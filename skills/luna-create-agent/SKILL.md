@@ -10,6 +10,9 @@ when they run and what input they receive.
 
 ## Files
 
+Agent definitions are owned by `agents/<agent-id>/`; do not add TypeScript
+workflow or runtime files for a new reusable agent.
+
 ```text
 agents/<agent-id>/
   agent.yaml

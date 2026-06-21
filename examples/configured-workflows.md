@@ -3,6 +3,15 @@
 This guide is the practical extension map for Luna. It explains what can be
 created with configuration and what still requires TypeScript.
 
+Public extension paths:
+
+- `agents/<id>/` for reusable Flue agent definitions.
+- `workflows/<id>/` for YAML workflow graphs.
+- `src/adapters/<id>/` for input adapters.
+- `src/core/built-ins/` for deterministic YAML built-ins.
+- `src/core/tools/` for Luna-native local tools.
+- `src/core/agent-runtime/flue/` for the current Flue runtime adapter.
+
 For step-by-step recipes, see:
 
 - [Run a GitHub PR review](review-pr.md)
@@ -47,13 +56,13 @@ The workflow id comes from one of these places:
 The common command shape is:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --from <adapter> <value>
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --from <adapter> <value>
 ```
 
 The lower-level JSON path is useful for tests and automation:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --input path/to/invocation.json
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --input path/to/invocation.json
 ```
 
 The committed workflows consume Luna's normalized invocation shape. See
@@ -494,13 +503,13 @@ Adapters exist so callers do not need to hand-write invocation JSON.
 The current adapter command is:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 The Jira implementation adapter command is:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 To add a new adapter:
@@ -552,8 +561,8 @@ An adapter should not:
 
 Use YAML/config for:
 
-- New agents.
-- New workflow graphs using existing built-ins.
+- New agents under `agents/<id>/`.
+- New workflow graphs under `workflows/<id>/` using existing built-ins.
 - New model profiles.
 - New MCP server policy in `config/mcp.yaml`.
 - New local repository entries.
@@ -564,44 +573,46 @@ Use YAML/config for:
 
 Use TypeScript for:
 
-- New input adapters.
-- New built-in steps.
-- New local tools.
+- New input adapters under `src/adapters/<id>/`.
+- New deterministic workflow built-ins under `src/core/built-ins/`.
+- New Luna-native local tools under `src/core/tools/`.
 - New workspace or repository behavior.
 - New artifact behavior.
 - JSON Schema features outside Luna's supported subset.
 
 Built-ins are registered in `src/core/built-ins/catalog.ts`. The catalog is the
 source of truth for both YAML validation and runtime execution; do not add a
-second handwritten list of built-in names.
+second handwritten list of built-in names. Local tools are registered in
+`src/core/tools/catalog.ts` and materialized for Flue under
+`src/core/agent-runtime/flue/`.
 
 ## Testing Checklist
 
 For a new agent:
 
 ```bash
-npm test -- tests/core/agent-definition.test.ts
+rtk npm test -- tests/core/agent-definition.test.ts
 ```
 
 For a new workflow:
 
 ```bash
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
 ```
 
 For a new adapter:
 
 ```bash
-npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
+rtk npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
 ```
 
 Before finishing a branch:
 
 ```bash
-npm test
-npm run typecheck
-npm run build
-npm run flue:build
+rtk npm test
+rtk npm run typecheck
+rtk npm run build
+rtk npm run flue:build
 ```
 
 ## Write-Mode Configuration
@@ -615,8 +626,8 @@ draft PR.
 `config/implementation.yaml` controls:
 
 - `sandbox.type: trusted_host_local` for local host execution.
-- `validation.commands` for commands such as `npm test` and
-  `npm run typecheck`.
+- `validation.commands` for commands such as `rtk npm test` and
+  `rtk npm run typecheck`.
 - `validation.repair_attempts` for agent repair loops after failed validation.
 - `commit.enabled`, `push.enabled`, and `change_request.enabled` for publishing.
 
@@ -673,16 +684,16 @@ id:
 
 1. Authenticate Pi:
    ```bash
-   npx @earendil-works/pi-ai login openai-codex
+   rtk npx @earendil-works/pi-ai login openai-codex
    ```
 2. Authenticate GitHub:
    ```bash
-   gh auth status
+   rtk gh auth status
    ```
 3. Clone the target repo locally.
 4. Add the repo to `config/repositories.yaml`.
 5. Run:
    ```bash
-   LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
+   rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
    ```
 6. Open `.runs/code-review/<run-id>/final-report.md`.

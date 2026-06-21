@@ -21,6 +21,12 @@ Review Luna changes as architecture, not just code.
 - Flue-specific runner, capabilities, MCP, subagent profile, Pi auth, model
   projection, observability parsing, and workflow factory code stays under
   `src/core/agent-runtime/flue/**`.
+- Public docs point authors to `agents/<id>/`, `workflows/<id>/`,
+  `src/adapters/<id>/`, `src/core/built-ins/`, `src/core/tools/`, and
+  `src/core/agent-runtime/flue/`.
+- Docs do not recommend old deleted paths such as `src/core/types.ts`,
+  `src/tools/repository-tools.ts`, `src/core/flue-*`,
+  `src/core/implementation-*`, or a built-ins barrel.
 - Docs/examples changed when public behavior or authoring patterns changed.
 
 ## Review Order
@@ -29,14 +35,15 @@ Review Luna changes as architecture, not just code.
 2. Search for dead imports, old names, duplicate lists, and stale examples.
 3. Check tests cover both success and failure paths.
 4. Verify README/examples explain the new path for a person new to Luna.
-5. Run focused tests and `npm run typecheck`.
+5. Run focused tests and `rtk npm run typecheck`.
 
 ## Useful Scans
 
 ```sh
-rg -n "built-in-steps|src/workflows/.*\\.ts|TODO|TBD" AGENTS.md README.md examples skills src tests
-rg -n "from \".*built-in-steps\\.js\"|from \"../../src/core/built-in-steps\\.js\"" src tests
-rg -n "src/core/flue-|src/core/pi-auth|observability/flue-log-sink" src tests examples skills
+rtk rg -n "built-in-steps|src/workflows/.*\\.ts|TODO|TBD" AGENTS.md README.md examples skills src tests
+rtk rg -n "from \".*built-in-steps\\.js\"|from \"../../src/core/built-in-steps\\.js\"" src tests
+rtk rg -n "src/core/flue-|src/core/pi-auth|observability/flue-log-sink" src tests examples skills
+rtk rg -n "src/core/types\\.ts|src/tools/repository-tools\\.ts|src/core/implementation-|built-ins/index\\.ts" README.md examples skills src tests
 ```
 
 Do not add `review-pr <url>` except inside docs as an explicit anti-example.
@@ -46,7 +53,7 @@ implementation.
 For broad changes, run:
 
 ```sh
-npm test
-npm run typecheck
-npm run build
+rtk npm test
+rtk npm run typecheck
+rtk npm run build
 ```

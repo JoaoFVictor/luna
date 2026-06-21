@@ -25,6 +25,9 @@ Good tools:
 
 ## Files
 
+Local tools are owned by `src/core/tools/`. Do not add tool implementations
+under old `src/tools/` paths.
+
 - Define runtime-neutral tool contracts in `src/core/tools/contracts.ts`.
 - Implement domain tools under `src/core/tools/`.
 - Register public tool IDs in `src/core/tools/catalog.ts`.

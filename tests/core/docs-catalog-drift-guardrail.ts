@@ -118,6 +118,17 @@ function realWorkflowTargets(relativePath: string, content: string): string[] {
     .map((id) => `${relativePath} references workflow:${id}`);
 }
 
+const deletedPathPatterns = [
+  /src\/core\/types\.ts/,
+  /src\/tools\/repository-tools\.ts/,
+  /src\/core\/flue-[A-Za-z0-9_.-]+/,
+  /src\/core\/implementation-[A-Za-z0-9_.-]+/,
+  /built-ins\/index\.ts/
+] as const;
+
+const deletedPathWarningPattern =
+  /\bDo not\b|\bdo not\b|\bnot recommend\b|\bold\b|\blegacy\b|\bdeleted paths\b/;
+
 export function realReviewPrCommandViolations(
   relativePath: string,
   content: string
@@ -137,6 +148,24 @@ export function realReviewPrCommandViolations(
   });
 }
 
+export function deletedPathRecommendationViolations(
+  relativePath: string,
+  content: string
+): string[] {
+  const lines = content.split(/\r?\n/);
+
+  return lines.flatMap((line, index) => {
+    if (!deletedPathPatterns.some((pattern) => pattern.test(line))) {
+      return [];
+    }
+
+    const contextText = lines.slice(Math.max(0, index - 3), index + 4).join("\n");
+    return deletedPathWarningPattern.test(contextText)
+      ? []
+      : [`${relativePath}:${index + 1} recommends deleted core path`];
+  });
+}
+
 export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise<void> {
   const builtIns = [...builtInStepNames].sort();
   const toolIds = Object.keys(lunaToolCatalog).sort();
@@ -144,6 +173,7 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
   const legacyViolations: string[] = [];
   const workflowReferences: string[] = [];
   const reviewPrViolations: string[] = [];
+  const deletedPathViolations: string[] = [];
 
   expect(builtIns, "runtime built-in inventory from src/core/built-ins/catalog.ts").not.toEqual([]);
   expect(toolIds, "runtime tool inventory from src/core/tools/catalog.ts").not.toEqual([]);
@@ -174,6 +204,7 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
     legacyViolations.push(...legacyLineViolations(relativePath, content));
     workflowReferences.push(...realWorkflowTargets(relativePath, content));
     reviewPrViolations.push(...realReviewPrCommandViolations(relativePath, content));
+    deletedPathViolations.push(...deletedPathRecommendationViolations(relativePath, content));
   }
 
   const referencedWorkflowIds = [...new Set(workflowReferences.map((reference) =>
@@ -182,6 +213,7 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
 
   expect(legacyViolations).toEqual([]);
   expect(reviewPrViolations).toEqual([]);
+  expect(deletedPathViolations).toEqual([]);
   expect(referencedWorkflowIds).toEqual(workflowIds);
   for (const reference of workflowReferences) {
     expect(workflowIds, reference).toContain(reference.match(/workflow:([a-z][a-z0-9-]*)/)?.[1]);

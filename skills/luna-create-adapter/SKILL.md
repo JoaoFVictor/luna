@@ -49,8 +49,8 @@ failures, auth/config failures, and normalized invocation shape.
 Run:
 
 ```sh
-npm test -- tests/core/cli.test.ts tests/adapters/<adapter-id>-adapter.test.ts
-npm run typecheck
+rtk npm test -- tests/core/cli.test.ts tests/adapters/<adapter-id>-adapter.test.ts
+rtk npm run typecheck
 ```
 
 Update README and `examples/configured-workflows.md` if the adapter is public.
