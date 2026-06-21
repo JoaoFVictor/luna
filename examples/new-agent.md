@@ -193,3 +193,11 @@ If the agent is part of a real workflow, also run the workflow runner tests:
 ```bash
 rtk npm test -- tests/core/configured-workflow-runner.test.ts
 ```
+
+Before opening a PR, also run:
+
+```bash
+rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
+```

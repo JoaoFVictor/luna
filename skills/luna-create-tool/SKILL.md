@@ -54,6 +54,8 @@ Run:
 rtk npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
 rtk npm test -- tests/core/flue-modules.test.ts
 rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 ```
 
 Update README/examples when adding reusable public tools.

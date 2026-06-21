@@ -133,7 +133,7 @@ LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --fr
 ```
 
 The `jira-task-url` adapter fetches the Jira issue, maps the configured
-repository field to a local repository entry, and runs the generic Luna Flue
+repository field to a local repository entry, and runs the generic Luna workflow
 entrypoint with a normalized Jira issue invocation. URL adapters omit `target`
 unless the CLI override is used; workflow selection comes from
 `--target workflow:<id>`, invocation `target`, or `config/routing.yaml`.

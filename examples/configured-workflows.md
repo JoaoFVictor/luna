@@ -5,7 +5,7 @@ created with configuration and what still requires TypeScript.
 
 Public extension paths:
 
-- `agents/<id>/` for reusable Flue agent definitions.
+- `agents/<id>/` for reusable Luna agent definitions.
 - `workflows/<id>/` for YAML workflow graphs.
 - `src/adapters/<id>/` for input adapters.
 - `src/core/built-ins/` for deterministic YAML built-ins.
@@ -38,7 +38,8 @@ Choose the guide by intent:
 
 ## Runtime Model
 
-Luna exposes one generic Flue workflow entrypoint named `luna`.
+Luna exposes one generic workflow entrypoint named `luna` through the current
+Flue runtime adapter.
 
 ```text
 adapter or JSON input -> invocation -> route -> workflow graph -> built-ins/agents/agent loops -> artifacts

@@ -74,7 +74,7 @@ LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from 
 ```
 
 The `github-pr-url` adapter calls `gh api`, builds a normalized Luna invocation,
-and runs the generic Flue workflow entrypoint. URL adapters omit `target`
+and runs the generic Luna workflow entrypoint. URL adapters omit `target`
 unless the CLI override is used; workflow selection comes from
 `--target workflow:<id>`, invocation `target`, or `config/routing.yaml`.
 

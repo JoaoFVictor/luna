@@ -168,11 +168,16 @@ Run the focused tests:
 rtk npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-code-review.test.ts tests/core/built-ins-implementation.test.ts
 rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
 rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 ```
 
 Run the full suite before committing:
 
 ```sh
 rtk npm test
+rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 rtk npm run build
 ```

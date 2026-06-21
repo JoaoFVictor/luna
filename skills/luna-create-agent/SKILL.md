@@ -60,6 +60,8 @@ Run:
 rtk npm test -- tests/core/agent-definition.test.ts
 rtk npm test -- tests/core/flue-agent-capabilities.test.ts tests/core/flue-subagent-profiles.test.ts
 rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 ```
 
 If the agent is wired into a workflow, also run

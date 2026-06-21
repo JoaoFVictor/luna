@@ -5,9 +5,9 @@ repository.
 
 ## Project Shape
 
-Luna is a local-first multi-agent orchestration repo built on Flue. It has one
-generic workflow entrypoint in `src/workflows/luna.ts`; do not add a TypeScript
-workflow file per workflow.
+Luna is a local-first multi-agent orchestration repo with Flue as the current
+agent runtime adapter. It has one generic workflow entrypoint in
+`src/workflows/luna.ts`; do not add a TypeScript workflow file per workflow.
 
 Runtime flow:
 
@@ -17,7 +17,7 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 
 Primary extension points:
 
-- `agents/<id>/`: reusable Flue agent definitions.
+- `agents/<id>/`: reusable Luna agent definitions.
 - `workflows/<id>/`: YAML workflow graphs.
 - `src/adapters/<id>/`: input adapters for external sources.
 - `src/core/built-ins/`: deterministic workflow built-ins.
@@ -46,7 +46,8 @@ Before changing an area, read the matching project skill:
 - Register local tools through `src/core/tools/catalog.ts`; Flue
   materialization lives in `src/core/agent-runtime/flue/tool-registry.ts`.
 - Update README/examples when adding public extension points.
-- Run focused tests for the touched area plus `npm run typecheck`.
+- Run focused tests for the touched area plus `npm run typecheck`,
+  `npm run typecheck:unused-src`, and `npm run lint:unused`.
 
 ## Useful Docs
 

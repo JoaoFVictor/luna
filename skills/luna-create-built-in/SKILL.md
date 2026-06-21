@@ -48,6 +48,8 @@ Run:
 rtk npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-*.test.ts
 rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
 rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 ```
 
 Update README/examples when adding public built-ins.

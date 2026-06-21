@@ -28,7 +28,8 @@ Rules:
   a separate artifact namespace.
 - Optional `execution.max_concurrency` controls safe ready-node parallelism.
   Repository-sensitive built-ins remain serialized by local locks, and
-  `agent`/`agent_loop` nodes stay effectively single-lane.
+  `agent`/`agent_loop` nodes must use explicit workflow dependencies and
+  artifacts instead of shared mutable local state.
 
 ## Node Types
 
@@ -87,4 +88,6 @@ Run:
 ```sh
 rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
 rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 ```

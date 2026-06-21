@@ -49,8 +49,9 @@ Workflow YAML does not define a separate artifact namespace. The routed
 
 `execution.max_concurrency` controls how many safe ready nodes the scheduler
 may run at once. Repository-sensitive built-ins are still serialized by local
-locks, and agent nodes stay effectively single-lane until harness isolation is
-proven for broader parallelism.
+locks. Agent and agent-loop nodes must not depend on shared mutable local state;
+use workflow dependencies, artifacts, and repository locks to make parallel runs
+safe.
 
 Use `git_managed_write` only for workflows that intentionally create a writable
 worktree and run trusted local write agents.
@@ -230,4 +231,7 @@ rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementat
 
 ```bash
 rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 ```

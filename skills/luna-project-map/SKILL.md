@@ -5,8 +5,9 @@ description: Use when first working in Luna, orienting to its architecture, deci
 
 # Luna Project Map
 
-Luna is a local-first multi-agent orchestration repo built on Flue. Start by
-reading `README.md` and `examples/configured-workflows.md`.
+Luna is a local-first multi-agent orchestration repo with Flue as the current
+agent runtime adapter. Start by reading `README.md` and
+`examples/configured-workflows.md`.
 
 Runtime flow:
 

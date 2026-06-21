@@ -1,11 +1,11 @@
 # Luna
 
-Local-first multi-agent workflow orchestration built on Flue.
+Local-first multi-agent workflow orchestration with a Flue runtime adapter.
 
 Luna is a base repository for running configurable agent workflows locally. It
-uses Flue for the workflow and agent abstraction, while keeping routing, input
-adapters, repository access, workspaces, model profiles, and artifacts under
-your control.
+keeps routing, input adapters, repository access, workspaces, model profiles,
+artifacts, and workflow configuration under Luna-owned modules. Flue is the
+current runtime adapter for launching agents and the generic workflow entrypoint.
 
 The bundled workflows cover GitHub PR code review and Jira-driven
 implementation. Luna is not meant to be only a code review tool; code review
@@ -101,7 +101,7 @@ For complete walkthroughs, see:
 - **Router**: chooses the workflow from `--target workflow:<id>`, the
   invocation `target`, or `config/routing.yaml`.
 - **Workflow**: a YAML graph of ordered nodes under `workflows/<workflow-id>/`.
-- **Agent**: a configured Flue agent under `agents/<agent-id>/`, with YAML
+- **Agent**: a configured Luna agent under `agents/<agent-id>/`, with YAML
   metadata, Markdown instructions, and a JSON Schema output contract.
 - **Built-in step**: deterministic TypeScript runtime capability under
   `src/core/built-ins/`, such as preparing a git worktree or collecting
@@ -120,7 +120,7 @@ For complete walkthroughs, see:
 input adapter -> normalized invocation -> router -> workflow graph -> built-ins/agents/agent loops -> artifacts
 ```
 
-There is one generic Flue workflow entrypoint: `luna`.
+There is one generic workflow entrypoint: `luna`.
 
 Workflow selection happens through `--target workflow:<id>`, an invocation
 `target`, or `config/routing.yaml`. URL adapters omit `target` unless the CLI
@@ -129,7 +129,7 @@ override is used. You do not create a new TypeScript file under
 
 Current public extension paths:
 
-- `agents/<id>/` for reusable Flue agent definitions.
+- `agents/<id>/` for reusable Luna agent definitions.
 - `workflows/<id>/` for YAML workflow graphs.
 - `src/adapters/<id>/` for input adapters.
 - `src/core/built-ins/` for deterministic YAML built-ins.
@@ -206,7 +206,7 @@ another delegation tree, its own artifact, schema, or workflow gate.
 ## Project Structure
 
 ```text
-agents/                 reusable Flue agent definitions
+agents/                 reusable Luna agent definitions
 config/                 runtime configuration
 examples/               usage examples and authoring guide
 src/adapters/           input adapters and registry
@@ -214,7 +214,7 @@ src/core/agent-runtime/flue/
                         current Flue runtime adapter
 src/core/built-ins/     deterministic YAML built-ins
 src/core/tools/         Luna-native local tools for agents
-src/workflows/luna.ts   single generic Flue workflow entrypoint
+src/workflows/luna.ts   single generic workflow entrypoint
 workflows/              YAML workflow graphs
 ```
 
