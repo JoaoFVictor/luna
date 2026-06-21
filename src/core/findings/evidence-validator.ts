@@ -1,4 +1,5 @@
-import type { Finding, RepoContext } from "./types.js";
+import type { RepoContext } from "../types.js";
+import type { Finding } from "./types.js";
 
 function hasValidEvidence(
   filesByPath: Map<string, RepoContext["files"][number]>,

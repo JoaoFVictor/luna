@@ -1,11 +1,10 @@
 import type {
-  AcceptanceDecision,
-  Finding,
   Invocation,
   RepoContext,
   RepositoryConfig,
   WorkspaceRecord
 } from "../types.js";
+import type { AcceptanceDecision, Finding } from "../findings/types.js";
 import type { ValidationResult } from "../agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,

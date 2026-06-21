@@ -7,13 +7,15 @@ import {
   validateCodeReviewFindingsBuiltIn
 } from "../../src/core/providers/github/built-ins.js";
 import type {
-  AcceptanceDecision,
-  Finding,
   Invocation,
   RepoContext,
   RepositoryConfig,
   WorkspaceRecord
 } from "../../src/core/types.js";
+import type {
+  AcceptanceDecision,
+  Finding
+} from "../../src/core/findings/types.js";
 import type { ImplementationConfig } from "../../src/core/write-mode/types.js";
 import type { WorkflowState } from "../../src/core/workflow-state.js";
 

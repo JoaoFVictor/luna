@@ -1,4 +1,4 @@
-import { validateFindingEvidence as defaultValidateFindingEvidence } from "../../evidence-validator.js";
+import { validateFindingEvidence as defaultValidateFindingEvidence } from "../../findings/evidence-validator.js";
 import { prepare as defaultPrepareWorktree } from "./worktree-manager.js";
 import { collectRepoContext as defaultCollectRepoContext } from "../../git/diff/repo-context.js";
 import {
@@ -7,12 +7,14 @@ import {
 } from "./report-builder.js";
 import { runPreflight as defaultRunPreflight } from "../../preflight.js";
 import type {
-  AcceptanceDecision,
-  CodeReviewFindings,
   Invocation,
   RepoContext,
   WorkspaceRecord
 } from "../../types.js";
+import type {
+  AcceptanceDecision,
+  CodeReviewFindings
+} from "../../findings/types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
   findingsFrom,

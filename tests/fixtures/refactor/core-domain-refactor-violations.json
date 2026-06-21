@@ -43,11 +43,6 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/evidence-validator.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/invocation-helpers.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7

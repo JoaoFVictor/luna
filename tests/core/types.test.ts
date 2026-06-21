@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
-  AcceptanceDecisionSchema,
   AppConfigSchema,
-  CodeReviewFindingsSchema,
-  EvidenceRefSchema,
   FileExcerptSchema,
   InvocationSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RepoContextSchema,
-  ReviewPlanSchema,
   RunIdentitySchema,
   RoutingConfigSchema
 } from "../../src/core/types.js";
+import {
+  AcceptanceDecisionSchema,
+  CodeReviewFindingsSchema,
+  EvidenceRefSchema,
+  ReviewPlanSchema
+} from "../../src/core/findings/types.js";
 import {
   AgentLoopResultSchema,
   ValidationResultSchema

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validateFindingEvidence } from "../../src/core/evidence-validator.js";
-import type { Finding, RepoContext } from "../../src/core/types.js";
+import { validateFindingEvidence } from "../../src/core/findings/evidence-validator.js";
+import type { Finding } from "../../src/core/findings/types.js";
+import type { RepoContext } from "../../src/core/types.js";
 
 const repoContext: RepoContext = {
   repository: {

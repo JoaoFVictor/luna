@@ -2,10 +2,10 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { RunIdentityOptions } from "../../src/core/run-identity.js";
 import type {
-  AcceptanceDecision,
   Invocation,
   RunIdentity
 } from "../../src/core/types.js";
+import type { AcceptanceDecision } from "../../src/core/findings/types.js";
 
 export const invocation: Invocation = {
   version: "2026-06",

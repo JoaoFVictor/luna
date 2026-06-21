@@ -14,11 +14,11 @@ import {
   finalImplementationReportBuiltIn
 } from "../../src/core/providers/jira/built-ins.js";
 import type {
-  AcceptanceDecision,
   Invocation,
   RepositoryConfig,
   WorkspaceRecord
 } from "../../src/core/types.js";
+import type { AcceptanceDecision } from "../../src/core/findings/types.js";
 import type { ValidationResult } from "../../src/core/agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,

@@ -3,12 +3,11 @@ import {
   buildFinalReportJson,
   buildFinalReportMarkdown
 } from "../../src/core/providers/github/report-builder.js";
+import type { Invocation, WorkspaceRecord } from "../../src/core/types.js";
 import type {
   AcceptanceDecision,
-  Finding,
-  Invocation,
-  WorkspaceRecord
-} from "../../src/core/types.js";
+  Finding
+} from "../../src/core/findings/types.js";
 
 const invocation: Invocation = {
   version: "2026-06",
