@@ -57,13 +57,6 @@ const allowedRuntimeOwners: RuntimeOwner[] = [
   "composition-root", "generic", "provider:github", "provider:jira"
 ];
 
-const wave0OversizedFileBaseline = [
-  "src/core/configured-workflow-runner.ts",
-  "tests/core/configured-workflow-runner.test.ts",
-  "tests/core/flue-modules.test.ts",
-  "tests/core/implementation-git-actions.test.ts"
-];
-
 const ownershipFixturePaths = new Set([
   "tests/fixtures/ownership/runtime-ownership.json",
   "tests/fixtures/ownership/non-runtime-ownership.json",
@@ -604,7 +597,7 @@ describe("refactor guardrails", () => {
 
     expect(Object.keys(waivers)).toEqual(["waivers"]);
     expect(waivers).toEqual({ waivers: [] });
-    expect(Object.keys(oversizedFiles).sort()).toEqual(wave0OversizedFileBaseline);
+    expect(oversizedFiles).toEqual({});
   });
 
   it("classifies every runtime source file in the runtime ownership manifest", async () => {
