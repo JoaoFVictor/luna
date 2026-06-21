@@ -8,6 +8,7 @@ import {
 import type {
   BuiltInStepDependencies,
   BuiltInStepMetadata,
+  BuiltInStepRegistryView,
   RunBuiltInStepOptions
 } from "../built-ins/types.js";
 import { resolveConfigRoot } from "../config/loader.js";
@@ -94,10 +95,6 @@ export type { RunAgentLoopStepOptions, RunAgentStepOptions };
 
 type MaybePromise<T> = T | Promise<T>;
 
-type BuiltInMetadataRegistry = {
-  require(name: string): { metadata?: BuiltInStepMetadata };
-};
-
 export type ConfiguredWorkflowRunnerDependencies = {
   createRunIdentity?: (
     invocation: Invocation,
@@ -114,7 +111,7 @@ export type ConfiguredWorkflowRunnerDependencies = {
     options: RunAgentLoopStepOptions
   ) => MaybePromise<unknown>;
   cleanupWorktree?: typeof defaultCleanupWorktree;
-  builtInStepRegistry?: BuiltInMetadataRegistry;
+  builtInStepRegistry?: BuiltInStepRegistryView;
   builtInStepDependencies?: BuiltInStepDependencies;
   lockManagerFactory?: (options: RunLockManagerOptions) => SchedulerLockManager;
   lockPortFactory?: (options: RunLockManagerOptions) => RunLockPort;
@@ -188,7 +185,7 @@ function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
 
 function builtInMetadata(
   node: WorkflowNode,
-  activeRegistry: BuiltInMetadataRegistry
+  activeRegistry: BuiltInStepRegistryView
 ): BuiltInStepMetadata {
   if (node.type !== "built_in") {
     return {};
@@ -283,7 +280,8 @@ export async function runConfiguredWorkflow({
       dependencies: {
         createRunIdentity: makeRunIdentity,
         routeInvocation: dependencies.routeInvocation,
-        ArtifactStore: Store
+        ArtifactStore: Store,
+        builtInStepRegistry: activeBuiltInStepRegistry
       },
       attempt,
       date,

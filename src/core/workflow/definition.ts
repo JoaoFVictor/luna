@@ -6,7 +6,8 @@ import {
   assertNoDuplicateArtifactPaths,
   normalizeArtifactWritePlans
 } from "./artifact-write-plan.js";
-import { isBuiltInStepName } from "../built-ins/catalog.js";
+import { builtInStepMetadataRegistry } from "../built-ins/catalog.js";
+import type { BuiltInStepRegistryView } from "../built-ins/types.js";
 import { loadYamlFile } from "../config/loader.js";
 import { assertSafeSegment, isInsideRoot } from "../security/path.js";
 import {
@@ -289,13 +290,18 @@ function assertNoDuplicateNodeIds(nodes: WorkflowNode[]): void {
   }
 }
 
-function assertBuiltInNamesRegistered(nodes: WorkflowNode[]): void {
+function assertBuiltInNamesRegistered(
+  nodes: WorkflowNode[],
+  builtInStepRegistry: BuiltInStepRegistryView
+): void {
   for (const node of nodes) {
     if (node.type !== "built_in") {
       continue;
     }
 
-    if (!isBuiltInStepName(node.uses)) {
+    try {
+      builtInStepRegistry.require(node.uses);
+    } catch {
       throw workflowDefinitionError(
         `Unsupported built-in step: ${node.uses}`,
         "workflow_built_in_unknown"
@@ -350,8 +356,11 @@ function assertAcyclic(nodes: WorkflowNode[]): void {
   }
 }
 
-function validateWorkflowGraph(graph: WorkflowGraph): void {
-  assertBuiltInNamesRegistered(graph.nodes);
+function validateWorkflowGraph(
+  graph: WorkflowGraph,
+  builtInStepRegistry: BuiltInStepRegistryView
+): void {
+  assertBuiltInNamesRegistered(graph.nodes, builtInStepRegistry);
   assertNoDuplicateNodeIds(graph.nodes);
   assertDependenciesExist(graph.nodes);
   assertAcyclic(graph.nodes);
@@ -385,7 +394,8 @@ function normalizeSubagentPolicy(
 
 export async function loadWorkflowDefinition(
   workflowsRoot: string,
-  workflowId: string
+  workflowId: string,
+  options: { builtInStepRegistry?: BuiltInStepRegistryView } = {}
 ): Promise<WorkflowDefinition> {
   assertSafeSegment(workflowId);
   const directory = path.join(workflowsRoot, workflowId);
@@ -397,18 +407,21 @@ export async function loadWorkflowDefinition(
   return await loadWorkflowDefinitionFromMetadata({
     directory,
     metadata,
-    workflowId
+    workflowId,
+    builtInStepRegistry: options.builtInStepRegistry
   });
 }
 
 export async function loadWorkflowDefinitionFromMetadata({
   directory,
   metadata,
-  workflowId
+  workflowId,
+  builtInStepRegistry = builtInStepMetadataRegistry
 }: {
   directory: string;
   metadata: WorkflowMetadata;
   workflowId: string;
+  builtInStepRegistry?: BuiltInStepRegistryView;
 }): Promise<WorkflowDefinition> {
   if (metadata.id !== workflowId) {
     throw workflowDefinitionError(
@@ -422,7 +435,7 @@ export async function loadWorkflowDefinitionFromMetadata({
     graphPath,
     WorkflowGraphSchema
   );
-  validateWorkflowGraph(graph);
+  validateWorkflowGraph(graph, builtInStepRegistry);
 
   return {
     ...metadata,

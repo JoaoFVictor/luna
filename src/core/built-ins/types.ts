@@ -62,6 +62,11 @@ export type BuiltInStep<Name extends string = string> = {
   readonly run: (options: BuiltInStepRunOptions) => MaybePromise<unknown>;
 };
 
+export type BuiltInStepRegistryView = {
+  readonly names?: readonly string[];
+  require(name: string): { metadata?: BuiltInStepMetadata };
+};
+
 export type RunBuiltInStepOptions = BuiltInStepRunOptions & {
   uses: string;
 };

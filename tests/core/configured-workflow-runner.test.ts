@@ -242,6 +242,50 @@ describe("configured workflow runner", () => {
     }
   });
 
+  it("validates workflow built-ins against the injected runtime registry", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeParallelProbeWorkflow(root);
+
+      const unsupportedError = new Error("Unsupported built-in step");
+      Object.assign(unsupportedError, { code: "built_in_unsupported" });
+
+      const result = await runConfiguredWorkflow({
+        invocation: {
+          ...invocation,
+          target: { type: "workflow", id: "parallel-probe" }
+        },
+        configRoot: root,
+        throwOnError: false,
+        dependencies: {
+          builtInStepRegistry: {
+            names: ["preflight"],
+            require(name: string) {
+              if (name !== "preflight") {
+                throw unsupportedError;
+              }
+
+              return {};
+            }
+          },
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" }))
+        }
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        error: {
+          code: "workflow_config_read_failed",
+          message: "Failed to load workflow configuration: parallel-probe"
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("emits routed and finished observability events for successful runs", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 

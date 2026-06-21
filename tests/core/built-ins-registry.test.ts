@@ -6,6 +6,7 @@ import {
   isBuiltInStepName,
   runBuiltInStep
 } from "../../src/core/providers/built-ins.js";
+import { builtInStepNames as metadataBuiltInStepNames } from "../../src/core/built-ins/catalog.js";
 import {
   defineBuiltInRegistry,
   defineBuiltInStep
@@ -74,6 +75,13 @@ describe("built-in step registry", () => {
     expect(defaultProviderBuiltInStepRegistry.names).toEqual(builtInStepNames);
     expect(Object.isFrozen(defaultBuiltInSteps)).toBe(true);
     expect(Object.isFrozen(builtInStepNames)).toBe(true);
+  });
+
+  it("keeps provider runtime names aligned with workflow validation metadata", () => {
+    expect(metadataBuiltInStepNames).toEqual(builtInStepNames);
+    expect(defaultProviderBuiltInStepRegistry.names).toEqual(
+      metadataBuiltInStepNames
+    );
   });
 
   it("keeps built-in metadata immutable in the default catalog", () => {

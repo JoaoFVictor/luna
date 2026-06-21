@@ -7,6 +7,7 @@ import {
   type WorkflowMetadata,
   WorkflowMetadataSchema
 } from "../workflow/definition.js";
+import type { BuiltInStepRegistryView } from "../built-ins/types.js";
 
 function compatibilityError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };
@@ -66,7 +67,8 @@ const ConfiguredWorkflowMetadataSchema = {
 
 export async function loadConfiguredWorkflowDefinition(
   workflowsRoot: string,
-  workflowId: string
+  workflowId: string,
+  options: { builtInStepRegistry?: BuiltInStepRegistryView } = {}
 ): Promise<WorkflowDefinition> {
   assertSafeSegment(workflowId);
   const directory = path.join(workflowsRoot, workflowId);
@@ -78,6 +80,7 @@ export async function loadConfiguredWorkflowDefinition(
   return await loadWorkflowDefinitionFromMetadata({
     directory,
     metadata,
-    workflowId
+    workflowId,
+    builtInStepRegistry: options.builtInStepRegistry
   });
 }

@@ -22,6 +22,7 @@ import {
 import { assertSafeSegment } from "../security/path.js";
 import { routeInvocation as defaultRouteInvocation } from "../invocation/router.js";
 import type { RunIdentityOptions } from "../invocation/run-identity.js";
+import type { BuiltInStepRegistryView } from "../built-ins/types.js";
 import {
   RoutingConfigSchema,
   type Invocation,
@@ -58,6 +59,7 @@ export type ConfiguredWorkflowBootstrapDependencies = {
   ) => RunIdentity;
   routeInvocation?: typeof defaultRouteInvocation;
   ArtifactStore: typeof ArtifactStore;
+  builtInStepRegistry?: BuiltInStepRegistryView;
 };
 
 export type ConfiguredWorkflowBootstrapConfigs = {
@@ -121,10 +123,13 @@ function workflowIdFromRoute(
 
 async function loadConfiguredWorkflow(
   workflowsRoot: string,
-  workflowId: string
+  workflowId: string,
+  builtInStepRegistry: BuiltInStepRegistryView | undefined
 ): Promise<WorkflowDefinition> {
   try {
-    return await loadConfiguredWorkflowDefinition(workflowsRoot, workflowId);
+    return await loadConfiguredWorkflowDefinition(workflowsRoot, workflowId, {
+      builtInStepRegistry
+    });
   } catch (cause) {
     const error = configuredWorkflowError(
       `Failed to load workflow configuration: ${workflowId}`,
@@ -273,7 +278,8 @@ async function bootstrapConfiguredWorkflowRun({
   );
   const workflow = await loadConfiguredWorkflow(
     resolvedWorkflowsRoot,
-    workflowId
+    workflowId,
+    dependencies.builtInStepRegistry
   );
   const workflowObservabilityConfig =
     workflow.observability ?? defaultWorkflowObservabilityConfig;
