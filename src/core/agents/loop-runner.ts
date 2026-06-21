@@ -1,7 +1,5 @@
-import type {
-  AgentLoopAttempt,
-  ValidationResult
-} from "../agent-runtime/contracts.js";
+import type { AgentLoopAttempt } from "../agent-runtime/contracts.js";
+import type { ValidationResult } from "../validation/runner.js";
 
 export type AgentLoopPhase = "initial" | "repair";
 

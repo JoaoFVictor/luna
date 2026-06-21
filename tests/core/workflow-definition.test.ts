@@ -203,6 +203,53 @@ describe("workflow definition loader", () => {
     }
   });
 
+  it("loads agent_loop nodes with literal structured validation commands", async () => {
+    const root = await tempWorkflowRoot();
+
+    try {
+      await writeWorkflowGraph(root, [
+        "nodes:",
+        "  - id: implementation",
+        "    type: agent_loop",
+        "    agent: code-implementer",
+        "    output_schema: implementation_result",
+        "    sandbox:",
+        "      type: trusted_host_local",
+        "      cwd: $.workspace.path",
+        "      env_allowlist: []",
+        "    validation:",
+        "      commands:",
+        "        - cmd: npm",
+        "          args:",
+        "            - test",
+        "          timeout_ms: 120000",
+        "      max_output_bytes: 200000",
+        "    repair:",
+        "      attempts: 1",
+        ""
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).resolves.toMatchObject({
+        graph: {
+          nodes: [
+            {
+              id: "implementation",
+              type: "agent_loop",
+              validation: {
+                commands: [
+                  { cmd: "npm", args: ["test"], timeout_ms: 120000 }
+                ],
+                max_output_bytes: 200000
+              }
+            }
+          ]
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("loads agent_loop artifact plans without requiring specific output keys", async () => {
     const root = await tempWorkflowRoot();
     const workflowDir = path.join(root, "implementation");

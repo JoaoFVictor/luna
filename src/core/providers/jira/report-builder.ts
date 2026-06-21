@@ -4,7 +4,7 @@ import type {
   Invocation,
   InvocationRepository
 } from "../../invocation/types.js";
-import type { ValidationResult } from "../../agent-runtime/contracts.js";
+import type { ValidationResult } from "../../validation/runner.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact

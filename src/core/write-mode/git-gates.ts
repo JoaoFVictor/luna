@@ -8,7 +8,7 @@ import type {
 import { appendLocalTransactionJournalEntry } from "./transaction-journal.js";
 import { remoteUrlMatches } from "../git/remote-url.js";
 import type { AcceptanceDecision } from "../decisions/types.js";
-import type { ValidationResult } from "../agent-runtime/contracts.js";
+import type { ValidationResult } from "../validation/runner.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact

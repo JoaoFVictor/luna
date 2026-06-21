@@ -14,12 +14,12 @@ import type {
 } from "../change-request/contracts.js";
 import { ChangeRequestArtifactSchema } from "../change-request/contracts.js";
 import type { AcceptanceDecision } from "../decisions/types.js";
-import type { ValidationResult } from "../agent-runtime/contracts.js";
-import { AcceptanceDecisionSchema } from "../decisions/types.js";
 import {
-  AgentLoopResultSchema,
-  ValidationResultSchema
-} from "../agent-runtime/contracts.js";
+  ValidationResultSchema,
+  type ValidationResult
+} from "../validation/runner.js";
+import { AcceptanceDecisionSchema } from "../decisions/types.js";
+import { AgentLoopResultSchema } from "../agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact

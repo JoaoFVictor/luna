@@ -23,7 +23,7 @@ const yamlRoots = ["agents", "workflows", "config"];
 const jsonSchemaRoots = ["agents", "workflows"];
 const legacyReferenceScanRoots = ["src", "tests", "workflows", "examples", "README.md"];
 const intentionalLegacyReferenceFiles = new Set([
-  "tests/core/types.test.ts",
+  "tests/core/invocation-helpers.test.ts",
   "tests/core/cli.test.ts"
 ]);
 

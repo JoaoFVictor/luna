@@ -1,14 +1,7 @@
 import { z } from "zod";
-import {
-  ValidationCommandResultSchema,
-  ValidationResultSchema,
-  type ValidationCommandResult,
-  type ValidationResult
-} from "../validation/runner.js";
+import { ValidationResultSchema } from "../validation/runner.js";
 
 const NonEmptyStringSchema = z.string().min(1);
-export type { ValidationCommandResult, ValidationResult };
-export { ValidationCommandResultSchema, ValidationResultSchema };
 
 export const AgentLoopAttemptSchema = z
   .object({

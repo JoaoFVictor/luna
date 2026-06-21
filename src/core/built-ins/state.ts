@@ -3,7 +3,7 @@ import type { RepositoryConfig } from "../config/schemas.js";
 import type { Invocation } from "../invocation/types.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
 import type { CodeReviewFindings, Finding } from "../findings/types.js";
-import type { ValidationResult } from "../agent-runtime/contracts.js";
+import type { ValidationResult } from "../validation/runner.js";
 import type { ImplementationConfig } from "../write-mode/types.js";
 import { resolveWorkflowInput, type WorkflowState } from "../workflow/state.js";
 import { builtInError, type BuiltInErrorCode } from "./errors.js";

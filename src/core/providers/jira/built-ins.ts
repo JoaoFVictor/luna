@@ -5,7 +5,7 @@ import {
 import { jiraIssueContextFrom } from "./task-context.js";
 import type { ChangeRequestArtifact } from "../../change-request/contracts.js";
 import type { Invocation } from "../../invocation/types.js";
-import type { ValidationResult } from "../../agent-runtime/contracts.js";
+import type { ValidationResult } from "../../validation/runner.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact

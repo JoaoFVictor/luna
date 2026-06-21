@@ -13,6 +13,7 @@ import {
   defaultWorkflowSubagentPolicy,
   type WorkflowSubagentPolicy
 } from "../agents/subagent-policy.js";
+import { ValidationCommandSchema } from "../validation/runner.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -84,14 +85,6 @@ const AgentNodeSchema = z
     artifacts: z.array(ArtifactWritePlanSchema).optional(),
     input: z.record(z.unknown()).optional(),
     after: z.array(NonEmptyStringSchema).optional()
-  })
-  .strict();
-
-const ValidationCommandSchema = z
-  .object({
-    cmd: NonEmptyStringSchema,
-    args: z.array(z.string()).optional(),
-    timeout_ms: z.number().int().positive().optional()
   })
   .strict();
 
