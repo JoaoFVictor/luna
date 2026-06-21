@@ -6,6 +6,38 @@ import { RunLockManager } from "../../src/core/run-lock-manager.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import type { LunaObservabilityEvent } from "../../src/core/observability/events.js";
 
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 describe("run lock manager", () => {
   it("serializes exclusive access to the same resource", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
@@ -26,6 +58,84 @@ describe("run lock manager", () => {
     });
     expect(secondRelease).toEqual(expect.any(Function));
     await secondRelease();
+  });
+
+  it("serializes separate managers through the shared filesystem lock root", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const waitingObserved = deferred();
+    const events: LunaObservabilityEvent[] = [];
+    const manager1 = new RunLockManager({
+      root,
+      runId: "run-1",
+      timeoutMs: 1000,
+      staleAfterMs: 6000
+    });
+    const manager2 = new RunLockManager({
+      root,
+      runId: "run-2",
+      timeoutMs: 1000,
+      staleAfterMs: 6000,
+      observability: createLunaObservability({
+        run: { id: "run-2" },
+        workflow: { id: "implementation" },
+        sinks: [
+          {
+            id: "memory",
+            required: true,
+            append: (event) => {
+              events.push(event);
+              if (event.event === "luna.lock.waiting") {
+                waitingObserved.resolve();
+              }
+            }
+          }
+        ]
+      })
+    });
+
+    const release1 = await manager1.acquire("repository:repo", "exclusive");
+    let secondAcquired = false;
+    const secondAcquire = manager2
+      .acquire("repository:repo", "exclusive", { timeoutMs: 1000 })
+      .then((release) => {
+        secondAcquired = true;
+        return release;
+      });
+
+    await withTimeout(
+      waitingObserved.promise,
+      500,
+      "second manager did not observe repository lock contention"
+    );
+    expect(secondAcquired).toBe(false);
+
+    await release1();
+    const release2 = await withTimeout(
+      secondAcquire,
+      1000,
+      "second manager did not acquire after first release"
+    );
+    expect(secondAcquired).toBe(true);
+    await release2();
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "luna.lock.waiting",
+          run_id: "run-2",
+          attributes: expect.objectContaining({
+            "luna.resource": "repository:repo"
+          })
+        }),
+        expect.objectContaining({
+          event: "luna.lock.acquired",
+          run_id: "run-2",
+          attributes: expect.objectContaining({
+            "luna.resource": "repository:repo"
+          })
+        })
+      ])
+    );
   });
 
   it("writes lock owner metadata", async () => {

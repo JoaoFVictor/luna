@@ -84,6 +84,38 @@ function staticRunIdentity(run: RunIdentity) {
   });
 }
 
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 async function writeBaseConfig(
   root: string,
   workflowId = "code-review",
@@ -408,6 +440,57 @@ async function writeConfigInputWorkflow(root: string): Promise<void> {
       "    artifact: config-probe.json",
       "    input:",
       "      commands: $.config.implementation.validation.commands",
+      ""
+    ].join("\n")
+  );
+}
+
+async function writePolicyLockWorkflow(root: string): Promise<void> {
+  await mkdir(path.join(root, "workflows", "policy-locks"), {
+    recursive: true
+  });
+  await writeFile(
+    path.join(root, "routing.yaml"),
+    [
+      "routes:",
+      "  - name: policy-locks",
+      "    when: {}",
+      "    target:",
+      "      type: workflow",
+      "      id: policy-locks",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "policy-locks", "workflow.yaml"),
+    [
+      "id: policy-locks",
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      "execution:",
+      "  max_concurrency: 3",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "policy-locks", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: locked_a",
+      "    type: built_in",
+      "    uses: commit_changes",
+      "    artifact: locked-a.json",
+      "  - id: unlocked",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifact: unlocked.json",
+      "  - id: locked_b",
+      "    type: built_in",
+      "    uses: commit_changes",
+      "    artifact: locked-b.json",
       ""
     ].join("\n")
   );
@@ -1507,6 +1590,104 @@ describe("configured workflow runner", () => {
         "acquire:repository:repo",
         "release:repository:repo"
       ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("serializes repository-sensitive sections without reducing global concurrency to one", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "policy-locks");
+      await writePolicyLockWorkflow(root);
+
+      let activeRepositoryLocks = 0;
+      let maxActiveRepositoryLocks = 0;
+      let activeSteps = 0;
+      let maxActiveSteps = 0;
+      const lockTails = new Map<string, Promise<void>>();
+      const events: string[] = [];
+      const unlockedStepStarted = deferred();
+      let firstLockedStepStarted = false;
+
+      const resultPromise = runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            workflow_id: "policy-locks"
+          }),
+          lockManagerFactory: () => ({
+            acquire: async (resource) => {
+              const previous = lockTails.get(resource) ?? Promise.resolve();
+              let releaseQueuedLock!: () => void;
+              const queuedLock = new Promise<void>((resolve) => {
+                releaseQueuedLock = resolve;
+              });
+              lockTails.set(resource, previous.then(() => queuedLock));
+              await previous;
+
+              events.push(`acquire:${resource}`);
+              activeRepositoryLocks += 1;
+              maxActiveRepositoryLocks = Math.max(
+                maxActiveRepositoryLocks,
+                activeRepositoryLocks
+              );
+
+              return async () => {
+                activeRepositoryLocks -= 1;
+                events.push(`release:${resource}`);
+                releaseQueuedLock();
+              };
+            }
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
+            activeSteps += 1;
+            maxActiveSteps = Math.max(maxActiveSteps, activeSteps);
+            events.push(`start:${uses}`);
+
+            if (uses === "commit_changes" && !firstLockedStepStarted) {
+              firstLockedStepStarted = true;
+              await withTimeout(
+                unlockedStepStarted.promise,
+                500,
+                "unlocked workflow step did not run while repository lock was held"
+              );
+            }
+
+            if (uses === "preflight") {
+              unlockedStepStarted.resolve();
+            }
+
+            events.push(`finish:${uses}`);
+            activeSteps -= 1;
+
+            return { uses };
+          })
+        }
+      });
+
+      const result = await resultPromise;
+
+      expect(result.status).toBe("success");
+      expect(events).toContain("start:commit_changes");
+      expect(events).toContain("start:preflight");
+      expect(maxActiveSteps).toBeGreaterThan(1);
+      expect(maxActiveRepositoryLocks).toBe(1);
+      expect(
+        events.filter((event) => event === "acquire:repository:repo")
+      ).toHaveLength(2);
+      await expect(
+        readJson(root, "policy-locks", "run-1", "locked-a.json")
+      ).resolves.toEqual({ uses: "commit_changes" });
+      await expect(
+        readJson(root, "policy-locks", "run-1", "locked-b.json")
+      ).resolves.toEqual({ uses: "commit_changes" });
+      await expect(
+        readJson(root, "policy-locks", "run-1", "unlocked.json")
+      ).resolves.toEqual({ uses: "preflight" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
