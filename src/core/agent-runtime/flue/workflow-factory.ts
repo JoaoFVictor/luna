@@ -5,6 +5,10 @@ import {
 } from "../../configured-workflow/runner.js";
 import { loadMcpConfig } from "../../config/mcp.js";
 import type { Invocation } from "../../invocation/types.js";
+import {
+  defaultProviderBuiltInStepRegistry,
+  runBuiltInStep
+} from "../../providers/built-ins.js";
 import { createFlueAgentRunner } from "./runner.js";
 import { createFlueLogSink } from "./observability.js";
 import { registerConfiguredPiOAuthProviders } from "./pi-auth.js";
@@ -19,12 +23,18 @@ export async function runLunaWorkflowWithFlue(
   await registerConfiguredPiOAuthProviders({ configRoot });
   const mcpConfig = await loadMcpConfig(configRoot);
 
+  const agentRunner = createFlueAgentRunner({ ctx, mcpConfig });
+
   return await runConfiguredWorkflow({
     invocation: ctx.payload,
     configRoot,
     projectRoot,
     runtimeRunId: ctx.id,
     observabilitySinks: [createFlueLogSink(ctx.log)],
-    dependencies: createFlueAgentRunner({ ctx, mcpConfig })
+    dependencies: {
+      ...agentRunner,
+      builtInStepRegistry: defaultProviderBuiltInStepRegistry,
+      runBuiltInStep
+    }
   });
 }

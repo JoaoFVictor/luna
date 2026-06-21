@@ -47,12 +47,12 @@ describe("run identity", () => {
     expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
   });
 
-  it("includes workflow id, millisecond timestamp, flue id suffix, and nonce", () => {
+  it("includes workflow id, millisecond timestamp, runtime id suffix, and nonce", () => {
     const identity = createRunIdentity(invocation, {
       attempt: 1,
       date: new Date("2026-06-18T15:04:05.123Z"),
       workflowId: "code-review",
-      flueRunId: "flue-run-abcdef123456",
+      runtimeRunId: "flue-run-abcdef123456",
       nonce: "n9x8"
     });
 
@@ -93,7 +93,7 @@ describe("run identity", () => {
         attempt: 1,
         date: new Date("2026-06-18T15:04:05.123Z"),
         workflowId: "code-review",
-        flueRunId: previousFlueRunId,
+        runtimeRunId: previousFlueRunId,
         nonce: "n9x8"
       });
       const artifactDirectory = path.join(
@@ -162,7 +162,7 @@ describe("run identity", () => {
       attempt: 1,
       date: fixedDate,
       workflowId: "code-review",
-      flueRunId: "flue-run-abcdef123456",
+      runtimeRunId: "flue-run-abcdef123456",
       nonce: "one"
     };
 
@@ -172,7 +172,7 @@ describe("run identity", () => {
       { ...safeOptions, nonce: "ユニコード" },
       { ...safeOptions, nonce: "../bad" },
       { ...safeOptions, workflowId: "../code-review" },
-      { ...safeOptions, flueRunId: "flue-run/../abcdef123456" }
+      { ...safeOptions, runtimeRunId: "flue-run/../abcdef123456" }
     ]) {
       expect(() => createRunIdentity(invocation, options)).toThrow(
         expect.objectContaining({ code: "invalid_run_id" })

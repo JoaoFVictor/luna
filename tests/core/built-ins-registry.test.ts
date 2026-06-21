@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   defaultBuiltInSteps,
   builtInStepNames,
-  builtInStepRegistry as defaultBuiltInStepRegistry,
+  defaultProviderBuiltInStepRegistry,
   isBuiltInStepName,
   runBuiltInStep
-} from "../../src/core/built-ins/index.js";
+} from "../../src/core/providers/built-ins.js";
 import {
   defineBuiltInRegistry,
   defineBuiltInStep
@@ -71,14 +71,15 @@ describe("built-in step registry", () => {
     ]);
     expect(isBuiltInStepName("preflight")).toBe(true);
     expect(isBuiltInStepName("missing_step")).toBe(false);
-    expect(defaultBuiltInStepRegistry.names).toEqual(builtInStepNames);
+    expect(defaultProviderBuiltInStepRegistry.names).toEqual(builtInStepNames);
     expect(Object.isFrozen(defaultBuiltInSteps)).toBe(true);
     expect(Object.isFrozen(builtInStepNames)).toBe(true);
   });
 
   it("keeps built-in metadata immutable in the default catalog", () => {
-    const prepareWorktree = defaultBuiltInStepRegistry.require("prepare_worktree");
-    const finalReport = defaultBuiltInStepRegistry.require(
+    const prepareWorktree =
+      defaultProviderBuiltInStepRegistry.require("prepare_worktree");
+    const finalReport = defaultProviderBuiltInStepRegistry.require(
       "final_code_review_report"
     );
 
@@ -97,8 +98,8 @@ describe("built-in step registry", () => {
   });
 
   it("marks repository-sensitive built-ins with repository exclusive locks", () => {
-    const lockedNames = defaultBuiltInStepRegistry.names.filter((name) =>
-      defaultBuiltInStepRegistry.require(name).metadata?.locks?.some((lock) =>
+    const lockedNames = defaultProviderBuiltInStepRegistry.names.filter((name) =>
+      defaultProviderBuiltInStepRegistry.require(name).metadata?.locks?.some((lock) =>
         lock.resource === "repository" && lock.mode === "exclusive"
       ) === true
     );
@@ -112,7 +113,7 @@ describe("built-in step registry", () => {
     ]);
 
     for (const name of lockedNames) {
-      expect(defaultBuiltInStepRegistry.require(name).metadata?.locks).toContainEqual({
+      expect(defaultProviderBuiltInStepRegistry.require(name).metadata?.locks).toContainEqual({
         resource: "repository",
         mode: "exclusive"
       });

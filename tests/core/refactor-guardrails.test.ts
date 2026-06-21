@@ -38,7 +38,7 @@ const allowedCompositionRoots = new Set([
   "src/workflows/luna.ts",
   "src/cli.ts",
   "src/adapters/registry.ts",
-  "src/core/built-ins/catalog.ts",
+  "src/core/agent-runtime/flue/workflow-factory.ts",
   "src/core/change-request/default-registry.ts"
 ]);
 

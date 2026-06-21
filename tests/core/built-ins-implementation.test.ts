@@ -8,7 +8,7 @@ import {
   recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
 } from "../../src/core/built-ins/implementation.js";
-import { openChangeRequestBuiltIn } from "../../src/core/built-ins/catalog.js";
+import { openChangeRequestBuiltIn } from "../../src/core/providers/built-ins.js";
 import {
   collectTaskContextBuiltIn,
   finalImplementationReportBuiltIn

@@ -15,6 +15,10 @@ import type {
 import type { AcceptanceDecision } from "../../decisions/types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
+  finalReportMetadata,
+  prepareWorktreeMetadata
+} from "../../built-ins/metadata.js";
+import {
   findingsFrom,
   repositoryFrom,
   requiredInput,
@@ -68,10 +72,7 @@ export const preflightBuiltIn = defineBuiltInStep({
 
 export const prepareWorktreeBuiltIn = defineBuiltInStep({
   name: "prepare_worktree",
-  metadata: {
-    capturesWorkspace: true,
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
+  metadata: prepareWorktreeMetadata,
   async run({ state, dependencies = {} }) {
     const prepareWorktree = dependencies.prepareWorktree ?? defaultPrepareWorktree;
 
@@ -131,7 +132,7 @@ export const validateCodeReviewFindingsBuiltIn = defineBuiltInStep({
 
 export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
   name: "final_code_review_report",
-  metadata: { deferredLifecycle: "final_report" },
+  metadata: finalReportMetadata,
   async run({ state, input, dependencies = {} }) {
     const buildFinalReportJson =
       dependencies.buildFinalReportJson ?? defaultBuildFinalReportJson;

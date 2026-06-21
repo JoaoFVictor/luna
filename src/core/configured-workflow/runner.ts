@@ -4,7 +4,7 @@ import { ArtifactStore } from "../artifacts/store.js";
 import { cleanup as defaultCleanupWorktree } from "../git/worktree-cleanup.js";
 import {
   builtInStepRegistry as defaultBuiltInStepRegistry
-} from "../built-ins/index.js";
+} from "../built-ins/executor.js";
 import type {
   BuiltInStepDependencies,
   BuiltInStepMetadata,

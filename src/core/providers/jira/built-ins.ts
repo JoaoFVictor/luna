@@ -11,6 +11,7 @@ import type {
   PushBranchArtifact
 } from "../../write-mode/types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
+import { finalReportMetadata } from "../../built-ins/metadata.js";
 import {
   finalValidationFrom,
   implementationWorkspaceFrom,
@@ -86,7 +87,7 @@ export const collectTaskContextBuiltIn = defineBuiltInStep({
 
 export const finalImplementationReportBuiltIn = defineBuiltInStep({
   name: "final_implementation_report",
-  metadata: { deferredLifecycle: "final_report" },
+  metadata: finalReportMetadata,
   run({ state, input, dependencies = {} }) {
     const buildImplementationReportJson =
       dependencies.buildImplementationReportJson ??

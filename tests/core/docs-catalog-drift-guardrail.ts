@@ -2,7 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { expect } from "vitest";
 import YAML from "yaml";
-import { builtInStepNames } from "../../src/core/built-ins/catalog.js";
+import { builtInStepNames } from "../../src/core/providers/built-ins.js";
 import { lunaToolCatalog } from "../../src/core/tools/catalog.js";
 
 async function readText(repoRoot: string, relativePath: string): Promise<string> {

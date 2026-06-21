@@ -4,7 +4,7 @@ import {
 } from "../agents/definition.js";
 import {
   runBuiltInStep as defaultRunBuiltInStep
-} from "../built-ins/index.js";
+} from "../built-ins/executor.js";
 import type {
   BuiltInStepDependencies,
   RunBuiltInStepOptions

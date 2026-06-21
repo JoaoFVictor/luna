@@ -6,7 +6,6 @@ export type RunIdentityOptions = {
   date: Date;
   workflowId: string;
   runtimeRunId?: string;
-  flueRunId?: string;
   nonce: string;
 };
 
@@ -59,12 +58,12 @@ function safeIdentityPart(value: string, label: string): string {
   return slug;
 }
 
-function flueSuffix(flueRunId: string | undefined): string | undefined {
-  if (flueRunId === undefined) {
+function runtimeRunSuffix(runtimeRunId: string | undefined): string | undefined {
+  if (runtimeRunId === undefined) {
     return undefined;
   }
 
-  const slug = safeIdentityPart(flueRunId, "flue run id");
+  const slug = safeIdentityPart(runtimeRunId, "runtime run id");
   return slug.slice(-12);
 }
 
@@ -76,7 +75,7 @@ export function createRunIdentity(
     attempt,
     date,
     workflowId,
-    runtimeRunId = options.flueRunId,
+    runtimeRunId,
     nonce
   } = options;
   if (!Number.isSafeInteger(attempt) || attempt < 1) {
@@ -88,7 +87,7 @@ export function createRunIdentity(
     safeIdentityPart(workflowId, "workflow id"),
     invocationSlug(invocation),
     `a${attempt}`,
-    flueSuffix(runtimeRunId),
+    runtimeRunSuffix(runtimeRunId),
     safeIdentityPart(nonce, "nonce")
   ].filter((part): part is string => part !== undefined && part !== "");
 
