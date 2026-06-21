@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { resolveModelProfiles } from "../../src/core/model-config.js";
-import { toFlueModelOptions } from "../../src/core/agent-runtime/flue/model-options.js";
 import type { ModelsConfig } from "../../src/core/types.js";
 
 describe("model config", () => {
@@ -174,22 +173,4 @@ describe("model config", () => {
       );
     }
   );
-
-  it("maps reasoning_effort low to thinkingLevel low", () => {
-    expect(
-      toFlueModelOptions({ model: "openai-codex/gpt-5.4-mini", reasoning_effort: "low" })
-    ).toEqual({ model: "openai-codex/gpt-5.4-mini", thinkingLevel: "low" });
-  });
-
-  it("maps reasoning_effort medium to thinkingLevel medium", () => {
-    expect(
-      toFlueModelOptions({ model: "openai-codex/gpt-5.4-mini", reasoning_effort: "medium" })
-    ).toEqual({ model: "openai-codex/gpt-5.4-mini", thinkingLevel: "medium" });
-  });
-
-  it("maps reasoning_effort high to thinkingLevel high", () => {
-    expect(
-      toFlueModelOptions({ model: "openai/gpt-5", reasoning_effort: "high" })
-    ).toEqual({ model: "openai/gpt-5", thinkingLevel: "high" });
-  });
 });

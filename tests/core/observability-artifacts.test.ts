@@ -126,7 +126,6 @@ describe("observability artifacts", () => {
       promptId: "prompt-1",
       modelProfile: "deep",
       response: {
-        data: {},
         usage: {
           input: 10,
           output: 5,
@@ -239,7 +238,7 @@ describe("observability artifacts", () => {
       usageFromFlueResponse({
         promptId: "prompt-1",
         modelProfile: "deep",
-        response: { data: {} }
+        response: {}
       })
     ).toBeUndefined();
   });

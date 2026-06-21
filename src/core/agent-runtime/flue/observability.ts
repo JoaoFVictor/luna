@@ -15,6 +15,11 @@ type FlueLog = {
   error(message: string, attributes?: FlueLogAttributes): void;
 };
 
+type FluePromptResponseWithUsage = {
+  usage?: PromptUsage;
+  model?: PromptModel;
+};
+
 function errorAttributes(event: LunaEvent): FlueLogAttributes {
   const error =
     event.data?.error !== null && typeof event.data?.error === "object"
@@ -100,10 +105,10 @@ export function usageFromFlueResponse({
 }: {
   promptId: string;
   modelProfile: string;
-  response: object | undefined;
+  response: FluePromptResponseWithUsage | undefined;
 }): LunaUsageRecord | undefined {
-  const usage = (response as { usage?: PromptUsage } | undefined)?.usage;
-  const model = (response as { model?: PromptModel } | undefined)?.model;
+  const usage = response?.usage;
+  const model = response?.model;
 
   if (usage === undefined || model === undefined) {
     return undefined;
