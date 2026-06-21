@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolveModelProfiles } from "../../src/core/model-config.js";
-import type { ModelsConfig } from "../../src/core/types.js";
+import { resolveModelProfiles } from "../../src/core/config/models.js";
+import type { ModelsConfig } from "../../src/core/config/schemas.js";
 
 describe("model config", () => {
   it("resolves model profiles to concrete model names", () => {

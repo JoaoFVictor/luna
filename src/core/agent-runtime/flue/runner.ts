@@ -21,7 +21,7 @@ import {
   type ResolvedFlueAgentCapabilities
 } from "./capabilities.js";
 import { toFlueModelOptions } from "./model-options.js";
-import type { McpConfig } from "../../mcp-config.js";
+import type { McpConfig } from "../../config/mcp.js";
 import { customEvent } from "../../observability/luna-observability.js";
 import { sanitizeJsonObject } from "../../observability/sanitize.js";
 import {

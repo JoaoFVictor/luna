@@ -1,4 +1,4 @@
-import type { ArtifactStore } from "../artifact-store.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 
 export type LunaTokenSummary = {
   input: number;

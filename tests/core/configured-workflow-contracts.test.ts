@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { ArtifactStore } from "../../src/core/artifact-store.js";
+import { ArtifactStore } from "../../src/core/artifacts/store.js";
 import {
   configuredWorkflowBootstrap,
   loadConfigs

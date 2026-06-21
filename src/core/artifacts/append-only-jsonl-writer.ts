@@ -1,6 +1,6 @@
 import { mkdir, open } from "node:fs/promises";
 import path from "node:path";
-import { assertJsonValue, type JsonValue } from "./json-value.js";
+import { assertJsonValue, type JsonValue } from "../json-value.js";
 
 type WritableFileHandle = {
   writeFile(value: string, encoding: BufferEncoding): Promise<unknown>;

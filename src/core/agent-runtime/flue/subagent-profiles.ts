@@ -8,7 +8,7 @@ import { loadAgentDefinition } from "../../agents/definition.js";
 import { loadFlueSkill } from "./skill-loader.js";
 import { resolveFlueTools } from "./tool-registry.js";
 import { toFlueModelOptions } from "./model-options.js";
-import type { ResolvedModelProfiles } from "../../model-config.js";
+import type { ResolvedModelProfiles } from "../../config/models.js";
 import {
   customEvent,
   type LunaObservability

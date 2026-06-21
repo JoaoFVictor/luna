@@ -12,12 +12,12 @@ import type {
 import { resolveWorkflowInput, type WorkflowState } from "../workflow/state.js";
 import type { WorkflowSubagentPolicy } from "../agents/subagent-policy.js";
 import type { WorkflowNode } from "../workflow/definition.js";
-import type { ResolvedModelProfiles } from "../model-config.js";
-import type { ArtifactStore } from "../artifact-store.js";
+import type { ResolvedModelProfiles } from "../config/models.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type {
-  ModelProfile,
   ValidationCommand
 } from "../types.js";
+import type { ModelProfile } from "../config/schemas.js";
 import { ValidationCommandSchema } from "../types.js";
 import type {
   LunaObservability

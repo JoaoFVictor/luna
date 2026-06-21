@@ -2,13 +2,12 @@ import type {
   ImplementationLifecycleEvidence
 } from "../write-mode/lifecycle.js";
 import type {
-  AppConfig,
   Invocation,
-  RepositoryConfig,
   RunIdentity,
   RuntimeConfigState,
   WorkspaceRecord
 } from "../types.js";
+import type { AppConfig, RepositoryConfig } from "../config/schemas.js";
 
 export type WorkflowState = {
   invocation: unknown;

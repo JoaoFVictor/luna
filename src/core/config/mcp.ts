@@ -1,6 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
-import { loadOptionalYamlFile } from "./config-loader.js";
+import { loadOptionalYamlFile } from "./loader.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 

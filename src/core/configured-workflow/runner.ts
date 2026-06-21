@@ -1,6 +1,6 @@
 import path from "node:path";
 import { writePlannedArtifacts } from "../workflow/artifact-write-plan.js";
-import { ArtifactStore } from "../artifact-store.js";
+import { ArtifactStore } from "../artifacts/store.js";
 import { cleanup as defaultCleanupWorktree } from "../git/worktree-cleanup.js";
 import {
   builtInStepRegistry as defaultBuiltInStepRegistry
@@ -10,7 +10,7 @@ import type {
   BuiltInStepMetadata,
   RunBuiltInStepOptions
 } from "../built-ins/types.js";
-import { resolveConfigRoot } from "../config-loader.js";
+import { resolveConfigRoot } from "../config/loader.js";
 import { assertJsonValue, type JsonValue } from "../json-value.js";
 import { routeInvocation as defaultRouteInvocation } from "../router.js";
 import {
@@ -88,10 +88,10 @@ import type {
 import {
   type ErrorArtifact,
   type Invocation,
-  type RepositoryConfig,
   type RunIdentity,
   type WorkspaceRecord
 } from "../types.js";
+import type { RepositoryConfig } from "../config/schemas.js";
 
 export type { RunAgentLoopStepOptions, RunAgentStepOptions };
 

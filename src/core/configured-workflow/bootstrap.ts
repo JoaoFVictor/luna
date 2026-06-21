@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
 import path from "node:path";
-import { ArtifactStore } from "../artifact-store.js";
+import { ArtifactStore } from "../artifacts/store.js";
 import {
   loadOptionalYamlFile,
   loadYamlFile
-} from "../config-loader.js";
+} from "../config/loader.js";
 import { configuredWorkflowError } from "../configured-workflow-errors.js";
 import { createObservabilitySinks } from "../observability/exporter-config.js";
 import { createJsonlEventSink } from "../observability/jsonl-sink.js";
@@ -26,11 +26,13 @@ import {
   AppConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
-  RoutingConfigSchema,
   type AppConfig,
-  type Invocation,
   type ModelsConfig,
-  type RepositoriesConfig,
+  type RepositoriesConfig
+} from "../config/schemas.js";
+import {
+  RoutingConfigSchema,
+  type Invocation,
   type RouteTarget,
   type RuntimeConfigState,
   type RoutingConfig,
@@ -44,7 +46,7 @@ import {
 import {
   resolveModelProfiles,
   type ResolvedModelProfiles
-} from "../model-config.js";
+} from "../config/models.js";
 import { ImplementationConfigSchema } from "../write-mode/types.js";
 import type { ConfiguredWorkflowBootstrap } from "./contracts.js";
 import { loadConfiguredWorkflowDefinition } from "./workflow-definition-compatibility.js";

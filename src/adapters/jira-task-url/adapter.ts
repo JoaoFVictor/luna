@@ -1,6 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
-import { loadYamlFile } from "../../core/config-loader.js";
+import { loadYamlFile } from "../../core/config/loader.js";
 import {
   jiraAuthForInstance,
   loadLunaAuth,

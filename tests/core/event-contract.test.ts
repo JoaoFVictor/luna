@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
-import type { ArtifactStore } from "../../src/core/artifact-store.js";
+import type { ArtifactStore } from "../../src/core/artifacts/store.js";
 import type { JsonValue } from "../../src/core/json-value.js";
 import {
   createLunaObservability,

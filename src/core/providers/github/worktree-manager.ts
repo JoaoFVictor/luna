@@ -6,9 +6,9 @@ import { runGit as defaultRunGit } from "../../git/client.js";
 import { safeJoin } from "../../path-security.js";
 import type {
   Invocation,
-  RepositoryConfig,
   WorkspaceRecord
 } from "../../types.js";
+import type { RepositoryConfig } from "../../config/schemas.js";
 import { githubPullRequestContextFrom } from "./pull-request-context.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;

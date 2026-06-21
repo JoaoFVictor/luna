@@ -1,4 +1,4 @@
-import type { ModelProfile } from "../../types.js";
+import type { ModelProfile } from "../../config/schemas.js";
 
 export function toFlueModelOptions(profile: ModelProfile): {
   model: string;

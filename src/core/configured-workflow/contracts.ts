@@ -1,4 +1,4 @@
-import type { ArtifactStore } from "../artifact-store.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { JsonValue } from "../json-value.js";
 import type { LunaEvent } from "../observability/events.js";
 import type { LunaObservability } from "../observability/luna-observability.js";

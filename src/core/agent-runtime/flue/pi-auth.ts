@@ -3,9 +3,9 @@ import path from "node:path";
 import { registerProvider as defaultRegisterProvider } from "@flue/runtime";
 import { getOAuthApiKey as defaultGetOAuthApiKey } from "@earendil-works/pi-ai/oauth";
 import type { OAuthCredentials } from "@earendil-works/pi-ai/oauth";
-import { loadYamlFile } from "../../config-loader.js";
-import { resolveModelProfiles } from "../../model-config.js";
-import { ModelsConfigSchema } from "../../types.js";
+import { loadYamlFile } from "../../config/loader.js";
+import { resolveModelProfiles } from "../../config/models.js";
+import { ModelsConfigSchema } from "../../config/schemas.js";
 
 type PiAuth = Record<string, OAuthCredentials>;
 

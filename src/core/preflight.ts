@@ -2,9 +2,9 @@ import { stat as fsStat } from "node:fs/promises";
 import { runGit as defaultRunGit } from "./git/client.js";
 import { remoteUrlMatches } from "./git/remote-url.js";
 import type {
-  Invocation,
-  RepositoryConfig
+  Invocation
 } from "./types.js";
+import type { RepositoryConfig } from "./config/schemas.js";
 import type { ImplementationConfig } from "./write-mode/types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;

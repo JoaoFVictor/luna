@@ -7,9 +7,9 @@ import {
   assertJsonValue,
   isPlainObject,
   type JsonValue
-} from "./json-value.js";
-import { safeJoin } from "./path-security.js";
-import { redactString, redactValue } from "./redactor.js";
+} from "../json-value.js";
+import { safeJoin } from "../path-security.js";
+import { redactString, redactValue } from "../redactor.js";
 
 type AtomicWriteFile = typeof defaultAtomicWriteFile;
 

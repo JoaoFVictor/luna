@@ -1,7 +1,7 @@
 import {
   appendOnlyJsonlWriter,
   type AppendOnlyJsonlWriterDependencies
-} from "../append-only-jsonl-writer.js";
+} from "../artifacts/append-only-jsonl-writer.js";
 
 export type LocalTransactionJournalEntry = {
   runId: string;

@@ -1,4 +1,4 @@
-import type { ModelProfile, ModelsConfig } from "./types.js";
+import type { ModelProfile, ModelsConfig } from "./schemas.js";
 
 type ModelEnv = Record<string, string | undefined>;
 

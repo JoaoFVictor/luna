@@ -1,5 +1,6 @@
 import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
-import type { Invocation, RepositoryConfig, WorkspaceRecord } from "../types.js";
+import type { RepositoryConfig } from "../config/schemas.js";
+import type { Invocation, WorkspaceRecord } from "../types.js";
 import type { CodeReviewFindings, Finding } from "../findings/types.js";
 import type { ValidationResult } from "../agent-runtime/contracts.js";
 import type { ImplementationConfig } from "../write-mode/types.js";

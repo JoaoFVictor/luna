@@ -1,14 +1,13 @@
 import { cleanup as defaultCleanupWorktree } from "../git/worktree-cleanup.js";
 import { lifecycleEvidenceFromSchedulerState } from "../write-mode/lifecycle.js";
 import { workspaceLifecycleDecision } from "../write-mode/workspace-lifecycle.js";
-import type { ArtifactStore } from "../artifact-store.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { SchedulerLockManager } from "../workflow/scheduler.js";
 import type {
-  AppConfig,
-  RepositoryConfig,
   RuntimeConfigState,
   WorkspaceRecord
 } from "../types.js";
+import type { AppConfig, RepositoryConfig } from "../config/schemas.js";
 import { configuredWorkflowError } from "../configured-workflow-errors.js";
 import type { ConfiguredWorkflowFinalizer } from "./contracts.js";
 

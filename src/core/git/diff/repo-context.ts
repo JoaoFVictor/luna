@@ -8,9 +8,9 @@ import {
 import type {
   ChangedFile,
   FileExcerpt,
-  RepoContext,
-  RepositoryConfig
+  RepoContext
 } from "../../types.js";
+import type { RepositoryConfig } from "../../config/schemas.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type FileStatus = ChangedFile["status"];

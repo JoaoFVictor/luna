@@ -8,16 +8,16 @@ import {
   loadOptionalYamlFile,
   loadYamlFile,
   resolveConfigRoot
-} from "../../src/core/config-loader.js";
-import { McpConfigSchema } from "../../src/core/mcp-config.js";
-import { resolveModelProfiles } from "../../src/core/model-config.js";
+} from "../../src/core/config/loader.js";
+import { McpConfigSchema } from "../../src/core/config/mcp.js";
+import { resolveModelProfiles } from "../../src/core/config/models.js";
 import { JiraConfigSchema } from "../../src/core/providers/jira/config.js";
 import {
   AppConfigSchema,
   ModelsConfigSchema,
-  RepositoriesConfigSchema,
-  RoutingConfigSchema
-} from "../../src/core/types.js";
+  RepositoriesConfigSchema
+} from "../../src/core/config/schemas.js";
+import { RoutingConfigSchema } from "../../src/core/types.js";
 import { ImplementationConfigSchema } from "../../src/core/write-mode/types.js";
 
 const configSchemas = {

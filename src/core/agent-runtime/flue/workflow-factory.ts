@@ -3,7 +3,7 @@ import {
   runConfiguredWorkflow,
   type ConfiguredWorkflowResult
 } from "../../configured-workflow/runner.js";
-import { loadMcpConfig } from "../../mcp-config.js";
+import { loadMcpConfig } from "../../config/mcp.js";
 import type { Invocation } from "../../types.js";
 import { createFlueAgentRunner } from "./runner.js";
 import { createFlueLogSink } from "./observability.js";

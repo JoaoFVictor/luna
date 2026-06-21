@@ -9,9 +9,9 @@ import {
 import type {
   Invocation,
   RepoContext,
-  RepositoryConfig,
   WorkspaceRecord
 } from "../../src/core/types.js";
+import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 import type { Finding } from "../../src/core/findings/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 import type { ImplementationConfig } from "../../src/core/write-mode/types.js";

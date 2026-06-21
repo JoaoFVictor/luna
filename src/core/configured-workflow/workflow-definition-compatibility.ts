@@ -1,5 +1,5 @@
 import path from "node:path";
-import { loadYamlFile } from "../config-loader.js";
+import { loadYamlFile } from "../config/loader.js";
 import { assertSafeSegment } from "../path-security.js";
 import {
   loadWorkflowDefinitionFromMetadata,

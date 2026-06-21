@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentDefinition } from "../../src/core/agents/definition.js";
 import { resolveFlueMcpTools } from "../../src/core/agent-runtime/flue/mcp-capabilities.js";
 import { resolveFlueAgentCapabilities } from "../../src/core/agent-runtime/flue/capabilities.js";
-import type { McpConfig } from "../../src/core/mcp-config.js";
+import type { McpConfig } from "../../src/core/config/mcp.js";
 import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 

@@ -8,28 +8,8 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/append-only-jsonl-writer.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/artifact-store.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/atomic-write.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/built-ins/catalog.ts",
       "rule": "generic-provider-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/config-loader.ts",
-      "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },
     {
@@ -44,16 +24,6 @@
     },
     {
       "path": "src/core/json-value.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/mcp-config.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/model-config.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },

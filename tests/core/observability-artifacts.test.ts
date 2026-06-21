@@ -2,7 +2,7 @@ import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { ArtifactStore } from "../../src/core/artifact-store.js";
+import { ArtifactStore } from "../../src/core/artifacts/store.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import { customEvent } from "../../src/core/observability/events.js";
 import { createJsonlEventSink } from "../../src/core/observability/jsonl-sink.js";

@@ -1,4 +1,4 @@
-import type { ArtifactStore } from "../artifact-store.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { LunaEvent, LunaObservabilitySink } from "./events.js";
 import { sanitizeForObservability } from "./sanitize.js";
 

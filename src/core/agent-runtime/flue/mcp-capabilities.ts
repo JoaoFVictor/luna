@@ -3,7 +3,7 @@ import {
   type ToolDefinition
 } from "@flue/runtime";
 import type { AgentDefinition } from "../../agents/definition.js";
-import type { McpConfig, McpServerConfig } from "../../mcp-config.js";
+import type { McpConfig, McpServerConfig } from "../../config/mcp.js";
 
 type McpCapabilityErrorCode =
   | "mcp_agent_mode_not_allowed"

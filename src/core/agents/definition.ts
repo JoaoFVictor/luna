@@ -5,7 +5,7 @@ import {
   AgentCapabilityFieldsSchema,
   assertNoDuplicateCapabilities
 } from "./capabilities.js";
-import { loadYamlFile } from "../config-loader.js";
+import { loadYamlFile } from "../config/loader.js";
 import { assertSafeSegment, isInsideRoot } from "../path-security.js";
 
 const NonEmptyStringSchema = z.string().min(1);

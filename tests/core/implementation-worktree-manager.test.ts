@@ -8,7 +8,7 @@ import {
   prepareImplementationWorktree
 } from "../../src/core/write-mode/worktree.js";
 import type { LocalTransactionJournalEntry } from "../../src/core/write-mode/transaction-journal.js";
-import type { RepositoryConfig } from "../../src/core/types.js";
+import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 
 type GitCall = {
   cwd: string;

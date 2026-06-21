@@ -1,9 +1,9 @@
 import type {
   Invocation,
   RepoContext,
-  RepositoryConfig,
   WorkspaceRecord
 } from "../types.js";
+import type { RepositoryConfig } from "../config/schemas.js";
 import type { Finding } from "../findings/types.js";
 import type { AcceptanceDecision } from "../decisions/types.js";
 import type { ValidationResult } from "../agent-runtime/contracts.js";

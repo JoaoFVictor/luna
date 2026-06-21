@@ -4,8 +4,8 @@ import { resolveFlueMcpTools } from "./mcp-capabilities.js";
 import { loadFlueSkill } from "./skill-loader.js";
 import { resolveFlueSubagentProfiles } from "./subagent-profiles.js";
 import { resolveFlueTools } from "./tool-registry.js";
-import type { McpConfig } from "../../mcp-config.js";
-import type { ResolvedModelProfiles } from "../../model-config.js";
+import type { McpConfig } from "../../config/mcp.js";
+import type { ResolvedModelProfiles } from "../../config/models.js";
 import {
   customEvent,
   type LunaObservability
