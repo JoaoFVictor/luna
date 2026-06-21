@@ -1,7 +1,0 @@
-nodes:
-  - id: legacy
-    type: built_in
-    uses: final_code_review_report
-    artifact:
-      json: final-report.json
-      markdown: final-report.md

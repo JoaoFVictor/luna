@@ -8,12 +8,8 @@ import {
   commitChanges as defaultCommitChanges,
   pushBranch as defaultPushBranch
 } from "../write-mode/git-gates.js";
-import type {
-  ChangeRequestArtifact,
-  ChangeRequestRegistry
-} from "../change-request/contracts.js";
+import type { ChangeRequestRegistry } from "../change-request/contracts.js";
 import type { AcceptanceDecision } from "../decisions/types.js";
-import type { ValidationResult } from "../validation/runner.js";
 import { AgentLoopResultSchema } from "../agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,

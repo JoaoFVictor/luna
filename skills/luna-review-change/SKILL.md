@@ -37,7 +37,8 @@ Review Luna changes as architecture, not just code.
 2. Search for dead imports, old names, duplicate lists, and stale examples.
 3. Check tests cover both success and failure paths.
 4. Verify README/examples explain the new path for a person new to Luna.
-5. Run focused tests and `rtk npm run typecheck`.
+5. Run focused tests, `rtk npm run typecheck`,
+   `rtk npm run typecheck:unused-src`, and `rtk npm run lint:unused`.
 
 ## Useful Scans
 
@@ -57,5 +58,7 @@ For broad changes, run:
 ```sh
 rtk npm test
 rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 rtk npm run build
 ```

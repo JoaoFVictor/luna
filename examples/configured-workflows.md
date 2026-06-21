@@ -304,7 +304,7 @@ Every run writes:
 `events.jsonl` is mandatory and cannot be disabled. Optional exporters attach
 beside it. Today the accepted optional exporter key is `runtime_log`;
 OpenTelemetry, Braintrust, and Sentry are future exporter targets, not accepted
-workflow config keys. `flue_log` is accepted as a legacy Flue runtime alias.
+workflow config keys.
 
 Workflow YAML can set optional observability exporters and the workflow-level
 subagent write policy:
@@ -611,6 +611,8 @@ Before finishing a branch:
 ```bash
 rtk npm test
 rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 rtk npm run build
 rtk npm run flue:build
 ```

@@ -6,7 +6,7 @@ import type { RunIdentityOptions } from "../invocation/run-identity.js";
 import type { Invocation, RunIdentity } from "../invocation/types.js";
 import type { ErrorArtifact } from "./errors.js";
 import type { ImplementationConfig, WorkspaceRecord } from "../write-mode/types.js";
-import type { WorkflowDefinition, WorkflowNode } from "../workflow/definition.js";
+import type { WorkflowNode } from "../workflow/definition.js";
 import type { WorkflowState } from "../workflow/state.js";
 import type {
   ConfiguredWorkflowBootstrapConfigs,

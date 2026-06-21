@@ -1,12 +1,5 @@
 import {
   customEvent,
-  runCompletedEvent,
-  runStartedEvent,
-  stepFailedEvent,
-  stepSkippedEvent,
-  stepStartedEvent,
-  stepSucceededEvent,
-  type JsonObject,
   type LunaEvent,
   type LunaObservabilityLevel,
   type LunaObservabilitySink

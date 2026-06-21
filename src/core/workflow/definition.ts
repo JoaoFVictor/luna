@@ -144,7 +144,6 @@ const WorkflowGraphShapeSchema = z
 
 const WorkflowGraphSchema = {
   parse(value: unknown): z.infer<typeof WorkflowGraphShapeSchema> {
-    assertNoLegacyArtifactShape(value);
     const graph = WorkflowGraphShapeSchema.parse(value);
     const knownStepIds = new Set(graph.nodes.map((node) => node.id));
     const nodes = graph.nodes.map((node) => ({
@@ -194,58 +193,6 @@ function workflowDefinitionError(message: string, code: string): Error & { code:
   const error = new Error(message) as Error & { code: string };
   error.code = code;
   return error;
-}
-
-function assertNoLegacyArtifactShape(value: unknown): void {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return;
-  }
-
-  const nodes = (value as { nodes?: unknown }).nodes;
-  if (!Array.isArray(nodes)) {
-    return;
-  }
-
-  for (const node of nodes) {
-    if (
-      typeof node === "object" &&
-      node !== null &&
-      Object.prototype.hasOwnProperty.call(node, "artifact")
-    ) {
-      throw workflowDefinitionError(
-        "Workflow node artifact is no longer supported; use artifacts instead",
-        "workflow_legacy_artifact_shape"
-      );
-    }
-
-    if (hasLegacyReportPathInput((node as { input?: unknown }).input)) {
-      throw workflowDefinitionError(
-        "Workflow report path input is no longer supported; use explicit artifacts instead",
-        "workflow_legacy_report_path"
-      );
-    }
-  }
-}
-
-function hasLegacyReportPathInput(value: unknown): boolean {
-  if (typeof value === "string") {
-    return value === "$.state.reportPath";
-  }
-
-  if (Array.isArray(value)) {
-    return value.some((item) => hasLegacyReportPathInput(item));
-  }
-
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const legacyKeys = ["report_path", "reportPath"];
-  if (legacyKeys.some((key) => Object.prototype.hasOwnProperty.call(value, key))) {
-    return true;
-  }
-
-  return Object.values(value).some((nested) => hasLegacyReportPathInput(nested));
 }
 
 async function safeWorkflowPath(

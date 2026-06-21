@@ -54,5 +54,6 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 
 ## Verification
 
-Run focused tests for the changed area and `rtk npm run typecheck`. Before
+Run focused tests for the changed area, `rtk npm run typecheck`,
+`rtk npm run typecheck:unused-src`, and `rtk npm run lint:unused`. Before
 finishing a broad change, run `rtk npm test` and `rtk npm run build`.

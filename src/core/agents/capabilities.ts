@@ -1,8 +1,4 @@
 import { z } from "zod";
-import type {
-  AgentSubagentReference,
-  SubagentPolicyOverride
-} from "./subagent-policy.js";
 
 export const CapabilityIdSchema = z
   .string()

@@ -280,8 +280,7 @@ subagent_policy:
   allow_write: false
 ```
 
-`flue_log` is accepted as a legacy Flue runtime alias, but `runtime_log` is the
-canonical workflow key.
+`runtime_log` is the only accepted runtime log exporter key.
 
 Workflow YAML may tune scheduler execution:
 
@@ -475,6 +474,8 @@ The value passed to `--from` is not registered in `src/adapters/registry.ts`.
 ```bash
 rtk npm test
 rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
 rtk npm run build
 rtk npm run flue:build
 ```

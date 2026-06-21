@@ -42,23 +42,8 @@ const allowedCompositionRoots = new Set([
   "src/core/change-request/default-registry.ts"
 ]);
 
-const legacyArtifactShapeAllowlist = new Set([
-  "tests/fixtures/workflows/legacy-artifact-string.graph.yaml",
-  "tests/fixtures/workflows/legacy-artifact-map.graph.yaml"
-]);
-
-const legacyReportPathShapeAllowlist = new Set([
-  "tests/fixtures/workflows/legacy-report-path.graph.yaml"
-]);
-
 const legacyArtifactTestContractAllowlist = new Set([
-  "tests/core/workflow-definition-legacy-artifacts.test.ts",
-  "tests/core/workflow-definition-legacy-report-path.test.ts",
   "tests/core/refactor-guardrails.test.ts"
-]);
-
-const legacyReportPathRuntimeAllowlist = new Set([
-  "src/core/workflow/definition.ts"
 ]);
 
 async function readJson<T>(relativePath: string): Promise<T> {
@@ -787,15 +772,15 @@ describe("refactor guardrails", () => {
       });
   });
 
-  it("rejects legacy workflow artifact shape outside fixed negative coverage", async () => {
+  it("keeps workflow graphs and fixtures on explicit artifacts only", async () => {
     const workflowGraphs = (await listFiles("workflows")).filter((file) =>
       file.endsWith("/graph.yaml")
     );
     const artifactFixtureGraphs = (await listFiles("tests/fixtures/workflows")).filter(
-      (file) => file.endsWith(".yaml") && !legacyArtifactShapeAllowlist.has(file)
+      (file) => file.endsWith(".yaml")
     );
     const reportPathFixtureGraphs = (await listFiles("tests/fixtures/workflows")).filter(
-      (file) => file.endsWith(".yaml") && !legacyReportPathShapeAllowlist.has(file)
+      (file) => file.endsWith(".yaml")
     );
 
     for (const relativePath of [...workflowGraphs, ...artifactFixtureGraphs]) {
@@ -843,9 +828,9 @@ describe("refactor guardrails", () => {
   });
 
   it("does not expose legacy report path strings in runtime source", async () => {
-    const checkedFiles = (await listFiles("src"))
-      .filter((file) => file.endsWith(".ts"))
-      .filter((file) => !legacyReportPathRuntimeAllowlist.has(file));
+    const checkedFiles = (await listFiles("src")).filter((file) =>
+      file.endsWith(".ts")
+    );
 
     for (const relativePath of checkedFiles) {
       const sourceFile = ts.createSourceFile(

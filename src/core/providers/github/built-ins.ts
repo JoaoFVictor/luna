@@ -25,7 +25,6 @@ import {
   requiredState,
   resolvedInput,
   runIdFrom,
-  stepValue,
   workspaceFrom,
   workspaceRootFrom,
   workflowFrom,
