@@ -159,11 +159,15 @@ function violationKey(violation: Pick<CoreDomainViolation, "path" | "rule">): st
   return `${violation.path}:${violation.rule}`;
 }
 
-function assertManifestEntry(entry: CoreDomainViolation): void {
+function assertManifestEntry(entry: CoreDomainViolation, currentWave: number): void {
   expect(entry.path).toEqual(expect.any(String));
   expect(entry.rule).toEqual(expect.any(String));
   expect(entry.removeByWave).toEqual(expect.any(Number));
   expect(entry.removeByWave).toBeGreaterThan(0);
+  expect(
+    entry.removeByWave,
+    `${violationKey(entry)} removeByWave must be after currentWave`
+  ).toBeGreaterThan(currentWave);
 }
 
 function applyTemporaryViolationManifest(
@@ -206,7 +210,10 @@ function unexpectedViolationKeys(
 }
 
 function isProviderPath(relativePath: string): boolean {
-  return relativePath.startsWith("src/core/providers/");
+  return (
+    relativePath.startsWith("src/core/providers/") ||
+    isProviderAdapterPath(relativePath)
+  );
 }
 
 function isProviderAdapterPath(relativePath: string): boolean {
@@ -221,7 +228,6 @@ function isGenericRuntimePath(relativePath: string): boolean {
     relativePath.startsWith("src/") &&
     relativePath.endsWith(".ts") &&
     !isProviderPath(relativePath) &&
-    !isProviderAdapterPath(relativePath) &&
     !allowedCompositionRoots.has(relativePath)
   );
 }
@@ -483,6 +489,26 @@ describe("refactor guardrails", () => {
     expect(oversizedFiles).toEqual({});
   });
 
+  it("treats provider adapters as provider-owned import targets", () => {
+    const providerOwnedTargets = [
+      "src/core/providers/github/built-ins.ts",
+      "src/adapters/github-pr-url/index.ts",
+      "src/adapters/jira-task-url/adapter.ts"
+    ];
+
+    expect(providerOwnedTargets.filter(isProviderPath)).toEqual(providerOwnedTargets);
+  });
+
+  it("rejects expired temporary core-domain violations", () => {
+    expect(() =>
+      assertManifestEntry({
+        path: "src/core/types.ts",
+        rule: "global-core-types-barrel",
+        removeByWave: 1
+      }, 1)
+    ).toThrow(/removeByWave/);
+  });
+
   it("keeps core domain ownership violations explicit and temporary", async () => {
     const manifest = await readJson<CoreDomainViolationManifest>(
       "tests/fixtures/refactor/core-domain-refactor-violations.json"
@@ -497,7 +523,7 @@ describe("refactor guardrails", () => {
     expect(typeof manifest.finalMode).toBe("boolean");
 
     for (const violation of manifest.violations) {
-      assertManifestEntry(violation);
+      assertManifestEntry(violation, manifest.currentWave);
       expect(sourceFileSet.has(violation.path)).toBe(true);
       expect(violationKeys.has(violationKey(violation))).toBe(false);
       violationKeys.add(violationKey(violation));
@@ -523,6 +549,11 @@ describe("refactor guardrails", () => {
     for (const relativePath of sourceFiles) {
       const content = await readText(relativePath);
       const imports = importSpecifiersFromSource(relativePath, content);
+      const resolvedImports = sourceImportsFromSource(
+        relativePath,
+        content,
+        sourceFileSet
+      );
 
       if (
         imports.some((specifier) =>
@@ -537,11 +568,7 @@ describe("refactor guardrails", () => {
       }
 
       if (isGenericRuntimePath(relativePath)) {
-        for (const importedPath of sourceImportsFromSource(
-          relativePath,
-          content,
-          sourceFileSet
-        )) {
+        for (const importedPath of resolvedImports) {
           if (isProviderPath(importedPath)) {
             rawGenericProviderImportViolations.push(
               violationKey(coreDomainViolation(relativePath, "generic-provider-import"))
@@ -550,11 +577,7 @@ describe("refactor guardrails", () => {
         }
       }
 
-      for (const importedPath of sourceImportsFromSource(
-        relativePath,
-        content,
-        sourceFileSet
-      )) {
+      for (const importedPath of resolvedImports) {
         if (isLegacyFlueCorePath(importedPath)) {
           rawLegacyPathReferences.push(
             violationKey(coreDomainViolation(relativePath, "legacy-flue-core-path"))

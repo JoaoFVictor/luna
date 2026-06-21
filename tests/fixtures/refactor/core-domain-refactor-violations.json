@@ -3,6 +3,11 @@
   "finalMode": false,
   "violations": [
     {
+      "path": "src/adapters/registry.ts",
+      "rule": "generic-provider-import",
+      "removeByWave": 7
+    },
+    {
       "path": "src/core/agent-capabilities.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
