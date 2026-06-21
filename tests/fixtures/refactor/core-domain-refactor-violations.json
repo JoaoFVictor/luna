@@ -148,16 +148,6 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/flue-tool-registry.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/flue-tool-registry.ts",
-      "rule": "flue-runtime-import",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/git-failure.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
@@ -290,11 +280,6 @@
     {
       "path": "src/core/worktree-diff-collector.ts",
       "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/tools/repository-tools.ts",
-      "rule": "flue-runtime-import",
       "removeByWave": 7
     },
     {

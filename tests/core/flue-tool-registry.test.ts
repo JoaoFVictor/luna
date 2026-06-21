@@ -1,13 +1,32 @@
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { lunaToolCatalog } from "../../src/core/tools/catalog.js";
 
 async function importRegistryWithGitMock() {
   vi.resetModules();
   const runGit = vi.fn(async () => "");
   vi.doMock("../../src/core/git.js", () => ({ runGit }));
 
-  const registry = await import("../../src/core/flue-tool-registry.js");
+  const registry = await import(
+    "../../src/core/agent-runtime/flue/tool-registry.js"
+  );
 
   return { ...registry, runGit };
+}
+
+async function listFiles(relativeDirectory: string): Promise<string[]> {
+  const entries = await readdir(relativeDirectory, { withFileTypes: true });
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const relativePath = path.posix.join(relativeDirectory, entry.name);
+      return entry.isDirectory()
+        ? await listFiles(relativePath)
+        : [relativePath];
+    })
+  );
+
+  return nested.flat().sort();
 }
 
 describe("flue tool registry", () => {
@@ -30,6 +49,10 @@ describe("flue tool registry", () => {
       "repository_diff_summary"
     ]);
     expect(tools).toHaveLength(2);
+    expect(Object.keys(lunaToolCatalog).sort()).toEqual([
+      "repository.diff-summary",
+      "repository.status"
+    ]);
   });
 
   it("executes repository tools through git with bound cwd", async () => {
@@ -102,16 +125,17 @@ describe("flue tool registry", () => {
 
     expect(registeredFlueToolSafety()).toEqual({
       "repository.status": {
-        writes: false,
-        network: false,
-        side_effects: false
+        writes: false
       },
       "repository.diff-summary": {
-        writes: false,
-        network: false,
-        side_effects: false
+        writes: false
       }
     });
+    expect(registeredFlueToolSafety()).toEqual(
+      Object.fromEntries(
+        Object.entries(lunaToolCatalog).map(([id, tool]) => [id, tool.safety])
+      )
+    );
   });
 
   it("enforces tool safety invariants", async () => {
@@ -119,12 +143,19 @@ describe("flue tool registry", () => {
 
     expect(() =>
       assertToolSafety({
-        writes: true,
-        network: false,
-        side_effects: false
+        writes: "yes" as never
       })
-    ).toThrow(
-      "writing tools must declare side_effects"
+    ).toThrow("tools must declare whether they write");
+  });
+
+  it("keeps Flue defineTool out of Luna-native tools", async () => {
+    const files = (await listFiles("src/core/tools")).filter((file) =>
+      file.endsWith(".ts")
     );
+    const contents = await Promise.all(
+      files.map((file) => readFile(file, "utf8"))
+    );
+
+    expect(contents.join("\n")).not.toContain("defineTool");
   });
 });

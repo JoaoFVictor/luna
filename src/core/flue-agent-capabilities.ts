@@ -3,7 +3,7 @@ import type { AgentDefinition } from "./agent-definition.js";
 import { resolveFlueMcpTools } from "./flue-mcp-capabilities.js";
 import { loadFlueSkill } from "./flue-skill-loader.js";
 import { resolveFlueSubagentProfiles } from "./flue-subagent-profiles.js";
-import { resolveFlueTools } from "./flue-tool-registry.js";
+import { resolveFlueTools } from "./agent-runtime/flue/tool-registry.js";
 import type { McpConfig } from "./mcp-config.js";
 import type { ResolvedModelProfiles } from "./model-config.js";
 import {

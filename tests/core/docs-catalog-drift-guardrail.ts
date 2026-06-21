@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect } from "vitest";
 import YAML from "yaml";
 import { builtInStepNames } from "../../src/core/built-ins/catalog.js";
-import { registeredFlueToolSafety } from "../../src/core/flue-tool-registry.js";
+import { lunaToolCatalog } from "../../src/core/tools/catalog.js";
 
 async function readText(repoRoot: string, relativePath: string): Promise<string> {
   return readFile(path.join(repoRoot, relativePath), "utf8");
@@ -139,14 +139,14 @@ export function realReviewPrCommandViolations(
 
 export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise<void> {
   const builtIns = [...builtInStepNames].sort();
-  const toolIds = Object.keys(registeredFlueToolSafety()).sort();
+  const toolIds = Object.keys(lunaToolCatalog).sort();
   const workflowIds = await workflowIdsFromDefinitions(repoRoot);
   const legacyViolations: string[] = [];
   const workflowReferences: string[] = [];
   const reviewPrViolations: string[] = [];
 
   expect(builtIns, "runtime built-in inventory from src/core/built-ins/catalog.ts").not.toEqual([]);
-  expect(toolIds, "runtime tool inventory from src/core/flue-tool-registry.ts").not.toEqual([]);
+  expect(toolIds, "runtime tool inventory from src/core/tools/catalog.ts").not.toEqual([]);
   expect(workflowIds, "workflow id inventory from workflows/*/workflow.yaml").not.toEqual([]);
 
   for (const relativePath of ["README.md", "examples/configured-workflows.md"]) {

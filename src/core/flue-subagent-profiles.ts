@@ -6,7 +6,7 @@ import {
 } from "@flue/runtime";
 import { loadAgentDefinition } from "./agent-definition.js";
 import { loadFlueSkill } from "./flue-skill-loader.js";
-import { resolveFlueTools } from "./flue-tool-registry.js";
+import { resolveFlueTools } from "./agent-runtime/flue/tool-registry.js";
 import {
   toFlueModelOptions,
   type ResolvedModelProfiles
