@@ -11,7 +11,7 @@ import type { GenericSchema } from "valibot";
 import {
   runAgentLoopStateMachine,
   type RunWritableAgentInput
-} from "./agent-loop-runner.js";
+} from "./agents/loop-runner.js";
 import type {
   RunAgentLoopStepOptions,
   RunAgentStepOptions

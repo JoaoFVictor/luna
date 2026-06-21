@@ -4,7 +4,7 @@ import type {
   AnyLunaToolDefinition,
   LunaToolSafety
 } from "../../tools/contracts.js";
-import type { AgentDefinition } from "../../agent-definition.js";
+import type { AgentDefinition } from "../../agents/definition.js";
 
 type AgentMode = AgentDefinition["mode"];
 

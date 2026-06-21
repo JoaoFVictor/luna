@@ -1,7 +1,7 @@
 import type {
   AgentLoopAttempt,
   ValidationResult
-} from "./types.js";
+} from "../agent-runtime/contracts.js";
 
 export type AgentLoopPhase = "initial" | "repair";
 

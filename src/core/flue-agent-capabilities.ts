@@ -1,5 +1,5 @@
 import type { AgentProfile, Skill, ToolDefinition } from "@flue/runtime";
-import type { AgentDefinition } from "./agent-definition.js";
+import type { AgentDefinition } from "./agents/definition.js";
 import { resolveFlueMcpTools } from "./flue-mcp-capabilities.js";
 import { loadFlueSkill } from "./flue-skill-loader.js";
 import { resolveFlueSubagentProfiles } from "./flue-subagent-profiles.js";
@@ -12,7 +12,7 @@ import {
 } from "./observability/luna-observability.js";
 import { sanitizeJsonObject } from "./observability/sanitize.js";
 import type { ObservabilitySummary } from "./observability/summary.js";
-import type { WorkflowSubagentPolicy } from "./subagent-policy.js";
+import type { WorkflowSubagentPolicy } from "./agents/subagent-policy.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];

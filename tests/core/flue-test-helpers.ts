@@ -87,7 +87,7 @@ export async function importWorkflowWithRunnerMock(
 export function cleanupFlueMocks(): void {
   vi.doUnmock("../../src/core/configured-workflow-runner.js");
   vi.doUnmock("../../src/core/flue-agent-capabilities.js");
-  vi.doUnmock("../../src/core/agent-loop-runner.js");
+  vi.doUnmock("../../src/core/agents/loop-runner.js");
   vi.doUnmock("../../src/core/pi-auth.js");
   vi.resetModules();
   vi.restoreAllMocks();

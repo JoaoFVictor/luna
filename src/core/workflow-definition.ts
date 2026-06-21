@@ -12,7 +12,7 @@ import { assertSafeSegment, isInsideRoot } from "./path-security.js";
 import {
   defaultWorkflowSubagentPolicy,
   type WorkflowSubagentPolicy
-} from "./subagent-policy.js";
+} from "./agents/subagent-policy.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   AcceptanceDecisionSchema,
-  AgentLoopResultSchema,
   AppConfigSchema,
   CodeReviewFindingsSchema,
   EvidenceRefSchema,
@@ -12,9 +11,12 @@ import {
   RepoContextSchema,
   ReviewPlanSchema,
   RunIdentitySchema,
-  RoutingConfigSchema,
-  ValidationResultSchema
+  RoutingConfigSchema
 } from "../../src/core/types.js";
+import {
+  AgentLoopResultSchema,
+  ValidationResultSchema
+} from "../../src/core/agent-runtime/contracts.js";
 import {
   GitGateArtifactSchema,
   ImplementationConfigSchema

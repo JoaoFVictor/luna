@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { runAgentLoopStateMachine } from "../../src/core/agent-loop-runner.js";
+import { runAgentLoopStateMachine } from "../../src/core/agents/loop-runner.js";
 import {
   AgentLoopResultSchema,
   type ValidationResult
-} from "../../src/core/types.js";
+} from "../../src/core/agent-runtime/contracts.js";
 
 const passedValidation: ValidationResult = { passed: true };
 const failedValidation: ValidationResult = { passed: false };

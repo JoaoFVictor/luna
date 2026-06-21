@@ -13,15 +13,13 @@ import type {
   ChangeRequestRegistry
 } from "../change-request/contracts.js";
 import { ChangeRequestArtifactSchema } from "../change-request/contracts.js";
-import type {
-  AcceptanceDecision,
-  ValidationResult
-} from "../types.js";
+import type { AcceptanceDecision } from "../types.js";
+import type { ValidationResult } from "../agent-runtime/contracts.js";
+import { AcceptanceDecisionSchema } from "../types.js";
 import {
-  AcceptanceDecisionSchema,
   AgentLoopResultSchema,
   ValidationResultSchema
-} from "../types.js";
+} from "../agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact

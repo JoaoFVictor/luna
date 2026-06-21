@@ -1,4 +1,4 @@
-import type { AgentDefinition } from "../agent-definition.js";
+import type { AgentDefinition } from "../agents/definition.js";
 
 export type LunaToolMode = AgentDefinition["mode"];
 

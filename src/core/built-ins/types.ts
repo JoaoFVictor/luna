@@ -4,9 +4,9 @@ import type {
   Invocation,
   RepoContext,
   RepositoryConfig,
-  ValidationResult,
   WorkspaceRecord
 } from "../types.js";
+import type { ValidationResult } from "../agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,
   ImplementationConfig,

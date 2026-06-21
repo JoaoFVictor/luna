@@ -4,9 +4,9 @@ import type {
   Finding,
   Invocation,
   RepositoryConfig,
-  ValidationResult,
   WorkspaceRecord
 } from "../types.js";
+import type { ValidationResult } from "../agent-runtime/contracts.js";
 import type { ImplementationConfig } from "../write-mode/types.js";
 import { resolveWorkflowInput, type WorkflowState } from "../workflow-state.js";
 import { builtInError, type BuiltInErrorCode } from "./errors.js";

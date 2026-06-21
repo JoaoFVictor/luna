@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import type {
-  ValidationCommand,
+  ValidationCommand
+} from "./types.js";
+import type {
   ValidationCommandResult,
   ValidationResult
-} from "./types.js";
+} from "./agent-runtime/contracts.js";
 
 export type ProcessRunRequest = {
   cmd: string;

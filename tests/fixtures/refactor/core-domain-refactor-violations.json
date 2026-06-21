@@ -8,21 +8,6 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/agent-capabilities.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/agent-definition.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/agent-loop-runner.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/append-only-jsonl-writer.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
@@ -234,11 +219,6 @@
     },
     {
       "path": "src/core/run-lock-manager.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/subagent-policy.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },

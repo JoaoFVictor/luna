@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ArtifactStore } from "../../src/core/artifact-store.js";
-import type { AgentDefinition } from "../../src/core/agent-definition.js";
+import type { AgentDefinition } from "../../src/core/agents/definition.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import {
   createObservabilitySummary,

@@ -4,7 +4,7 @@ import {
   type AgentProfile,
   type ToolDefinition
 } from "@flue/runtime";
-import { loadAgentDefinition } from "./agent-definition.js";
+import { loadAgentDefinition } from "./agents/definition.js";
 import { loadFlueSkill } from "./flue-skill-loader.js";
 import { resolveFlueTools } from "./agent-runtime/flue/tool-registry.js";
 import {
@@ -25,7 +25,7 @@ import {
   resolveSubagentPolicy,
   type ResolvedSubagentPolicy,
   type WorkflowSubagentPolicy
-} from "./subagent-policy.js";
+} from "./agents/subagent-policy.js";
 
 function subagentError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };

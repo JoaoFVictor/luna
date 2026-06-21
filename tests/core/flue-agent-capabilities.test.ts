@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ToolDefinition } from "@flue/runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentDefinition } from "../../src/core/agent-definition.js";
+import type { AgentDefinition } from "../../src/core/agents/definition.js";
 import { resolveFlueMcpTools } from "../../src/core/flue-mcp-capabilities.js";
 import { resolveFlueAgentCapabilities } from "../../src/core/flue-agent-capabilities.js";
 import type { McpConfig } from "../../src/core/mcp-config.js";

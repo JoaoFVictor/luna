@@ -4,9 +4,9 @@ import {
   buildImplementationReportMarkdown
 } from "../../src/core/providers/jira/report-builder.js";
 import type {
-  Invocation,
-  ValidationResult
+  Invocation
 } from "../../src/core/types.js";
+import type { ValidationResult } from "../../src/core/agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact

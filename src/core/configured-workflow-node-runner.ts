@@ -1,7 +1,7 @@
 import {
   loadAgentDefinition,
   type AgentDefinition
-} from "./agent-definition.js";
+} from "./agents/definition.js";
 import {
   runBuiltInStep as defaultRunBuiltInStep
 } from "./built-ins/index.js";
@@ -10,7 +10,7 @@ import type {
   RunBuiltInStepOptions
 } from "./built-ins/types.js";
 import { resolveWorkflowInput, type WorkflowState } from "./workflow-state.js";
-import type { WorkflowSubagentPolicy } from "./subagent-policy.js";
+import type { WorkflowSubagentPolicy } from "./agents/subagent-policy.js";
 import type { WorkflowNode } from "./workflow-definition.js";
 import type { ResolvedModelProfiles } from "./model-config.js";
 import type { ArtifactStore } from "./artifact-store.js";
