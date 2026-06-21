@@ -1,16 +1,6 @@
 import { z } from "zod";
-import { InvocationSchema, WorkspaceRecordSchema } from "../types.js";
 
 const NonEmptyStringSchema = z.string().min(1);
-
-export const ReviewPlanSchema = z
-  .object({
-    summary: NonEmptyStringSchema,
-    focus_areas: z.array(NonEmptyStringSchema),
-    files_to_review: z.array(NonEmptyStringSchema)
-  })
-  .strict();
-export type ReviewPlan = z.infer<typeof ReviewPlanSchema>;
 
 export const EvidenceRefSchema = z
   .object({
@@ -45,31 +35,3 @@ export const CodeReviewFindingsSchema = z
   })
   .strict();
 export type CodeReviewFindings = z.infer<typeof CodeReviewFindingsSchema>;
-
-export const AcceptanceDecisionSchema = z
-  .object({
-    status: z.enum(["accepted", "rejected", "needs_human_review"]),
-    summary: NonEmptyStringSchema,
-    blocking_reasons: z.array(NonEmptyStringSchema),
-    recommended_action: z.enum([
-      "approve",
-      "comment",
-      "request_changes",
-      "continue",
-      "stop",
-      "human_review"
-    ])
-  })
-  .strict();
-export type AcceptanceDecision = z.infer<typeof AcceptanceDecisionSchema>;
-
-export const FinalReportSchema = z
-  .object({
-    invocation: InvocationSchema,
-    plan: ReviewPlanSchema,
-    findings: CodeReviewFindingsSchema,
-    acceptance: AcceptanceDecisionSchema,
-    workspace: WorkspaceRecordSchema.optional()
-  })
-  .strict();
-export type FinalReport = z.infer<typeof FinalReportSchema>;

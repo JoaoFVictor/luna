@@ -18,7 +18,7 @@ import type {
   RepositoryConfig,
   WorkspaceRecord
 } from "../../src/core/types.js";
-import type { AcceptanceDecision } from "../../src/core/findings/types.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 import type { ValidationResult } from "../../src/core/agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,

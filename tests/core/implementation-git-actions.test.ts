@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { commitChanges } from "../../src/core/write-mode/git-gates.js";
 import type { LocalTransactionJournalEntry } from "../../src/core/write-mode/transaction-journal.js";
-import type { AcceptanceDecision } from "../../src/core/findings/types.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 import type { ValidationResult } from "../../src/core/agent-runtime/contracts.js";
 import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 

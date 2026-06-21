@@ -5,7 +5,7 @@ import type {
   Invocation,
   RunIdentity
 } from "../../src/core/types.js";
-import type { AcceptanceDecision } from "../../src/core/findings/types.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 
 export const invocation: Invocation = {
   version: "2026-06",

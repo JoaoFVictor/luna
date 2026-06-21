@@ -12,9 +12,9 @@ import type {
   WorkspaceRecord
 } from "../../types.js";
 import type {
-  AcceptanceDecision,
   CodeReviewFindings
 } from "../../findings/types.js";
+import type { AcceptanceDecision } from "../../decisions/types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
   findingsFrom,

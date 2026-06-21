@@ -5,14 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import { runGit } from "../../src/core/git/client.js";
 import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
-import type {
-  Invocation
-} from "../../src/core/types.js";
-import type {
-  AcceptanceDecision,
-  CodeReviewFindings,
-  ReviewPlan
-} from "../../src/core/findings/types.js";
+import type { Invocation } from "../../src/core/types.js";
+import type { CodeReviewFindings } from "../../src/core/findings/types.js";
+import type { ReviewPlan } from "../../src/core/code-review/types.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 import {
   createRealGitReviewFixture,
   type RealGitReviewFixture

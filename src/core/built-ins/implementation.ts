@@ -13,9 +13,9 @@ import type {
   ChangeRequestRegistry
 } from "../change-request/contracts.js";
 import { ChangeRequestArtifactSchema } from "../change-request/contracts.js";
-import type { AcceptanceDecision } from "../findings/types.js";
+import type { AcceptanceDecision } from "../decisions/types.js";
 import type { ValidationResult } from "../agent-runtime/contracts.js";
-import { AcceptanceDecisionSchema } from "../findings/types.js";
+import { AcceptanceDecisionSchema } from "../decisions/types.js";
 import {
   AgentLoopResultSchema,
   ValidationResultSchema

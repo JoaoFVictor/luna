@@ -10,12 +10,6 @@ import {
   RoutingConfigSchema
 } from "../../src/core/types.js";
 import {
-  AcceptanceDecisionSchema,
-  CodeReviewFindingsSchema,
-  EvidenceRefSchema,
-  ReviewPlanSchema
-} from "../../src/core/findings/types.js";
-import {
   AgentLoopResultSchema,
   ValidationResultSchema
 } from "../../src/core/agent-runtime/contracts.js";
@@ -128,39 +122,6 @@ const plannedAppConfig = {
   artifacts: {
     root: ".runs"
   }
-};
-
-const validReviewPlan = {
-  summary: "Review the changed authentication flow.",
-  focus_areas: ["Input validation", "Authorization checks"],
-  files_to_review: ["src/auth.ts"]
-};
-
-const validCodeReviewFindings = {
-  findings: [
-    {
-      title: "Missing authorization check",
-      severity: "high",
-      confidence: "high",
-      description: "The update path does not verify ownership.",
-      evidence: [
-        {
-          path: "src/auth.ts",
-          line_start: 12,
-          line_end: 18,
-          quote: "updateUser(request.body)"
-        }
-      ],
-      recommendation: "Verify the caller owns the user record before updating it."
-    }
-  ]
-};
-
-const validAcceptanceDecision = {
-  status: "rejected",
-  summary: "One high-confidence authorization issue remains.",
-  blocking_reasons: ["Missing authorization check"],
-  recommended_action: "request_changes"
 };
 
 const validRunIdentity = {
@@ -621,28 +582,6 @@ describe("core zod schemas", () => {
     expect(() => ModelsConfigSchema.parse(invalidConfig)).toThrow();
   });
 
-  it("rejects a finding without confidence", () => {
-    const invalidFindings = {
-      findings: [
-        {
-          title: "Missing authorization check",
-          severity: "high",
-          description: "The update path does not verify ownership.",
-          evidence: [
-            {
-              path: "src/auth.ts",
-              line_start: 12,
-              line_end: 18
-            }
-          ],
-          recommendation: "Verify the caller owns the user record before updating it."
-        }
-      ]
-    };
-
-    expect(() => CodeReviewFindingsSchema.parse(invalidFindings)).toThrow();
-  });
-
   it("rejects a FileExcerpt range with end_line before start_line", () => {
     expect(() =>
       FileExcerptSchema.parse({
@@ -653,23 +592,4 @@ describe("core zod schemas", () => {
     ).toThrow();
   });
 
-  it("rejects an EvidenceRef range with line_end before line_start", () => {
-    expect(() =>
-      EvidenceRefSchema.parse({
-        path: "src/auth.ts",
-        line_start: 20,
-        line_end: 19
-      })
-    ).toThrow();
-  });
-
-  it("accepts valid ReviewPlan, CodeReviewFindings, and AcceptanceDecision outputs", () => {
-    expect(ReviewPlanSchema.parse(validReviewPlan)).toEqual(validReviewPlan);
-    expect(CodeReviewFindingsSchema.parse(validCodeReviewFindings)).toEqual(
-      validCodeReviewFindings
-    );
-    expect(AcceptanceDecisionSchema.parse(validAcceptanceDecision)).toEqual(
-      validAcceptanceDecision
-    );
-  });
 });

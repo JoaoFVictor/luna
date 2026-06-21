@@ -4,7 +4,8 @@ import type {
   RepositoryConfig,
   WorkspaceRecord
 } from "../types.js";
-import type { AcceptanceDecision, Finding } from "../findings/types.js";
+import type { Finding } from "../findings/types.js";
+import type { AcceptanceDecision } from "../decisions/types.js";
 import type { ValidationResult } from "../agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,
