@@ -56,7 +56,10 @@ implementation workflow to consume through routing or a CLI target override.
 The result must satisfy Luna's `NormalizedInvocation` contract:
 
 ```ts
-import { InvocationSchema, type NormalizedInvocation } from "../../core/types.js";
+import {
+  InvocationSchema,
+  type NormalizedInvocation
+} from "../../core/invocation/types.js";
 import type { InputAdapter } from "../types.js";
 
 export const slackMessageUrlAdapter: InputAdapter = {

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRunIdentity, slugTimestamp } from "../../src/core/invocation/run-identity.js";
 import type { Invocation } from "../../src/core/invocation/types.js";
 import { artifactRootForWorkflow } from "../../src/core/configured-workflow/bootstrap.js";
-import { slugify } from "../../src/core/path-security.js";
+import { RunLockManager } from "../../src/core/workflow/lock-manager.js";
 
 const fixedDate = new Date("2026-06-18T15:04:05.000Z");
 
@@ -83,30 +85,62 @@ describe("run identity", () => {
       "repository_swinggo-dev-swg-front-nuxt.lock"
     );
     const previousFlueRunId = "flue-run-abcdef123456";
+    const locksRoot = await mkdtemp(path.join(tmpdir(), "luna-lock-compat-"));
+    let releaseLock: (() => Promise<void>) | undefined;
 
-    const runIdentity = createRunIdentity(invocation, {
-      attempt: 1,
-      date: new Date("2026-06-18T15:04:05.123Z"),
-      workflowId: "code-review",
-      flueRunId: previousFlueRunId,
-      nonce: "n9x8"
-    });
-    const artifactDirectory = path.join(
-      artifactRootForWorkflow("/tmp/luna-artifacts", runIdentity.workflow_id),
-      runIdentity.run_id
-    );
-    const lockKey = path.join(
-      "/tmp/luna-locks",
-      `${slugify(repositoryLockResource.replace(/:/g, "_"))}.lock`
-    );
-    const serializedPublicEvent = JSON.parse(JSON.stringify(runIdentity)) as {
-      flue_run_id?: string;
-    };
+    try {
+      const runIdentity = createRunIdentity(invocation, {
+        attempt: 1,
+        date: new Date("2026-06-18T15:04:05.123Z"),
+        workflowId: "code-review",
+        flueRunId: previousFlueRunId,
+        nonce: "n9x8"
+      });
+      const artifactDirectory = path.join(
+        artifactRootForWorkflow("/tmp/luna-artifacts", runIdentity.workflow_id),
+        runIdentity.run_id
+      );
+      const lockManager = new RunLockManager({
+        root: locksRoot,
+        runId: runIdentity.run_id,
+        runtimeRunId: runIdentity.flue_run_id,
+        timeoutMs: 1000,
+        staleAfterMs: 6000
+      });
+      releaseLock = await lockManager.acquire(
+        repositoryLockResource,
+        "exclusive"
+      );
+      const [actualLockDirectoryName] = await readdir(locksRoot);
+      const lockKey = path.join(
+        "/tmp/luna-locks",
+        actualLockDirectoryName
+      );
+      const actualLockDirectory = path.join(
+        locksRoot,
+        actualLockDirectoryName
+      );
+      const owner = JSON.parse(
+        await readFile(path.join(actualLockDirectory, "owner.json"), "utf8")
+      ) as { run_id?: string; runtime_run_id?: string };
+      const serializedPublicEvent = JSON.parse(JSON.stringify(runIdentity)) as {
+        flue_run_id?: string;
+      };
 
-    expect(runIdentity.run_id).toBe(previousRunId);
-    expect(artifactDirectory).toBe(previousArtifactDirectory);
-    expect(lockKey).toBe(previousLockKey);
-    expect(serializedPublicEvent.flue_run_id).toBe(previousFlueRunId);
+      expect(runIdentity.run_id).toBe(previousRunId);
+      expect(artifactDirectory).toBe(previousArtifactDirectory);
+      expect(lockKey).toBe(previousLockKey);
+      expect((await stat(actualLockDirectory)).isDirectory()).toBe(true);
+      expect(owner).toMatchObject({
+        run_id: previousRunId,
+        runtime_run_id: previousFlueRunId
+      });
+      expect(owner).not.toHaveProperty("flue_run_id");
+      expect(serializedPublicEvent.flue_run_id).toBe(previousFlueRunId);
+    } finally {
+      await releaseLock?.();
+      await rm(locksRoot, { recursive: true, force: true });
+    }
   });
 
   it("omits flue_run_id outside Flue and still creates unique path-safe ids", () => {
