@@ -7,16 +7,6 @@ nodes:
         source: $.steps.preflight
         format: json
 
-  - id: workspace
-    type: built_in
-    uses: prepare_implementation_worktree
-    artifacts:
-      - path: workspace.json
-        source: $.steps.workspace
-        format: json
-    after:
-      - preflight
-
   - id: task_context
     type: built_in
     uses: collect_task_context
@@ -25,7 +15,19 @@ nodes:
         source: $.steps.task_context
         format: json
     after:
-      - workspace
+      - preflight
+
+  - id: workspace
+    type: built_in
+    uses: prepare_implementation_worktree
+    input:
+      subject: $.steps.task_context.implementation_subject
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
+    after:
+      - task_context
 
   - id: implementation_plan
     type: agent
@@ -141,6 +143,8 @@ nodes:
   - id: commit
     type: built_in
     uses: commit_changes
+    input:
+      message: $.steps.task_context.implementation_title
     artifacts:
       - path: commit.json
         source: $.steps.commit
@@ -158,16 +162,16 @@ nodes:
     after:
       - commit
 
-  - id: pull_request
+  - id: change_request
     type: built_in
-    uses: open_pull_request
+    uses: open_change_request
     input:
       push: $.steps.push
-      title: $.steps.task_context.jira.summary
+      title: $.steps.task_context.implementation_title
       body: $.steps.task_context.jira.description
     artifacts:
-      - path: pull-request.json
-        source: $.steps.pull_request
+      - path: change-request.json
+        source: $.steps.change_request
         format: json
     after:
       - push
@@ -183,4 +187,4 @@ nodes:
         source: $.steps.final_report.markdown
         format: markdown
     after:
-      - pull_request
+      - change_request

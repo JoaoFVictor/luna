@@ -65,6 +65,10 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
+    "src/core/built-ins/implementation.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
     "src/core/built-ins/index.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
@@ -80,6 +84,10 @@
     "src/core/built-ins/types.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/change-request-actions.ts": {
+      "owner": "composition-root",
+      "reason": "Connects provider-owned modules at an explicit runtime composition root."
     },
     "src/core/config-loader.ts": {
       "owner": "generic",
@@ -225,7 +233,7 @@
       "owner": "provider:github",
       "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
     },
-    "src/core/providers/github/implementation-actions.ts": {
+    "src/core/providers/github/change-request-actions.ts": {
       "owner": "provider:github",
       "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
     },
@@ -354,6 +362,11 @@
       "from": "src/core/built-ins/catalog.ts",
       "to": "src/core/providers/jira/built-ins.ts",
       "reason": "Registers Jira-owned built-ins at the built-in composition root."
+    },
+    {
+      "from": "src/core/change-request-actions.ts",
+      "to": "src/core/providers/github/change-request-actions.ts",
+      "reason": "Dispatches change request publishing to the configured GitHub provider implementation."
     }
   ]
 }

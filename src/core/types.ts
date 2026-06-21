@@ -290,11 +290,11 @@ export const PushBranchArtifactSchema = GitGateArtifactSchema.extend({
 }).strict();
 export type PushBranchArtifact = z.infer<typeof PushBranchArtifactSchema>;
 
-export const PullRequestArtifactSchema = GitGateArtifactSchema.extend({
+export const ChangeRequestArtifactSchema = GitGateArtifactSchema.extend({
   provider: z.literal("github").optional(),
   url: NonEmptyStringSchema.optional()
 }).strict();
-export type PullRequestArtifact = z.infer<typeof PullRequestArtifactSchema>;
+export type ChangeRequestArtifact = z.infer<typeof ChangeRequestArtifactSchema>;
 
 export const ImplementationConfigSchema = z
   .object({
@@ -312,7 +312,7 @@ export const ImplementationConfigSchema = z
             remote: NonEmptyStringSchema
           })
           .strict(),
-        pull_request: z
+        change_request: z
           .object({
             enabled: z.boolean(),
             provider: z.literal("github"),
@@ -347,13 +347,13 @@ export const ImplementationConfigSchema = z
     }
 
     if (
-      config.implementation.pull_request.enabled &&
+      config.implementation.change_request.enabled &&
       !config.implementation.push.enabled
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "pull_request.enabled requires push.enabled",
-        path: ["implementation", "pull_request", "enabled"]
+        message: "change_request.enabled requires push.enabled",
+        path: ["implementation", "change_request", "enabled"]
       });
     }
   });

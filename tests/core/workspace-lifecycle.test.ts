@@ -28,7 +28,7 @@ function evidence(
 const successfulInput = {
   commitEnabled: true,
   pushEnabled: false,
-  pullRequestEnabled: false,
+  changeRequestEnabled: false,
   evidence: evidence()
 };
 
@@ -89,13 +89,13 @@ describe("workspace lifecycle", () => {
     expect(
       lifecycleDecision({
         ...successfulInput,
-        pullRequestEnabled: true,
+        changeRequestEnabled: true,
         evidence: evidence({
           pushAttempted: true,
-          pullRequestAttempted: false
+          changeRequestAttempted: false
         })
       })
-    ).toEqual({ preserve: true, reason: "pull_request_skipped_or_failed" });
+    ).toEqual({ preserve: true, reason: "change_request_skipped_or_failed" });
   });
 
   it("allows cleanup when all enabled gates succeeded", () => {
@@ -111,7 +111,7 @@ describe("workspace lifecycle", () => {
         ...successfulInput,
         evidence: evidence({
           pushAttempted: false,
-          pullRequestAttempted: false
+          changeRequestAttempted: false
         })
       })
     ).toEqual({ preserve: false, reason: "success_cleanup" });

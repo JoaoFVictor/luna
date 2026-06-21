@@ -411,7 +411,7 @@ describe("config definition files", () => {
           status: "disabled",
           reason: "disabled"
         },
-        pull_request: {
+        change_request: {
           enabled: false,
           skipped: true,
           status: "disabled",
@@ -541,8 +541,8 @@ describe("config definition files", () => {
 
     expect(graph.nodes.map((node) => node.id)).toEqual([
       "preflight",
-      "workspace",
       "task_context",
+      "workspace",
       "implementation_plan",
       "implementation",
       "implementation_validation",
@@ -552,7 +552,7 @@ describe("config definition files", () => {
       "acceptance_decision",
       "commit",
       "push",
-      "pull_request",
+      "change_request",
       "final_report"
     ]);
     expect(graph.nodes.find((node) => node.id === "implementation")).toEqual(

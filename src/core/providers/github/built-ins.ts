@@ -5,32 +5,27 @@ import {
   buildFinalReportJson as defaultBuildFinalReportJson,
   buildFinalReportMarkdown as defaultBuildFinalReportMarkdown
 } from "./report-builder.js";
-import { openPullRequest as defaultOpenPullRequest } from "./implementation-actions.js";
 import { runPreflight as defaultRunPreflight } from "../../preflight.js";
 import type {
   AcceptanceDecision,
   CodeReviewFindings,
   Invocation,
-  PushBranchArtifact,
   RepoContext,
   WorkspaceRecord
 } from "../../types.js";
-import { PullRequestArtifactSchema } from "../../types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
   findingsFrom,
   repositoryFrom,
   requiredInput,
   requiredState,
-  requiredImplementationFrom,
   resolvedInput,
   runIdFrom,
   stepValue,
   workspaceFrom,
   workspaceRootFrom,
   workflowFrom,
-  implementationFrom,
-  implementationWorkspaceFrom
+  implementationFrom
 } from "../../built-ins/state.js";
 import { builtInError } from "../../built-ins/errors.js";
 import { githubPullRequestContextFrom } from "./pull-request-context.js";
@@ -162,45 +157,5 @@ export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
         acceptance
       })
     };
-  }
-});
-
-export const openPullRequestBuiltIn = defineBuiltInStep({
-  name: "open_pull_request",
-  metadata: {
-    implementationLifecycle: "pull_request",
-    implementationLifecycleOutcome: (output) => {
-      const result = PullRequestArtifactSchema.safeParse(output);
-      if (!result.success) {
-        const error = new Error(
-          "open_pull_request must return PullRequestArtifact"
-        ) as Error & { code: string };
-        error.code = "built_in_lifecycle_contract_invalid";
-        throw error;
-      }
-
-      return {
-        pullRequestAttempted:
-          !result.data.skipped && result.data.url !== undefined
-      };
-    },
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
-  async run({ state, input, dependencies = {} }) {
-    const openPullRequest = dependencies.openPullRequest ?? defaultOpenPullRequest;
-    const resolved = resolvedInput(input, state);
-    const implementation = requiredImplementationFrom(state);
-    const workspace = implementationWorkspaceFrom(state);
-
-    return await openPullRequest({
-      enabled: implementation.pull_request.enabled,
-      cwd: workspace.path,
-      push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
-      branch: workspace.branch,
-      baseRef: implementation.pull_request.base_ref,
-      draft: implementation.pull_request.draft,
-      title: requiredInput(resolved.title as string | undefined, "title"),
-      body: typeof resolved.body === "string" ? resolved.body : undefined
-    });
   }
 });

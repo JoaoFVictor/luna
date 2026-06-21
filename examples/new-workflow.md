@@ -122,7 +122,7 @@ Graph rules:
 - `record_acceptance_decision`
 - `commit_changes`
 - `push_branch`
-- `open_pull_request`
+- `open_change_request`
 - `final_implementation_report`
 
 Some built-ins are workflow-specific. If a workflow needs a new local

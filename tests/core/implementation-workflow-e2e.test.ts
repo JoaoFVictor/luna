@@ -105,7 +105,7 @@ async function writeTestConfig(root: string): Promise<void> {
       "  push:",
       "    enabled: false",
       "    remote: origin",
-      "  pull_request:",
+      "  change_request:",
       "    enabled: false",
       "    provider: github",
       "    draft: true",
@@ -280,7 +280,7 @@ describe("implementation workflow e2e", () => {
                   skipped: true,
                   reason: "disabled"
                 })),
-                openPullRequest: vi.fn(async () => ({
+                openChangeRequest: vi.fn(async () => ({
                   enabled: false,
                   skipped: true,
                   reason: "disabled"
@@ -292,7 +292,7 @@ describe("implementation workflow e2e", () => {
                   validation: input.validation,
                   commit: input.commit,
                   push: input.push,
-                  pull_request: input.pullRequest,
+                  change_request: input.changeRequest,
                   trusted_host_local: input.trustedHostLocal
                 })),
                 buildImplementationReportMarkdown: vi.fn((input) =>
@@ -488,8 +488,8 @@ describe("implementation workflow e2e", () => {
               calls.push("push_branch");
               return { enabled: false, skipped: true, reason: "disabled" };
             }),
-            openPullRequest: vi.fn(async () => {
-              calls.push("open_pull_request");
+            openChangeRequest: vi.fn(async () => {
+              calls.push("open_change_request");
               return { enabled: false, skipped: true, reason: "disabled" };
             }),
             buildImplementationReportJson: vi.fn((input) => {
@@ -500,7 +500,7 @@ describe("implementation workflow e2e", () => {
                 validation: input.validation,
                 commit: input.commit,
                 push: input.push,
-                pull_request: input.pullRequest,
+                change_request: input.changeRequest,
                 trusted_host_local: input.trustedHostLocal
               };
             }),
@@ -574,7 +574,7 @@ describe("implementation workflow e2e", () => {
         "change-acceptance-reviewer",
         "commit_changes",
         "push_branch",
-        "open_pull_request",
+        "open_change_request",
         "final_implementation_report"
       ]);
       expect(result.workspace).toMatchObject({
@@ -593,7 +593,7 @@ describe("implementation workflow e2e", () => {
         skipped: true,
         reason: "disabled"
       });
-      await expect(readJson(root, "pull-request.json")).resolves.toMatchObject({
+      await expect(readJson(root, "change-request.json")).resolves.toMatchObject({
         skipped: true,
         reason: "disabled"
       });

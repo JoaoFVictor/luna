@@ -66,7 +66,7 @@ describe("built-in step registry", () => {
       "record_acceptance_decision",
       "commit_changes",
       "push_branch",
-      "open_pull_request",
+      "open_change_request",
       "final_implementation_report"
     ]);
     expect(isBuiltInStepName("preflight")).toBe(true);
@@ -108,7 +108,7 @@ describe("built-in step registry", () => {
       "prepare_implementation_worktree",
       "commit_changes",
       "push_branch",
-      "open_pull_request"
+      "open_change_request"
     ]);
 
     for (const name of lockedNames) {

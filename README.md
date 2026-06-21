@@ -320,11 +320,13 @@ repositories:
       - https://github.com/org/repo.git
 ```
 
-`config/implementation.yaml` keeps commit, push, and pull request creation
+`config/implementation.yaml` keeps commit, push, and change request creation
 disabled by default. Enabling push requires commit to be enabled, and enabling a
-draft PR requires both commit and push to be enabled. When commit is disabled,
-validation fails, acceptance rejects the work, or a git publishing gate fails,
-Luna preserves the write worktree so you can inspect or continue the changes.
+change request requires both commit and push to be enabled. The first supported
+change request provider is GitHub, which opens a draft PR. When commit is
+disabled, validation fails, acceptance rejects the work, or a git publishing
+gate fails, Luna preserves the write worktree so you can inspect or continue the
+changes.
 
 ## Current Inventory
 
@@ -361,7 +363,7 @@ Built-in steps:
 - `record_acceptance_decision`
 - `commit_changes`
 - `push_branch`
-- `open_pull_request`
+- `open_change_request`
 - `final_implementation_report`
 
 Local tools:

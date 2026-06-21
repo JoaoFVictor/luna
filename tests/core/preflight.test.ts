@@ -55,7 +55,7 @@ const implementationConfig: ImplementationConfig["implementation"] = {
   branch_pattern: "feature/{slug}",
   commit: { enabled: true },
   push: { enabled: true, remote: "origin" },
-  pull_request: {
+  change_request: {
     enabled: true,
     provider: "github",
     draft: true,
@@ -362,7 +362,7 @@ describe("preflight", () => {
           ...implementationConfig,
           commit: { enabled: false },
           push: { enabled: true, remote: "origin" },
-          pull_request: { ...implementationConfig.pull_request, enabled: false }
+          change_request: { ...implementationConfig.change_request, enabled: false }
         },
         runGit: async (_cwd, args) =>
           args[0] === "remote"
@@ -373,7 +373,7 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "push_requires_commit" });
   });
 
-  it("throws pull_request_requires_push when PR is enabled without push", async () => {
+  it("throws change_request_requires_push when PR is enabled without push", async () => {
     await expect(
       runPreflight({
         invocation: jiraInvocation,
@@ -386,7 +386,7 @@ describe("preflight", () => {
           ...implementationConfig,
           commit: { enabled: true },
           push: { enabled: false, remote: "origin" },
-          pull_request: { ...implementationConfig.pull_request, enabled: true }
+          change_request: { ...implementationConfig.change_request, enabled: true }
         },
         runGit: async (_cwd, args) =>
           args[0] === "remote"
@@ -394,6 +394,6 @@ describe("preflight", () => {
             : "true\n",
         stat: async () => ({ isDirectory: () => true })
       })
-    ).rejects.toMatchObject({ code: "pull_request_requires_push" });
+    ).rejects.toMatchObject({ code: "change_request_requires_push" });
   });
 });

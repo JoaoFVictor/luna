@@ -1,48 +1,23 @@
 import {
-  prepareImplementationWorktree as defaultPrepareImplementationWorktree
-} from "../../implementation-worktree-manager.js";
-import { safeJoin } from "../../path-security.js";
-import { runValidationCommands as defaultRunValidationCommands } from "../../validation-runner.js";
-import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../../worktree-diff-collector.js";
-import {
-  commitChanges as defaultCommitChanges,
-  pushBranch as defaultPushBranch
-} from "../../implementation-git-actions.js";
-import {
   buildImplementationReportJson as defaultBuildImplementationReportJson,
   buildImplementationReportMarkdown as defaultBuildImplementationReportMarkdown
 } from "./report-builder.js";
 import { jiraIssueContextFrom } from "./task-context.js";
 import type {
-  AcceptanceDecision,
+  ChangeRequestArtifact,
   CommitChangesArtifact,
   Invocation,
-  PullRequestArtifact,
   PushBranchArtifact,
   ValidationResult
 } from "../../types.js";
-import {
-  AcceptanceDecisionSchema,
-  AgentLoopResultSchema,
-  CommitChangesArtifactSchema,
-  PushBranchArtifactSchema,
-  ValidationResultSchema
-} from "../../types.js";
-import type { WorktreeDiff } from "../../worktree-diff-collector.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
-  expectedRemoteUrlsFrom,
   finalValidationFrom,
   implementationWorkspaceFrom,
-  repositoryFrom,
   requiredImplementationFrom,
-  requiredInput,
   requiredState,
   resolvedInput,
-  runIdFrom,
-  stepValue,
-  workspaceFrom,
-  workspaceRootFrom
+  stepValue
 } from "../../built-ins/state.js";
 import { builtInError } from "../../built-ins/errors.js";
 
@@ -64,75 +39,40 @@ function jiraIssueInvocationFrom(state: { invocation?: unknown }): Invocation {
   return invocation;
 }
 
-function implementationTitle(invocation: Invocation): string {
-  const task = jiraIssueContextFrom(invocation);
-
-  return `${task.issueKey}: ${task.title ?? task.issueKey}`;
-}
-
 function implementationReportStatus({
   validation,
   commit,
   push,
-  pullRequest
+  changeRequest
 }: {
   validation: ValidationResult;
   commit: CommitChangesArtifact;
   push: PushBranchArtifact;
-  pullRequest: PullRequestArtifact;
+  changeRequest: ChangeRequestArtifact;
 }): string {
   if (!validation.passed) {
     return "validation_failed";
   }
 
-  if (!commit.skipped && !push.skipped && !pullRequest.skipped) {
-    return "ready_for_pr";
+  if (!commit.skipped && !push.skipped && !changeRequest.skipped) {
+    return "ready_for_change_request";
   }
 
   return "completed_with_skips";
 }
 
-function lifecycleContractError(message: string): Error {
-  const error = new Error(message) as Error & { code: string };
-  error.code = "built_in_lifecycle_contract_invalid";
-
-  return error;
-}
-
-export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
-  name: "prepare_implementation_worktree",
-  metadata: {
-    implementationLifecycle: "workspace",
-    capturesWorkspace: true,
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
-  async run({ state, dependencies = {} }) {
-    const prepareImplementationWorktree =
-      dependencies.prepareImplementationWorktree ??
-      defaultPrepareImplementationWorktree;
-    const implementation = requiredImplementationFrom(state);
-    const task = jiraIssueContextFrom(jiraIssueInvocationFrom(state));
-
-    return await prepareImplementationWorktree({
-      subject: {
-        key: task.issueKey,
-        title: task.title
-      },
-      repository: repositoryFrom(state),
-      workspaceRoot: workspaceRootFrom(state),
-      runId: runIdFrom(state),
-      baseRef: implementation.pull_request.base_ref,
-      branchPattern: implementation.branch_pattern
-    });
-  }
-});
-
 export const collectTaskContextBuiltIn = defineBuiltInStep({
   name: "collect_task_context",
   run({ state }) {
     const task = jiraIssueContextFrom(jiraIssueInvocationFrom(state));
+    const title = `${task.issueKey}: ${task.title ?? task.issueKey}`;
 
     return {
+      implementation_title: title,
+      implementation_subject: {
+        key: task.issueKey,
+        title: task.title
+      },
       jira: {
         issue_key: task.issueKey,
         summary: task.title ?? "",
@@ -141,191 +81,6 @@ export const collectTaskContextBuiltIn = defineBuiltInStep({
       },
       repository: task.repository
     };
-  }
-});
-
-export const runValidationCommandsBuiltIn = defineBuiltInStep({
-  name: "run_validation_commands",
-  metadata: {
-    implementationLifecycle: "validation",
-    implementationLifecycleOutcome: (output) => {
-      const result = ValidationResultSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError(
-          "run_validation_commands must return ValidationResult"
-        );
-      }
-
-      return {
-        validationPassed: result.data.passed
-      };
-    }
-  },
-  async run({ state, dependencies = {} }) {
-    const runValidationCommands =
-      dependencies.runValidationCommands ?? defaultRunValidationCommands;
-    const implementation = requiredImplementationFrom(state);
-
-    return await runValidationCommands({
-      cwd: workspaceFrom(state).path,
-      commands: implementation.validation.commands,
-      maxOutputBytes: implementation.validation.max_output_bytes
-    });
-  }
-});
-
-export const recordImplementationValidationBuiltIn = defineBuiltInStep({
-  name: "record_implementation_validation",
-  metadata: {
-    implementationLifecycle: "validation",
-    implementationLifecycleOutcome: (output) => {
-      const result = ValidationResultSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError(
-          "record_implementation_validation must return ValidationResult"
-        );
-      }
-
-      return {
-        validationPassed: result.data.passed
-      };
-    }
-  },
-  run({ state, input }) {
-    const resolved = resolvedInput(input, state);
-    const implementation = AgentLoopResultSchema.parse(
-      requiredInput(resolved.implementation, "implementation")
-    );
-
-    return implementation.final_validation;
-  }
-});
-
-export const collectWorktreeDiffBuiltIn = defineBuiltInStep({
-  name: "collect_worktree_diff",
-  metadata: { implementationLifecycle: "diff" },
-  async run({ state, dependencies = {} }) {
-    const collectWorktreeDiff =
-      dependencies.collectWorktreeDiff ?? defaultCollectWorktreeDiff;
-    const implementation = requiredImplementationFrom(state);
-
-    return await collectWorktreeDiff({
-      cwd: workspaceFrom(state).path,
-      maxDiffBytes: implementation.validation.max_output_bytes
-    });
-  }
-});
-
-export const recordAcceptanceDecisionBuiltIn = defineBuiltInStep({
-  name: "record_acceptance_decision",
-  metadata: {
-    implementationLifecycle: "acceptance",
-    implementationLifecycleOutcome: (output) => {
-      const result = AcceptanceDecisionSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError(
-          "record_acceptance_decision must return AcceptanceDecision"
-        );
-      }
-
-      return {
-        acceptanceAccepted: result.data.status === "accepted"
-      };
-    }
-  },
-  run({ state, input }) {
-    const resolved = resolvedInput(input, state);
-    return requiredInput(resolved.acceptance, "acceptance");
-  }
-});
-
-export const commitChangesBuiltIn = defineBuiltInStep({
-  name: "commit_changes",
-  metadata: {
-    implementationLifecycle: "commit",
-    implementationLifecycleOutcome: (output) => {
-      const result = CommitChangesArtifactSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError("commit_changes must return CommitChangesArtifact");
-      }
-
-      return {
-        commitSucceeded:
-          !result.data.skipped && result.data.commit_sha !== undefined
-      };
-    },
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
-  async run({ state, input, dependencies = {} }) {
-    const commitChanges = dependencies.commitChanges ?? defaultCommitChanges;
-    const resolved = resolvedInput(input, state);
-    const implementation = requiredImplementationFrom(state);
-    const repository = repositoryFrom(state);
-    const workspace = implementationWorkspaceFrom(state);
-    const invocation = jiraIssueInvocationFrom(state);
-    const runId = runIdFrom(state);
-
-    return await commitChanges({
-      enabled: implementation.commit.enabled,
-      cwd: workspace.path,
-      validation: finalValidationFrom(state, resolved),
-      acceptance: stepValue<AcceptanceDecision>(
-        state,
-        resolved,
-        "acceptance",
-        "acceptance"
-      ),
-      diff: stepValue<WorktreeDiff>(state, resolved, "diff", "worktree_diff"),
-      branch: workspace.branch,
-      remote: implementation.push.remote,
-      baseSha: workspace.base_sha,
-      branchPattern: implementation.branch_pattern,
-      expectedRemoteUrls: expectedRemoteUrlsFrom(repository),
-      message: implementationTitle(invocation),
-      runId,
-      repositoryPath: repository.path,
-      journalPath: await safeJoin(workspaceRootFrom(state), [
-        repository.id,
-        `${runId}.transactions.jsonl`
-      ])
-    });
-  }
-});
-
-export const pushBranchBuiltIn = defineBuiltInStep({
-  name: "push_branch",
-  metadata: {
-    implementationLifecycle: "push",
-    implementationLifecycleOutcome: (output) => {
-      const result = PushBranchArtifactSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError("push_branch must return PushBranchArtifact");
-      }
-
-      return {
-        pushAttempted:
-          !result.data.skipped &&
-          result.data.remote !== undefined &&
-          result.data.branch !== undefined
-      };
-    },
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
-  async run({ state, input, dependencies = {} }) {
-    const pushBranch = dependencies.pushBranch ?? defaultPushBranch;
-    const resolved = resolvedInput(input, state);
-    const implementation = requiredImplementationFrom(state);
-    const repository = repositoryFrom(state);
-    const workspace = implementationWorkspaceFrom(state);
-
-    return await pushBranch({
-      enabled: implementation.push.enabled,
-      cwd: workspace.path,
-      commit: stepValue<CommitChangesArtifact>(state, resolved, "commit", "commit"),
-      branch: workspace.branch,
-      remote: implementation.push.remote,
-      expectedRemoteUrls: expectedRemoteUrlsFrom(repository)
-    });
   }
 });
 
@@ -349,11 +104,11 @@ export const finalImplementationReportBuiltIn = defineBuiltInStep({
       "commit"
     );
     const push = stepValue<PushBranchArtifact>(state, resolved, "push", "push");
-    const pullRequest = stepValue<PullRequestArtifact>(
+    const changeRequest = stepValue<ChangeRequestArtifact>(
       state,
       resolved,
-      "pull_request",
-      "pull_request"
+      "change_request",
+      "change_request"
     );
     const reportInput = {
       invocation: jiraIssueInvocationFrom(state),
@@ -361,7 +116,7 @@ export const finalImplementationReportBuiltIn = defineBuiltInStep({
         validation,
         commit,
         push,
-        pullRequest
+        changeRequest
       }),
       branch: workspace.branch,
       worktree: {
@@ -372,7 +127,7 @@ export const finalImplementationReportBuiltIn = defineBuiltInStep({
       validation,
       commit,
       push,
-      pullRequest,
+      changeRequest,
       trustedHostLocal:
         requiredImplementationFrom(state).sandbox.type === "trusted_host_local"
     };

@@ -165,7 +165,7 @@ async function writeImplementationConfig(configRoot: string): Promise<void> {
       "  push:",
       "    enabled: false",
       "    remote: origin",
-      "  pull_request:",
+      "  change_request:",
       "    enabled: false",
       "    provider: github",
       "    draft: true",
@@ -486,6 +486,11 @@ describe("configured code review workflow end-to-end with real Git", () => {
 
             if (uses === "collect_task_context") {
               return {
+                implementation_title: "ABC-123: Fix checkout validation",
+                implementation_subject: {
+                  key: "ABC-123",
+                  title: "Fix checkout validation"
+                },
                 jira: {
                   issue_key: "ABC-123",
                   summary: "Fix checkout validation",
@@ -514,7 +519,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
               return { enabled: false, skipped: true, reason: "disabled" };
             }
 
-            if (uses === "open_pull_request") {
+            if (uses === "open_change_request") {
               return { enabled: false, skipped: true, reason: "disabled" };
             }
 

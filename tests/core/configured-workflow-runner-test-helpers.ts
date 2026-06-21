@@ -298,7 +298,7 @@ export async function writeImplementationConfig(
   options: {
     commitEnabled?: boolean;
     pushEnabled?: boolean;
-    pullRequestEnabled?: boolean;
+    changeRequestEnabled?: boolean;
   } = {}
 ): Promise<void> {
   await writeFile(
@@ -311,8 +311,8 @@ export async function writeImplementationConfig(
       "  push:",
       `    enabled: ${options.pushEnabled === true ? "true" : "false"}`,
       "    remote: origin",
-      "  pull_request:",
-      `    enabled: ${options.pullRequestEnabled === true ? "true" : "false"}`,
+      "  change_request:",
+      `    enabled: ${options.changeRequestEnabled === true ? "true" : "false"}`,
       "    provider: github",
       "    draft: true",
       "    base_ref: main",
@@ -426,12 +426,12 @@ export async function writeImplementationWorkflow(root: string): Promise<void> {
       "        format: json",
       "    after:",
       "      - commit",
-      "  - id: pull_request",
+      "  - id: change_request",
       "    type: built_in",
-      "    uses: open_pull_request",
+      "    uses: open_change_request",
       "    artifacts:",
-      "      - path: pull-request.json",
-      "        source: $.steps.pull_request",
+      "      - path: change-request.json",
+      "        source: $.steps.change_request",
       "        format: json",
       "    after:",
       "      - push",
@@ -446,7 +446,7 @@ export async function writeImplementationWorkflow(root: string): Promise<void> {
       "        source: $.steps.final_report.markdown",
       "        format: markdown",
       "    after:",
-      "      - pull_request",
+      "      - change_request",
       ""
     ].join("\n")
   );

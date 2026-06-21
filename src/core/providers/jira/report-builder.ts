@@ -1,9 +1,9 @@
 import { jiraIssueContextFrom } from "./task-context.js";
 import type {
+  ChangeRequestArtifact,
   CommitChangesArtifact,
   Invocation,
   InvocationRepository,
-  PullRequestArtifact,
   PushBranchArtifact,
   ValidationResult
 } from "../../types.js";
@@ -22,7 +22,7 @@ type ReportInput = {
   validation: ValidationResult;
   commit: CommitChangesArtifact;
   push: PushBranchArtifact;
-  pullRequest: PullRequestArtifact;
+  changeRequest: ChangeRequestArtifact;
   trustedHostLocal: boolean;
 };
 
@@ -50,7 +50,7 @@ export type ImplementationReportJson = {
   };
   commit: ActionJson & Pick<CommitChangesArtifact, "branch" | "commit_sha">;
   push: ActionJson & Pick<PushBranchArtifact, "remote" | "branch">;
-  pull_request: ActionJson & Pick<PullRequestArtifact, "provider" | "url">;
+  change_request: ActionJson & Pick<ChangeRequestArtifact, "provider" | "url">;
   warnings: string[];
 };
 
@@ -98,7 +98,7 @@ export function buildImplementationReportJson({
   validation,
   commit,
   push,
-  pullRequest,
+  changeRequest,
   trustedHostLocal
 }: ReportInput): ImplementationReportJson {
   const task = jiraIssueContextFrom(invocation);
@@ -128,10 +128,10 @@ export function buildImplementationReportJson({
       remote: push.remote,
       branch: push.branch
     },
-    pull_request: {
-      ...actionStatus({ artifact: pullRequest, success: "opened" }),
-      provider: pullRequest.provider,
-      url: pullRequest.url
+    change_request: {
+      ...actionStatus({ artifact: changeRequest, success: "opened" }),
+      provider: changeRequest.provider,
+      url: changeRequest.url
     },
     warnings: trustedHostLocal ? [trustedHostLocalWarning] : []
   };
@@ -151,7 +151,7 @@ export function buildImplementationReportMarkdown(input: ReportInput): string {
     `Validation: ${report.validation.passed ? "passed" : "failed"}`,
     `Commit: ${report.commit.status}`,
     `Push: ${report.push.status}`,
-    `Pull request: ${report.pull_request.status}`
+    `Change request: ${report.change_request.status}`
   ];
 
   if (report.commit.reason !== undefined) {
@@ -162,12 +162,12 @@ export function buildImplementationReportMarkdown(input: ReportInput): string {
     lines.push(`Push reason: ${report.push.reason}`);
   }
 
-  if (report.pull_request.reason !== undefined) {
-    lines.push(`Pull request reason: ${report.pull_request.reason}`);
+  if (report.change_request.reason !== undefined) {
+    lines.push(`Change request reason: ${report.change_request.reason}`);
   }
 
-  if (report.pull_request.url !== undefined) {
-    lines.push(`Pull request URL: ${report.pull_request.url}`);
+  if (report.change_request.url !== undefined) {
+    lines.push(`Change request URL: ${report.change_request.url}`);
   }
 
   if (report.warnings.length > 0) {

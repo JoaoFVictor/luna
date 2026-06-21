@@ -70,7 +70,7 @@ export function lifecycleStepMapViolations(
       "acceptance_decision",
       "commit",
       "push",
-      "pull_request",
+      "change_request",
       "validation",
       "implementation",
       "implementation_validation",

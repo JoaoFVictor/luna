@@ -20,7 +20,7 @@ type PreflightErrorCode =
   | "implementation_config_missing"
   | "remote_url_mismatch"
   | "push_requires_commit"
-  | "pull_request_requires_push";
+  | "change_request_requires_push";
 
 type PreflightError = Error & {
   code: PreflightErrorCode;
@@ -130,10 +130,10 @@ function assertWriteGateConsistency(
     );
   }
 
-  if (implementation.pull_request.enabled && !implementation.push.enabled) {
+  if (implementation.change_request.enabled && !implementation.push.enabled) {
     throw preflightError(
-      "pull_request.enabled requires push.enabled",
-      "pull_request_requires_push"
+      "change_request.enabled requires push.enabled",
+      "change_request_requires_push"
     );
   }
 }

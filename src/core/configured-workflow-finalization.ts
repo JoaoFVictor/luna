@@ -179,7 +179,7 @@ export function cleanupMayRemoveWorktree({
   return !workspaceLifecycleDecision(lifecycleEvidence, {
     commitEnabled: implementationConfig?.commit.enabled ?? false,
     pushEnabled: implementationConfig?.push.enabled ?? false,
-    pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false
+    changeRequestEnabled: implementationConfig?.change_request.enabled ?? false
   }).preserve;
 }
 
@@ -262,7 +262,7 @@ async function finalizeWriteSuccessWorkspace({
   const lifecycle = workspaceLifecycleDecision(lifecycleEvidence, {
     commitEnabled: implementationConfig?.commit.enabled ?? false,
     pushEnabled: implementationConfig?.push.enabled ?? false,
-    pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false
+    changeRequestEnabled: implementationConfig?.change_request.enabled ?? false
   });
 
   if (lifecycle.preserve) {

@@ -14,7 +14,7 @@ export type ImplementationLifecycleEvidence = {
   commitAttempted: boolean;
   commitSucceeded: boolean;
   pushAttempted: boolean;
-  pullRequestAttempted: boolean;
+  changeRequestAttempted: boolean;
   failureReason?: {
     phase:
       | "workspace"
@@ -23,7 +23,7 @@ export type ImplementationLifecycleEvidence = {
       | "diff"
       | "commit"
       | "push"
-      | "pull_request";
+      | "change_request";
     code: string;
     message: string;
   };
@@ -45,7 +45,7 @@ export function initialImplementationLifecycleEvidence(): ImplementationLifecycl
     commitAttempted: false,
     commitSucceeded: false,
     pushAttempted: false,
-    pullRequestAttempted: false
+    changeRequestAttempted: false
   };
 }
 
@@ -107,11 +107,11 @@ export function markPushAttempted(
   return { ...evidence, pushAttempted: attempted };
 }
 
-export function markPullRequestAttempted(
+export function markChangeRequestAttempted(
   evidence: ImplementationLifecycleEvidence,
   attempted: boolean
 ): ImplementationLifecycleEvidence {
-  return { ...evidence, pullRequestAttempted: attempted };
+  return { ...evidence, changeRequestAttempted: attempted };
 }
 
 export function markImplementationFailure(
@@ -201,20 +201,20 @@ export function recordWorkflowNodeLifecycle(
     );
   }
 
-  if (phase === "pull_request") {
+  if (phase === "change_request") {
     if (
       result.status === "succeeded" &&
-      result.outcome?.pullRequestAttempted === undefined
+      result.outcome?.changeRequestAttempted === undefined
     ) {
       throw new Error(
-        "Pull request lifecycle outcome is missing pullRequestAttempted"
+        "Change request lifecycle outcome is missing changeRequestAttempted"
       );
     }
 
-    return markPullRequestAttempted(
+    return markChangeRequestAttempted(
       evidence,
       result.status === "succeeded" &&
-        result.outcome?.pullRequestAttempted === true
+        result.outcome?.changeRequestAttempted === true
     );
   }
 

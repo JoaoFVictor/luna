@@ -1,10 +1,10 @@
 import type {
   AcceptanceDecision,
+  ChangeRequestArtifact,
   CommitChangesArtifact,
   Finding,
   ImplementationConfig,
   Invocation,
-  PullRequestArtifact,
   PushBranchArtifact,
   RepoContext,
   RepositoryConfig,
@@ -24,14 +24,14 @@ export type ImplementationLifecyclePhase =
   | "acceptance"
   | "commit"
   | "push"
-  | "pull_request";
+  | "change_request";
 
 export type ImplementationLifecycleOutcome = {
   readonly validationPassed?: boolean;
   readonly acceptanceAccepted?: boolean;
   readonly commitSucceeded?: boolean;
   readonly pushAttempted?: boolean;
-  readonly pullRequestAttempted?: boolean;
+  readonly changeRequestAttempted?: boolean;
 };
 
 export type BuiltInStepMetadata = {
@@ -139,8 +139,9 @@ export type BuiltInStepDependencies = {
     remote: string;
     expectedRemoteUrls: readonly string[];
   }) => MaybePromise<PushBranchArtifact>;
-  openPullRequest?: (input: {
+  openChangeRequest?: (input: {
     enabled: boolean;
+    provider: string;
     cwd: string;
     push: PushBranchArtifact;
     branch: string;
@@ -148,7 +149,7 @@ export type BuiltInStepDependencies = {
     draft: boolean;
     title: string;
     body?: string;
-  }) => MaybePromise<PullRequestArtifact>;
+  }) => MaybePromise<ChangeRequestArtifact>;
   buildImplementationReportJson?: (input: {
     invocation: Invocation;
     status: string;
@@ -161,7 +162,7 @@ export type BuiltInStepDependencies = {
     validation: ValidationResult;
     commit: CommitChangesArtifact;
     push: PushBranchArtifact;
-    pullRequest: PullRequestArtifact;
+    changeRequest: ChangeRequestArtifact;
     trustedHostLocal: boolean;
   }) => unknown;
   buildImplementationReportMarkdown?: (input: {
@@ -176,7 +177,7 @@ export type BuiltInStepDependencies = {
     validation: ValidationResult;
     commit: CommitChangesArtifact;
     push: PushBranchArtifact;
-    pullRequest: PullRequestArtifact;
+    changeRequest: ChangeRequestArtifact;
     trustedHostLocal: boolean;
   }) => string;
 };

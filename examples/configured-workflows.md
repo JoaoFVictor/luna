@@ -98,7 +98,7 @@ Built-in steps:
 - `record_acceptance_decision`
 - `commit_changes`
 - `push_branch`
-- `open_pull_request`
+- `open_change_request`
 - `final_implementation_report`
 
 Local tools:
@@ -608,8 +608,9 @@ npm run flue:build
 
 The `implementation` workflow is a `git_managed_write` workflow. It creates a
 writable worktree, runs `code-implementer` through `trusted_host_local`, validates
-the result, reviews it, and then optionally commits, pushes, and opens a draft
-GitHub PR.
+the result, reviews it, and then optionally commits, pushes, and opens a change
+request. The first supported change request provider is GitHub, which opens a
+draft PR.
 
 `config/implementation.yaml` controls:
 
@@ -617,9 +618,9 @@ GitHub PR.
 - `validation.commands` for commands such as `npm test` and
   `npm run typecheck`.
 - `validation.repair_attempts` for agent repair loops after failed validation.
-- `commit.enabled`, `push.enabled`, and `pull_request.enabled` for publishing.
+- `commit.enabled`, `push.enabled`, and `change_request.enabled` for publishing.
 
-Publishing gates are ordered. Push requires commit, and draft PR creation
+Publishing gates are ordered. Push requires commit, and change request creation
 requires push. If commit is disabled, validation fails, acceptance rejects the
 change, or a publishing gate is skipped or fails, Luna preserves the write
 worktree for inspection.

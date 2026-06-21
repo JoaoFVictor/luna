@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { pushBranch } from "../../src/core/implementation-git-actions.js";
-import { openPullRequest } from "../../src/core/providers/github/implementation-actions.js";
+import { openGitHubChangeRequest } from "../../src/core/providers/github/change-request-actions.js";
 import type {
   CommitChangesArtifact,
-  PullRequestArtifact,
+  ChangeRequestArtifact,
   PushBranchArtifact
 } from "../../src/core/types.js";
 
@@ -169,7 +169,7 @@ describe("pushBranch", () => {
   });
 });
 
-describe("openPullRequest", () => {
+describe("openGitHubChangeRequest", () => {
   const pushed: PushBranchArtifact = {
     enabled: true,
     skipped: false,
@@ -178,7 +178,7 @@ describe("openPullRequest", () => {
   };
 
   function prInput(
-    overrides: Partial<Parameters<typeof openPullRequest>[0]> = {}
+    overrides: Partial<Parameters<typeof openGitHubChangeRequest>[0]> = {}
   ) {
     const calls: GhCall[] = [];
 
@@ -210,7 +210,7 @@ describe("openPullRequest", () => {
   it("skips when disabled", async () => {
     const { input } = prInput({ enabled: false });
 
-    await expect(openPullRequest(input)).resolves.toEqual({
+    await expect(openGitHubChangeRequest(input)).resolves.toEqual({
       enabled: false,
       skipped: true,
       reason: "disabled"
@@ -220,7 +220,7 @@ describe("openPullRequest", () => {
   it("skips when the branch was not pushed", async () => {
     const { input } = prInput({ push: { enabled: true, skipped: true } });
 
-    await expect(openPullRequest(input)).resolves.toEqual({
+    await expect(openGitHubChangeRequest(input)).resolves.toEqual({
       enabled: true,
       skipped: true,
       reason: "no_push"
@@ -230,7 +230,7 @@ describe("openPullRequest", () => {
   it("skips when the base ref is missing", async () => {
     const { input } = prInput({ baseRef: "" });
 
-    await expect(openPullRequest(input)).resolves.toEqual({
+    await expect(openGitHubChangeRequest(input)).resolves.toEqual({
       enabled: true,
       skipped: true,
       reason: "base_ref_missing"
@@ -242,7 +242,7 @@ describe("openPullRequest", () => {
       push: { ...pushed, branch: "feature/other" }
     });
 
-    await expect(openPullRequest(input)).resolves.toEqual({
+    await expect(openGitHubChangeRequest(input)).resolves.toEqual({
       enabled: true,
       skipped: true,
       reason: "branch_mismatch"
@@ -259,7 +259,7 @@ describe("openPullRequest", () => {
       }
     });
 
-    await expect(openPullRequest(input)).resolves.toEqual({
+    await expect(openGitHubChangeRequest(input)).resolves.toEqual({
       enabled: true,
       skipped: true,
       reason: "gh_not_authenticated"
@@ -281,8 +281,8 @@ describe("openPullRequest", () => {
       }
     });
 
-    await expect(openPullRequest(input)).rejects.toMatchObject({
-      code: "pull_request_create_failed",
+    await expect(openGitHubChangeRequest(input)).rejects.toMatchObject({
+      code: "change_request_create_failed",
       cause
     });
     expect(calls).toEqual([
@@ -309,12 +309,12 @@ describe("openPullRequest", () => {
   it("creates a draft GitHub PR against the configured base ref", async () => {
     const { input, calls } = prInput();
 
-    await expect(openPullRequest(input)).resolves.toEqual({
+    await expect(openGitHubChangeRequest(input)).resolves.toEqual({
       enabled: true,
       skipped: false,
       provider: "github",
       url: "https://github.com/swinggo-dev/swg-front-nuxt/pull/42"
-    } satisfies PullRequestArtifact);
+    } satisfies ChangeRequestArtifact);
     expect(calls).toEqual([
       { cwd, args: ["auth", "status"] },
       {

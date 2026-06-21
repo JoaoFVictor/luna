@@ -5,7 +5,7 @@ export function workspaceLifecycleDecision(
   workflowResult: {
     commitEnabled: boolean;
     pushEnabled: boolean;
-    pullRequestEnabled: boolean;
+    changeRequestEnabled: boolean;
   }
 ): { preserve: boolean; reason: string } {
   if (!workflowResult.commitEnabled) {
@@ -28,8 +28,8 @@ export function workspaceLifecycleDecision(
     return { preserve: true, reason: "push_skipped_or_failed" };
   }
 
-  if (workflowResult.pullRequestEnabled && !evidence.pullRequestAttempted) {
-    return { preserve: true, reason: "pull_request_skipped_or_failed" };
+  if (workflowResult.changeRequestEnabled && !evidence.changeRequestAttempted) {
+    return { preserve: true, reason: "change_request_skipped_or_failed" };
   }
 
   return { preserve: false, reason: "success_cleanup" };

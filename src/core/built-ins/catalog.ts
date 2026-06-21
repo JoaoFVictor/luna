@@ -1,21 +1,23 @@
 import {
   collectRepoContextBuiltIn,
   finalCodeReviewReportBuiltIn,
-  openPullRequestBuiltIn,
   prepareWorktreeBuiltIn,
   preflightBuiltIn,
   validateCodeReviewFindingsBuiltIn
 } from "../providers/github/built-ins.js";
 import {
-  collectTaskContextBuiltIn,
   collectWorktreeDiffBuiltIn,
   commitChangesBuiltIn,
-  finalImplementationReportBuiltIn,
+  openChangeRequestBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   pushBranchBuiltIn,
   recordAcceptanceDecisionBuiltIn,
   recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
+} from "./implementation.js";
+import {
+  collectTaskContextBuiltIn,
+  finalImplementationReportBuiltIn
 } from "../providers/jira/built-ins.js";
 
 export const defaultBuiltInSteps = Object.freeze([
@@ -32,7 +34,7 @@ export const defaultBuiltInSteps = Object.freeze([
   recordAcceptanceDecisionBuiltIn,
   commitChangesBuiltIn,
   pushBranchBuiltIn,
-  openPullRequestBuiltIn,
+  openChangeRequestBuiltIn,
   finalImplementationReportBuiltIn
 ] as const);
 

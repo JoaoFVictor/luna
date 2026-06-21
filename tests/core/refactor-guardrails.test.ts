@@ -80,7 +80,8 @@ const exactCommandMarkers = ["gh"];
 
 const compositionRootPaths = new Set([
   "src/adapters/registry.ts",
-  "src/core/built-ins/catalog.ts"
+  "src/core/built-ins/catalog.ts",
+  "src/core/change-request-actions.ts"
 ]);
 
 const genericRuntimeProviderMarkerLiteralAllowlist = new Map<string, Map<string, number>>([

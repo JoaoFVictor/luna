@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { PullRequestArtifact, PushBranchArtifact } from "../../types.js";
+import type { ChangeRequestArtifact, PushBranchArtifact } from "../../types.js";
 
 type RunGh = (cwd: string, args: readonly string[]) => Promise<string>;
-type PullRequestError = Error & {
-  code: "pull_request_create_failed";
+type ChangeRequestError = Error & {
+  code: "change_request_create_failed";
   cause?: unknown;
 };
 
@@ -23,24 +23,14 @@ async function defaultRunGh(cwd: string, args: readonly string[]): Promise<strin
   return stdout;
 }
 
-function pullRequestError(message: string, cause: unknown): PullRequestError {
-  const error = new Error(message, { cause }) as PullRequestError;
-  error.code = "pull_request_create_failed";
+function changeRequestError(message: string, cause: unknown): ChangeRequestError {
+  const error = new Error(message, { cause }) as ChangeRequestError;
+  error.code = "change_request_create_failed";
 
   return error;
 }
 
-export async function openPullRequest({
-  enabled,
-  cwd,
-  push,
-  branch,
-  baseRef,
-  draft,
-  title,
-  body,
-  runGh = defaultRunGh
-}: {
+export type OpenGitHubChangeRequestInput = {
   enabled: boolean;
   cwd: string;
   push: PushBranchArtifact;
@@ -50,7 +40,19 @@ export async function openPullRequest({
   title: string;
   body?: string;
   runGh?: RunGh;
-}): Promise<PullRequestArtifact> {
+};
+
+export async function openGitHubChangeRequest({
+  enabled,
+  cwd,
+  push,
+  branch,
+  baseRef,
+  draft,
+  title,
+  body,
+  runGh = defaultRunGh
+}: OpenGitHubChangeRequestInput): Promise<ChangeRequestArtifact> {
   if (!enabled) {
     return skipped(false, "disabled");
   }
@@ -89,7 +91,7 @@ export async function openPullRequest({
   try {
     url = (await runGh(cwd, args)).trim();
   } catch (cause) {
-    throw pullRequestError("Failed to create GitHub pull request", cause);
+    throw changeRequestError("Failed to create GitHub change request", cause);
   }
 
   return {

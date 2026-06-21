@@ -101,12 +101,12 @@ async function runImplementationLifecycleScenario({
   root,
   commitOutput,
   pushOutput = { enabled: false, skipped: true, reason: "disabled" },
-  pullRequestOutput = { enabled: false, skipped: true, reason: "disabled" }
+  changeRequestOutput = { enabled: false, skipped: true, reason: "disabled" }
 }: {
   root: string;
   commitOutput: unknown;
   pushOutput?: unknown;
-  pullRequestOutput?: unknown;
+  changeRequestOutput?: unknown;
 }) {
   const preparedWorkspace: WorkspaceRecord = {
     run_id: "run-1",
@@ -144,8 +144,8 @@ async function runImplementationLifecycleScenario({
       return pushOutput;
     }
 
-    if (uses === "open_pull_request") {
-      return pullRequestOutput;
+    if (uses === "open_change_request") {
+      return changeRequestOutput;
     }
 
     if (uses === "final_implementation_report") {
@@ -599,7 +599,7 @@ describe("configured workflow runner", () => {
       config: {
         commitEnabled: true,
         pushEnabled: true,
-        pullRequestEnabled: true
+        changeRequestEnabled: true
       },
       outputs: {
         commitOutput: { enabled: true, skipped: false, commit_sha: "abc123" },
@@ -609,13 +609,13 @@ describe("configured workflow runner", () => {
           remote: "origin",
           branch: "feature/abc-123"
         },
-        pullRequestOutput: {
+        changeRequestOutput: {
           enabled: true,
           skipped: true,
           reason: "pull request disabled by gate"
         }
       },
-      reason: "pull_request_skipped_or_failed"
+      reason: "change_request_skipped_or_failed"
     }
   ])(
     "preserves write-mode workspace when enabled $name output is skipped",

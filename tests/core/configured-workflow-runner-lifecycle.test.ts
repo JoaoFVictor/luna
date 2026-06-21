@@ -81,7 +81,7 @@ describe("configured workflow runner", () => {
             return { enabled: false, skipped: true, reason: "disabled" };
           }
 
-          if (uses === "open_pull_request") {
+          if (uses === "open_change_request") {
             return { enabled: false, skipped: true, reason: "disabled" };
           }
 

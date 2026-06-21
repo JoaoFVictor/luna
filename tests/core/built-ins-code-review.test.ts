@@ -138,7 +138,7 @@ const implementationConfig: ImplementationConfig["implementation"] = {
     enabled: true,
     remote: "origin"
   },
-  pull_request: {
+  change_request: {
     enabled: true,
     provider: "github",
     draft: true,
