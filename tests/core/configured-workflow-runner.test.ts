@@ -492,6 +492,41 @@ describe("configured workflow runner", () => {
     }
   });
 
+  it("rejects workflow observability configs with both runtime_log and legacy flue_log", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writePreflightWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    runtime_log:",
+        "      enabled: true",
+        "    flue_log:",
+        "      enabled: false"
+      ]);
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        throwOnError: false,
+        nonceFactory: () => "dupe",
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z")
+        }
+      });
+
+      if (result.status !== "failed") {
+        throw new Error(`Expected workflow config failure, got ${result.status}`);
+      }
+      expect(result.error).toMatchObject({
+        code: "workflow_config_read_failed"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not let optional observability sink failures mask successful runs", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 

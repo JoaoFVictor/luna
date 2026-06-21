@@ -32,7 +32,13 @@ const OptionalExporterConfigSchema = z
 
 const ObservabilityConfigSchema = z
   .object({
-    exporters: z.record(OptionalExporterConfigSchema).optional()
+    exporters: z
+      .object({
+        jsonl: OptionalExporterConfigSchema.optional(),
+        runtime_log: OptionalExporterConfigSchema.optional()
+      })
+      .strict()
+      .optional()
   })
   .strict()
   .optional();
@@ -44,7 +50,7 @@ const SubagentPolicySchema = z
   .strict()
   .optional();
 
-const WorkflowMetadataSchema = z
+export const WorkflowMetadataSchema = z
   .object({
     id: NonEmptyStringSchema,
     type: z.literal("workflow"),
@@ -175,13 +181,6 @@ export const defaultWorkflowObservabilityConfig: WorkflowObservabilityConfig = {
   exporters: {
     runtime_log: { enabled: true, required: false }
   }
-};
-type WorkflowObservabilityExporterName =
-  keyof WorkflowObservabilityConfig["exporters"];
-export type WorkflowDefinitionLoadOptions = {
-  observabilityExporterAliases?: Readonly<
-    Record<string, WorkflowObservabilityExporterName>
-  >;
 };
 export type WorkflowGraph = z.infer<typeof WorkflowGraphShapeSchema>;
 export type WorkflowNode = WorkflowGraph["nodes"][number];
@@ -366,35 +365,18 @@ function validateWorkflowGraph(graph: WorkflowGraph): void {
 }
 
 function normalizeObservabilityConfig(
-  config: z.infer<typeof ObservabilityConfigSchema>,
-  options: WorkflowDefinitionLoadOptions = {}
+  config: z.infer<typeof ObservabilityConfigSchema>
 ): WorkflowObservabilityConfig {
   if (config?.exporters?.jsonl !== undefined) {
     throw new Error("events.jsonl is mandatory and cannot be configured");
   }
 
-  const runtimeLog = {
-    ...defaultWorkflowObservabilityConfig.exporters.runtime_log
-  };
-
-  for (const [exporterName, exporterConfig] of Object.entries(
-    config?.exporters ?? {}
-  )) {
-    const canonicalName =
-      options.observabilityExporterAliases?.[exporterName] ?? exporterName;
-    if (canonicalName !== "runtime_log") {
-      throw workflowDefinitionError(
-        `Unsupported observability exporter: ${exporterName}`,
-        "config_schema_invalid"
-      );
-    }
-
-    Object.assign(runtimeLog, exporterConfig);
-  }
-
   return {
     exporters: {
-      runtime_log: runtimeLog
+      runtime_log: {
+        ...defaultWorkflowObservabilityConfig.exporters.runtime_log,
+        ...config?.exporters?.runtime_log
+      }
     }
   };
 }
@@ -410,8 +392,7 @@ function normalizeSubagentPolicy(
 
 export async function loadWorkflowDefinition(
   workflowsRoot: string,
-  workflowId: string,
-  options: WorkflowDefinitionLoadOptions = {}
+  workflowId: string
 ): Promise<WorkflowDefinition> {
   assertSafeSegment(workflowId);
   const directory = path.join(workflowsRoot, workflowId);
@@ -420,6 +401,22 @@ export async function loadWorkflowDefinition(
     WorkflowMetadataSchema
   );
 
+  return await loadWorkflowDefinitionFromMetadata({
+    directory,
+    metadata,
+    workflowId
+  });
+}
+
+export async function loadWorkflowDefinitionFromMetadata({
+  directory,
+  metadata,
+  workflowId
+}: {
+  directory: string;
+  metadata: WorkflowMetadata;
+  workflowId: string;
+}): Promise<WorkflowDefinition> {
   if (metadata.id !== workflowId) {
     throw workflowDefinitionError(
       `Workflow id ${metadata.id} does not match directory ${workflowId}`,
@@ -444,7 +441,7 @@ export async function loadWorkflowDefinition(
         ? {}
         : { lock_timeout_ms: metadata.execution.lock_timeout_ms })
     },
-    observability: normalizeObservabilityConfig(metadata.observability, options),
+    observability: normalizeObservabilityConfig(metadata.observability),
     subagent_policy: normalizeSubagentPolicy(metadata.subagent_policy)
   };
 }
