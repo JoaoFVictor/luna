@@ -360,7 +360,10 @@ describe("implementation built-ins", () => {
       baseSha: "abc123",
       branchPattern: "feature/{slug}",
       expectedRemoteUrls: repository.expected_remote_urls,
-      message: "ABC-123: Fix checkout validation"
+      message: "ABC-123: Fix checkout validation",
+      runId: "run-123",
+      repositoryPath: "/repo",
+      journalPath: "/tmp/worktrees/repo/run-123.transactions.jsonl"
     });
   });
 

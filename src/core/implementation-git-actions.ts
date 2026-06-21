@@ -1,6 +1,13 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
+import { classifyGitFailure, type GitFailure } from "./git-failure.js";
 import { runGit as defaultRunGit } from "./git.js";
+import type {
+  AppendLocalTransactionJournalEntry,
+  LocalTransactionJournalEntry
+} from "./local-transaction-journal.js";
+import { appendLocalTransactionJournalEntry } from "./local-transaction-journal.js";
 import { remoteUrlMatches } from "./remote-url.js";
 import type {
   CommitChangesArtifact,
@@ -123,6 +130,113 @@ function isExpectedAncestryMismatch(error: unknown): boolean {
   );
 }
 
+function gitFailureSummary(failure: GitFailure): { code: string; message: string } {
+  return {
+    code: failure.kind,
+    message: failure.message
+  };
+}
+
+function commitStageJournalEntry({
+  runId,
+  phase,
+  timestamp,
+  worktreePath,
+  repositoryPath,
+  indexPath,
+  cleanup,
+  originalFailure,
+  cleanupFailure
+}: {
+  runId: string;
+  phase: LocalTransactionJournalEntry["phase"];
+  timestamp: string;
+  worktreePath: string;
+  repositoryPath?: string;
+  indexPath?: string;
+  cleanup: LocalTransactionJournalEntry["cleanup"];
+  originalFailure?: LocalTransactionJournalEntry["originalFailure"];
+  cleanupFailure?: LocalTransactionJournalEntry["cleanupFailure"];
+}): LocalTransactionJournalEntry {
+  return {
+    runId,
+    operation: "commit_stage",
+    phase,
+    timestamp,
+    resources: {
+      worktreePath,
+      ...(repositoryPath === undefined ? {} : { repositoryPath }),
+      ...(indexPath === undefined ? {} : { indexPath })
+    },
+    cleanup,
+    indexRestoreStrategy: "reset_to_pre_operation_index",
+    ...(originalFailure === undefined ? {} : { originalFailure }),
+    ...(cleanupFailure === undefined ? {} : { cleanupFailure })
+  };
+}
+
+async function appendCommitStageJournal({
+  appendJournalEntry,
+  runId,
+  journalPath,
+  phase,
+  now,
+  worktreePath,
+  repositoryPath,
+  indexPath,
+  cleanup,
+  originalFailure,
+  cleanupFailure
+}: {
+  appendJournalEntry?: AppendLocalTransactionJournalEntry;
+  runId?: string;
+  journalPath?: string;
+  phase: LocalTransactionJournalEntry["phase"];
+  now: () => Date;
+  worktreePath: string;
+  repositoryPath?: string;
+  indexPath?: string;
+  cleanup: LocalTransactionJournalEntry["cleanup"];
+  originalFailure?: LocalTransactionJournalEntry["originalFailure"];
+  cleanupFailure?: LocalTransactionJournalEntry["cleanupFailure"];
+}): Promise<void> {
+  if (runId === undefined || runId === "") {
+    return;
+  }
+
+  const entry = commitStageJournalEntry({
+    runId,
+    phase,
+    timestamp: now().toISOString(),
+    worktreePath,
+    repositoryPath,
+    indexPath,
+    cleanup,
+    originalFailure,
+    cleanupFailure
+  });
+
+  if (appendJournalEntry !== undefined) {
+    await appendJournalEntry(entry);
+    return;
+  }
+
+  if (journalPath !== undefined && journalPath !== "") {
+    await appendLocalTransactionJournalEntry({ filePath: journalPath, entry });
+  }
+}
+
+async function appendCommitStageJournalBestEffort(
+  input: Parameters<typeof appendCommitStageJournal>[0]
+): Promise<unknown> {
+  try {
+    await appendCommitStageJournal(input);
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
 async function currentBranch({
   cwd,
   runGit
@@ -161,6 +275,11 @@ export async function commitChanges({
   branchPattern,
   expectedRemoteUrls,
   message,
+  runId,
+  repositoryPath,
+  journalPath,
+  appendJournalEntry,
+  now = () => new Date(),
   runGit = defaultRunGit
 }: {
   enabled: boolean;
@@ -174,6 +293,11 @@ export async function commitChanges({
   branchPattern: string;
   expectedRemoteUrls: readonly string[];
   message: string;
+  runId?: string;
+  repositoryPath?: string;
+  journalPath?: string;
+  appendJournalEntry?: AppendLocalTransactionJournalEntry;
+  now?: () => Date;
   runGit?: RunGit;
 }): Promise<CommitChangesArtifact> {
   if (!enabled) {
@@ -222,14 +346,121 @@ export async function commitChanges({
     return skipped(true, "sensitive_untracked_files");
   }
 
-  await runGit(cwd, ["--literal-pathspecs", "add", "-A", "--", ...paths]);
-  await runGit(cwd, ["commit", "-m", message]);
+  const indexPath = (await runGit(cwd, ["rev-parse", "--git-path", "index"])).trim();
+  const resolvedJournalPath =
+    journalPath ??
+    (runId === undefined || runId === ""
+      ? undefined
+      : path.join(cwd, ".luna", `${runId}.transactions.jsonl`));
+
+  try {
+    await runGit(cwd, ["diff", "--cached", "--quiet", "--exit-code"]);
+  } catch (error) {
+    throw classifyGitFailure(error);
+  }
+
+  await appendCommitStageJournal({
+    appendJournalEntry,
+    runId,
+    journalPath: resolvedJournalPath,
+    phase: "started",
+    now,
+    worktreePath: cwd,
+    repositoryPath,
+    indexPath,
+    cleanup: {
+      attempted: false,
+      branchRemovalAllowed: false
+    }
+  });
+
+  try {
+    await runGit(cwd, ["--literal-pathspecs", "add", "-A", "--", ...paths]);
+    await runGit(cwd, ["commit", "-m", message]);
+  } catch (error) {
+    const originalFailure = classifyGitFailure(error);
+    const originalFailureSummary = gitFailureSummary(originalFailure);
+    await appendCommitStageJournalBestEffort({
+      appendJournalEntry,
+      runId,
+      journalPath: resolvedJournalPath,
+      phase: "failed",
+      now,
+      worktreePath: cwd,
+      repositoryPath,
+      indexPath,
+      cleanup: {
+        attempted: false,
+        branchRemovalAllowed: false
+      },
+      originalFailure: originalFailureSummary
+    });
+
+    try {
+      await runGit(cwd, ["reset", "--mixed", "HEAD"]);
+    } catch (cleanupError) {
+      await appendCommitStageJournalBestEffort({
+        appendJournalEntry,
+        runId,
+        journalPath: resolvedJournalPath,
+        phase: "rolled_back",
+        now,
+        worktreePath: cwd,
+        repositoryPath,
+        indexPath,
+        cleanup: {
+          attempted: true,
+          action: "restore_index",
+          branchRemovalAllowed: false
+        },
+        originalFailure: originalFailureSummary,
+        cleanupFailure: gitFailureSummary(classifyGitFailure(cleanupError))
+      });
+
+      throw originalFailure;
+    }
+
+    await appendCommitStageJournalBestEffort({
+      appendJournalEntry,
+      runId,
+      journalPath: resolvedJournalPath,
+      phase: "rolled_back",
+      now,
+      worktreePath: cwd,
+      repositoryPath,
+      indexPath,
+      cleanup: {
+        attempted: true,
+        action: "restore_index",
+        branchRemovalAllowed: false
+      },
+      originalFailure: originalFailureSummary
+    });
+
+    throw originalFailure;
+  }
+
+  const commitSha = (await runGit(cwd, ["rev-parse", "HEAD"])).trim();
+  await appendCommitStageJournal({
+    appendJournalEntry,
+    runId,
+    journalPath: resolvedJournalPath,
+    phase: "succeeded",
+    now,
+    worktreePath: cwd,
+    repositoryPath,
+    indexPath,
+    cleanup: {
+      attempted: false,
+      branchRemovalAllowed: false
+    }
+  });
 
   return {
     enabled: true,
     skipped: false,
     branch,
-    commit_sha: (await runGit(cwd, ["rev-parse", "HEAD"])).trim()
+    commit_sha: commitSha
   };
 }
 

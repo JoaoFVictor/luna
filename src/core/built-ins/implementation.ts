@@ -1,6 +1,7 @@
 import {
   prepareImplementationWorktree as defaultPrepareImplementationWorktree
 } from "../implementation-worktree-manager.js";
+import { safeJoin } from "../path-security.js";
 import { runValidationCommands as defaultRunValidationCommands } from "../validation-runner.js";
 import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../worktree-diff-collector.js";
 import {
@@ -147,6 +148,7 @@ export const commitChangesBuiltIn = defineBuiltInStep({
     const repository = repositoryFrom(state);
     const workspace = implementationWorkspaceFrom(state);
     const invocation = jiraIssueInvocationFrom(state);
+    const runId = runIdFrom(state);
 
     return await commitChanges({
       enabled: implementation.commit.enabled,
@@ -159,7 +161,13 @@ export const commitChangesBuiltIn = defineBuiltInStep({
       baseSha: workspace.base_sha,
       branchPattern: implementation.branch_pattern,
       expectedRemoteUrls: expectedRemoteUrlsFrom(repository),
-      message: implementationTitle(invocation)
+      message: implementationTitle(invocation),
+      runId,
+      repositoryPath: repository.path,
+      journalPath: await safeJoin(workspaceRootFrom(state), [
+        repository.id,
+        `${runId}.transactions.jsonl`
+      ])
     });
   }
 });

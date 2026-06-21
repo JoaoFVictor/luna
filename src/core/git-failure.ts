@@ -1,5 +1,6 @@
 export type GitFailureKind =
   | "branch_exists"
+  | "pre_existing_staged_changes"
   | "nothing_to_commit"
   | "missing_identity"
   | "push_rejected"
@@ -81,9 +82,15 @@ function isBranchExistsMessage(value: string | undefined): boolean {
 
 function classifyKind({
   message,
+  args,
+  exitCode,
+  stdout,
   stderr
 }: {
   message: string;
+  args: string[];
+  exitCode?: number;
+  stdout?: string;
   stderr?: string;
 }): GitFailureKind {
   if (isBranchExistsMessage(stderr) || isBranchExistsMessage(message)) {
@@ -91,7 +98,15 @@ function classifyKind({
   }
 
   if (
+    args.join(" ") === "diff --cached --quiet --exit-code" &&
+    exitCode === 1
+  ) {
+    return "pre_existing_staged_changes";
+  }
+
+  if (
     /nothing to commit/i.test(stderr ?? "") ||
+    /nothing to commit/i.test(stdout ?? "") ||
     /nothing to commit/i.test(message)
   ) {
     return "nothing_to_commit";
@@ -119,12 +134,13 @@ export function classifyGitFailure(error: unknown): GitFailure {
   const stderr = stringValue(processFailure.stderr);
   const stdout = stringValue(processFailure.stdout);
   const { command, args } = commandPartsFrom(message);
+  const exitCode = numberValue(processFailure.exitCode ?? processFailure.code);
 
   return {
-    kind: classifyKind({ message, stderr }),
+    kind: classifyKind({ message, args, exitCode, stdout, stderr }),
     command,
     args,
-    exitCode: numberValue(processFailure.exitCode ?? processFailure.code),
+    exitCode,
     signal: stringValue(processFailure.signal),
     timedOut: processFailure.timedOut === true,
     message,

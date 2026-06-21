@@ -106,6 +106,9 @@ export type BuiltInStepDependencies = {
     branchPattern: string;
     expectedRemoteUrls: readonly string[];
     message: string;
+    runId?: string;
+    repositoryPath?: string;
+    journalPath?: string;
   }) => MaybePromise<CommitChangesArtifact>;
   pushBranch?: (input: {
     enabled: boolean;
