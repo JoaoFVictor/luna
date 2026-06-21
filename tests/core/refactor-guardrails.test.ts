@@ -5,6 +5,10 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 import { loadWorkflowDefinition } from "../../src/core/workflow-definition.js";
+import {
+  assertDocsCatalogDriftGuardrail,
+  realReviewPrCommandViolations
+} from "./docs-catalog-drift-guardrail.js";
 import { lifecycleStepMapViolations } from "./lifecycle-guardrail.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -959,42 +963,24 @@ describe("refactor guardrails", () => {
     }
   });
 
-  it("checks docs and catalog inventories without changing runtime contracts", async () => {
-    const catalog = await readText("src/core/built-ins/catalog.ts");
-    const toolRegistry = await readText("src/core/flue-tool-registry.ts");
-    const readme = await readText("README.md");
+  it("keeps public docs, examples, and skills aligned with runtime inventories", async () => {
+    await assertDocsCatalogDriftGuardrail(repoRoot);
+  });
 
-    const builtInSymbols = [...catalog.matchAll(/\b([a-zA-Z0-9]+BuiltIn)\b/g)]
-      .map((match) => match[1])
-      .sort();
-    const toolIds = [...toolRegistry.matchAll(/"([a-z0-9.-]+)"/g)]
-      .map((match) => match[1])
-      .filter((id) => id.includes("."))
-      .sort();
-
-    expect(builtInSymbols.length).toBeGreaterThan(0);
-    expect(toolIds).toEqual(expect.arrayContaining(["repository.diff-summary", "repository.status"]));
-    expect(readme.trim().length).toBeGreaterThan(0);
-
-    for (const graph of (await listFiles("workflows")).filter((file) => file.endsWith("/graph.yaml"))) {
-      const graphContent = await readText(graph);
-      expect(graphContent).toContain("nodes:");
-    }
-
-    for (const example of await listFiles("examples")) {
-      const exampleContent = await readText(example);
-      expect(exampleContent.trim().length).toBeGreaterThan(0);
-    }
-
-    const agentsGuide = await readText("AGENTS.md");
-    const referencedSkills = [...agentsGuide.matchAll(/skills\/[^\s`]+\/SKILL\.md/g)]
-      .map((match) => match[0])
-      .sort();
-    expect(referencedSkills.length).toBeGreaterThan(0);
-
-    for (const skill of referencedSkills) {
-      const skillContent = await readText(skill);
-      expect(skillContent.trim().length).toBeGreaterThan(0);
-    }
+  it("detects legacy review-pr commands unless they are explicit anti-examples", () => {
+    expect(realReviewPrCommandViolations("docs.md", "review-pr <url>"))
+      .toEqual(["docs.md:1 exposes real command review-pr <url>"]);
+    expect(
+      realReviewPrCommandViolations(
+        "docs.md",
+        "npm run dev -- review-pr <url>"
+      )
+    ).toEqual(["docs.md:1 exposes real command review-pr <url>"]);
+    expect(
+      realReviewPrCommandViolations(
+        "docs.md",
+        "Do not add one-off commands like review-pr <url>."
+      )
+    ).toEqual([]);
   });
 });

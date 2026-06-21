@@ -34,9 +34,9 @@ rg -n "built-in-steps|src/workflows/.*\\.ts|TODO|TBD" AGENTS.md README.md exampl
 rg -n "from \".*built-in-steps\\.js\"|from \"../../src/core/built-in-steps\\.js\"" src tests
 ```
 
-The string `review-pr <url>` is allowed only inside docs as an explicit
-anti-example. It must not appear as a real CLI command, script, package entry,
-or source implementation.
+Do not add `review-pr <url>` except inside docs as an explicit anti-example.
+It must not appear as a real CLI command, script, package entry, or source
+implementation.
 
 For broad changes, run:
 
