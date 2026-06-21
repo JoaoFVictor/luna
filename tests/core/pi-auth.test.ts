@@ -7,7 +7,7 @@ import {
   loadPiOAuthApiKey,
   registerConfiguredPiOAuthProviders,
   registerPiOAuthProvider
-} from "../../src/core/pi-auth.js";
+} from "../../src/core/agent-runtime/flue/pi-auth.js";
 
 describe("Pi OAuth auth.json integration", () => {
   it("loads and refreshes an OAuth token from auth.json", async () => {

@@ -3,6 +3,9 @@
 Workflows are YAML graphs. If the workflow uses existing Luna built-ins and
 agents, no new TypeScript workflow entrypoint is required.
 
+Workflow definitions live under `workflows/<id>/`. Luna keeps one generic
+TypeScript workflow entrypoint at `src/workflows/luna.ts`.
+
 This recipe starts with a read-only workflow that operates on a GitHub PR and
 local git repository context. Luna also includes a write-mode implementation
 workflow for Jira tasks. A workflow for a different domain may need a new input
@@ -205,7 +208,7 @@ For agent structured output, each agent still owns its own
 From an adapter:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from github-pr-url https://github.com/org/repo/pull/123
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 This works only if `my-workflow` accepts the normalized GitHub PR invocation
@@ -214,17 +217,17 @@ produced by `github-pr-url`.
 From a normalized invocation file:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --input path/to/invocation.json
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --input path/to/invocation.json
 ```
 
 For the bundled Jira implementation workflow, the adapter command is:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 ## 9. Test
 
 ```bash
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
 ```

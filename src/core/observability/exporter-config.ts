@@ -1,10 +1,10 @@
-import type { WorkflowObservabilityConfig } from "../workflow-definition.js";
+import type { WorkflowObservabilityConfig } from "../workflow/definition.js";
 import type { LunaObservabilitySink } from "./events.js";
 
 export type CreateObservabilitySinksOptions = {
   config: WorkflowObservabilityConfig;
   jsonlSink: LunaObservabilitySink;
-  flueLogSinks?: readonly LunaObservabilitySink[];
+  runtimeLogSinks?: readonly LunaObservabilitySink[];
 };
 
 function withIdentity(
@@ -18,33 +18,35 @@ function withIdentity(
 export function createObservabilitySinks({
   config,
   jsonlSink,
-  flueLogSinks
+  runtimeLogSinks
 }: CreateObservabilitySinksOptions): LunaObservabilitySink[] {
   const sinks: LunaObservabilitySink[] = [
     withIdentity(jsonlSink, "jsonl", true)
   ];
-  const flueLog = config.exporters.flue_log;
+  const runtimeLog = config.exporters.runtime_log;
 
-  if (!flueLog.enabled) {
+  if (!runtimeLog.enabled) {
     return sinks;
   }
 
-  const providedFlueLogSinks = flueLogSinks ?? [];
+  const providedRuntimeLogSinks = runtimeLogSinks ?? [];
 
-  if (providedFlueLogSinks.length === 0) {
-    if (flueLog.required) {
-      throw new Error("Required observability exporter flue_log is unavailable");
+  if (providedRuntimeLogSinks.length === 0) {
+    if (runtimeLog.required) {
+      throw new Error("Required observability exporter runtime_log is unavailable");
     }
 
     return sinks;
   }
 
-  for (const [index, sink] of providedFlueLogSinks.entries()) {
+  for (const [index, sink] of providedRuntimeLogSinks.entries()) {
     sinks.push(
       withIdentity(
         sink,
-        providedFlueLogSinks.length === 1 ? "flue_log" : `flue_log:${index + 1}`,
-        flueLog.required
+        providedRuntimeLogSinks.length === 1
+          ? "runtime_log"
+          : `runtime_log:${index + 1}`,
+        runtimeLog.required
       )
     );
   }

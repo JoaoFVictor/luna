@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { runAgentLoopStateMachine } from "../../src/core/agent-loop-runner.js";
-import {
-  AgentLoopResultSchema,
-  type ValidationResult
-} from "../../src/core/types.js";
+import { runAgentLoopStateMachine } from "../../src/core/agents/loop-runner.js";
+import { AgentLoopResultSchema } from "../../src/core/agent-runtime/contracts.js";
+import type { ValidationResult } from "../../src/core/validation/runner.js";
 
 const passedValidation: ValidationResult = { passed: true };
 const failedValidation: ValidationResult = { passed: false };
@@ -11,6 +9,44 @@ const cwd = "/repo/worktree";
 const prompt = { task: "ABC-123" };
 
 describe("agent loop runner", () => {
+  it("requires validation and result status on agent loop result artifacts", () => {
+    expect(
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        validation: { passed: true },
+        final_validation: { passed: true },
+        result: { status: "passed", summary: "Validation passed." }
+      })
+    ).toMatchObject({
+      status: "passed",
+      validation: { passed: true },
+      final_validation: { passed: true }
+    });
+
+    expect(() =>
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        final_validation: { passed: true },
+        result: { status: "passed", summary: "Validation passed." }
+      })
+    ).toThrow();
+
+    expect(() =>
+      AgentLoopResultSchema.parse({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        validation: { passed: true },
+        final_validation: { passed: true },
+        result: { summary: "Validation passed." }
+      })
+    ).toThrow();
+  });
+
   it("passes on the first attempt", async () => {
     const runWritableAgent = vi.fn(async () => ({ summary: "implemented" }));
     const runValidation = vi.fn(async () => passedValidation);

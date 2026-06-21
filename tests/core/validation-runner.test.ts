@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { runValidationCommands } from "../../src/core/validation-runner.js";
+import {
+  runValidationCommands,
+  ValidationResultSchema
+} from "../../src/core/validation/runner.js";
 
 describe("validation runner", () => {
+  it("accepts implementation runtime validation result artifacts", () => {
+    expect(
+      ValidationResultSchema.parse({
+        passed: false,
+        commands: [
+          {
+            cmd: "npm",
+            args: ["test"],
+            exit_code: 1,
+            stdout: "",
+            stderr: "failed",
+            stdout_truncated: false,
+            stderr_truncated: false,
+            duration_ms: 42,
+            timed_out: false
+          }
+        ]
+      })
+    ).toMatchObject({ passed: false });
+  });
+
   it("returns passed false for non-zero exit codes without throwing", async () => {
     const result = await runValidationCommands({
       cwd: "/repo",

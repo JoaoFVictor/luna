@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createRunIdentity, slugTimestamp } from "../../src/core/run-identity.js";
-import type { Invocation } from "../../src/core/types.js";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { createRunIdentity, slugTimestamp } from "../../src/core/invocation/run-identity.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import { artifactRootForWorkflow } from "../../src/core/configured-workflow/bootstrap.js";
+import { RunLockManager } from "../../src/core/workflow/lock-manager.js";
 
 const fixedDate = new Date("2026-06-18T15:04:05.000Z");
 
@@ -42,12 +47,12 @@ describe("run identity", () => {
     expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
   });
 
-  it("includes workflow id, millisecond timestamp, flue id suffix, and nonce", () => {
+  it("includes workflow id, millisecond timestamp, runtime id suffix, and nonce", () => {
     const identity = createRunIdentity(invocation, {
       attempt: 1,
       date: new Date("2026-06-18T15:04:05.123Z"),
       workflowId: "code-review",
-      flueRunId: "flue-run-abcdef123456",
+      runtimeRunId: "flue-run-abcdef123456",
       nonce: "n9x8"
     });
 
@@ -64,6 +69,78 @@ describe("run identity", () => {
       subject: { type: "pull_request", id: "313" },
       started_at: "2026-06-18T15:04:05.123Z"
     });
+  });
+
+  it("preserves run identity, artifact, lock, and public Flue event compatibility", async () => {
+    const previousRunId =
+      "20260618t150405123z-code-review-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a1-abcdef123456-n9x8";
+    const previousArtifactDirectory = path.join(
+      "/tmp/luna-artifacts",
+      "code-review",
+      previousRunId
+    );
+    const repositoryLockResource = "repository:swinggo-dev/swg-front-nuxt";
+    const previousLockKey = path.join(
+      "/tmp/luna-locks",
+      "repository_swinggo-dev-swg-front-nuxt.lock"
+    );
+    const previousFlueRunId = "flue-run-abcdef123456";
+    const locksRoot = await mkdtemp(path.join(tmpdir(), "luna-lock-compat-"));
+    let releaseLock: (() => Promise<void>) | undefined;
+
+    try {
+      const runIdentity = createRunIdentity(invocation, {
+        attempt: 1,
+        date: new Date("2026-06-18T15:04:05.123Z"),
+        workflowId: "code-review",
+        runtimeRunId: previousFlueRunId,
+        nonce: "n9x8"
+      });
+      const artifactDirectory = path.join(
+        artifactRootForWorkflow("/tmp/luna-artifacts", runIdentity.workflow_id),
+        runIdentity.run_id
+      );
+      const lockManager = new RunLockManager({
+        root: locksRoot,
+        runId: runIdentity.run_id,
+        runtimeRunId: runIdentity.flue_run_id,
+        timeoutMs: 1000,
+        staleAfterMs: 6000
+      });
+      releaseLock = await lockManager.acquire(
+        repositoryLockResource,
+        "exclusive"
+      );
+      const [actualLockDirectoryName] = await readdir(locksRoot);
+      const lockKey = path.join(
+        "/tmp/luna-locks",
+        actualLockDirectoryName
+      );
+      const actualLockDirectory = path.join(
+        locksRoot,
+        actualLockDirectoryName
+      );
+      const owner = JSON.parse(
+        await readFile(path.join(actualLockDirectory, "owner.json"), "utf8")
+      ) as { run_id?: string; runtime_run_id?: string };
+      const serializedPublicEvent = JSON.parse(JSON.stringify(runIdentity)) as {
+        flue_run_id?: string;
+      };
+
+      expect(runIdentity.run_id).toBe(previousRunId);
+      expect(artifactDirectory).toBe(previousArtifactDirectory);
+      expect(lockKey).toBe(previousLockKey);
+      expect((await stat(actualLockDirectory)).isDirectory()).toBe(true);
+      expect(owner).toMatchObject({
+        run_id: previousRunId,
+        runtime_run_id: previousFlueRunId
+      });
+      expect(owner).not.toHaveProperty("flue_run_id");
+      expect(serializedPublicEvent.flue_run_id).toBe(previousFlueRunId);
+    } finally {
+      await releaseLock?.();
+      await rm(locksRoot, { recursive: true, force: true });
+    }
   });
 
   it("omits flue_run_id outside Flue and still creates unique path-safe ids", () => {
@@ -85,7 +162,7 @@ describe("run identity", () => {
       attempt: 1,
       date: fixedDate,
       workflowId: "code-review",
-      flueRunId: "flue-run-abcdef123456",
+      runtimeRunId: "flue-run-abcdef123456",
       nonce: "one"
     };
 
@@ -95,7 +172,7 @@ describe("run identity", () => {
       { ...safeOptions, nonce: "ユニコード" },
       { ...safeOptions, nonce: "../bad" },
       { ...safeOptions, workflowId: "../code-review" },
-      { ...safeOptions, flueRunId: "flue-run/../abcdef123456" }
+      { ...safeOptions, runtimeRunId: "flue-run/../abcdef123456" }
     ]) {
       expect(() => createRunIdentity(invocation, options)).toThrow(
         expect.objectContaining({ code: "invalid_run_id" })

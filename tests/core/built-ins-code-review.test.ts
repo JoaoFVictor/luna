@@ -7,15 +7,15 @@ import {
   validateCodeReviewFindingsBuiltIn
 } from "../../src/core/providers/github/built-ins.js";
 import type {
-  AcceptanceDecision,
-  Finding,
-  ImplementationConfig,
-  Invocation,
-  RepoContext,
-  RepositoryConfig,
   WorkspaceRecord
-} from "../../src/core/types.js";
-import type { WorkflowState } from "../../src/core/workflow-state.js";
+} from "../../src/core/write-mode/types.js";
+import type { RepoContext } from "../../src/core/git/diff/types.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import type { RepositoryConfig } from "../../src/core/config/schemas.js";
+import type { Finding } from "../../src/core/findings/types.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
+import type { ImplementationConfig } from "../../src/core/write-mode/types.js";
+import type { WorkflowState } from "../../src/core/workflow/state.js";
 
 const invocation: Invocation = {
   version: "2026-06",

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
-import type { ArtifactStore } from "../../src/core/artifact-store.js";
-import type { JsonValue } from "../../src/core/json-value.js";
+import type { ArtifactStore } from "../../src/core/artifacts/store.js";
+import type { JsonValue } from "../../src/core/json/value.js";
 import {
   createLunaObservability,
   runCompletedEvent,
@@ -12,7 +12,7 @@ import {
   type LunaEvent,
   type LunaObservabilitySink
 } from "../../src/core/observability/luna-observability.js";
-import { createFlueLogSink } from "../../src/core/observability/flue-log-sink.js";
+import { createFlueLogSink } from "../../src/core/agent-runtime/flue/observability.js";
 import { createJsonlEventSink } from "../../src/core/observability/jsonl-sink.js";
 
 type JsonObject = { [key: string]: JsonValue };
@@ -23,7 +23,7 @@ type ExpectedLunaEvent = {
   timestamp: string;
   run: {
     id: string;
-    flueRunId?: string;
+    runtimeRunId?: string;
     attempt: number;
   };
   workflow: {
@@ -41,13 +41,13 @@ type ExpectedLunaEvent = {
 };
 
 const runtimeFiles = [
-  "src/core/workflow-scheduler.ts",
-  "src/core/configured-workflow-runner.ts",
-  "src/core/run-lock-manager.ts",
+  "src/core/workflow/scheduler.ts",
+  "src/core/configured-workflow/runner.ts",
+  "src/core/workflow/lock-manager.ts",
   "src/workflows/luna.ts"
 ];
 
-const run = { id: "run-1", flueRunId: "flue-1", attempt: 2 };
+const run = { id: "run-1", runtimeRunId: "flue-1", attempt: 2 };
 const workflow = { id: "code-review" };
 const timestamp = "2026-06-20T12:00:00.000Z";
 
@@ -83,6 +83,7 @@ function expectNormalizedEvent(event: LunaEvent): ExpectedLunaEvent {
   expect(event).not.toHaveProperty("run_id");
   expect(event).not.toHaveProperty("workflow_id");
   expect(event).not.toHaveProperty("attributes");
+  expect(event.run).not.toHaveProperty("flueRunId");
   return event;
 }
 
@@ -159,6 +160,46 @@ describe("luna event contract", () => {
     ).toThrow("Invalid JSON value");
   });
 
+  it("does not promote stale Flue run aliases into generic event run ids", async () => {
+    const staleRun = {
+      id: "run-stale",
+      flueRunId: "flue-stale",
+      attempt: 3
+    } as unknown as LunaEvent["run"];
+    const constructed = runStartedEvent({
+      severity: "info",
+      run: staleRun,
+      workflow,
+      timestamp
+    });
+    const emitted: LunaEvent[] = [];
+    const observability = createLunaObservability({
+      run: staleRun,
+      workflow,
+      sinks: [
+        {
+          id: "memory",
+          append: (event) => {
+            emitted.push(event);
+          }
+        }
+      ],
+      now: () => new Date(timestamp)
+    });
+
+    await observability.emit(
+      runStartedEvent({
+        ...observability.eventContext("info")
+      })
+    );
+
+    for (const event of [constructed, emitted[0]]) {
+      expect(event.run).toEqual({ id: "run-stale", attempt: 3 });
+      expect(event.run).not.toHaveProperty("flueRunId");
+      expect(event.run).not.toHaveProperty("runtimeRunId");
+    }
+  });
+
   it("fans out the same normalized event shape to JSONL, Flue log, and summary sinks", async () => {
     const jsonlLines: JsonValue[] = [];
     const artifactStore = {
@@ -207,6 +248,7 @@ describe("luna event contract", () => {
       "luna.step.succeeded",
       expect.objectContaining({
         "luna.run_id": "run-1",
+        "luna.flue_run_id": "flue-1",
         "luna.workflow_id": "code-review",
         "luna.step_id": "plan",
         "luna.outcome_status": "succeeded"

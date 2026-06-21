@@ -131,7 +131,7 @@ export function lifecycleStepMapViolations(
   }
 
   function visit(node: ts.Node): void {
-    if (relativePath === "src/core/implementation-lifecycle.ts") {
+    if (relativePath === "src/core/write-mode/lifecycle.ts") {
       if (
         ts.isPropertyAccessExpression(node) &&
         node.expression.getText(sourceFile) === "result" &&
@@ -153,7 +153,7 @@ export function lifecycleStepMapViolations(
       }
     }
 
-    if (relativePath === "src/core/configured-workflow-runner.ts") {
+    if (relativePath === "src/core/configured-workflow/runner.ts") {
       if (
         ts.isFunctionDeclaration(node) &&
         ["nodeLifecycleOutcome", "workflowNodeStepResultFrom"].includes(
@@ -188,10 +188,10 @@ export function lifecycleStepMapViolations(
 
     if (
       [
-        "src/core/implementation-lifecycle.ts",
-        "src/core/workspace-lifecycle.ts",
-        "src/core/configured-workflow-runner.ts",
-        "src/core/workflow-scheduler.ts"
+        "src/core/write-mode/lifecycle.ts",
+        "src/core/write-mode/workspace-lifecycle.ts",
+        "src/core/configured-workflow/runner.ts",
+        "src/core/workflow/scheduler.ts"
       ].includes(relativePath)
     ) {
       if (

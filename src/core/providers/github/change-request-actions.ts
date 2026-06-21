@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { ChangeRequestArtifact, PushBranchArtifact } from "../../types.js";
+import type {
+  ChangeRequestArtifact,
+  ChangeRequestProvider,
+  OpenChangeRequestRequest
+} from "../../change-request/contracts.js";
 
 type RunGh = (cwd: string, args: readonly string[]) => Promise<string>;
 type ChangeRequestError = Error & {
@@ -30,15 +34,7 @@ function changeRequestError(message: string, cause: unknown): ChangeRequestError
   return error;
 }
 
-export type OpenGitHubChangeRequestInput = {
-  enabled: boolean;
-  cwd: string;
-  push: PushBranchArtifact;
-  branch: string;
-  baseRef?: string;
-  draft: boolean;
-  title: string;
-  body?: string;
+export type OpenGitHubChangeRequestInput = OpenChangeRequestRequest & {
   runGh?: RunGh;
 };
 
@@ -101,3 +97,8 @@ export async function openGitHubChangeRequest({
     ...(url === "" ? {} : { url })
   };
 }
+
+export const githubChangeRequestProvider: ChangeRequestProvider = {
+  provider: "github",
+  open: openGitHubChangeRequest
+};

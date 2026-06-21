@@ -1,19 +1,23 @@
-import { validateFindingEvidence as defaultValidateFindingEvidence } from "../../evidence-validator.js";
+import { validateFindingEvidence as defaultValidateFindingEvidence } from "../../findings/evidence-validator.js";
 import { prepare as defaultPrepareWorktree } from "./worktree-manager.js";
-import { collectRepoContext as defaultCollectRepoContext } from "../../repo-context-collector.js";
+import { collectRepoContext as defaultCollectRepoContext } from "../../git/diff/repo-context.js";
 import {
   buildFinalReportJson as defaultBuildFinalReportJson,
   buildFinalReportMarkdown as defaultBuildFinalReportMarkdown
 } from "./report-builder.js";
-import { runPreflight as defaultRunPreflight } from "../../preflight.js";
+import { runPreflight as defaultRunPreflight } from "../../preflight/runner.js";
+import type { Invocation } from "../../invocation/types.js";
+import type { RepoContext } from "../../git/diff/types.js";
+import type { WorkspaceRecord } from "../../write-mode/types.js";
 import type {
-  AcceptanceDecision,
-  CodeReviewFindings,
-  Invocation,
-  RepoContext,
-  WorkspaceRecord
-} from "../../types.js";
+  CodeReviewFindings
+} from "../../findings/types.js";
+import type { AcceptanceDecision } from "../../decisions/types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
+import {
+  finalReportMetadata,
+  prepareWorktreeMetadata
+} from "../../built-ins/metadata.js";
 import {
   findingsFrom,
   repositoryFrom,
@@ -21,7 +25,6 @@ import {
   requiredState,
   resolvedInput,
   runIdFrom,
-  stepValue,
   workspaceFrom,
   workspaceRootFrom,
   workflowFrom,
@@ -68,10 +71,7 @@ export const preflightBuiltIn = defineBuiltInStep({
 
 export const prepareWorktreeBuiltIn = defineBuiltInStep({
   name: "prepare_worktree",
-  metadata: {
-    capturesWorkspace: true,
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
+  metadata: prepareWorktreeMetadata,
   async run({ state, dependencies = {} }) {
     const prepareWorktree = dependencies.prepareWorktree ?? defaultPrepareWorktree;
 
@@ -131,7 +131,7 @@ export const validateCodeReviewFindingsBuiltIn = defineBuiltInStep({
 
 export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
   name: "final_code_review_report",
-  metadata: { deferredLifecycle: "final_report" },
+  metadata: finalReportMetadata,
   async run({ state, input, dependencies = {} }) {
     const buildFinalReportJson =
       dependencies.buildFinalReportJson ?? defaultBuildFinalReportJson;

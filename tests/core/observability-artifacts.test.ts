@@ -2,7 +2,7 @@ import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { ArtifactStore } from "../../src/core/artifact-store.js";
+import { ArtifactStore } from "../../src/core/artifacts/store.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import { customEvent } from "../../src/core/observability/events.js";
 import { createJsonlEventSink } from "../../src/core/observability/jsonl-sink.js";
@@ -13,9 +13,9 @@ import {
   recordPromptOperation,
   recordPromptUsage,
   recordPromptUsageMissing,
-  recordRejectedCapability,
-  usageFromFlueResponse
+  recordRejectedCapability
 } from "../../src/core/observability/summary.js";
+import { usageFromFlueResponse } from "../../src/core/agent-runtime/flue/observability.js";
 
 async function initializedStore(): Promise<{
   root: string;
@@ -126,7 +126,6 @@ describe("observability artifacts", () => {
       promptId: "prompt-1",
       modelProfile: "deep",
       response: {
-        data: {},
         usage: {
           input: 10,
           output: 5,
@@ -239,7 +238,7 @@ describe("observability artifacts", () => {
       usageFromFlueResponse({
         promptId: "prompt-1",
         modelProfile: "deep",
-        response: { data: {} }
+        response: {}
       })
     ).toBeUndefined();
   });

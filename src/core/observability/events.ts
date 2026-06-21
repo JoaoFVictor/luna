@@ -1,7 +1,7 @@
 import {
   assertJsonValue,
   type JsonValue
-} from "../json-value.js";
+} from "../json/value.js";
 
 export type JsonObject = { [key: string]: JsonValue };
 
@@ -15,7 +15,7 @@ export type LunaEvent = {
   timestamp: string;
   run: {
     id: string;
-    flueRunId?: string;
+    runtimeRunId?: string;
     attempt: number;
   };
   workflow: {
@@ -73,7 +73,7 @@ function eventData(data: JsonObject | undefined): { data?: JsonObject } {
 function eventRun(run: LunaEvent["run"]): LunaEvent["run"] {
   return {
     id: run.id,
-    ...(run.flueRunId === undefined ? {} : { flueRunId: run.flueRunId }),
+    ...(run.runtimeRunId === undefined ? {} : { runtimeRunId: run.runtimeRunId }),
     attempt: run.attempt
   };
 }

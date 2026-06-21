@@ -3,13 +3,13 @@ import {
   buildImplementationReportJson,
   buildImplementationReportMarkdown
 } from "../../src/core/providers/jira/report-builder.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import type { ValidationResult } from "../../src/core/validation/runner.js";
 import type {
   CommitChangesArtifact,
-  Invocation,
-  ChangeRequestArtifact,
-  PushBranchArtifact,
-  ValidationResult
-} from "../../src/core/types.js";
+  PushBranchArtifact
+} from "../../src/core/write-mode/types.js";
+import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
 
 const invocation: Invocation = {
   version: "2026-06",

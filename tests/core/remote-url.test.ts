@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeRemoteUrl,
   remoteUrlMatches
-} from "../../src/core/remote-url.js";
+} from "../../src/core/git/remote-url.js";
 
 describe("remote url", () => {
   it.each([

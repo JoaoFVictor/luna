@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactString, redactValue } from "../../src/core/redactor.js";
+import { redactString, redactValue } from "../../src/core/security/redactor.js";
 
 describe("redactor", () => {
   it("redacts JSON values by secret-looking keys and token patterns", () => {

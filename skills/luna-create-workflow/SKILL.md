@@ -85,6 +85,6 @@ Node `input` can reference:
 Run:
 
 ```sh
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
-npm run typecheck
+rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+rtk npm run typecheck
 ```

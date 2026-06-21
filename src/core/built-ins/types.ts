@@ -1,19 +1,22 @@
+import type { Invocation } from "../invocation/types.js";
+import type { RepoContext } from "../git/diff/types.js";
+import type { WorkspaceRecord } from "../write-mode/types.js";
+import type { RepositoryConfig } from "../config/schemas.js";
+import type { Finding } from "../findings/types.js";
+import type { AcceptanceDecision } from "../decisions/types.js";
+import type { ValidationResult } from "../validation/runner.js";
 import type {
-  AcceptanceDecision,
-  ChangeRequestArtifact,
   CommitChangesArtifact,
-  Finding,
   ImplementationConfig,
-  Invocation,
-  PushBranchArtifact,
-  RepoContext,
-  RepositoryConfig,
-  ValidationResult,
-  WorkspaceRecord
-} from "../types.js";
-import type { ImplementationWorktreeRecord } from "../implementation-worktree-manager.js";
-import type { WorktreeDiff } from "../worktree-diff-collector.js";
-import type { WorkflowState } from "../workflow-state.js";
+  PushBranchArtifact
+} from "../write-mode/types.js";
+import type {
+  ChangeRequestArtifact,
+  ChangeRequestRegistry
+} from "../change-request/contracts.js";
+import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
+import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
+import type { WorkflowState } from "../workflow/state.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -57,6 +60,11 @@ export type BuiltInStep<Name extends string = string> = {
   readonly name: Name;
   readonly metadata?: BuiltInStepMetadata;
   readonly run: (options: BuiltInStepRunOptions) => MaybePromise<unknown>;
+};
+
+export type BuiltInStepRegistryView = {
+  readonly names?: readonly string[];
+  require(name: string): { metadata?: BuiltInStepMetadata };
 };
 
 export type RunBuiltInStepOptions = BuiltInStepRunOptions & {
@@ -139,17 +147,7 @@ export type BuiltInStepDependencies = {
     remote: string;
     expectedRemoteUrls: readonly string[];
   }) => MaybePromise<PushBranchArtifact>;
-  openChangeRequest?: (input: {
-    enabled: boolean;
-    provider: string;
-    cwd: string;
-    push: PushBranchArtifact;
-    branch: string;
-    baseRef?: string;
-    draft: boolean;
-    title: string;
-    body?: string;
-  }) => MaybePromise<ChangeRequestArtifact>;
+  changeRequestRegistry?: ChangeRequestRegistry;
   buildImplementationReportJson?: (input: {
     invocation: Invocation;
     status: string;

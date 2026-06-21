@@ -1,12 +1,5 @@
 import {
   customEvent,
-  runCompletedEvent,
-  runStartedEvent,
-  stepFailedEvent,
-  stepSkippedEvent,
-  stepStartedEvent,
-  stepSucceededEvent,
-  type JsonObject,
   type LunaEvent,
   type LunaObservabilityLevel,
   type LunaObservabilitySink
@@ -30,7 +23,7 @@ export {
 export type CreateLunaObservabilityOptions = {
   run: {
     id: string;
-    flueRunId?: string;
+    runtimeRunId?: string;
     attempt?: number;
   };
   workflow: {
@@ -89,7 +82,9 @@ export function createLunaObservability({
   const requiredSinks = sinks.filter((sink) => sink.required !== false);
   const eventRun = {
     id: run.id,
-    ...(run.flueRunId === undefined ? {} : { flueRunId: run.flueRunId }),
+    ...(run.runtimeRunId === undefined
+      ? {}
+      : { runtimeRunId: run.runtimeRunId }),
     attempt: run.attempt ?? 1
   };
 

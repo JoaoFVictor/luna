@@ -4,30 +4,30 @@ import {
   commitChangesBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   pushBranchBuiltIn,
-  openChangeRequestBuiltIn,
   recordAcceptanceDecisionBuiltIn,
   recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
 } from "../../src/core/built-ins/implementation.js";
+import { openChangeRequestBuiltIn } from "../../src/core/providers/built-ins.js";
 import {
   collectTaskContextBuiltIn,
   finalImplementationReportBuiltIn
 } from "../../src/core/providers/jira/built-ins.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
+import type { RepositoryConfig } from "../../src/core/config/schemas.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
+import type { ValidationResult } from "../../src/core/validation/runner.js";
 import type {
-  AcceptanceDecision,
   CommitChangesArtifact,
   ImplementationConfig,
-  Invocation,
-  ChangeRequestArtifact,
-  PushBranchArtifact,
-  RepositoryConfig,
-  ValidationResult,
-  WorkspaceRecord
-} from "../../src/core/types.js";
-import type { ImplementationWorktreeRecord } from "../../src/core/implementation-worktree-manager.js";
-import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
+  PushBranchArtifact
+} from "../../src/core/write-mode/types.js";
+import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
+import type { ImplementationWorktreeRecord } from "../../src/core/write-mode/worktree.js";
+import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";
-import type { WorkflowState } from "../../src/core/workflow-state.js";
+import type { WorkflowState } from "../../src/core/workflow/state.js";
 
 const githubInvocation: Invocation = {
   version: "2026-06",
@@ -414,7 +414,13 @@ describe("implementation built-ins", () => {
   });
 
   it("runs open_change_request through injected dependencies", async () => {
-    const openChangeRequest = vi.fn(async () => changeRequestArtifact);
+    const changeRequestProvider = {
+      provider: "github",
+      open: vi.fn(async () => changeRequestArtifact)
+    };
+    const changeRequestRegistry = {
+      get: vi.fn(() => changeRequestProvider)
+    };
 
     await expect(
       openChangeRequestBuiltIn.run({
@@ -427,13 +433,13 @@ describe("implementation built-ins", () => {
           title: "ABC-123: Fix checkout validation",
           body: "Reject invalid checkout payloads."
         },
-        dependencies: { openChangeRequest }
+        dependencies: { changeRequestRegistry }
       })
     ).resolves.toEqual(changeRequestArtifact);
 
-    expect(openChangeRequest).toHaveBeenCalledWith({
+    expect(changeRequestRegistry.get).toHaveBeenCalledWith("github");
+    expect(changeRequestProvider.open).toHaveBeenCalledWith({
       enabled: true,
-      provider: "github",
       cwd: implementationWorkspace.path,
       push: pushArtifact,
       branch: implementationWorkspace.branch,
@@ -441,6 +447,37 @@ describe("implementation built-ins", () => {
       draft: true,
       title: "ABC-123: Fix checkout validation",
       body: "Reject invalid checkout payloads."
+    });
+  });
+
+  it("throws a coded error when the change request provider is unsupported", async () => {
+    const unsupportedImplementation: ImplementationConfig["implementation"] = {
+      ...implementationConfig,
+      change_request: {
+        enabled: true,
+        provider: "unsupported-provider",
+        draft: true,
+        base_ref: "main"
+      }
+    };
+
+    await expect(
+      openChangeRequestBuiltIn.run({
+        state: implementationState({
+          config: { implementation: unsupportedImplementation },
+          steps: {
+            push: pushArtifact
+          }
+        }),
+        input: {
+          title: "ABC-123: Fix checkout validation"
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "change_request_provider_unsupported",
+      details: {
+        provider: "unsupported-provider"
+      }
     });
   });
 
@@ -688,7 +725,13 @@ describe("implementation built-ins", () => {
 
   it("uses state.steps fallbacks for push_branch, open_change_request, and final report", async () => {
     const pushBranch = vi.fn(async () => pushArtifact);
-    const openChangeRequest = vi.fn(async () => changeRequestArtifact);
+    const changeRequestProvider = {
+      provider: "github",
+      open: vi.fn(async () => changeRequestArtifact)
+    };
+    const changeRequestRegistry = {
+      get: vi.fn(() => changeRequestProvider)
+    };
     const buildImplementationReportJson = vi.fn(() => ({ report: "json" }));
 
     await pushBranchBuiltIn.run({
@@ -698,7 +741,7 @@ describe("implementation built-ins", () => {
     await openChangeRequestBuiltIn.run({
       state: implementationState({ steps: { push: pushArtifact } }),
       input: { title: "ABC-123: Fix checkout validation" },
-      dependencies: { openChangeRequest }
+      dependencies: { changeRequestRegistry }
     });
     await finalImplementationReportBuiltIn.run({
       state: implementationState({
@@ -716,7 +759,9 @@ describe("implementation built-ins", () => {
     });
 
     expect(pushBranch).toHaveBeenCalledWith(expect.objectContaining({ commit: commitArtifact }));
-    expect(openChangeRequest).toHaveBeenCalledWith(expect.objectContaining({ push: pushArtifact }));
+    expect(changeRequestProvider.open).toHaveBeenCalledWith(
+      expect.objectContaining({ push: pushArtifact })
+    );
     expect(buildImplementationReportJson).toHaveBeenCalledWith(
       expect.objectContaining({
         validation,

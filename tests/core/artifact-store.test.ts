@@ -13,7 +13,7 @@ import {
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { ArtifactStore } from "../../src/core/artifact-store.js";
+import { ArtifactStore } from "../../src/core/artifacts/store.js";
 
 async function tempRoot(): Promise<string> {
   return await realpath(await mkdtemp(path.join(tmpdir(), "luna-artifacts-")));
@@ -293,7 +293,7 @@ describe("artifact store", () => {
   });
 
   it("atomicWriteFile syncs the file and parent directory before completing", async () => {
-    const { atomicWriteFile } = await import("../../src/core/atomic-write.js");
+    const { atomicWriteFile } = await import("../../src/core/artifacts/atomic-write.js");
     const root = await tempRoot();
     const syncOrder: string[] = [];
 
@@ -306,7 +306,7 @@ describe("artifact store", () => {
   });
 
   it("atomicWriteFile removes its temp file when rename fails", async () => {
-    const { atomicWriteFile } = await import("../../src/core/atomic-write.js");
+    const { atomicWriteFile } = await import("../../src/core/artifacts/atomic-write.js");
     const root = await tempRoot();
     const targetPath = path.join(root, "state.json");
     let tempPath: string | undefined;
@@ -329,7 +329,7 @@ describe("artifact store", () => {
   });
 
   it("atomicWriteFile preserves its error code when temp cleanup fails", async () => {
-    const { atomicWriteFile } = await import("../../src/core/atomic-write.js");
+    const { atomicWriteFile } = await import("../../src/core/artifacts/atomic-write.js");
     const root = await tempRoot();
     const targetPath = path.join(root, "state.json");
     let tempPath: string | undefined;

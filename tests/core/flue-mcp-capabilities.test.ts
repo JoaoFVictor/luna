@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@flue/runtime";
 import { describe, expect, it, vi } from "vitest";
-import { resolveFlueMcpTools } from "../../src/core/flue-mcp-capabilities.js";
-import type { McpConfig } from "../../src/core/mcp-config.js";
+import { resolveFlueMcpTools } from "../../src/core/agent-runtime/flue/mcp-capabilities.js";
+import type { McpConfig } from "../../src/core/config/mcp.js";
 
 function tool(name: string): ToolDefinition {
   return { name } as ToolDefinition;

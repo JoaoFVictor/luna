@@ -2,16 +2,16 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { ArtifactStore } from "../../src/core/artifact-store.js";
-import type { AgentDefinition } from "../../src/core/agent-definition.js";
+import { ArtifactStore } from "../../src/core/artifacts/store.js";
+import type { AgentDefinition } from "../../src/core/agents/definition.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import {
   createObservabilitySummary,
   type ObservabilitySummary
 } from "../../src/core/observability/summary.js";
-import type { RunAgentStepOptions } from "../../src/core/configured-workflow-runner.js";
+import type { RunAgentStepOptions } from "../../src/core/configured-workflow/runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
-import { runFlueAgentStep } from "../../src/core/flue-agent-runner.js";
+import { runFlueAgentStep } from "../../src/core/agent-runtime/flue/runner.js";
 
 async function testAgent(root: string): Promise<AgentDefinition> {
   const directory = path.join(root, "agents", "reviewer");
@@ -123,7 +123,7 @@ function stepOptions({
       steps: {}
     },
     observability: createLunaObservability({
-      run: { id: "run-1", flueRunId: "flue-run-1", attempt: 1 },
+      run: { id: "run-1", runtimeRunId: "flue-run-1", attempt: 1 },
       workflow: { id: "code-review" },
       sinks: [
         {

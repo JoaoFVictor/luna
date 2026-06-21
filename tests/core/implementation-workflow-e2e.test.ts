@@ -2,13 +2,15 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
+import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import {
   prepareImplementationWorktree,
   type ImplementationWorktreeRecord
-} from "../../src/core/implementation-worktree-manager.js";
-import type { Invocation, WorkspaceRecord } from "../../src/core/types.js";
-import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
+} from "../../src/core/write-mode/worktree.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
+import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
+import { providerAwareWorkflowDependencies } from "./provider-aware-workflow-dependencies.js";
 
 const repoRoot = process.cwd();
 
@@ -251,7 +253,7 @@ describe("implementation workflow e2e", () => {
             workflowsRoot: path.join(repoRoot, "workflows"),
             agentsRoot: path.join(repoRoot, "agents"),
             nonceFactory: () => nonce,
-            dependencies: {
+            dependencies: providerAwareWorkflowDependencies({
               now: () => new Date("2026-06-20T00:00:00.000Z"),
               builtInStepDependencies: {
                 runPreflight: vi.fn(async () => ({ status: "ok" })),
@@ -280,11 +282,16 @@ describe("implementation workflow e2e", () => {
                   skipped: true,
                   reason: "disabled"
                 })),
-                openChangeRequest: vi.fn(async () => ({
-                  enabled: false,
-                  skipped: true,
-                  reason: "disabled"
-                })),
+                changeRequestRegistry: {
+                  get: vi.fn(() => ({
+                    provider: "github",
+                    open: vi.fn(async () => ({
+                      enabled: false,
+                      skipped: true,
+                      reason: "disabled"
+                    }))
+                  }))
+                },
                 buildImplementationReportJson: vi.fn((input) => ({
                   status: input.status,
                   branch: input.branch,
@@ -335,7 +342,7 @@ describe("implementation workflow e2e", () => {
               cleanupWorktree: vi.fn(async () => {
                 throw new Error("cleanup should not run when commit is disabled");
               })
-            }
+            })
           })
         )
       );
@@ -453,7 +460,7 @@ describe("implementation workflow e2e", () => {
         configRoot: root,
         workflowsRoot: path.join(repoRoot, "workflows"),
         agentsRoot: path.join(repoRoot, "agents"),
-        dependencies: {
+        dependencies: providerAwareWorkflowDependencies({
           createRunIdentity: () => ({
             run_id: "run-1",
             workflow_id: "implementation",
@@ -488,10 +495,15 @@ describe("implementation workflow e2e", () => {
               calls.push("push_branch");
               return { enabled: false, skipped: true, reason: "disabled" };
             }),
-            openChangeRequest: vi.fn(async () => {
-              calls.push("open_change_request");
-              return { enabled: false, skipped: true, reason: "disabled" };
-            }),
+            changeRequestRegistry: {
+              get: vi.fn(() => ({
+                provider: "github",
+                open: vi.fn(async () => {
+                  calls.push("open_change_request");
+                  return { enabled: false, skipped: true, reason: "disabled" };
+                })
+              }))
+            },
             buildImplementationReportJson: vi.fn((input) => {
               calls.push("final_implementation_report");
               return {
@@ -560,7 +572,7 @@ describe("implementation workflow e2e", () => {
           cleanupWorktree: vi.fn(async () => {
             throw new Error("cleanup should not run when commit is disabled");
           })
-        }
+        })
       });
 
       expect(result.status).toBe("success");

@@ -7,7 +7,7 @@ import {
   isInsideRoot,
   safeJoin,
   slugify
-} from "../../src/core/path-security.js";
+} from "../../src/core/security/path.js";
 
 async function tempRoot(prefix: string): Promise<string> {
   return await realpath(await mkdtemp(join(tmpdir(), prefix)));
@@ -62,7 +62,7 @@ describe("path security", () => {
   });
 
   it("does not use startsWith for containment checks", async () => {
-    const source = await readFile("src/core/path-security.ts", "utf8");
+    const source = await readFile("src/core/security/path.ts", "utf8");
 
     expect(source).not.toContain("startsWith");
   });

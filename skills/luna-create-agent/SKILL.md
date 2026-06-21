@@ -10,6 +10,9 @@ when they run and what input they receive.
 
 ## Files
 
+Agent definitions are owned by `agents/<agent-id>/`; do not add TypeScript
+workflow or runtime files for a new reusable agent.
+
 ```text
 agents/<agent-id>/
   agent.yaml
@@ -36,9 +39,13 @@ Keep orchestration in `workflows/<id>/graph.yaml`, not in agent instructions.
 ## Capabilities
 
 - `skills`: relative paths to `SKILL.md`.
-- `tools`: IDs from `src/core/flue-tool-registry.ts`.
+- `tools`: IDs from `src/core/tools/catalog.ts`.
 - `mcp_servers`: IDs from `config/mcp.yaml`.
 - `subagents`: referenced Luna agent IDs.
+
+Flue materializes skills, tools, MCP servers, and subagent profiles through
+`src/core/agent-runtime/flue/capabilities.ts`; do not import Flue runtime APIs
+from generic agent definition or policy modules.
 
 Subagents are lightweight internal delegation. A referenced subagent may use
 skills as instructions, but must not declare local tools, MCP servers, or nested
@@ -50,9 +57,9 @@ gates, tools, MCP, or another delegation tree.
 Run:
 
 ```sh
-npm test -- tests/core/agent-definition.test.ts
-npm test -- tests/core/flue-agent-capabilities.test.ts tests/core/flue-subagent-profiles.test.ts
-npm run typecheck
+rtk npm test -- tests/core/agent-definition.test.ts
+rtk npm test -- tests/core/flue-agent-capabilities.test.ts tests/core/flue-subagent-profiles.test.ts
+rtk npm run typecheck
 ```
 
 If the agent is wired into a workflow, also run

@@ -2,8 +2,8 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { expect } from "vitest";
 import YAML from "yaml";
-import { builtInStepNames } from "../../src/core/built-ins/catalog.js";
-import { registeredFlueToolSafety } from "../../src/core/flue-tool-registry.js";
+import { builtInStepNames } from "../../src/core/providers/built-ins.js";
+import { lunaToolCatalog } from "../../src/core/tools/catalog.js";
 
 async function readText(repoRoot: string, relativePath: string): Promise<string> {
   return readFile(path.join(repoRoot, relativePath), "utf8");
@@ -118,6 +118,25 @@ function realWorkflowTargets(relativePath: string, content: string): string[] {
     .map((id) => `${relativePath} references workflow:${id}`);
 }
 
+const deletedPathPatterns = [
+  /src\/core\/types\.ts/,
+  /src\/tools\/repository-tools\.ts/,
+  /src\/core\/flue-[A-Za-z0-9_.-]+/,
+  /src\/core\/implementation-[A-Za-z0-9_.-]+/,
+  /built-ins\/index\.ts/
+] as const;
+
+const deletedPathWarningPattern =
+  /\b[Dd]o not\b|\bnot recommend\b|\bforbidden\b/;
+
+function isDeletedPathAllowedLine(line: string): boolean {
+  const trimmedLine = line.trim();
+  return (
+    deletedPathWarningPattern.test(trimmedLine) ||
+    trimmedLine.startsWith("rtk rg ")
+  );
+}
+
 export function realReviewPrCommandViolations(
   relativePath: string,
   content: string
@@ -137,16 +156,34 @@ export function realReviewPrCommandViolations(
   });
 }
 
+export function deletedPathRecommendationViolations(
+  relativePath: string,
+  content: string
+): string[] {
+  const lines = content.split(/\r?\n/);
+
+  return lines.flatMap((line, index) => {
+    if (!deletedPathPatterns.some((pattern) => pattern.test(line))) {
+      return [];
+    }
+
+    return isDeletedPathAllowedLine(line)
+      ? []
+      : [`${relativePath}:${index + 1} recommends deleted core path`];
+  });
+}
+
 export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise<void> {
   const builtIns = [...builtInStepNames].sort();
-  const toolIds = Object.keys(registeredFlueToolSafety()).sort();
+  const toolIds = Object.keys(lunaToolCatalog).sort();
   const workflowIds = await workflowIdsFromDefinitions(repoRoot);
   const legacyViolations: string[] = [];
   const workflowReferences: string[] = [];
   const reviewPrViolations: string[] = [];
+  const deletedPathViolations: string[] = [];
 
   expect(builtIns, "runtime built-in inventory from src/core/built-ins/catalog.ts").not.toEqual([]);
-  expect(toolIds, "runtime tool inventory from src/core/flue-tool-registry.ts").not.toEqual([]);
+  expect(toolIds, "runtime tool inventory from src/core/tools/catalog.ts").not.toEqual([]);
   expect(workflowIds, "workflow id inventory from workflows/*/workflow.yaml").not.toEqual([]);
 
   for (const relativePath of ["README.md", "examples/configured-workflows.md"]) {
@@ -174,6 +211,7 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
     legacyViolations.push(...legacyLineViolations(relativePath, content));
     workflowReferences.push(...realWorkflowTargets(relativePath, content));
     reviewPrViolations.push(...realReviewPrCommandViolations(relativePath, content));
+    deletedPathViolations.push(...deletedPathRecommendationViolations(relativePath, content));
   }
 
   const referencedWorkflowIds = [...new Set(workflowReferences.map((reference) =>
@@ -182,6 +220,7 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
 
   expect(legacyViolations).toEqual([]);
   expect(reviewPrViolations).toEqual([]);
+  expect(deletedPathViolations).toEqual([]);
   expect(referencedWorkflowIds).toEqual(workflowIds);
   for (const reference of workflowReferences) {
     expect(workflowIds, reference).toContain(reference.match(/workflow:([a-z][a-z0-9-]*)/)?.[1]);

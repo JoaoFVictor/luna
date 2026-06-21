@@ -2,8 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { vi } from "vitest";
 import type { CreatedAgent } from "@flue/runtime";
-import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow-runner.js";
-import type { RunIdentity } from "../../src/core/types.js";
+import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow/runner.js";
+import type { RunIdentity } from "../../src/core/invocation/types.js";
 
 export type PromptCall = {
   text: string;
@@ -72,12 +72,14 @@ export async function importWorkflowWithRunnerMock(
   registerConfiguredPiOAuthProviders: () => Promise<void> = async () => {}
 ): Promise<{ run: (ctx: never) => Promise<unknown> }> {
   vi.resetModules();
-  vi.doMock("../../src/core/configured-workflow-runner.js", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../src/core/configured-workflow-runner.js")>()),
+  vi.doMock("../../src/core/configured-workflow/runner.js", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../../src/core/configured-workflow/runner.js")>()),
     runConfiguredWorkflow
   }));
-  vi.doMock("../../src/core/pi-auth.js", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../src/core/pi-auth.js")>()),
+  vi.doMock("../../src/core/agent-runtime/flue/pi-auth.js", async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../src/core/agent-runtime/flue/pi-auth.js")
+    >()),
     registerConfiguredPiOAuthProviders
   }));
 
@@ -85,10 +87,10 @@ export async function importWorkflowWithRunnerMock(
 }
 
 export function cleanupFlueMocks(): void {
-  vi.doUnmock("../../src/core/configured-workflow-runner.js");
-  vi.doUnmock("../../src/core/flue-agent-capabilities.js");
-  vi.doUnmock("../../src/core/agent-loop-runner.js");
-  vi.doUnmock("../../src/core/pi-auth.js");
+  vi.doUnmock("../../src/core/configured-workflow/runner.js");
+  vi.doUnmock("../../src/core/agent-runtime/flue/capabilities.js");
+  vi.doUnmock("../../src/core/agents/loop-runner.js");
+  vi.doUnmock("../../src/core/agent-runtime/flue/pi-auth.js");
   vi.resetModules();
   vi.restoreAllMocks();
   resetEnv();

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
 import type { AdapterContext, InputAdapter } from "../../src/adapters/types.js";
-import type { Invocation } from "../../src/core/types.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
 import {
   buildFlueRunCommand,
   childProcessExitCode,
@@ -15,7 +15,7 @@ import {
   parseCliArgs,
   parseWorkflowTarget,
   resolveFlueCliBin
-} from "../../src/core/flue-cli.js";
+} from "../../src/core/agent-runtime/flue/cli.js";
 
 const validInvocation: Invocation = {
   version: "2026-06",
@@ -347,7 +347,9 @@ describe("flue local CLI wrapper", () => {
       throw new Error("CLI should invoke Flue, not import the workflow");
     });
 
-    const { main: isolatedMain } = await import("../../src/core/flue-cli.js");
+    const { main: isolatedMain } = await import(
+      "../../src/core/agent-runtime/flue/cli.js"
+    );
     const invocationFile = path.join(
       await mkdtemp(path.join(tmpdir(), "luna-cli-workflow-")),
       "invocation.json"

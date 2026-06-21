@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
-import { collectRepoContext } from "../../src/core/repo-context-collector.js";
+import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
+import {
+  FileExcerptSchema,
+  RepoContextSchema
+} from "../../src/core/git/diff/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 type FakeGitCall = {
@@ -12,6 +16,26 @@ const pullRequest = githubPullRequestContextFrom(gitInvocation);
 const baseSha = pullRequest.references.base_sha;
 const headSha = pullRequest.references.head_sha;
 const tabbedPath = "src/tab\tpath.ts";
+const validRepoContext = {
+  repository: {
+    owner: "octo-org",
+    name: "hello-world",
+    full_name: "octo-org/hello-world"
+  },
+  base_sha: "abc123",
+  head_sha: "def456",
+  files: [
+    {
+      path: "src/image.png",
+      status: "modified",
+      additions: 0,
+      deletions: 0,
+      binary: true,
+      patch: null,
+      excerpt: null
+    }
+  ]
+};
 
 function nul(...fields: string[]): string {
   return `${fields.join("\0")}\0`;
@@ -143,6 +167,20 @@ function gitOutputFor(args: readonly string[]): string {
 }
 
 describe("repo context collector", () => {
+  it("accepts repo context binary metadata with null patch and excerpt", () => {
+    expect(RepoContextSchema.parse(validRepoContext)).toEqual(validRepoContext);
+  });
+
+  it("rejects a file excerpt range with end_line before start_line", () => {
+    expect(() =>
+      FileExcerptSchema.parse({
+        start_line: 20,
+        end_line: 19,
+        content: "const result = run();"
+      })
+    ).toThrow();
+  });
+
   it("collects changed file metadata with pinned diffs and truncation metadata", async () => {
     const calls: FakeGitCall[] = [];
 

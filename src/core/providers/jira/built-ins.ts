@@ -3,14 +3,15 @@ import {
   buildImplementationReportMarkdown as defaultBuildImplementationReportMarkdown
 } from "./report-builder.js";
 import { jiraIssueContextFrom } from "./task-context.js";
+import type { ChangeRequestArtifact } from "../../change-request/contracts.js";
+import type { Invocation } from "../../invocation/types.js";
+import type { ValidationResult } from "../../validation/runner.js";
 import type {
-  ChangeRequestArtifact,
   CommitChangesArtifact,
-  Invocation,
-  PushBranchArtifact,
-  ValidationResult
-} from "../../types.js";
+  PushBranchArtifact
+} from "../../write-mode/types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
+import { finalReportMetadata } from "../../built-ins/metadata.js";
 import {
   finalValidationFrom,
   implementationWorkspaceFrom,
@@ -86,7 +87,7 @@ export const collectTaskContextBuiltIn = defineBuiltInStep({
 
 export const finalImplementationReportBuiltIn = defineBuiltInStep({
   name: "final_implementation_report",
-  metadata: { deferredLifecycle: "final_report" },
+  metadata: finalReportMetadata,
   run({ state, input, dependencies = {} }) {
     const buildImplementationReportJson =
       dependencies.buildImplementationReportJson ??

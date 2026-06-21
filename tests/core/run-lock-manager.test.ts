@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { RunLockManager } from "../../src/core/run-lock-manager.js";
+import { RunLockManager } from "../../src/core/workflow/lock-manager.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
 
@@ -143,7 +143,7 @@ describe("run lock manager", () => {
     const manager = new RunLockManager({
       root,
       runId: "run-1",
-      flueRunId: "flue-1",
+      runtimeRunId: "runtime-1",
       timeoutMs: 1000,
       staleAfterMs: 6000
     });
@@ -156,8 +156,9 @@ describe("run lock manager", () => {
     expect(JSON.parse(content)).toMatchObject({
       resource: "repository:repo",
       run_id: "run-1",
-      flue_run_id: "flue-1"
+      runtime_run_id: "runtime-1"
     });
+    expect(JSON.parse(content)).not.toHaveProperty("flue_run_id");
     await release();
   });
 
@@ -309,7 +310,7 @@ describe("run lock manager", () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
     const events: LunaEvent[] = [];
     const observability = createLunaObservability({
-      run: { id: "run-1", flueRunId: "flue-1" },
+      run: { id: "run-1", runtimeRunId: "flue-1" },
       workflow: { id: "code-review" },
       sinks: [
         {
@@ -324,7 +325,7 @@ describe("run lock manager", () => {
     const manager = new RunLockManager({
       root,
       runId: "run-1",
-      flueRunId: "flue-1",
+      runtimeRunId: "flue-1",
       timeoutMs: 1000,
       staleAfterMs: 3000,
       observability
@@ -338,7 +339,7 @@ describe("run lock manager", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "luna.lock.acquired",
-          run: { id: "run-1", flueRunId: "flue-1", attempt: 1 },
+          run: { id: "run-1", runtimeRunId: "flue-1", attempt: 1 },
           data: expect.objectContaining({
             "luna.resource": "repository:repo"
           })

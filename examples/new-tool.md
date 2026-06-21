@@ -1,8 +1,13 @@
 # Create a new local tool
 
-Local tools are deterministic TypeScript functions exposed to Flue agents. Use
-a tool when an agent needs a small, explicit capability such as reading git
-status, summarizing a diff, or querying a local system through controlled code.
+Local tools are deterministic Luna-native TypeScript functions that can be
+materialized for the current agent runtime. Use a tool when an agent needs a
+small, explicit capability such as reading git status, summarizing a diff, or
+querying a local system through controlled code.
+
+Local tool contracts, implementations, and catalog registration live under
+`src/core/tools/`. The current Flue runtime adapter materializes those tools
+under `src/core/agent-runtime/flue/`.
 
 Do not use a tool for orchestration. Workflow order belongs in `graph.yaml`.
 Do not use a tool for external input normalization. That belongs in an input
@@ -23,9 +28,9 @@ Start with the most conservative safety metadata:
 
 ```yaml
 safety:
-  writes: false
+  localWrites: false
   network: false
-  side_effects: false
+  externalSideEffects: false
 ```
 
 Read-only agents may use non-writing tools when the agent declares them.
@@ -33,55 +38,61 @@ Subagents do not receive local tools; use a trusted write subagent with an
 explicit `policy.allow_tools` list or a workflow graph node when delegated work
 needs tools.
 
-Current examples live in `src/tools/repository-tools.ts`.
+Current examples live in `src/core/tools/repository.ts`.
 
-## 2. Implement the Flue tool
+## 2. Implement the Luna tool
 
-Add the implementation to an existing file under `src/tools/` or create a new
-domain file there:
+Add the implementation to an existing file under `src/core/tools/` or create a
+new domain file there:
 
 ```ts
-import { defineTool } from "@flue/runtime";
 import * as v from "valibot";
-import { runGit } from "../core/git.js";
+import { runGit } from "../git/client.js";
+import type { LunaToolDefinition } from "./contracts.js";
 
-export function repositoryLastCommitTool(cwd: string) {
-  return defineTool({
-    name: "repository_last_commit",
-    description: "Return the latest git commit summary for the bound worktree.",
-    parameters: v.object({}),
-    execute: async () => await runGit(cwd, ["log", "-1", "--oneline"])
-  });
-}
+const emptyParameters = v.object({});
+
+export const repositoryLastCommitTool: LunaToolDefinition<
+  v.InferOutput<typeof emptyParameters>,
+  string
+> = {
+  id: "repository.last-commit",
+  description: "Return the latest git commit summary for the bound worktree.",
+  parameters: emptyParameters,
+  safety: {
+    localWrites: false,
+    network: false,
+    externalSideEffects: false
+  },
+  modes: ["read_only", "trusted_host_local_write"],
+  createHandler: ({ cwd }) =>
+    async () => await runGit(cwd, ["log", "-1", "--oneline"])
+};
 ```
 
-The registry id used in `agent.yaml` can contain dots, such as
-`repository.last-commit`. The Flue tool name should be model-facing and safe,
-such as `repository_last_commit`.
+The id used in `agent.yaml` can contain dots, such as
+`repository.last-commit`. Luna converts it to a model-facing Flue tool name at
+the runtime adapter boundary, such as `repository_last_commit`.
 
 ## 3. Register the tool
 
-Add it to `src/core/flue-tool-registry.ts`:
+Add it to `src/core/tools/catalog.ts`:
 
 ```ts
-import { repositoryLastCommitTool } from "../tools/repository-tools.js";
+import { repositoryLastCommitTool } from "./repository.js";
 
-const toolRegistry: Record<string, RegisteredTool> = {
-  "repository.last-commit": {
-    factory: repositoryLastCommitTool,
-    allowedAgentModes: ["read_only", "trusted_host_local_write"],
-    safety: {
-      writes: false,
-      network: false,
-      side_effects: false
-    }
-  }
+export const lunaToolCatalog = {
+  [repositoryLastCommitTool.id]: repositoryLastCommitTool
 };
 ```
 
 Use `read_only` only when the tool is safe for read-only agents. Reserve
 `trusted_host_local_write` for tools that are useful only inside a trusted local
-write worktree.
+write worktree. Do not import `@flue/runtime` or call `defineTool` from
+`src/core/tools/**`; `src/core/agent-runtime/flue/tool-registry.ts` owns that
+adapter boundary.
+Other Flue runtime wiring, including capability resolution and workflow launch
+assembly, also lives under `src/core/agent-runtime/flue/**`.
 
 ## 4. Attach the tool to an agent
 
@@ -117,9 +128,9 @@ restrictions if the tool is not allowed in every agent mode.
 Useful commands:
 
 ```sh
-npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
-npm test -- tests/core/flue-modules.test.ts
-npm run typecheck
+rtk npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
+rtk npm test -- tests/core/flue-modules.test.ts
+rtk npm run typecheck
 ```
 
 ## 6. Document public tools

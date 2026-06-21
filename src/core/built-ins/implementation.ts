@@ -1,30 +1,31 @@
 import {
   prepareImplementationWorktree as defaultPrepareImplementationWorktree
-} from "../implementation-worktree-manager.js";
-import { safeJoin } from "../path-security.js";
-import { runValidationCommands as defaultRunValidationCommands } from "../validation-runner.js";
-import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../worktree-diff-collector.js";
+} from "../write-mode/worktree.js";
+import { safeJoin } from "../security/path.js";
+import { runValidationCommands as defaultRunValidationCommands } from "../validation/runner.js";
+import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../git/diff/worktree-diff.js";
 import {
   commitChanges as defaultCommitChanges,
   pushBranch as defaultPushBranch
-} from "../implementation-git-actions.js";
-import { openChangeRequest as defaultOpenChangeRequest } from "../change-request-actions.js";
+} from "../write-mode/git-gates.js";
+import type { ChangeRequestRegistry } from "../change-request/contracts.js";
+import type { AcceptanceDecision } from "../decisions/types.js";
+import { AgentLoopResultSchema } from "../agent-runtime/contracts.js";
 import type {
-  AcceptanceDecision,
   CommitChangesArtifact,
-  ChangeRequestArtifact,
-  PushBranchArtifact,
-  ValidationResult
-} from "../types.js";
+  PushBranchArtifact
+} from "../write-mode/types.js";
+import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
 import {
-  AcceptanceDecisionSchema,
-  AgentLoopResultSchema,
-  ChangeRequestArtifactSchema,
-  CommitChangesArtifactSchema,
-  PushBranchArtifactSchema,
-  ValidationResultSchema
-} from "../types.js";
-import type { WorktreeDiff } from "../worktree-diff-collector.js";
+  collectWorktreeDiffMetadata,
+  commitChangesMetadata,
+  openChangeRequestMetadata,
+  prepareImplementationWorktreeMetadata,
+  pushBranchMetadata,
+  recordAcceptanceDecisionMetadata,
+  recordImplementationValidationMetadata,
+  runValidationCommandsMetadata
+} from "./metadata.js";
 import { defineBuiltInStep } from "./registry.js";
 import {
   expectedRemoteUrlsFrom,
@@ -74,11 +75,7 @@ function implementationSubjectFrom(input: unknown): ImplementationSubject {
 
 export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
   name: "prepare_implementation_worktree",
-  metadata: {
-    implementationLifecycle: "workspace",
-    capturesWorkspace: true,
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
+  metadata: prepareImplementationWorktreeMetadata,
   async run({ state, input, dependencies = {} }) {
     const prepareImplementationWorktree =
       dependencies.prepareImplementationWorktree ??
@@ -99,21 +96,7 @@ export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
 
 export const runValidationCommandsBuiltIn = defineBuiltInStep({
   name: "run_validation_commands",
-  metadata: {
-    implementationLifecycle: "validation",
-    implementationLifecycleOutcome: (output) => {
-      const result = ValidationResultSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError(
-          "run_validation_commands must return ValidationResult"
-        );
-      }
-
-      return {
-        validationPassed: result.data.passed
-      };
-    }
-  },
+  metadata: runValidationCommandsMetadata,
   async run({ state, dependencies = {} }) {
     const runValidationCommands =
       dependencies.runValidationCommands ?? defaultRunValidationCommands;
@@ -129,21 +112,7 @@ export const runValidationCommandsBuiltIn = defineBuiltInStep({
 
 export const recordImplementationValidationBuiltIn = defineBuiltInStep({
   name: "record_implementation_validation",
-  metadata: {
-    implementationLifecycle: "validation",
-    implementationLifecycleOutcome: (output) => {
-      const result = ValidationResultSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError(
-          "record_implementation_validation must return ValidationResult"
-        );
-      }
-
-      return {
-        validationPassed: result.data.passed
-      };
-    }
-  },
+  metadata: recordImplementationValidationMetadata,
   run({ state, input }) {
     const resolved = resolvedInput(input, state);
     const implementation = AgentLoopResultSchema.parse(
@@ -156,7 +125,7 @@ export const recordImplementationValidationBuiltIn = defineBuiltInStep({
 
 export const collectWorktreeDiffBuiltIn = defineBuiltInStep({
   name: "collect_worktree_diff",
-  metadata: { implementationLifecycle: "diff" },
+  metadata: collectWorktreeDiffMetadata,
   async run({ state, dependencies = {} }) {
     const collectWorktreeDiff =
       dependencies.collectWorktreeDiff ?? defaultCollectWorktreeDiff;
@@ -171,21 +140,7 @@ export const collectWorktreeDiffBuiltIn = defineBuiltInStep({
 
 export const recordAcceptanceDecisionBuiltIn = defineBuiltInStep({
   name: "record_acceptance_decision",
-  metadata: {
-    implementationLifecycle: "acceptance",
-    implementationLifecycleOutcome: (output) => {
-      const result = AcceptanceDecisionSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError(
-          "record_acceptance_decision must return AcceptanceDecision"
-        );
-      }
-
-      return {
-        acceptanceAccepted: result.data.status === "accepted"
-      };
-    }
-  },
+  metadata: recordAcceptanceDecisionMetadata,
   run({ state, input }) {
     const resolved = resolvedInput(input, state);
     return requiredInput(resolved.acceptance, "acceptance");
@@ -194,21 +149,7 @@ export const recordAcceptanceDecisionBuiltIn = defineBuiltInStep({
 
 export const commitChangesBuiltIn = defineBuiltInStep({
   name: "commit_changes",
-  metadata: {
-    implementationLifecycle: "commit",
-    implementationLifecycleOutcome: (output) => {
-      const result = CommitChangesArtifactSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError("commit_changes must return CommitChangesArtifact");
-      }
-
-      return {
-        commitSucceeded:
-          !result.data.skipped && result.data.commit_sha !== undefined
-      };
-    },
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
+  metadata: commitChangesMetadata,
   async run({ state, input, dependencies = {} }) {
     const commitChanges = dependencies.commitChanges ?? defaultCommitChanges;
     const resolved = resolvedInput(input, state);
@@ -246,23 +187,7 @@ export const commitChangesBuiltIn = defineBuiltInStep({
 
 export const pushBranchBuiltIn = defineBuiltInStep({
   name: "push_branch",
-  metadata: {
-    implementationLifecycle: "push",
-    implementationLifecycleOutcome: (output) => {
-      const result = PushBranchArtifactSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError("push_branch must return PushBranchArtifact");
-      }
-
-      return {
-        pushAttempted:
-          !result.data.skipped &&
-          result.data.remote !== undefined &&
-          result.data.branch !== undefined
-      };
-    },
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
+  metadata: pushBranchMetadata,
   async run({ state, input, dependencies = {} }) {
     const pushBranch = dependencies.pushBranch ?? defaultPushBranch;
     const resolved = resolvedInput(input, state);
@@ -281,42 +206,32 @@ export const pushBranchBuiltIn = defineBuiltInStep({
   }
 });
 
-export const openChangeRequestBuiltIn = defineBuiltInStep({
-  name: "open_change_request",
-  metadata: {
-    implementationLifecycle: "change_request",
-    implementationLifecycleOutcome: (output) => {
-      const result = ChangeRequestArtifactSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError(
-          "open_change_request must return ChangeRequestArtifact"
-        );
-      }
+export function createOpenChangeRequestBuiltIn(
+  defaultChangeRequestRegistry: ChangeRequestRegistry
+) {
+  return defineBuiltInStep({
+    name: "open_change_request",
+    metadata: openChangeRequestMetadata,
+    async run({ state, input, dependencies = {} }) {
+      const changeRequestRegistry =
+        dependencies.changeRequestRegistry ?? defaultChangeRequestRegistry;
+      const resolved = resolvedInput(input, state);
+      const implementation = requiredImplementationFrom(state);
+      const workspace = implementationWorkspaceFrom(state);
+      const changeRequestProvider = changeRequestRegistry.get(
+        implementation.change_request.provider
+      );
 
-      return {
-        changeRequestAttempted:
-          !result.data.skipped && result.data.url !== undefined
-      };
-    },
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
-  async run({ state, input, dependencies = {} }) {
-    const openChangeRequest =
-      dependencies.openChangeRequest ?? defaultOpenChangeRequest;
-    const resolved = resolvedInput(input, state);
-    const implementation = requiredImplementationFrom(state);
-    const workspace = implementationWorkspaceFrom(state);
-
-    return await openChangeRequest({
-      enabled: implementation.change_request.enabled,
-      provider: implementation.change_request.provider,
-      cwd: workspace.path,
-      push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
-      branch: workspace.branch,
-      baseRef: implementation.change_request.base_ref,
-      draft: implementation.change_request.draft,
-      title: requiredInput(resolved.title as string | undefined, "title"),
-      body: typeof resolved.body === "string" ? resolved.body : undefined
-    });
-  }
-});
+      return await changeRequestProvider.open({
+        enabled: implementation.change_request.enabled,
+        cwd: workspace.path,
+        push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
+        branch: workspace.branch,
+        baseRef: implementation.change_request.base_ref,
+        draft: implementation.change_request.draft,
+        title: requiredInput(resolved.title as string | undefined, "title"),
+        body: typeof resolved.body === "string" ? resolved.body : undefined
+      });
+    }
+  });
+}

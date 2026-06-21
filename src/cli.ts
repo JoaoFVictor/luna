@@ -1,4 +1,4 @@
-import { main } from "./core/flue-cli.js";
+import { main } from "./core/agent-runtime/flue/cli.js";
 
 try {
   process.exitCode = await main(process.argv.slice(2));

@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadWorkflowDefinition } from "../../src/core/workflow-definition.js";
+import { loadWorkflowDefinition } from "../../src/core/workflow/definition.js";
 
 async function tempWorkflowRoot(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), "luna-workflow-definition-"));
@@ -194,6 +194,53 @@ describe("workflow definition loader", () => {
                   required: true
                 })
               ])
+            }
+          ]
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads agent_loop nodes with literal structured validation commands", async () => {
+    const root = await tempWorkflowRoot();
+
+    try {
+      await writeWorkflowGraph(root, [
+        "nodes:",
+        "  - id: implementation",
+        "    type: agent_loop",
+        "    agent: code-implementer",
+        "    output_schema: implementation_result",
+        "    sandbox:",
+        "      type: trusted_host_local",
+        "      cwd: $.workspace.path",
+        "      env_allowlist: []",
+        "    validation:",
+        "      commands:",
+        "        - cmd: npm",
+        "          args:",
+        "            - test",
+        "          timeout_ms: 120000",
+        "      max_output_bytes: 200000",
+        "    repair:",
+        "      attempts: 1",
+        ""
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).resolves.toMatchObject({
+        graph: {
+          nodes: [
+            {
+              id: "implementation",
+              type: "agent_loop",
+              validation: {
+                commands: [
+                  { cmd: "npm", args: ["test"], timeout_ms: 120000 }
+                ],
+                max_output_bytes: 200000
+              }
             }
           ]
         }
@@ -497,7 +544,7 @@ describe("workflow definition loader", () => {
     });
   });
 
-  it("defaults observability to mandatory jsonl and optional flue_log", async () => {
+  it("defaults observability to mandatory jsonl and optional runtime_log", async () => {
     const root = await tempWorkflowRoot();
     try {
       await writeMinimalWorkflow(root);
@@ -506,7 +553,7 @@ describe("workflow definition loader", () => {
 
       expect(definition.observability).toEqual({
         exporters: {
-          flue_log: { enabled: true, required: false }
+          runtime_log: { enabled: true, required: false }
         }
       });
     } finally {
@@ -563,22 +610,40 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("loads explicit optional flue_log exporter config", async () => {
+  it("loads explicit optional runtime_log exporter config", async () => {
     const root = await tempWorkflowRoot();
     try {
       await writeMinimalWorkflow(root, "code-review", [
         "observability:",
         "  exporters:",
-        "    flue_log:",
+        "    runtime_log:",
         "      enabled: false",
         "      required: false"
       ]);
 
       const definition = await loadWorkflowDefinition(root, "code-review");
 
-      expect(definition.observability.exporters.flue_log).toEqual({
+      expect(definition.observability.exporters.runtime_log).toEqual({
         enabled: false,
         required: false
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Flue exporter aliases out of the generic workflow definition", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeMinimalWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    flue_log:",
+        "      enabled: false"
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toMatchObject({
+        code: "config_schema_invalid"
       });
     } finally {
       await rm(root, { recursive: true, force: true });

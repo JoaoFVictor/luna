@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveWorkflowInput,
   type WorkflowState
-} from "../../src/core/workflow-state.js";
+} from "../../src/core/workflow/state.js";
 
 const codeReviewInvocation = {
   version: "2026-06",

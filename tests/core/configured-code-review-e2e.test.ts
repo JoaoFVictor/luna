@@ -2,19 +2,18 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
-import { runGit } from "../../src/core/git.js";
-import { collectRepoContext } from "../../src/core/repo-context-collector.js";
-import type {
-  AcceptanceDecision,
-  CodeReviewFindings,
-  Invocation,
-  ReviewPlan
-} from "../../src/core/types.js";
+import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
+import { runGit } from "../../src/core/git/client.js";
+import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import type { CodeReviewFindings } from "../../src/core/findings/types.js";
+import type { ReviewPlan } from "../../src/core/code-review/types.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 import {
   createRealGitReviewFixture,
   type RealGitReviewFixture
 } from "../fixtures/git-repo.js";
+import { providerAwareWorkflowDependencies } from "./provider-aware-workflow-dependencies.js";
 
 const repoRoot = process.cwd();
 const runId = "20260618t120000z-octo-hello-pr-123-a1";
@@ -293,7 +292,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
       configRoot,
       workflowsRoot: "workflows",
       agentsRoot: "agents",
-      dependencies: {
+      dependencies: providerAwareWorkflowDependencies({
         createRunIdentity: () => ({
           run_id: runId,
           workflow_id: "code-review",
@@ -322,7 +321,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
 
           return acceptance;
         }
-      }
+      })
     });
 
     const repoContext = await readJson<{
@@ -413,7 +412,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
         configRoot,
         workflowsRoot: path.join(repoRoot, "workflows"),
         agentsRoot: path.join(repoRoot, "agents"),
-        dependencies: {
+        dependencies: providerAwareWorkflowDependencies({
           createRunIdentity: () => ({
             run_id: runId,
             workflow_id: "code-review",
@@ -442,14 +441,14 @@ describe("configured code review workflow end-to-end with real Git", () => {
 
             return acceptance;
           }
-        }
+        })
       }),
       runConfiguredWorkflow({
         invocation: implementationInvocation,
         configRoot,
         workflowsRoot: path.join(repoRoot, "workflows"),
         agentsRoot: path.join(repoRoot, "agents"),
-        dependencies: {
+        dependencies: providerAwareWorkflowDependencies({
           createRunIdentity: () => ({
             run_id: implementationRunId,
             workflow_id: "implementation",
@@ -544,7 +543,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
             final_validation: { passed: true },
             result: { status: "passed" }
           })
-        }
+        })
       })
     ]);
 

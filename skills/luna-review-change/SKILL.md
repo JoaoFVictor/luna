@@ -16,7 +16,19 @@ Review Luna changes as architecture, not just code.
   agents.
 - Agents stay reusable and schemas match workflow inputs.
 - Built-ins are registered only through `src/core/built-ins/catalog.ts`.
-- Tools are registered only through `src/core/flue-tool-registry.ts`.
+- Tools are registered only through `src/core/tools/catalog.ts`; Flue
+  materialization stays in `src/core/agent-runtime/flue/tool-registry.ts`.
+- Flue-specific runner, capabilities, MCP, subagent profile, Pi auth, model
+  projection, observability parsing, and workflow factory code stays under
+  `src/core/agent-runtime/flue/**`.
+- Public docs point authors to `agents/<id>/`, `workflows/<id>/`,
+  `src/adapters/<id>/`, `src/core/built-ins/`, `src/core/tools/`, and
+  `src/core/agent-runtime/flue/`.
+- Docs do not recommend old deleted path `src/core/types.ts`.
+- Docs do not recommend old deleted path `src/tools/repository-tools.ts`.
+- Docs do not recommend old deleted path `src/core/flue-*`.
+- Docs do not recommend old deleted path `src/core/implementation-*`.
+- Docs do not recommend old built-ins barrel paths such as `built-ins/index.ts`.
 - Docs/examples changed when public behavior or authoring patterns changed.
 
 ## Review Order
@@ -25,13 +37,16 @@ Review Luna changes as architecture, not just code.
 2. Search for dead imports, old names, duplicate lists, and stale examples.
 3. Check tests cover both success and failure paths.
 4. Verify README/examples explain the new path for a person new to Luna.
-5. Run focused tests and `npm run typecheck`.
+5. Run focused tests, `rtk npm run typecheck`,
+   `rtk npm run typecheck:unused-src`, and `rtk npm run lint:unused`.
 
 ## Useful Scans
 
 ```sh
-rg -n "built-in-steps|src/workflows/.*\\.ts|TODO|TBD" AGENTS.md README.md examples skills src tests
-rg -n "from \".*built-in-steps\\.js\"|from \"../../src/core/built-in-steps\\.js\"" src tests
+rtk rg -n "built-in-steps|src/workflows/.*\\.ts|TODO|TBD" AGENTS.md README.md examples skills src tests
+rtk rg -n "from \".*built-in-steps\\.js\"|from \"../../src/core/built-in-steps\\.js\"" src tests
+rtk rg -n "src/core/flue-|src/core/pi-auth|observability/flue-log-sink" src tests examples skills
+rtk rg -n "src/core/types\\.ts|src/tools/repository-tools\\.ts|src/core/implementation-|built-ins/index\\.ts" README.md examples skills src tests
 ```
 
 Do not add `review-pr <url>` except inside docs as an explicit anti-example.
@@ -41,7 +56,9 @@ implementation.
 For broad changes, run:
 
 ```sh
-npm test
-npm run typecheck
-npm run build
+rtk npm test
+rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
+rtk npm run build
 ```

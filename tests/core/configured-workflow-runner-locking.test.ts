@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
+import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
-import type { WorkspaceRecord } from "../../src/core/types.js";
+import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
 import {
   acceptedDecision,
   artifactPath,
@@ -174,7 +174,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         projectRoot,
-        flueRunId: "flue-lock",
+        runtimeRunId: "flue-lock",
         dependencies: {
           createRunIdentity: staticRunIdentity({
             ...githubRun,
@@ -189,7 +189,7 @@ describe("configured workflow runner", () => {
       expect(lockManagerFactory).toHaveBeenCalledWith({
         root: path.join(projectRoot, "locks/app"),
         runId: "run-1",
-        flueRunId: "flue-lock",
+        runtimeRunId: "flue-lock",
         timeoutMs: 3456,
         staleAfterMs: 9000,
         observability: expect.any(Object)

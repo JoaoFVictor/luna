@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadAgentDefinition } from "../../src/core/agent-definition.js";
+import { loadAgentDefinition } from "../../src/core/agents/definition.js";
 
 async function tempAgentsRoot(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), "luna-agent-definition-"));

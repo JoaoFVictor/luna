@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveSubagentPolicy } from "../../src/core/subagent-policy.js";
+import { resolveSubagentPolicy } from "../../src/core/agents/subagent-policy.js";
 
 describe("subagent policy", () => {
   it("returns read-only defaults when no override is provided", () => {
@@ -67,7 +67,7 @@ describe("subagent policy", () => {
   it("rejects read-only policy overrides with an allow_tools list", () => {
     expect(() =>
       resolveSubagentPolicy(
-        { allow_write: true },
+        undefined,
         { mode: "read_only", allow_tools: ["repository.status"] }
       )
     ).toThrow(

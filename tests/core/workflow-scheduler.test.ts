@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   runWorkflowSchedule,
   schedulerStepFailed
-} from "../../src/core/workflow-scheduler.js";
+} from "../../src/core/workflow/scheduler.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
-import type { WorkflowNode } from "../../src/core/workflow-definition.js";
-import type { SchedulerWorkflowState } from "../../src/core/workflow-state.js";
+import type { WorkflowNode } from "../../src/core/workflow/definition.js";
+import type { SchedulerWorkflowState } from "../../src/core/workflow/state.js";
 
 type BuiltInWorkflowNode = Extract<WorkflowNode, { type: "built_in" }>;
 
@@ -229,6 +229,8 @@ describe("workflow scheduler", () => {
 
   it("runs independent nodes concurrently when max_concurrency is greater than 1", async () => {
     const started: string[] = [];
+    let runningNodes = 0;
+    let maxObservedConcurrentNodes = 0;
     const bothStarted = deferred();
     const release = deferred();
 
@@ -238,10 +240,16 @@ describe("workflow scheduler", () => {
       execution: { max_concurrency: 2 },
       runNode: async ({ node }) => {
         started.push(node.id);
+        runningNodes += 1;
+        maxObservedConcurrentNodes = Math.max(
+          maxObservedConcurrentNodes,
+          runningNodes
+        );
         if (started.length === 2) {
           bothStarted.resolve();
         }
         await release.promise;
+        runningNodes -= 1;
         return { id: node.id };
       },
       writePlannedArtifacts: vi.fn(async () => undefined),
@@ -254,6 +262,7 @@ describe("workflow scheduler", () => {
 
     const result = await schedule;
     expect(result.status).toBe("success");
+    expect(maxObservedConcurrentNodes).toBeGreaterThan(1);
   });
 
   it("falls back to sequential execution for invalid direct max_concurrency", async () => {
@@ -498,21 +507,21 @@ describe("workflow scheduler", () => {
   });
 
   it("wraps repository-locked built-ins with repository lock", async () => {
-    const events: string[] = [];
+    const lockEvents: string[] = [];
     await runWorkflowSchedule({
       nodes: [{ id: "prepare", type: "built_in", uses: "prepare_worktree" }],
       state: baseState(),
       execution: { max_concurrency: 1 },
       lockManager: {
         acquire: async (resource) => {
-          events.push(`acquire:${resource}`);
+          lockEvents.push(`acquire:${resource}`);
           return async () => {
-            events.push(`release:${resource}`);
+            lockEvents.push(`release:${resource}`);
           };
         }
       },
       runNode: async () => {
-        events.push("run");
+        lockEvents.push("run");
         return { ok: true };
       },
       writePlannedArtifacts: async () => undefined,
@@ -521,11 +530,12 @@ describe("workflow scheduler", () => {
       })
     });
 
-    expect(events).toEqual([
+    const expectedLockOrder = [
       "acquire:repository:repo",
       "run",
       "release:repository:repo"
-    ]);
+    ];
+    expect(lockEvents).toEqual(expectedLockOrder);
   });
 
   it("fails before execution when repository lock metadata cannot resolve a repository", async () => {
@@ -685,7 +695,7 @@ describe("workflow scheduler", () => {
       ]
     });
 
-    const result = await runWorkflowSchedule({
+    const failurePropagation = await runWorkflowSchedule({
       nodes: [builtInNode("a"), builtInNode("b", ["a"])],
       state: baseState(),
       execution: { max_concurrency: 1 },
@@ -700,19 +710,24 @@ describe("workflow scheduler", () => {
       writePlannedArtifacts,
       builtInMetadata: () => ({})
     });
+    const observedEvents = events.map((event) => ({
+      nodeId: event.step?.id,
+      type: event.type
+    }));
+    const expectedNodeIds = ["a", "a", "a", "b"];
 
-    expect(result.status).toBe("failed");
-    expect(result.steps.a).toMatchObject({
+    expect(failurePropagation.status).toBe("failed");
+    expect(failurePropagation.steps.a).toMatchObject({
       status: "failed",
       code: "scheduler_step_failed",
       details: { cause_code: "node_exploded", step_id: "a" }
     });
-    expect(result.primaryFailure).toMatchObject({
+    expect(failurePropagation.primaryFailure).toMatchObject({
       status: "failed",
       code: "scheduler_step_failed",
       details: { cause_code: "node_exploded", step_id: "a" }
     });
-    expect(result.steps.b).toEqual({
+    expect(failurePropagation.steps.b).toEqual({
       status: "skipped",
       code: "scheduler_dependency_failed",
       step_id: "b"
@@ -725,6 +740,7 @@ describe("workflow scheduler", () => {
         outcome: { status: "skipped", code: "scheduler_dependency_failed" }
       })
     );
+    expect(observedEvents.map((event) => event.nodeId)).toEqual(expectedNodeIds);
   });
 
   it("does not return captured workspace when workspace artifact write fails", async () => {

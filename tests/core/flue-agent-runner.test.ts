@@ -6,7 +6,7 @@ import type { CreatedAgent } from "@flue/runtime";
 import type {
   ConfiguredWorkflowRunnerDependencies,
   RunConfiguredWorkflowOptions
-} from "../../src/core/configured-workflow-runner.js";
+} from "../../src/core/configured-workflow/runner.js";
 import { gitInvocation } from "../fixtures/git-repo.js";
 import {
   cleanupFlueMocks,
@@ -241,7 +241,7 @@ describe("read-only Flue agent runner", () => {
     const local = vi.fn();
     const runGit = vi.fn(async () => " M src/index.ts\n");
     vi.doMock("@flue/runtime/node", () => ({ local }));
-    vi.doMock("../../src/core/git.js", () => ({ runGit }));
+    vi.doMock("../../src/core/git/client.js", () => ({ runGit }));
 
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-"));
     const repositoryPath = path.join(root, "repo");
@@ -367,7 +367,7 @@ describe("read-only Flue agent runner", () => {
       subagents,
       close
     }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
 
@@ -476,7 +476,7 @@ describe("read-only Flue agent runner", () => {
       subagents: [],
       close
     }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
 
@@ -576,7 +576,7 @@ describe("read-only Flue agent runner", () => {
       subagents: [],
       close
     }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
 

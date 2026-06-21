@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { commitChanges } from "../../src/core/implementation-git-actions.js";
-import type { LocalTransactionJournalEntry } from "../../src/core/local-transaction-journal.js";
-import type {
-  AcceptanceDecision,
-  ValidationResult
-} from "../../src/core/types.js";
-import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
+import { commitChanges } from "../../src/core/write-mode/git-gates.js";
+import type { LocalTransactionJournalEntry } from "../../src/core/write-mode/transaction-journal.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
+import type { ValidationResult } from "../../src/core/validation/runner.js";
+import {
+  GitGateArtifactSchema,
+  ImplementationConfigSchema
+} from "../../src/core/write-mode/types.js";
+import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 
 type GitCall = {
   cwd: string;
@@ -200,6 +202,95 @@ function commitInput(overrides: Partial<Parameters<typeof commitChanges>[0]> = {
 }
 
 describe("commitChanges", () => {
+    it("accepts implementation config with structured validation commands", () => {
+      expect(
+        ImplementationConfigSchema.parse({
+          implementation: {
+            branch_pattern: "feature/{slug}",
+            commit: { enabled: false },
+            push: { enabled: false, remote: "origin" },
+            change_request: {
+              enabled: false,
+              provider: "github",
+              draft: true,
+              base_ref: "main"
+            },
+            sandbox: { type: "trusted_host_local", env_allowlist: [] },
+            validation: {
+              repair_attempts: 1,
+              max_output_bytes: 200000,
+              commands: [
+                { cmd: "npm", args: ["test"], timeout_ms: 120000 },
+                { cmd: "npm", args: ["run", "typecheck"], timeout_ms: 120000 }
+              ]
+            }
+          }
+        })
+      ).toBeDefined();
+    });
+
+    it("accepts non-empty change request provider names", () => {
+      expect(
+        ImplementationConfigSchema.parse({
+          implementation: {
+            branch_pattern: "feature/{slug}",
+            commit: { enabled: false },
+            push: { enabled: false, remote: "origin" },
+            change_request: {
+              enabled: false,
+              provider: "unsupported-provider",
+              draft: true,
+              base_ref: "main"
+            },
+            sandbox: { type: "trusted_host_local", env_allowlist: [] },
+            validation: {
+              repair_attempts: 1,
+              max_output_bytes: 200000,
+              commands: [{ cmd: "npm", args: ["test"] }]
+            }
+          }
+        })
+      ).toMatchObject({
+        implementation: {
+          change_request: {
+            provider: "unsupported-provider"
+          }
+        }
+      });
+
+      expect(() =>
+        ImplementationConfigSchema.parse({
+          implementation: {
+            branch_pattern: "feature/{slug}",
+            commit: { enabled: false },
+            push: { enabled: false, remote: "origin" },
+            change_request: {
+              enabled: false,
+              provider: "",
+              draft: true,
+              base_ref: "main"
+            },
+            sandbox: { type: "trusted_host_local", env_allowlist: [] },
+            validation: {
+              repair_attempts: 1,
+              max_output_bytes: 200000,
+              commands: [{ cmd: "npm", args: ["test"] }]
+            }
+          }
+        })
+      ).toThrow();
+    });
+
+    it("accepts git gate artifact output contracts", () => {
+      expect(
+        GitGateArtifactSchema.parse({
+          enabled: true,
+          skipped: true,
+          reason: "validation_failed"
+        })
+      ).toMatchObject({ skipped: true });
+    });
+
     it("skips when disabled", async () => {
       await expect(commitChanges(commitInput({ enabled: false }))).resolves.toEqual({
         enabled: false,

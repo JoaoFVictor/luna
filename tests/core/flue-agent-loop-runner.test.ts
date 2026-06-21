@@ -6,7 +6,7 @@ import type { CreatedAgent } from "@flue/runtime";
 import type {
   ConfiguredWorkflowRunnerDependencies,
   RunConfiguredWorkflowOptions
-} from "../../src/core/configured-workflow-runner.js";
+} from "../../src/core/configured-workflow/runner.js";
 import { gitInvocation } from "../fixtures/git-repo.js";
 import {
   cleanupFlueMocks,
@@ -49,13 +49,13 @@ describe("trusted_host_local Flue agent loop runner", () => {
     const collectWorktreeDiff = vi.fn(async () => diffSummary);
 
     vi.doMock("@flue/runtime/node", () => ({ local }));
-    vi.doMock("../../src/core/git.js", () => ({ runGit }));
-    vi.doMock("../../src/core/validation-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/validation-runner.js")>()),
+    vi.doMock("../../src/core/git/client.js", () => ({ runGit }));
+    vi.doMock("../../src/core/validation/runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/validation/runner.js")>()),
       runValidationCommands
     }));
-    vi.doMock("../../src/core/worktree-diff-collector.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/worktree-diff-collector.js")>()),
+    vi.doMock("../../src/core/git/diff/worktree-diff.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/git/diff/worktree-diff.js")>()),
       collectWorktreeDiff
     }));
 
@@ -289,11 +289,11 @@ describe("trusted_host_local Flue agent loop runner", () => {
         options
       }))
     }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/agent-loop-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/agent-loop-runner.js")>()),
+    vi.doMock("../../src/core/agents/loop-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/agents/loop-runner.js")>()),
       runAgentLoopStateMachine
     }));
 
@@ -449,15 +449,15 @@ describe("trusted_host_local Flue agent loop runner", () => {
     }));
 
     vi.doMock("@flue/runtime/node", () => ({ local }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/validation-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/validation-runner.js")>()),
+    vi.doMock("../../src/core/validation/runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/validation/runner.js")>()),
       runValidationCommands
     }));
-    vi.doMock("../../src/core/worktree-diff-collector.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/worktree-diff-collector.js")>()),
+    vi.doMock("../../src/core/git/diff/worktree-diff.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/git/diff/worktree-diff.js")>()),
       collectWorktreeDiff
     }));
 
@@ -609,11 +609,11 @@ describe("trusted_host_local Flue agent loop runner", () => {
     });
 
     vi.doMock("@flue/runtime/node", () => ({ local: vi.fn() }));
-    vi.doMock("../../src/core/flue-agent-capabilities.js", () => ({
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/agent-loop-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/agent-loop-runner.js")>()),
+    vi.doMock("../../src/core/agents/loop-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/agents/loop-runner.js")>()),
       runAgentLoopStateMachine
     }));
 

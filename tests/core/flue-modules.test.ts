@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow-runner.js";
+import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow/runner.js";
 import { gitInvocation } from "../fixtures/git-repo.js";
 import { cleanupFlueMocks, importWorkflowWithRunnerMock, resetEnv } from "./flue-test-helpers.js";
 
@@ -45,7 +45,7 @@ describe("flue workflow entrypoint", () => {
         invocation: gitInvocation,
         configRoot: "config",
         projectRoot: process.cwd(),
-        flueRunId: "flue-1",
+        runtimeRunId: "flue-1",
         observabilitySinks: expect.arrayContaining([
           expect.objectContaining({ id: "flue-log", required: false })
         ])

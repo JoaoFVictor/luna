@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { resolveFlueSubagentProfiles } from "../../src/core/flue-subagent-profiles.js";
+import { resolveFlueSubagentProfiles } from "../../src/core/agent-runtime/flue/subagent-profiles.js";
 import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
@@ -488,7 +488,7 @@ describe("flue subagent profiles", () => {
         }
       }));
       const { resolveFlueSubagentProfiles: resolveWithMockedFlue } =
-        await import("../../src/core/flue-subagent-profiles.js");
+        await import("../../src/core/agent-runtime/flue/subagent-profiles.js");
 
       await expect(
         resolveWithMockedFlue({

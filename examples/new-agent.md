@@ -3,6 +3,10 @@
 Agents are reusable workers. A workflow graph decides when an agent runs and
 what input it receives.
 
+Agent definitions live under `agents/<id>/`. Runtime-specific materialization
+for skills, tools, MCP, and subagents belongs under
+`src/core/agent-runtime/flue/`.
+
 ## 1. Create The Agent Directory
 
 ```text
@@ -181,11 +185,11 @@ Add an agent node to a workflow `graph.yaml`:
 ## 6. Test
 
 ```bash
-npm test -- tests/core/agent-definition.test.ts
+rtk npm test -- tests/core/agent-definition.test.ts
 ```
 
 If the agent is part of a real workflow, also run the workflow runner tests:
 
 ```bash
-npm test -- tests/core/configured-workflow-runner.test.ts
+rtk npm test -- tests/core/configured-workflow-runner.test.ts
 ```

@@ -2,14 +2,16 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
+import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
-import type { RunIdentityOptions } from "../../src/core/run-identity.js";
+import type { RunIdentityOptions } from "../../src/core/invocation/run-identity.js";
+import type {
+  WorkspaceRecord
+} from "../../src/core/write-mode/types.js";
 import type {
   Invocation,
-  RunIdentity,
-  WorkspaceRecord
-} from "../../src/core/types.js";
+  RunIdentity
+} from "../../src/core/invocation/types.js";
 import {
   acceptedDecision,
   artifactPath,
@@ -66,6 +68,50 @@ async function writeConfigInputWorkflow(root: string): Promise<void> {
   );
 }
 
+async function writeParallelProbeWorkflow(root: string): Promise<void> {
+  await mkdir(path.join(root, "workflows", "parallel-probe"), {
+    recursive: true
+  });
+  await writeFile(
+    path.join(root, "routing.yaml"),
+    [
+      "routes:",
+      "  - name: explicit-target",
+      "    when:",
+      "      has_target: true",
+      "    use_target_from_input: true",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "parallel-probe", "workflow.yaml"),
+    [
+      "id: parallel-probe",
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      "execution:",
+      "  max_concurrency: 2",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "parallel-probe", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: node-a",
+      "    type: built_in",
+      "    uses: preflight",
+      "  - id: node-b",
+      "    type: built_in",
+      "    uses: collect_repo_context",
+      ""
+    ].join("\n")
+  );
+}
+
 
 describe("configured workflow runner", () => {
   it("routes and uses routed workflow options when creating the final run identity", async () => {
@@ -80,9 +126,9 @@ describe("configured workflow runner", () => {
       const createRunIdentity = vi.fn(
         (receivedInvocation: Invocation, options: RunIdentityOptions): RunIdentity => ({
           run_id: `run-${options.workflowId}`,
-          ...(options.flueRunId === undefined
+          ...(options.runtimeRunId === undefined
             ? {}
-            : { flue_run_id: options.flueRunId }),
+            : { flue_run_id: options.runtimeRunId }),
           workflow_id: options.workflowId,
           attempt: options.attempt,
           source: receivedInvocation.source,
@@ -108,7 +154,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-1",
+        runtimeRunId: "flue-1",
         nonceFactory: () => "nonce-1",
         dependencies: {
           now: () => fixedDate,
@@ -129,7 +175,7 @@ describe("configured workflow runner", () => {
         invocation,
         expect.objectContaining({
           workflowId: "code-review",
-          flueRunId: "flue-1",
+          runtimeRunId: "flue-1",
           nonce: "nonce-1",
           attempt: 1,
           date: fixedDate
@@ -175,16 +221,65 @@ describe("configured workflow runner", () => {
       await expect(
         pathExists(path.join(root, "artifacts", "_failed"))
       ).resolves.toBe(true);
-      await expect(
-        readJson(root, "_failed", result.run.run_id, "run.json")
-      ).resolves.toMatchObject({
+      const runJson = await readJson(
+        root,
+        "_failed",
+        result.run.run_id,
+        "run.json"
+      );
+      expect(runJson).toMatchObject({
         workflow_id: "_failed"
       });
+      expect(runJson).not.toHaveProperty("flue_run_id");
       await expect(
         readJson(root, "_failed", result.run.run_id, "error.json")
       ).resolves.toMatchObject({
         code: "route_not_found",
         run_id: result.run.run_id
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("validates workflow built-ins against the injected runtime registry", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeParallelProbeWorkflow(root);
+
+      const unsupportedError = new Error("Unsupported built-in step");
+      Object.assign(unsupportedError, { code: "built_in_unsupported" });
+
+      const result = await runConfiguredWorkflow({
+        invocation: {
+          ...invocation,
+          target: { type: "workflow", id: "parallel-probe" }
+        },
+        configRoot: root,
+        throwOnError: false,
+        dependencies: {
+          builtInStepRegistry: {
+            names: ["preflight"],
+            require(name: string) {
+              if (name !== "preflight") {
+                throw unsupportedError;
+              }
+
+              return {};
+            }
+          },
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" }))
+        }
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        error: {
+          code: "workflow_config_read_failed",
+          message: "Failed to load workflow configuration: parallel-probe"
+        }
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -204,7 +299,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-log",
+        runtimeRunId: "flue-log",
         nonceFactory: () => "log",
         observabilitySinks: [
           {
@@ -238,12 +333,12 @@ describe("configured workflow runner", () => {
         expect.arrayContaining([
           expect.objectContaining({
             type: "luna.run.routed",
-            run: { id: "run-log", flueRunId: "flue-log", attempt: 1 },
+            run: { id: "run-log", runtimeRunId: "flue-log", attempt: 1 },
             workflow: { id: "code-review" }
           }),
           expect.objectContaining({
             type: "luna.run.completed",
-            run: { id: "run-log", flueRunId: "flue-log", attempt: 1 },
+            run: { id: "run-log", runtimeRunId: "flue-log", attempt: 1 },
             workflow: { id: "code-review" }
           })
         ])
@@ -267,7 +362,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-obs",
+        runtimeRunId: "flue-obs",
         nonceFactory: () => "obs",
         observabilitySinks: [
           {
@@ -332,7 +427,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("keeps events.jsonl when flue_log exporter is disabled", async () => {
+  it("keeps events.jsonl when runtime_log exporter is disabled", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -340,7 +435,7 @@ describe("configured workflow runner", () => {
       await writePreflightWorkflow(root, "code-review", [
         "observability:",
         "  exporters:",
-        "    flue_log:",
+        "    runtime_log:",
         "      enabled: false",
         "      required: false"
       ]);
@@ -349,7 +444,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-disabled",
+        runtimeRunId: "flue-disabled",
         nonceFactory: () => "disabled",
         observabilitySinks: [
           {
@@ -394,6 +489,39 @@ describe("configured workflow runner", () => {
     }
   });
 
+  it("rejects flue_log exporter config through the configured workflow runtime boundary", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writePreflightWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    flue_log:",
+        "      enabled: false"
+      ]);
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        throwOnError: false,
+        nonceFactory: () => "dupe",
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z")
+        }
+      });
+
+      if (result.status !== "failed") {
+        throw new Error(`Expected workflow config failure, got ${result.status}`);
+      }
+      expect(result.error).toMatchObject({
+        code: "workflow_config_read_failed"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not let optional observability sink failures mask successful runs", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
@@ -405,7 +533,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-log",
+        runtimeRunId: "flue-log",
         nonceFactory: () => "log",
         observabilitySinks: [
           {
@@ -456,7 +584,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         throwOnError: false,
-        flueRunId: "flue-fail",
+        runtimeRunId: "flue-fail",
         nonceFactory: () => "fail",
         observabilitySinks: [
           {
@@ -487,7 +615,7 @@ describe("configured workflow runner", () => {
         expect.arrayContaining([
           expect.objectContaining({
             type: "luna.run.completed",
-            run: { id: "run-fail", flueRunId: "flue-fail", attempt: 1 },
+            run: { id: "run-fail", runtimeRunId: "flue-fail", attempt: 1 },
             workflow: { id: "code-review" },
             outcome: expect.objectContaining({ status: "failed" }),
             data: expect.objectContaining({
@@ -517,7 +645,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         throwOnError: false,
-        flueRunId: "flue-fail",
+        runtimeRunId: "flue-fail",
         nonceFactory: () => "fail",
         observabilitySinks: [
           {
@@ -589,6 +717,67 @@ describe("configured workflow runner", () => {
             commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }]
           }
         })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("runs configured independent nodes concurrently when max_concurrency is greater than one", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "parallel-probe", "real");
+      await writeParallelProbeWorkflow(root);
+
+      const startedNodeIds: string[] = [];
+      const completedNodeIds: string[] = [];
+      let activeNodes = 0;
+      let maxObservedConcurrentNodes = 0;
+      const releaseNodes = deferred<void>();
+
+      const resultPromise = runConfiguredWorkflow({
+        invocation: {
+          ...invocation,
+          target: { type: "workflow", id: "parallel-probe" }
+        },
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-parallel",
+            workflow_id: "parallel-probe"
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }) => {
+            const nodeId = uses === "preflight" ? "node-a" : "node-b";
+            startedNodeIds.push(nodeId);
+            activeNodes += 1;
+            maxObservedConcurrentNodes = Math.max(
+              maxObservedConcurrentNodes,
+              activeNodes
+            );
+            if (startedNodeIds.length === 2) {
+              releaseNodes.resolve();
+            }
+            await releaseNodes.promise;
+            activeNodes -= 1;
+            completedNodeIds.push(nodeId);
+            return { node_id: nodeId };
+          })
+        }
+      });
+
+      const result = await withTimeout(
+        resultPromise,
+        1000,
+        "configured independent nodes did not overlap"
+      );
+
+      expect(result.status).toBe("success");
+      expect(maxObservedConcurrentNodes).toBeGreaterThan(1);
+      expect(startedNodeIds).toEqual(expect.arrayContaining(["node-a", "node-b"]));
+      expect(completedNodeIds).toEqual(
+        expect.arrayContaining(["node-a", "node-b"])
       );
     } finally {
       await rm(root, { recursive: true, force: true });

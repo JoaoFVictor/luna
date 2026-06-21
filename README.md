@@ -24,6 +24,8 @@ was the first concrete workflow used to prove the architecture.
 - Add new workflows with YAML graphs when they can reuse Luna's current
   git built-ins.
 - Add new input sources by implementing CLI adapters selected with `--from`.
+- Add deterministic workflow built-ins under `src/core/built-ins/`.
+- Add Luna-native local tools for agents under `src/core/tools/`.
 - Inspect every run through local artifacts under `.runs/`.
 - Inspect runtime events and prompt usage through local observability artifacts.
 
@@ -32,20 +34,20 @@ was the first concrete workflow used to prove the architecture.
 Install dependencies:
 
 ```bash
-npm install
+rtk npm install
 ```
 
 Authenticate Pi's OpenAI Codex provider with your ChatGPT Plus or Pro
 subscription:
 
 ```bash
-npx @earendil-works/pi-ai login openai-codex
+rtk npx @earendil-works/pi-ai login openai-codex
 ```
 
 Authenticate GitHub CLI:
 
 ```bash
-gh auth status
+rtk gh auth status
 ```
 
 Clone the repository you want Luna to inspect:
@@ -69,13 +71,13 @@ repositories:
 Run a PR review:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 Run a Jira implementation task:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 Open the generated report:
@@ -93,15 +95,19 @@ For complete walkthroughs, see:
 ## Core Concepts
 
 - **Input adapter**: converts an external input, such as a GitHub PR URL, into
-  Luna's normalized invocation format.
+  Luna's normalized invocation format. Public adapters live under
+  `src/adapters/<adapter-id>/`.
 - **Invocation**: the normalized request Luna routes and passes into a workflow.
 - **Router**: chooses the workflow from `--target workflow:<id>`, the
   invocation `target`, or `config/routing.yaml`.
 - **Workflow**: a YAML graph of ordered nodes under `workflows/<workflow-id>/`.
 - **Agent**: a configured Flue agent under `agents/<agent-id>/`, with YAML
   metadata, Markdown instructions, and a JSON Schema output contract.
-- **Built-in step**: TypeScript runtime capability, such as preparing a git
-  worktree or collecting repository context, that a YAML workflow can call.
+- **Built-in step**: deterministic TypeScript runtime capability under
+  `src/core/built-ins/`, such as preparing a git worktree or collecting
+  repository context, that a YAML workflow can call.
+- **Local tool**: Luna-native deterministic function under `src/core/tools/`
+  that an agent may call when its `agent.yaml` declares the tool ID.
 - **Trusted local write mode**: `trusted_host_local` workflow sandbox plus a
   `trusted_host_local_write` agent. This is trusted-operator mode for local
   writes, not a sandbox security boundary.
@@ -121,9 +127,18 @@ Workflow selection happens through `--target workflow:<id>`, an invocation
 override is used. You do not create a new TypeScript file under
 `src/workflows/` for every workflow.
 
+Current public extension paths:
+
+- `agents/<id>/` for reusable Flue agent definitions.
+- `workflows/<id>/` for YAML workflow graphs.
+- `src/adapters/<id>/` for input adapters.
+- `src/core/built-ins/` for deterministic YAML built-ins.
+- `src/core/tools/` for Luna-native local tools.
+- `src/core/agent-runtime/flue/` for the current Flue runtime adapter.
+
 ## Agent Capabilities
 
-Agents can declare Flue skills and local tools in `agent.yaml`:
+Agents can declare runtime skills and Luna-native local tools in `agent.yaml`:
 
 ```yaml
 skills:
@@ -134,9 +149,9 @@ tools:
 ```
 
 Skills are paths to `SKILL.md` files relative to the agent directory. Tools are
-IDs resolved through Luna's TypeScript registry. Workflows do not declare tools
-directly; the workflow chooses agents, and each agent brings its own
-capabilities.
+IDs resolved through Luna's TypeScript catalog and materialized for the current
+agent runtime. Workflows do not declare tools directly; the workflow chooses
+agents, and each agent brings its own capabilities.
 
 ## MCP Capabilities
 
@@ -191,13 +206,16 @@ another delegation tree, its own artifact, schema, or workflow gate.
 ## Project Structure
 
 ```text
-agents/                 configured agent definitions
+agents/                 reusable Flue agent definitions
 config/                 runtime configuration
 examples/               usage examples and authoring guide
-src/core/               local runtime, routing, adapters, git, artifacts
 src/adapters/           input adapters and registry
+src/core/agent-runtime/flue/
+                        current Flue runtime adapter
+src/core/built-ins/     deterministic YAML built-ins
+src/core/tools/         Luna-native local tools for agents
 src/workflows/luna.ts   single generic Flue workflow entrypoint
-workflows/              YAML workflow definitions
+workflows/              YAML workflow graphs
 ```
 
 ## Configuration
@@ -254,13 +272,15 @@ policy:
 ```yaml
 observability:
   exporters:
-    flue_log:
+    runtime_log:
       enabled: true
       required: false
 
 subagent_policy:
   allow_write: false
 ```
+
+`runtime_log` is the only accepted runtime log exporter key.
 
 Workflow YAML may tune scheduler execution:
 
@@ -280,7 +300,7 @@ locks:
 ```
 
 By default, Luna uses Pi's `openai-codex/...` provider. Running
-`npx @earendil-works/pi-ai login openai-codex` writes `auth.json` in the project
+`rtk npx @earendil-works/pi-ai login openai-codex` writes `auth.json` in the project
 directory. Luna reads that file at runtime and registers the provider with Flue.
 Do not commit `auth.json`.
 
@@ -396,13 +416,18 @@ Agent configs reference skills by relative paths to `SKILL.md`, for example
 - [Create a new local tool](examples/new-tool.md)
 - [Configured workflows reference](examples/configured-workflows.md)
 
-Use YAML/config for new agents, new workflow graphs using existing built-ins,
-new model profiles, local repository entries, and routing rules.
+Use YAML/config for new agents under `agents/<id>/`, new workflow graphs under
+`workflows/<id>/`, new model profiles, local repository entries, and routing
+rules.
 
-Use TypeScript for new input adapters, new built-in steps, workspace/repository
-behavior, artifact behavior, or JSON Schema features outside Luna's current
-supported subset. Built-ins are registered through `src/core/built-ins/catalog.ts`;
-workflow YAML can only use names exported by that catalog.
+Use TypeScript for new input adapters under `src/adapters/<id>/`, new
+deterministic workflow built-ins under `src/core/built-ins/`, new Luna-native
+local tools under `src/core/tools/`, workspace/repository behavior, artifact
+behavior, or JSON Schema features outside Luna's current supported subset.
+Built-ins are registered through `src/core/built-ins/catalog.ts`; workflow YAML
+can only use names exported by that catalog. Local tools are registered through
+`src/core/tools/catalog.ts` and materialized for Flue under
+`src/core/agent-runtime/flue/`.
 
 ## Troubleshooting
 
@@ -414,7 +439,7 @@ local `path`.
 
 `gh` cannot read the PR
 
-Run `gh auth status`. For private repositories, the authenticated GitHub account
+Run `rtk gh auth status`. For private repositories, the authenticated GitHub account
 needs access to the repo. If git fetch also fails, check SSH or HTTPS git auth
 for the local clone.
 
@@ -423,7 +448,7 @@ for the local clone.
 Run:
 
 ```bash
-npx @earendil-works/pi-ai login openai-codex
+rtk npx @earendil-works/pi-ai login openai-codex
 ```
 
 Run it from the Luna project directory so `auth.json` is created where Luna
@@ -447,10 +472,12 @@ The value passed to `--from` is not registered in `src/adapters/registry.ts`.
 ## Development
 
 ```bash
-npm test
-npm run typecheck
-npm run build
-npm run flue:build
+rtk npm test
+rtk npm run typecheck
+rtk npm run typecheck:unused-src
+rtk npm run lint:unused
+rtk npm run build
+rtk npm run flue:build
 ```
 
 ## Design Principles

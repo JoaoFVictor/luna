@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendOnlyJsonlWriter,
   type AppendOnlyJsonlWriterDependencies
-} from "../../src/core/append-only-jsonl-writer.js";
+} from "../../src/core/artifacts/append-only-jsonl-writer.js";
 
 describe("append-only JSONL writer", () => {
   it("appends newline-terminated JSONL with mkdir, write, sync, and close order", async () => {

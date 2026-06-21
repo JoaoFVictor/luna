@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { routeInvocation } from "../../src/core/router.js";
-import type { RoutingConfig } from "../../src/core/types.js";
+import { routeInvocation } from "../../src/core/invocation/router.js";
+import {
+  RoutingConfigSchema,
+  type RoutingConfig
+} from "../../src/core/invocation/types.js";
 
 const routingConfig: RoutingConfig = {
   routes: [
@@ -39,6 +42,51 @@ const routingConfig: RoutingConfig = {
 };
 
 describe("router", () => {
+  it("accepts the planned routing config shape", () => {
+    expect(RoutingConfigSchema.parse(routingConfig)).toEqual(routingConfig);
+  });
+
+  it("rejects routes with conflicting scalar and list matchers", () => {
+    expect(() =>
+      RoutingConfigSchema.parse({
+        routes: [
+          {
+            name: "conflicting-events",
+            when: {
+              source: "github",
+              event: "pull_request",
+              event_in: ["issues"]
+            },
+            target: {
+              type: "workflow",
+              id: "code-review"
+            }
+          }
+        ]
+      })
+    ).toThrow();
+
+    expect(() =>
+      RoutingConfigSchema.parse({
+        routes: [
+          {
+            name: "conflicting-actions",
+            when: {
+              source: "github",
+              event: "pull_request",
+              action: "opened",
+              action_in: ["reopened"]
+            },
+            target: {
+              type: "workflow",
+              id: "code-review"
+            }
+          }
+        ]
+      })
+    ).toThrow();
+  });
+
   it("uses explicit input target when a route has has_target true", () => {
     const target = {
       type: "workflow",

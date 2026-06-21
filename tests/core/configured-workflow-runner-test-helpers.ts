@@ -1,11 +1,11 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { RunIdentityOptions } from "../../src/core/run-identity.js";
+import type { RunIdentityOptions } from "../../src/core/invocation/run-identity.js";
 import type {
-  AcceptanceDecision,
   Invocation,
   RunIdentity
-} from "../../src/core/types.js";
+} from "../../src/core/invocation/types.js";
+import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 
 export const invocation: Invocation = {
   version: "2026-06",
@@ -85,6 +85,9 @@ export const acceptedDecision: AcceptanceDecision = {
 export function staticRunIdentity(run: RunIdentity) {
   return (_invocation: Invocation, options: RunIdentityOptions): RunIdentity => ({
     ...run,
+    ...(options.runtimeRunId === undefined
+      ? {}
+      : { flue_run_id: options.runtimeRunId }),
     workflow_id: options.workflowId,
     attempt: options.attempt,
     started_at: options.date.toISOString()
