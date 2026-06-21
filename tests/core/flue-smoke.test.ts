@@ -14,7 +14,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveFlueCliBin } from "../../src/core/agent-runtime/flue/cli.js";
-import { InvocationSchema } from "../../src/core/types.js";
+import { InvocationSchema } from "../../src/core/invocation/types.js";
 import {
   createRealGitReviewFixture,
   type RealGitReviewFixture

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   FileExcerptSchema,
+  RepoContextSchema
+} from "../../src/core/types.js";
+import {
   InvocationSchema,
-  RepoContextSchema,
   RunIdentitySchema,
   RoutingConfigSchema
-} from "../../src/core/types.js";
+} from "../../src/core/invocation/types.js";
 import {
   AgentLoopResultSchema,
   ValidationResultSchema

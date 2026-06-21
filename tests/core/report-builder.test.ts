@@ -3,7 +3,8 @@ import {
   buildFinalReportJson,
   buildFinalReportMarkdown
 } from "../../src/core/providers/github/report-builder.js";
-import type { Invocation, WorkspaceRecord } from "../../src/core/types.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import type { WorkspaceRecord } from "../../src/core/types.js";
 import type { Finding } from "../../src/core/findings/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 

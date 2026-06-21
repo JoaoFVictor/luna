@@ -6,11 +6,8 @@ import {
   buildFinalReportMarkdown as defaultBuildFinalReportMarkdown
 } from "./report-builder.js";
 import { runPreflight as defaultRunPreflight } from "../../preflight.js";
-import type {
-  Invocation,
-  RepoContext,
-  WorkspaceRecord
-} from "../../types.js";
+import type { Invocation } from "../../invocation/types.js";
+import type { RepoContext, WorkspaceRecord } from "../../types.js";
 import type {
   CodeReviewFindings
 } from "../../findings/types.js";

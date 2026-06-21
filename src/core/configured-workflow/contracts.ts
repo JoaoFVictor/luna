@@ -2,13 +2,9 @@ import type { ArtifactStore } from "../artifacts/store.js";
 import type { JsonValue } from "../json-value.js";
 import type { LunaEvent } from "../observability/events.js";
 import type { LunaObservability } from "../observability/luna-observability.js";
-import type { RunIdentityOptions } from "../run-identity.js";
-import type {
-  ErrorArtifact,
-  Invocation,
-  RunIdentity,
-  WorkspaceRecord
-} from "../types.js";
+import type { RunIdentityOptions } from "../invocation/run-identity.js";
+import type { Invocation, RunIdentity } from "../invocation/types.js";
+import type { ErrorArtifact, WorkspaceRecord } from "../types.js";
 import type { WorkflowDefinition, WorkflowNode } from "../workflow/definition.js";
 import type { WorkflowState } from "../workflow/state.js";
 import type {

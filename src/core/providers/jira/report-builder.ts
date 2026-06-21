@@ -3,7 +3,7 @@ import type { ChangeRequestArtifact } from "../../change-request/contracts.js";
 import type {
   Invocation,
   InvocationRepository
-} from "../../types.js";
+} from "../../invocation/types.js";
 import type { ValidationResult } from "../../agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,

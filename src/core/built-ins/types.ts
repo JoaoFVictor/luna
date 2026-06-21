@@ -1,8 +1,5 @@
-import type {
-  Invocation,
-  RepoContext,
-  WorkspaceRecord
-} from "../types.js";
+import type { Invocation } from "../invocation/types.js";
+import type { RepoContext, WorkspaceRecord } from "../types.js";
 import type { RepositoryConfig } from "../config/schemas.js";
 import type { Finding } from "../findings/types.js";
 import type { AcceptanceDecision } from "../decisions/types.js";

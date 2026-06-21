@@ -1,5 +1,6 @@
 import { githubPullRequestContextFrom } from "./pull-request-context.js";
-import type { Invocation, WorkspaceRecord } from "../../types.js";
+import type { Invocation } from "../../invocation/types.js";
+import type { WorkspaceRecord } from "../../types.js";
 import type { Finding } from "../../findings/types.js";
 import type { AcceptanceDecision } from "../../decisions/types.js";
 

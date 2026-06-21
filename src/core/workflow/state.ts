@@ -1,9 +1,8 @@
 import type {
   ImplementationLifecycleEvidence
 } from "../write-mode/lifecycle.js";
+import type { Invocation, RunIdentity } from "../invocation/types.js";
 import type {
-  Invocation,
-  RunIdentity,
   RuntimeConfigState,
   WorkspaceRecord
 } from "../types.js";

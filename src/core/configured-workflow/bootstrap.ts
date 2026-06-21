@@ -20,8 +20,15 @@ import {
   type ObservabilitySummary
 } from "../observability/summary.js";
 import { assertSafeSegment } from "../path-security.js";
-import { routeInvocation as defaultRouteInvocation } from "../router.js";
-import type { RunIdentityOptions } from "../run-identity.js";
+import { routeInvocation as defaultRouteInvocation } from "../invocation/router.js";
+import type { RunIdentityOptions } from "../invocation/run-identity.js";
+import {
+  RoutingConfigSchema,
+  type Invocation,
+  type RouteTarget,
+  type RoutingConfig,
+  type RunIdentity
+} from "../invocation/types.js";
 import {
   AppConfigSchema,
   ModelsConfigSchema,
@@ -30,14 +37,7 @@ import {
   type ModelsConfig,
   type RepositoriesConfig
 } from "../config/schemas.js";
-import {
-  RoutingConfigSchema,
-  type Invocation,
-  type RouteTarget,
-  type RuntimeConfigState,
-  type RoutingConfig,
-  type RunIdentity
-} from "../types.js";
+import type { RuntimeConfigState } from "../types.js";
 import {
   defaultWorkflowObservabilityConfig,
   type WorkflowDefinition,

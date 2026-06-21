@@ -4,12 +4,14 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
-import type { RunIdentityOptions } from "../../src/core/run-identity.js";
+import type { RunIdentityOptions } from "../../src/core/invocation/run-identity.js";
 import type {
-  Invocation,
-  RunIdentity,
   WorkspaceRecord
 } from "../../src/core/types.js";
+import type {
+  Invocation,
+  RunIdentity
+} from "../../src/core/invocation/types.js";
 import {
   acceptedDecision,
   artifactPath,

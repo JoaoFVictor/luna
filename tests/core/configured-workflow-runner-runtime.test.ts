@@ -4,7 +4,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
-import type { Invocation, WorkspaceRecord } from "../../src/core/types.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import type { WorkspaceRecord } from "../../src/core/types.js";
 import {
   acceptedDecision,
   artifactPath,

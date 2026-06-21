@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { routeInvocation } from "../../src/core/router.js";
-import type { RoutingConfig } from "../../src/core/types.js";
+import { routeInvocation } from "../../src/core/invocation/router.js";
+import type { RoutingConfig } from "../../src/core/invocation/types.js";
 
 const routingConfig: RoutingConfig = {
   routes: [

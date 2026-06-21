@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { InvocationSchema, type Invocation } from "../../core/types.js";
+import {
+  InvocationSchema,
+  type Invocation
+} from "../../core/invocation/types.js";
 import type { AdapterInput, InputAdapter } from "../types.js";
 
 const GitHubRepositorySchema = z

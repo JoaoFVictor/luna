@@ -17,7 +17,7 @@ import {
   ModelsConfigSchema,
   RepositoriesConfigSchema
 } from "../../src/core/config/schemas.js";
-import { RoutingConfigSchema } from "../../src/core/types.js";
+import { RoutingConfigSchema } from "../../src/core/invocation/types.js";
 import { ImplementationConfigSchema } from "../../src/core/write-mode/types.js";
 
 const configSchemas = {

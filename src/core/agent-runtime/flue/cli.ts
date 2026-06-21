@@ -14,7 +14,7 @@ import {
   RouteTargetSchema,
   type Invocation,
   type RouteTarget
-} from "../../types.js";
+} from "../../invocation/types.js";
 
 export type CliArgs = {
   command: "run";

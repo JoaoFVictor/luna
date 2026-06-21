@@ -1,10 +1,10 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { RunIdentityOptions } from "../../src/core/run-identity.js";
+import type { RunIdentityOptions } from "../../src/core/invocation/run-identity.js";
 import type {
   Invocation,
   RunIdentity
-} from "../../src/core/types.js";
+} from "../../src/core/invocation/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 
 export const invocation: Invocation = {

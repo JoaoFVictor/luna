@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
 import type { AdapterContext, InputAdapter } from "../../src/adapters/types.js";
-import type { Invocation } from "../../src/core/types.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
 import {
   buildFlueRunCommand,
   childProcessExitCode,

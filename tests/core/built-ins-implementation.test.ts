@@ -13,10 +13,8 @@ import {
   collectTaskContextBuiltIn,
   finalImplementationReportBuiltIn
 } from "../../src/core/providers/jira/built-ins.js";
-import type {
-  Invocation,
-  WorkspaceRecord
-} from "../../src/core/types.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import type { WorkspaceRecord } from "../../src/core/types.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 import type { ValidationResult } from "../../src/core/agent-runtime/contracts.js";

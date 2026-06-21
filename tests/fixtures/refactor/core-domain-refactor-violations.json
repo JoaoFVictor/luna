@@ -18,11 +18,6 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/invocation-helpers.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/json-value.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
@@ -39,16 +34,6 @@
     },
     {
       "path": "src/core/redactor.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/router.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/run-identity.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },

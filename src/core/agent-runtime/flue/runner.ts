@@ -31,7 +31,7 @@ import {
   writeSummaryBestEffort
 } from "../../observability/summary.js";
 import { usageFromFlueResponse } from "./observability.js";
-import type { Invocation } from "../../types.js";
+import type { Invocation } from "../../invocation/types.js";
 import { runValidationCommands } from "../../validation-runner.js";
 import { collectWorktreeDiff } from "../../git/diff/worktree-diff.js";
 

@@ -13,7 +13,7 @@ import {
 import {
   InvocationSchema,
   type Invocation
-} from "../../core/types.js";
+} from "../../core/invocation/types.js";
 import type { AdapterInput, InputAdapter } from "../types.js";
 
 type JiraInstanceConfig = JiraConfig["instances"][number];

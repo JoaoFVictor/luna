@@ -4,11 +4,11 @@ import {
   parsePayload,
   requireRepository,
   requireSubject
-} from "../../invocation-helpers.js";
+} from "../../invocation/helpers.js";
 import type {
   InvocationRepository,
   NormalizedInvocation
-} from "../../types.js";
+} from "../../invocation/types.js";
 
 const JiraPayloadSchema = z
   .object({

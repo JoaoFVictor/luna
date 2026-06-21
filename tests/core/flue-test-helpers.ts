@@ -3,7 +3,7 @@ import path from "node:path";
 import { vi } from "vitest";
 import type { CreatedAgent } from "@flue/runtime";
 import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow/runner.js";
-import type { RunIdentity } from "../../src/core/types.js";
+import type { RunIdentity } from "../../src/core/invocation/types.js";
 
 export type PromptCall = {
   text: string;

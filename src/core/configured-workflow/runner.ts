@@ -12,7 +12,7 @@ import type {
 } from "../built-ins/types.js";
 import { resolveConfigRoot } from "../config/loader.js";
 import { assertJsonValue, type JsonValue } from "../json-value.js";
-import { routeInvocation as defaultRouteInvocation } from "../router.js";
+import { routeInvocation as defaultRouteInvocation } from "../invocation/router.js";
 import {
   RunLockManager,
   type RunLockManagerOptions
@@ -37,7 +37,7 @@ import { splitDeferredFinalReportNodesByPolicy } from "../workflow/execution-pol
 import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
-} from "../run-identity.js";
+} from "../invocation/run-identity.js";
 import { lifecycleEvidenceFromSchedulerState } from "../write-mode/lifecycle.js";
 import {
   defaultWorkflowObservabilityConfig,
@@ -85,10 +85,9 @@ import type {
   ObservabilityPortFactory,
   RunLockPort
 } from "./contracts.js";
+import type { Invocation, RunIdentity } from "../invocation/types.js";
 import {
   type ErrorArtifact,
-  type Invocation,
-  type RunIdentity,
   type WorkspaceRecord
 } from "../types.js";
 import type { RepositoryConfig } from "../config/schemas.js";

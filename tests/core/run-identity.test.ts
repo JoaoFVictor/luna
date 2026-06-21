@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createRunIdentity, slugTimestamp } from "../../src/core/run-identity.js";
-import type { Invocation } from "../../src/core/types.js";
+import path from "node:path";
+import { createRunIdentity, slugTimestamp } from "../../src/core/invocation/run-identity.js";
+import type { Invocation } from "../../src/core/invocation/types.js";
+import { artifactRootForWorkflow } from "../../src/core/configured-workflow/bootstrap.js";
+import { slugify } from "../../src/core/path-security.js";
 
 const fixedDate = new Date("2026-06-18T15:04:05.000Z");
 
@@ -64,6 +67,46 @@ describe("run identity", () => {
       subject: { type: "pull_request", id: "313" },
       started_at: "2026-06-18T15:04:05.123Z"
     });
+  });
+
+  it("preserves run identity, artifact, lock, and public Flue event compatibility", async () => {
+    const previousRunId =
+      "20260618t150405123z-code-review-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a1-abcdef123456-n9x8";
+    const previousArtifactDirectory = path.join(
+      "/tmp/luna-artifacts",
+      "code-review",
+      previousRunId
+    );
+    const repositoryLockResource = "repository:swinggo-dev/swg-front-nuxt";
+    const previousLockKey = path.join(
+      "/tmp/luna-locks",
+      "repository_swinggo-dev-swg-front-nuxt.lock"
+    );
+    const previousFlueRunId = "flue-run-abcdef123456";
+
+    const runIdentity = createRunIdentity(invocation, {
+      attempt: 1,
+      date: new Date("2026-06-18T15:04:05.123Z"),
+      workflowId: "code-review",
+      flueRunId: previousFlueRunId,
+      nonce: "n9x8"
+    });
+    const artifactDirectory = path.join(
+      artifactRootForWorkflow("/tmp/luna-artifacts", runIdentity.workflow_id),
+      runIdentity.run_id
+    );
+    const lockKey = path.join(
+      "/tmp/luna-locks",
+      `${slugify(repositoryLockResource.replace(/:/g, "_"))}.lock`
+    );
+    const serializedPublicEvent = JSON.parse(JSON.stringify(runIdentity)) as {
+      flue_run_id?: string;
+    };
+
+    expect(runIdentity.run_id).toBe(previousRunId);
+    expect(artifactDirectory).toBe(previousArtifactDirectory);
+    expect(lockKey).toBe(previousLockKey);
+    expect(serializedPublicEvent.flue_run_id).toBe(previousFlueRunId);
   });
 
   it("omits flue_run_id outside Flue and still creates unique path-safe ids", () => {
