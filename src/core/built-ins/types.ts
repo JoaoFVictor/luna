@@ -18,7 +18,7 @@ import type { WorkflowState } from "../workflow-state.js";
 export type MaybePromise<T> = T | Promise<T>;
 
 export type BuiltInStepMetadata = {
-  readonly deferUntilAfterWorkspaceLifecycle?: boolean;
+  readonly deferredLifecycle?: "final_report";
   readonly capturesWorkspace?: boolean;
   readonly locks?: readonly {
     readonly resource: "repository";

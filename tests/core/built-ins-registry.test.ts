@@ -85,7 +85,7 @@ describe("built-in step registry", () => {
       locks: [{ resource: "repository", mode: "exclusive" }]
     });
     expect(finalReport.metadata).toEqual({
-      deferUntilAfterWorkspaceLifecycle: true
+      deferredLifecycle: "final_report"
     });
     expect(Object.isFrozen(prepareWorktree)).toBe(true);
     expect(Object.isFrozen(prepareWorktree.metadata)).toBe(true);

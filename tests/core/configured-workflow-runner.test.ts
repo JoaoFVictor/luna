@@ -2593,7 +2593,7 @@ describe("configured workflow runner", () => {
                 name === "prepare_worktree"
                   ? { capturesWorkspace: true }
                   : name === "final_code_review_report"
-                    ? { deferUntilAfterWorkspaceLifecycle: true }
+                    ? { deferredLifecycle: "final_report" }
                     : {},
               run: async () => ({})
             })

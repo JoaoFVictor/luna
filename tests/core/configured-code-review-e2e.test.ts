@@ -481,7 +481,8 @@ describe("configured code review workflow end-to-end with real Git", () => {
               return {
                 jira: {
                   issue_key: "ABC-123",
-                  summary: "Fix checkout validation"
+                  summary: "Fix checkout validation",
+                  description: "Reject invalid checkout payloads."
                 }
               };
             }

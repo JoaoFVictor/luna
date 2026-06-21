@@ -56,7 +56,10 @@ export const preflightBuiltIn = defineBuiltInStep({
   name: "preflight",
   async run({ state, dependencies = {} }) {
     const runPreflight = dependencies.runPreflight ?? defaultRunPreflight;
-    const invocation = githubPullRequestInvocationFrom(state);
+    const invocation = requiredState(
+      state.invocation as Invocation | undefined,
+      "invocation"
+    );
 
     return await runPreflight({
       invocation,
@@ -132,7 +135,7 @@ export const validateCodeReviewFindingsBuiltIn = defineBuiltInStep({
 
 export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
   name: "final_code_review_report",
-  metadata: { deferUntilAfterWorkspaceLifecycle: true },
+  metadata: { deferredLifecycle: "final_report" },
   async run({ state, input, dependencies = {} }) {
     const buildFinalReportJson =
       dependencies.buildFinalReportJson ?? defaultBuildFinalReportJson;

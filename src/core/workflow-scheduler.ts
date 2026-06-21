@@ -11,6 +11,11 @@ import {
   recordFailedStep,
   type ObservabilitySummary
 } from "./observability/summary.js";
+import {
+  selectReadyBatchWithPolicy,
+  type WorkflowExecutionLocks,
+  type WorkflowExecutionPlanItem
+} from "./workflow-execution-policy.js";
 import type { WorkflowNode } from "./workflow-definition.js";
 import type { SchedulerWorkflowState } from "./workflow-state.js";
 
@@ -145,103 +150,9 @@ function duplicateWorkspaceError(stepId: string): Error & { code: string } {
   );
 }
 
-function artifactTargets(node: WorkflowNode): string[] {
-  return (node.artifacts ?? []).map((artifact) => artifact.path);
-}
-
-function isAgentLike(node: WorkflowNode): boolean {
-  return node.type === "agent" || node.type === "agent_loop";
-}
-
-function selectReadyBatch(
-  ready: WorkflowNode[],
-  maxConcurrency: number,
-  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata
-): WorkflowNode[] {
-  const selected: WorkflowNode[] = [];
-  const selectedTargets = new Set<string>();
-  let hasAgentLike = false;
-  let hasWorkspaceCapture = false;
-
-  for (const node of ready) {
-    if (selected.length >= maxConcurrency) {
-      break;
-    }
-
-    const nodeTargets = artifactTargets(node);
-    if (nodeTargets.some((target) => selectedTargets.has(target))) {
-      continue;
-    }
-
-    if (isAgentLike(node) && hasAgentLike) {
-      continue;
-    }
-
-    const metadata = builtInMetadata(node);
-    if (metadata.capturesWorkspace === true && hasWorkspaceCapture) {
-      continue;
-    }
-
-    selected.push(node);
-    for (const target of nodeTargets) {
-      selectedTargets.add(target);
-    }
-
-    if (isAgentLike(node)) {
-      hasAgentLike = true;
-    }
-    if (metadata.capturesWorkspace === true) {
-      hasWorkspaceCapture = true;
-    }
-  }
-
-  return selected.length > 0 ? selected : ready.slice(0, 1);
-}
-
-function normalizedMaxConcurrency(maxConcurrency: number): number {
-  return Number.isSafeInteger(maxConcurrency) && maxConcurrency > 0
-    ? maxConcurrency
-    : 1;
-}
-
-export function splitDeferredFinalReportNodes(
-  nodes: WorkflowNode[],
-  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata
-): { mainNodes: WorkflowNode[]; deferredNodes: WorkflowNode[] } {
-  const deferredIds = new Set(
-    nodes
-      .filter(
-        (node) =>
-          builtInMetadata(node).deferUntilAfterWorkspaceLifecycle === true
-      )
-      .map((node) => node.id)
-  );
-
-  for (const node of nodes) {
-    if (deferredIds.has(node.id)) {
-      continue;
-    }
-
-    for (const dependency of node.after ?? []) {
-      if (deferredIds.has(dependency)) {
-        throw schedulerError(
-          "Non-deferred node depends on deferred final report",
-          "workflow_deferred_dependency_invalid"
-        );
-      }
-    }
-  }
-
-  return {
-    mainNodes: nodes.filter((node) => !deferredIds.has(node.id)),
-    deferredNodes: nodes.filter((node) => deferredIds.has(node.id))
-  };
-}
-
 async function withLocks<T>(
-  _node: WorkflowNode,
   state: SchedulerWorkflowState,
-  metadata: BuiltInStepMetadata,
+  locks: WorkflowExecutionLocks,
   lockManager: SchedulerLockManager | undefined,
   run: () => Promise<T>
 ): Promise<T> {
@@ -249,7 +160,7 @@ async function withLocks<T>(
   let operationError: unknown;
 
   try {
-    for (const lock of metadata.locks ?? []) {
+    for (const lock of locks) {
       if (lock.resource === "repository") {
         if (state.repository === undefined) {
           throw schedulerError(
@@ -310,14 +221,26 @@ async function withLocks<T>(
   }
 }
 
-function preflightLocks(
-  batch: WorkflowNode[],
+function preflightExecutionPolicy(
+  batch: WorkflowExecutionPlanItem[],
   state: SchedulerWorkflowState,
-  lockManager: SchedulerLockManager | undefined,
-  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata
+  lockManager: SchedulerLockManager | undefined
 ): void {
-  for (const node of batch) {
-    for (const lock of builtInMetadata(node).locks ?? []) {
+  const batchExclusionKeys = new Set<string>();
+
+  for (const item of batch) {
+    for (const key of item.decision.batchExclusionKeys) {
+      if (batchExclusionKeys.has(key)) {
+        throw schedulerError(
+          "Workflow execution policy produced duplicate batch exclusion keys",
+          "workflow_execution_policy_invalid"
+        );
+      }
+
+      batchExclusionKeys.add(key);
+    }
+
+    for (const lock of item.decision.locks) {
       if (lock.resource === "repository" && state.repository === undefined) {
         throw schedulerError(
           "Repository lock resource is missing",
@@ -370,7 +293,6 @@ export async function runWorkflowSchedule({
     steps: { ...state.steps },
     ...(workspace === undefined ? {} : { workspace })
   };
-  const maxConcurrency = normalizedMaxConcurrency(execution.max_concurrency);
 
   async function emitStepEvent(
     buildEvent: (
@@ -451,21 +373,20 @@ export async function runWorkflowSchedule({
     );
   }
 
-  async function runOneNode(node: WorkflowNode): Promise<{
+  async function runOneNode(item: WorkflowExecutionPlanItem): Promise<{
     node: WorkflowNode;
     output: unknown;
     capturedWorkspace?: SchedulerWorkflowState["workspace"];
   }> {
+    const { node, decision } = item;
     const startedAt = Date.now();
     await emitStepStarted(node);
 
-    const metadata = builtInMetadata(node);
     try {
       const snapshot = snapshotState(scheduleState);
       const output = await withLocks(
-        node,
         snapshot,
-        metadata,
+        decision.locks,
         lockManager,
         async () =>
           await runNode({
@@ -473,11 +394,12 @@ export async function runWorkflowSchedule({
             state: snapshot
           })
       );
-      const capturesWorkspace = metadata.capturesWorkspace === true;
       const capturedWorkspace =
-        capturesWorkspace && isWorkspaceRecord(output) ? output : undefined;
+        decision.capturesWorkspace && isWorkspaceRecord(output)
+          ? output
+          : undefined;
 
-      if (capturesWorkspace && workspace !== undefined) {
+      if (decision.capturesWorkspace && workspace !== undefined) {
         throw duplicateWorkspaceError(node.id);
       }
 
@@ -557,15 +479,20 @@ export async function runWorkflowSchedule({
       throw observability.hardFailure();
     }
 
-    const batch = selectReadyBatch(ready, maxConcurrency, builtInMetadata);
-    preflightLocks(batch, scheduleState, lockManager, builtInMetadata);
+    const batchPlan = selectReadyBatchWithPolicy({
+      ready,
+      maxConcurrency: execution.max_concurrency,
+      builtInMetadata
+    });
+    preflightExecutionPolicy(batchPlan.items, scheduleState, lockManager);
     const settled = await Promise.allSettled(
-      batch.map(async (node) => await runOneNode(node))
+      batchPlan.items.map(async (item) => await runOneNode(item))
     );
     let hardError: unknown;
 
     for (const [index, result] of settled.entries()) {
-      const node = batch[index];
+      const item = batchPlan.items[index];
+      const node = item.node;
 
       if (result.status === "fulfilled") {
         const { output, capturedWorkspace } = result.value;

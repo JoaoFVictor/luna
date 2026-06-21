@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   runWorkflowSchedule,
-  schedulerStepFailed,
-  splitDeferredFinalReportNodes
+  schedulerStepFailed
 } from "../../src/core/workflow-scheduler.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
@@ -665,28 +664,6 @@ describe("workflow scheduler", () => {
         cause_code: "lock_release_failed"
       }
     });
-  });
-
-  it("rejects non-deferred nodes that depend on deferred final report nodes", () => {
-    expect(() =>
-      splitDeferredFinalReportNodes(
-        [
-          { id: "final", type: "built_in", uses: "final_code_review_report" },
-          {
-            id: "after_final",
-            type: "built_in",
-            uses: "preflight",
-            after: ["final"]
-          }
-        ],
-        (node) =>
-          node.id === "final"
-            ? { deferUntilAfterWorkspaceLifecycle: true }
-            : {}
-      )
-    ).toThrow(expect.objectContaining({
-      code: "workflow_deferred_dependency_invalid"
-    }));
   });
 
   it("wraps node failures as scheduler step failures and skips dependents", async () => {

@@ -288,7 +288,7 @@ describe("code review built-ins", () => {
     });
 
     expect(finalCodeReviewReportBuiltIn.metadata).toEqual({
-      deferUntilAfterWorkspaceLifecycle: true
+      deferredLifecycle: "final_report"
     });
     expect(buildFinalReportJson).toHaveBeenCalledWith({
       acceptance,

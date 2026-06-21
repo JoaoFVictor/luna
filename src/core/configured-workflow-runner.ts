@@ -50,9 +50,9 @@ import {
 } from "./observability/summary.js";
 import {
   runWorkflowSchedule,
-  splitDeferredFinalReportNodes,
   type SchedulerLockManager
 } from "./workflow-scheduler.js";
+import { splitDeferredFinalReportNodesByPolicy } from "./workflow-execution-policy.js";
 import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
@@ -1206,10 +1206,11 @@ export async function runConfiguredWorkflow({
     };
     const orderedNodes = topologicalNodes(workflow.graph.nodes);
     const { mainNodes, deferredNodes: deferredFinalReportNodes } =
-      splitDeferredFinalReportNodes(
-        orderedNodes,
-        (node) => builtInMetadata(node, activeBuiltInStepRegistry)
-    );
+      splitDeferredFinalReportNodesByPolicy({
+        nodes: orderedNodes,
+        builtInMetadata: (node) =>
+          builtInMetadata(node, activeBuiltInStepRegistry)
+      });
     const activeArtifactStore = artifactStore;
     const nodeRuntimeContext: WorkflowNodeRuntimeContext = {
       dependencies,

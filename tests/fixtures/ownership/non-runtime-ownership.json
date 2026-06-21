@@ -1958,284 +1958,274 @@
         "category": "github"
       },
       {
-        "line": 1292,
+        "line": 1290,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1374,
+        "line": 1372,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1429,
+        "line": 1427,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1480,
+        "line": 1478,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1538,
+        "line": 1539,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1584,
+        "line": 1585,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1626,
+        "line": 1627,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1668,
+        "line": 1669,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1723,
+        "line": 1724,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1819,
+        "line": 1820,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1881,
+        "line": 1882,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1972,
+        "line": 1973,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 1975,
+        "line": 1976,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2043,
+        "line": 2044,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2046,
+        "line": 2047,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2076,
+        "line": 2077,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 2082,
+        "line": 2083,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2126,
+        "line": 2127,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2130,
+        "line": 2131,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2201,
+        "line": 2202,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2205,
+        "line": 2206,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 2327,
+        "line": 2328,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2408,
+        "line": 2409,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2495,
+        "line": 2496,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2587,
+        "line": 2588,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2682,
+        "line": 2683,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2743,
+        "line": 2744,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2838,
+        "line": 2839,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 2915,
+        "line": 2916,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3001,
+        "line": 3002,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3023,
+        "line": 3024,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3084,
+        "line": 3085,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3109,
+        "line": 3110,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3149,
+        "line": 3150,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3201,
+        "line": 3202,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3217,
+        "line": 3218,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 3223,
+        "line": 3224,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 3249,
+        "line": 3250,
         "marker": "openai-codex",
         "category": "provider"
       },
       {
-        "line": 3262,
+        "line": 3263,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3293,
+        "line": 3294,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3316,
+        "line": 3317,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3340,
+        "line": 3341,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3358,
+        "line": 3359,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 3393,
+        "line": 3394,
         "marker": "github",
         "category": "github"
       }
     ],
     "tests/core/flue-agent-capabilities.test.ts": [
       {
-        "line": 203,
-        "marker": "github",
-        "category": "github"
-      },
-      {
         "line": 211,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 213,
+        "line": 219,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 222,
+        "line": 221,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 228,
+        "line": 230,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 237,
+        "line": 236,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 240,
+        "line": 245,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 301,
+        "line": 248,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 313,
+        "line": 309,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 512,
+        "line": 321,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 549,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 551,
+        "line": 522,
         "marker": "github",
         "category": "github"
       },
@@ -2245,7 +2235,17 @@
         "category": "github"
       },
       {
-        "line": 567,
+        "line": 561,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 569,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 577,
         "marker": "github",
         "category": "github"
       }
@@ -2576,7 +2576,7 @@
         "category": "github"
       },
       {
-        "line": 198,
+        "line": 199,
         "marker": "provider_cost_unit",
         "category": "provider"
       }
@@ -2607,12 +2607,12 @@
     ],
     "tests/core/flue-subagent-profiles.test.ts": [
       {
-        "line": 349,
+        "line": 406,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 350,
+        "line": 407,
         "marker": "github",
         "category": "github"
       }
@@ -3231,44 +3231,44 @@
     ],
     "tests/core/observability-artifacts.test.ts": [
       {
-        "line": 160,
+        "line": 169,
         "marker": "provider_cost_unit",
         "category": "provider"
       },
       {
-        "line": 196,
+        "line": 205,
         "marker": "provider_cost_unit",
         "category": "provider"
       }
     ],
     "tests/core/observability.test.ts": [
       {
-        "line": 161,
-        "marker": "provider_payload",
-        "category": "provider"
-      },
-      {
-        "line": 162,
-        "marker": "providerpayload",
-        "category": "provider"
-      },
-      {
-        "line": 163,
-        "marker": "provider.payload",
-        "category": "provider"
-      },
-      {
-        "line": 179,
-        "marker": "provider_payload",
-        "category": "provider"
-      },
-      {
         "line": 180,
-        "marker": "providerpayload",
+        "marker": "provider_payload",
         "category": "provider"
       },
       {
         "line": 181,
+        "marker": "providerpayload",
+        "category": "provider"
+      },
+      {
+        "line": 182,
+        "marker": "provider.payload",
+        "category": "provider"
+      },
+      {
+        "line": 199,
+        "marker": "provider_payload",
+        "category": "provider"
+      },
+      {
+        "line": 200,
+        "marker": "providerpayload",
+        "category": "provider"
+      },
+      {
+        "line": 201,
         "marker": "provider.payload",
         "category": "provider"
       }
@@ -3965,17 +3965,17 @@
     ],
     "tests/core/workflow-scheduler.test.ts": [
       {
-        "line": 16,
+        "line": 15,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 20,
+        "line": 19,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 30,
+        "line": 29,
         "marker": "github",
         "category": "github"
       }

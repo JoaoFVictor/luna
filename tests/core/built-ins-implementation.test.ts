@@ -462,7 +462,7 @@ describe("implementation built-ins", () => {
       trustedHostLocal: true
     };
     expect(finalImplementationReportBuiltIn.metadata).toEqual({
-      deferUntilAfterWorkspaceLifecycle: true
+      deferredLifecycle: "final_report"
     });
     expect(buildImplementationReportJson).toHaveBeenCalledWith(reportInput);
     expect(buildImplementationReportMarkdown).toHaveBeenCalledWith(reportInput);

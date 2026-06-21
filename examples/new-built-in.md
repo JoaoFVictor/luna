@@ -70,13 +70,13 @@ export const prepareSomethingBuiltIn = defineBuiltInStep({
 });
 ```
 
-Use `deferUntilAfterWorkspaceLifecycle` only for final report steps that must
+Use `deferredLifecycle: "final_report"` only for final report steps that must
 run after Luna decides whether to preserve or clean a worktree:
 
 ```ts
 export const finalSomethingReportBuiltIn = defineBuiltInStep({
   name: "final_something_report",
-  metadata: { deferUntilAfterWorkspaceLifecycle: true },
+  metadata: { deferredLifecycle: "final_report" },
   run() {
     return { json: {}, markdown: "# Report\n" };
   }

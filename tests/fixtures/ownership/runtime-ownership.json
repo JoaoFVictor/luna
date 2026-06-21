@@ -285,6 +285,10 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
+    "src/core/workflow-execution-policy.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
     "src/core/workflow-scheduler.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."

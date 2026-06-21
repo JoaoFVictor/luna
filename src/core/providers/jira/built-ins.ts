@@ -213,7 +213,7 @@ export const pushBranchBuiltIn = defineBuiltInStep({
 
 export const finalImplementationReportBuiltIn = defineBuiltInStep({
   name: "final_implementation_report",
-  metadata: { deferUntilAfterWorkspaceLifecycle: true },
+  metadata: { deferredLifecycle: "final_report" },
   run({ state, input, dependencies = {} }) {
     const buildImplementationReportJson =
       dependencies.buildImplementationReportJson ??
