@@ -1,10 +1,14 @@
+import { chmodSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
   readFile,
   realpath,
+  readdir,
   rm,
-  symlink
+  stat,
+  symlink,
+  writeFile
 } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -66,6 +70,25 @@ describe("artifact store", () => {
     );
     await expect(readFile(reportPath, "utf8")).resolves.toBe("# Review\n");
     await expect(readFile(errorPath, "utf8")).resolves.toContain("\"message\"");
+  });
+
+  it("touchArtifact preserves existing content while enforcing secure mode", async () => {
+    const root = await tempRoot();
+    const store = new ArtifactStore(root, "run-a1");
+    await store.initializeRunDirectory();
+    const existingPath = path.join(root, "run-a1", "events.jsonl");
+
+    await writeFile(existingPath, "{\"event\":\"existing\"}\n", {
+      encoding: "utf8",
+      mode: 0o644
+    });
+
+    const touchedPath = await store.touchArtifact("events.jsonl");
+
+    await expect(readFile(touchedPath, "utf8")).resolves.toBe(
+      "{\"event\":\"existing\"}\n"
+    );
+    expect((await stat(touchedPath)).mode & 0o777).toBe(0o600);
   });
 
   it("redacts secret-looking keys recursively in objects and arrays", async () => {
@@ -192,6 +215,158 @@ describe("artifact store", () => {
     const written = JSON.parse(await readFile(artifactPath, "utf8"));
 
     expect(written.message).toBe("Authorization: Bearer [REDACTED]");
+  });
+
+  it("writes error causes as JSON-safe error details", async () => {
+    const root = await tempRoot();
+    const store = new ArtifactStore(root, "run-a1");
+    await store.initializeRunDirectory();
+
+    const artifactPath = await store.writeError(
+      new Error("outer", { cause: new Error("inner") })
+    );
+
+    const written = JSON.parse(await readFile(artifactPath, "utf8"));
+
+    expect(written.cause).toMatchObject({
+      name: "Error",
+      message: "inner"
+    });
+  });
+
+  it("writes JSON-safe error artifacts for unsafe unknown values", async () => {
+    const root = await tempRoot();
+    const store = new ArtifactStore(root, "run-a1");
+    const circular: Record<string, unknown> = { ok: true };
+    circular.self = circular;
+    await store.initializeRunDirectory();
+
+    const artifactPath = await store.writeError({
+      callback: () => "ignored",
+      symbol: Symbol("marker"),
+      count: 2n,
+      date: new Date("2026-06-20T12:00:00.000Z"),
+      circular,
+      token: "token-value"
+    });
+
+    const written = JSON.parse(await readFile(artifactPath, "utf8"));
+
+    expect(written).toEqual({
+      error: {
+        callback: "[Function]",
+        symbol: "Symbol(marker)",
+        count: "2",
+        date: "2026-06-20T12:00:00.000Z",
+        circular: {
+          ok: true,
+          self: "[Circular]"
+        },
+        token: "[REDACTED]"
+      }
+    });
+  });
+
+  it("keeps the previous artifact when an injected atomic write fails", async () => {
+    const root = await tempRoot();
+    const runId = "run-a1";
+    const targetPath = path.join(root, runId, "state.json");
+    const store = new ArtifactStore(root, runId, {
+      atomicWriteFile: async () => {
+        throw new Error("rename failed");
+      }
+    });
+
+    await store.initializeRunDirectory();
+    await writeFile(targetPath, "{\n  \"version\": 1\n}\n", {
+      encoding: "utf8",
+      mode: 0o600
+    });
+
+    await expect(
+      store.writeJson("state.json", { version: 2 })
+    ).rejects.toMatchObject({ code: "artifact_atomic_write_failed" });
+
+    await expect(readFile(targetPath, "utf8")).resolves.toBe(
+      "{\n  \"version\": 1\n}\n"
+    );
+  });
+
+  it("atomicWriteFile syncs the file and parent directory before completing", async () => {
+    const { atomicWriteFile } = await import("../../src/core/atomic-write.js");
+    const root = await tempRoot();
+    const syncOrder: string[] = [];
+
+    await atomicWriteFile(path.join(root, "state.json"), "{\"ok\":true}\n", 0o600, {
+      onFileSynced: () => syncOrder.push("file"),
+      onDirectorySynced: () => syncOrder.push("directory")
+    });
+
+    expect(syncOrder).toEqual(["file", "directory"]);
+  });
+
+  it("atomicWriteFile removes its temp file when rename fails", async () => {
+    const { atomicWriteFile } = await import("../../src/core/atomic-write.js");
+    const root = await tempRoot();
+    const targetPath = path.join(root, "state.json");
+    let tempPath: string | undefined;
+
+    await mkdir(targetPath);
+
+    await expect(
+      atomicWriteFile(targetPath, "{\"version\":2}\n", 0o600, {
+        onTempFileCreated: (createdPath) => {
+          tempPath = createdPath;
+        }
+      })
+    ).rejects.toMatchObject({ code: "artifact_atomic_write_failed" });
+
+    expect(tempPath).toBeDefined();
+    await expect(readFile(tempPath as string, "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+    await expect(readdir(root)).resolves.toEqual(["state.json"]);
+  });
+
+  it("atomicWriteFile preserves its error code when temp cleanup fails", async () => {
+    const { atomicWriteFile } = await import("../../src/core/atomic-write.js");
+    const root = await tempRoot();
+    const targetPath = path.join(root, "state.json");
+    let tempPath: string | undefined;
+
+    await mkdir(targetPath);
+
+    try {
+      await expect(
+        atomicWriteFile(targetPath, "{\"version\":2}\n", 0o600, {
+          onTempFileCreated: (createdPath) => {
+            tempPath = createdPath;
+            chmodSync(root, 0o500);
+          }
+        })
+      ).rejects.toMatchObject({ code: "artifact_atomic_write_failed" });
+    } finally {
+      chmodSync(root, 0o700);
+      if (tempPath !== undefined) {
+        await rm(tempPath, { force: true });
+      }
+    }
+  });
+
+  it("writeJson rejects non-JSON values before writing json artifacts", async () => {
+    const root = await tempRoot();
+    const runId = "run-a1";
+    const targetPath = path.join(root, runId, "state.json");
+    const store = new ArtifactStore(root, runId);
+
+    await store.initializeRunDirectory();
+
+    await expect(
+      store.writeJson("state.json", { value: Number.NaN })
+    ).rejects.toMatchObject({ code: "artifact_json_value_invalid" });
+    await expect(readFile(targetPath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
   });
 
   it("redacts secrets in markdown reports", async () => {
