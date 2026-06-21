@@ -8,6 +8,7 @@ import type {
 import { appendLocalTransactionJournalEntry } from "./local-transaction-journal.js";
 import { remoteUrlMatches } from "./remote-url.js";
 import type {
+  AcceptanceDecision,
   CommitChangesArtifact,
   PushBranchArtifact,
   ValidationResult
@@ -22,10 +23,6 @@ type ProcessFailure = {
   signal?: unknown;
   timedOut?: unknown;
 };
-type AcceptanceLike =
-  | { status?: string; decision?: string; accepted?: boolean }
-  | boolean;
-
 function skipped(
   enabled: boolean,
   reason: string
@@ -33,16 +30,8 @@ function skipped(
   return { enabled, skipped: true, reason };
 }
 
-function isAccepted(acceptance: AcceptanceLike): boolean {
-  if (typeof acceptance === "boolean") {
-    return acceptance;
-  }
-
-  return (
-    acceptance.accepted === true ||
-    acceptance.status === "accepted" ||
-    acceptance.decision === "approve"
-  );
+function isAccepted(acceptance: AcceptanceDecision): boolean {
+  return acceptance.status === "accepted";
 }
 
 function hasDiff(diff: WorktreeDiff): boolean {
@@ -261,7 +250,7 @@ export async function commitChanges({
   enabled: boolean;
   cwd: string;
   validation: ValidationResult;
-  acceptance: AcceptanceLike;
+  acceptance: AcceptanceDecision;
   diff: WorktreeDiff;
   branch: string;
   remote: string;

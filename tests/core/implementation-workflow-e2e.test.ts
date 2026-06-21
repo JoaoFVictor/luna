@@ -321,16 +321,16 @@ describe("implementation workflow e2e", () => {
                   status: "accepted",
                   summary: "Implementation accepted.",
                   blocking_reasons: [],
-                  recommended_action: "merge"
+                  recommended_action: "approve"
                 };
               }),
               runAgentLoopStep: vi.fn(async () => ({
-                status: "completed",
+                status: "passed",
                 attempts_exhausted: false,
                 attempts: [],
                 validation: { passed: true },
                 final_validation: { passed: true },
-                result: { status: "completed" }
+                result: { status: "passed" }
               })),
               cleanupWorktree: vi.fn(async () => {
                 throw new Error("cleanup should not run when commit is disabled");

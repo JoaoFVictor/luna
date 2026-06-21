@@ -13,6 +13,8 @@ import {
   finalImplementationReportBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   pushBranchBuiltIn,
+  recordAcceptanceDecisionBuiltIn,
+  recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
 } from "../providers/jira/built-ins.js";
 
@@ -25,7 +27,9 @@ export const defaultBuiltInSteps = Object.freeze([
   prepareImplementationWorktreeBuiltIn,
   collectTaskContextBuiltIn,
   runValidationCommandsBuiltIn,
+  recordImplementationValidationBuiltIn,
   collectWorktreeDiffBuiltIn,
+  recordAcceptanceDecisionBuiltIn,
   commitChangesBuiltIn,
   pushBranchBuiltIn,
   openPullRequestBuiltIn,

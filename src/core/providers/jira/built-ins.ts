@@ -14,11 +14,19 @@ import {
 } from "./report-builder.js";
 import { jiraIssueContextFrom } from "./task-context.js";
 import type {
+  AcceptanceDecision,
   CommitChangesArtifact,
   Invocation,
   PullRequestArtifact,
   PushBranchArtifact,
   ValidationResult
+} from "../../types.js";
+import {
+  AcceptanceDecisionSchema,
+  AgentLoopResultSchema,
+  CommitChangesArtifactSchema,
+  PushBranchArtifactSchema,
+  ValidationResultSchema
 } from "../../types.js";
 import type { WorktreeDiff } from "../../worktree-diff-collector.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
@@ -28,6 +36,7 @@ import {
   implementationWorkspaceFrom,
   repositoryFrom,
   requiredImplementationFrom,
+  requiredInput,
   requiredState,
   resolvedInput,
   runIdFrom,
@@ -83,9 +92,17 @@ function implementationReportStatus({
   return "completed_with_skips";
 }
 
+function lifecycleContractError(message: string): Error {
+  const error = new Error(message) as Error & { code: string };
+  error.code = "built_in_lifecycle_contract_invalid";
+
+  return error;
+}
+
 export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
   name: "prepare_implementation_worktree",
   metadata: {
+    implementationLifecycle: "workspace",
     capturesWorkspace: true,
     locks: [{ resource: "repository", mode: "exclusive" }]
   },
@@ -129,6 +146,21 @@ export const collectTaskContextBuiltIn = defineBuiltInStep({
 
 export const runValidationCommandsBuiltIn = defineBuiltInStep({
   name: "run_validation_commands",
+  metadata: {
+    implementationLifecycle: "validation",
+    implementationLifecycleOutcome: (output) => {
+      const result = ValidationResultSchema.safeParse(output);
+      if (!result.success) {
+        throw lifecycleContractError(
+          "run_validation_commands must return ValidationResult"
+        );
+      }
+
+      return {
+        validationPassed: result.data.passed
+      };
+    }
+  },
   async run({ state, dependencies = {} }) {
     const runValidationCommands =
       dependencies.runValidationCommands ?? defaultRunValidationCommands;
@@ -142,8 +174,36 @@ export const runValidationCommandsBuiltIn = defineBuiltInStep({
   }
 });
 
+export const recordImplementationValidationBuiltIn = defineBuiltInStep({
+  name: "record_implementation_validation",
+  metadata: {
+    implementationLifecycle: "validation",
+    implementationLifecycleOutcome: (output) => {
+      const result = ValidationResultSchema.safeParse(output);
+      if (!result.success) {
+        throw lifecycleContractError(
+          "record_implementation_validation must return ValidationResult"
+        );
+      }
+
+      return {
+        validationPassed: result.data.passed
+      };
+    }
+  },
+  run({ state, input }) {
+    const resolved = resolvedInput(input, state);
+    const implementation = AgentLoopResultSchema.parse(
+      requiredInput(resolved.implementation, "implementation")
+    );
+
+    return implementation.final_validation;
+  }
+});
+
 export const collectWorktreeDiffBuiltIn = defineBuiltInStep({
   name: "collect_worktree_diff",
+  metadata: { implementationLifecycle: "diff" },
   async run({ state, dependencies = {} }) {
     const collectWorktreeDiff =
       dependencies.collectWorktreeDiff ?? defaultCollectWorktreeDiff;
@@ -156,9 +216,46 @@ export const collectWorktreeDiffBuiltIn = defineBuiltInStep({
   }
 });
 
+export const recordAcceptanceDecisionBuiltIn = defineBuiltInStep({
+  name: "record_acceptance_decision",
+  metadata: {
+    implementationLifecycle: "acceptance",
+    implementationLifecycleOutcome: (output) => {
+      const result = AcceptanceDecisionSchema.safeParse(output);
+      if (!result.success) {
+        throw lifecycleContractError(
+          "record_acceptance_decision must return AcceptanceDecision"
+        );
+      }
+
+      return {
+        acceptanceAccepted: result.data.status === "accepted"
+      };
+    }
+  },
+  run({ state, input }) {
+    const resolved = resolvedInput(input, state);
+    return requiredInput(resolved.acceptance, "acceptance");
+  }
+});
+
 export const commitChangesBuiltIn = defineBuiltInStep({
   name: "commit_changes",
-  metadata: { locks: [{ resource: "repository", mode: "exclusive" }] },
+  metadata: {
+    implementationLifecycle: "commit",
+    implementationLifecycleOutcome: (output) => {
+      const result = CommitChangesArtifactSchema.safeParse(output);
+      if (!result.success) {
+        throw lifecycleContractError("commit_changes must return CommitChangesArtifact");
+      }
+
+      return {
+        commitSucceeded:
+          !result.data.skipped && result.data.commit_sha !== undefined
+      };
+    },
+    locks: [{ resource: "repository", mode: "exclusive" }]
+  },
   async run({ state, input, dependencies = {} }) {
     const commitChanges = dependencies.commitChanges ?? defaultCommitChanges;
     const resolved = resolvedInput(input, state);
@@ -172,7 +269,12 @@ export const commitChangesBuiltIn = defineBuiltInStep({
       enabled: implementation.commit.enabled,
       cwd: workspace.path,
       validation: finalValidationFrom(state, resolved),
-      acceptance: stepValue(state, resolved, "acceptance", "acceptance"),
+      acceptance: stepValue<AcceptanceDecision>(
+        state,
+        resolved,
+        "acceptance",
+        "acceptance"
+      ),
       diff: stepValue<WorktreeDiff>(state, resolved, "diff", "worktree_diff"),
       branch: workspace.branch,
       remote: implementation.push.remote,
@@ -192,7 +294,23 @@ export const commitChangesBuiltIn = defineBuiltInStep({
 
 export const pushBranchBuiltIn = defineBuiltInStep({
   name: "push_branch",
-  metadata: { locks: [{ resource: "repository", mode: "exclusive" }] },
+  metadata: {
+    implementationLifecycle: "push",
+    implementationLifecycleOutcome: (output) => {
+      const result = PushBranchArtifactSchema.safeParse(output);
+      if (!result.success) {
+        throw lifecycleContractError("push_branch must return PushBranchArtifact");
+      }
+
+      return {
+        pushAttempted:
+          !result.data.skipped &&
+          result.data.remote !== undefined &&
+          result.data.branch !== undefined
+      };
+    },
+    locks: [{ resource: "repository", mode: "exclusive" }]
+  },
   async run({ state, input, dependencies = {} }) {
     const pushBranch = dependencies.pushBranch ?? defaultPushBranch;
     const resolved = resolvedInput(input, state);

@@ -54,6 +54,13 @@ const acceptance: AcceptanceDecision = {
   recommended_action: "comment"
 };
 
+const acceptedImplementationDecision: AcceptanceDecision = {
+  status: "accepted",
+  summary: "Implementation accepted.",
+  blocking_reasons: [],
+  recommended_action: "approve"
+};
+
 async function readJson<T>(root: string, name: string): Promise<T> {
   return JSON.parse(
     await readFile(path.join(root, "code-review", runId, name), "utf8")
@@ -491,6 +498,14 @@ describe("configured code review workflow end-to-end with real Git", () => {
               return { files: [] };
             }
 
+            if (uses === "record_implementation_validation") {
+              return { passed: true };
+            }
+
+            if (uses === "record_acceptance_decision") {
+              return acceptedImplementationDecision;
+            }
+
             if (uses === "commit_changes") {
               return { enabled: false, skipped: true, reason: "disabled" };
             }
@@ -515,14 +530,14 @@ describe("configured code review workflow end-to-end with real Git", () => {
           runAgentStep: async ({ agent }) =>
             agent.id === "implementation-planner"
               ? { summary: "Plan", steps: ["Edit"], risks: [] }
-              : { summary: "Accepted", findings: [], status: "accepted" },
+              : acceptedImplementationDecision,
           runAgentLoopStep: async () => ({
-            status: "completed",
+            status: "passed",
             attempts_exhausted: false,
             attempts: [],
             validation: { passed: true },
             final_validation: { passed: true },
-            result: { status: "completed" }
+            result: { status: "passed" }
           })
         }
       })

@@ -17,8 +17,29 @@ import type { WorkflowState } from "../workflow-state.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 
+export type ImplementationLifecyclePhase =
+  | "workspace"
+  | "validation"
+  | "diff"
+  | "acceptance"
+  | "commit"
+  | "push"
+  | "pull_request";
+
+export type ImplementationLifecycleOutcome = {
+  readonly validationPassed?: boolean;
+  readonly acceptanceAccepted?: boolean;
+  readonly commitSucceeded?: boolean;
+  readonly pushAttempted?: boolean;
+  readonly pullRequestAttempted?: boolean;
+};
+
 export type BuiltInStepMetadata = {
   readonly deferredLifecycle?: "final_report";
+  readonly implementationLifecycle?: ImplementationLifecyclePhase;
+  readonly implementationLifecycleOutcome?: (
+    output: unknown
+  ) => ImplementationLifecycleOutcome | undefined;
   readonly capturesWorkspace?: boolean;
   readonly locks?: readonly {
     readonly resource: "repository";
@@ -98,7 +119,7 @@ export type BuiltInStepDependencies = {
     enabled: boolean;
     cwd: string;
     validation: ValidationResult;
-    acceptance: unknown;
+    acceptance: AcceptanceDecision;
     diff: WorktreeDiff;
     branch: string;
     remote: string;

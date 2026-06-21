@@ -5,6 +5,7 @@ import {
 } from "../../src/core/implementation-git-actions.js";
 import { openPullRequest } from "../../src/core/providers/github/implementation-actions.js";
 import type {
+  AcceptanceDecision,
   CommitChangesArtifact,
   PullRequestArtifact,
   PushBranchArtifact,
@@ -38,8 +39,18 @@ const commitMessage = "ABC-123: Fix checkout validation";
 
 const passedValidation: ValidationResult = { passed: true };
 const failedValidation: ValidationResult = { passed: false };
-const accepted = { status: "accepted" };
-const rejected = { status: "rejected" };
+const accepted: AcceptanceDecision = {
+  status: "accepted",
+  summary: "Accepted",
+  blocking_reasons: [],
+  recommended_action: "approve"
+};
+const rejected: AcceptanceDecision = {
+  status: "rejected",
+  summary: "Rejected",
+  blocking_reasons: ["Needs changes"],
+  recommended_action: "request_changes"
+};
 
 const nonEmptyDiff: WorktreeDiff = {
   files: [

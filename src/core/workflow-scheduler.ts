@@ -1,4 +1,12 @@
-import type { BuiltInStepMetadata } from "./built-ins/index.js";
+import type {
+  BuiltInStepMetadata,
+  ImplementationLifecycleOutcome
+} from "./built-ins/index.js";
+import {
+  initialImplementationLifecycleEvidence,
+  recordWorkflowNodeLifecycle,
+  type ImplementationLifecycleEvidence
+} from "./implementation-lifecycle.js";
 import {
   stepFailedEvent,
   stepSkippedEvent,
@@ -53,7 +61,9 @@ export type WorkflowScheduleOptions = {
 export type WorkflowScheduleResult = {
   status: "success" | "failed";
   steps: Record<string, unknown>;
+  primaryFailure?: SchedulerStepFailure;
   workspace?: SchedulerWorkflowState["workspace"];
+  lifecycleEvidence: ImplementationLifecycleEvidence;
 };
 
 type SchedulerStepFailure = {
@@ -287,10 +297,14 @@ export async function runWorkflowSchedule({
   const completed = new Set<string>();
   const blocked = new Set<string>();
   const steps: Record<string, unknown> = {};
+  let primaryFailure: SchedulerStepFailure | undefined;
   let workspace = state.workspace;
+  let lifecycleEvidence =
+    state.lifecycleEvidence ?? initialImplementationLifecycleEvidence();
   const scheduleState: SchedulerWorkflowState = {
     ...state,
     steps: { ...state.steps },
+    lifecycleEvidence,
     ...(workspace === undefined ? {} : { workspace })
   };
 
@@ -376,6 +390,7 @@ export async function runWorkflowSchedule({
   async function runOneNode(item: WorkflowExecutionPlanItem): Promise<{
     node: WorkflowNode;
     output: unknown;
+    lifecycleOutcome?: ImplementationLifecycleOutcome;
     capturedWorkspace?: SchedulerWorkflowState["workspace"];
   }> {
     const { node, decision } = item;
@@ -394,6 +409,11 @@ export async function runWorkflowSchedule({
             state: snapshot
           })
       );
+      const metadata = builtInMetadata(node);
+      const lifecycleOutcome =
+        node.type === "built_in"
+          ? metadata.implementationLifecycleOutcome?.(output)
+          : undefined;
       const capturedWorkspace =
         decision.capturesWorkspace && isWorkspaceRecord(output)
           ? output
@@ -420,6 +440,7 @@ export async function runWorkflowSchedule({
       return {
         node,
         output,
+        ...(lifecycleOutcome === undefined ? {} : { lifecycleOutcome }),
         ...(capturedWorkspace === undefined ? {} : { capturedWorkspace })
       };
     } catch (error) {
@@ -444,6 +465,12 @@ export async function runWorkflowSchedule({
         const skipped = dependencySkipped(node.id);
         steps[node.id] = skipped;
         scheduleState.steps[node.id] = skipped;
+        lifecycleEvidence = recordWorkflowNodeLifecycle(
+          lifecycleEvidence,
+          builtInMetadata(node),
+          { status: "skipped" }
+        );
+        scheduleState.lifecycleEvidence = lifecycleEvidence;
         blocked.add(node.id);
         pending.delete(node.id);
         skippedDependency = true;
@@ -495,7 +522,7 @@ export async function runWorkflowSchedule({
       const node = item.node;
 
       if (result.status === "fulfilled") {
-        const { output, capturedWorkspace } = result.value;
+        const { output, lifecycleOutcome, capturedWorkspace } = result.value;
 
         if (capturedWorkspace !== undefined) {
           if (workspace !== undefined) {
@@ -505,6 +532,7 @@ export async function runWorkflowSchedule({
             );
             steps[node.id] = failure;
             scheduleState.steps[node.id] = failure;
+            primaryFailure ??= failure;
             blocked.add(node.id);
             pending.delete(node.id);
             recordFailedStep(summary, {
@@ -530,6 +558,15 @@ export async function runWorkflowSchedule({
 
         steps[node.id] = output;
         scheduleState.steps[node.id] = output;
+        lifecycleEvidence = recordWorkflowNodeLifecycle(
+          lifecycleEvidence,
+          builtInMetadata(node),
+          {
+            status: "succeeded",
+            ...(lifecycleOutcome === undefined ? {} : { outcome: lifecycleOutcome })
+          }
+        );
+        scheduleState.lifecycleEvidence = lifecycleEvidence;
         completed.add(node.id);
         pending.delete(node.id);
 
@@ -548,6 +585,13 @@ export async function runWorkflowSchedule({
       const failure = schedulerStepFailed(node.id, cause);
       steps[node.id] = failure;
       scheduleState.steps[node.id] = failure;
+      primaryFailure ??= failure;
+      lifecycleEvidence = recordWorkflowNodeLifecycle(
+        lifecycleEvidence,
+        builtInMetadata(node),
+        { status: "failed" }
+      );
+      scheduleState.lifecycleEvidence = lifecycleEvidence;
       blocked.add(node.id);
       pending.delete(node.id);
       recordFailedStep(summary, {
@@ -571,9 +615,17 @@ export async function runWorkflowSchedule({
     }
   }
 
+  Object.assign(state.steps, steps);
+  state.lifecycleEvidence = lifecycleEvidence;
+  if (workspace !== undefined) {
+    state.workspace = workspace;
+  }
+
   return {
     status: blocked.size > 0 ? "failed" : "success",
     steps,
+    lifecycleEvidence,
+    ...(primaryFailure === undefined ? {} : { primaryFailure }),
     ...(workspace === undefined ? {} : { workspace })
   };
 }

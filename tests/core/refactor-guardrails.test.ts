@@ -5,6 +5,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 import { loadWorkflowDefinition } from "../../src/core/workflow-definition.js";
+import { lifecycleStepMapViolations } from "./lifecycle-guardrail.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -49,10 +50,7 @@ type NonRuntimeOwnershipManifest = {
 };
 
 const allowedRuntimeOwners: RuntimeOwner[] = [
-  "composition-root",
-  "generic",
-  "provider:github",
-  "provider:jira"
+  "composition-root", "generic", "provider:github", "provider:jira"
 ];
 
 const wave0OversizedFileBaseline = [
@@ -711,6 +709,130 @@ describe("refactor guardrails", () => {
     }
 
     expect(violations).toEqual({});
+  });
+
+  it("detects lifecycle regressions from step maps and raw output parsing", () => {
+    const cases: Array<{
+      name: string;
+      relativePath: string;
+      content: string;
+      expectedViolation: string;
+    }> = [
+      {
+        name: "scheduleResult.steps in lifecycle helper",
+        relativePath: "src/core/configured-workflow-runner.ts",
+        content: [
+          "function inferWorkspaceDecision(scheduleResult: { steps: Record<string, unknown> }) {",
+          "  return scheduleResult.steps;",
+          "}"
+        ].join("\n"),
+        expectedViolation:
+          "src/core/configured-workflow-runner.ts:2 reads scheduler step output maps"
+      },
+      {
+        name: "state.steps lifecycle id",
+        relativePath: "src/core/configured-workflow-runner.ts",
+        content: [
+          "function lifecycleProbe(state: { steps: Record<string, unknown> }) {",
+          "  return state.steps.acceptance;",
+          "}"
+        ].join("\n"),
+        expectedViolation:
+          "src/core/configured-workflow-runner.ts:2 indexes lifecycle step output maps"
+      },
+      {
+        name: "steps lifecycle id",
+        relativePath: "src/core/configured-workflow-runner.ts",
+        content: [
+          "function lifecycleProbe(steps: Record<string, unknown>) {",
+          "  return steps[\"commit\"];",
+          "}"
+        ].join("\n"),
+        expectedViolation:
+          "src/core/configured-workflow-runner.ts:2 indexes lifecycle step output maps"
+      },
+      {
+        name: "raw output bracket status",
+        relativePath: "src/core/configured-workflow-runner.ts",
+        content: [
+          "function lifecycleProbe(output: Record<string, unknown>) {",
+          "  return output[\"status\"];",
+          "}"
+        ].join("\n"),
+        expectedViolation:
+          "src/core/configured-workflow-runner.ts:2 reads raw node output for lifecycle"
+      },
+      {
+        name: "raw output property validation",
+        relativePath: "src/core/configured-workflow-runner.ts",
+        content: [
+          "function lifecycleProbe(output: Record<string, unknown>) {",
+          "  return output.final_validation;",
+          "}"
+        ].join("\n"),
+        expectedViolation:
+          "src/core/configured-workflow-runner.ts:2 reads raw node output for lifecycle"
+      },
+      {
+        name: "implementation_lifecycle marker",
+        relativePath: "src/core/configured-workflow-runner.ts",
+        content: "const marker = \"implementation_lifecycle\";",
+        expectedViolation:
+          "src/core/configured-workflow-runner.ts:1 reintroduces agent/loop lifecycle metadata"
+      },
+      {
+        name: "raw result output",
+        relativePath: "src/core/implementation-lifecycle.ts",
+        content: [
+          "function record(result: { output?: unknown }) {",
+          "  return result[\"output\"];",
+          "}"
+        ].join("\n"),
+        expectedViolation:
+          "src/core/implementation-lifecycle.ts:2 reads raw lifecycle output"
+      },
+      {
+        name: "WorkflowNodeRunResult type",
+        relativePath: "src/core/implementation-lifecycle.ts",
+        content: "type WorkflowNodeRunResult = { output: unknown };",
+        expectedViolation:
+          "src/core/implementation-lifecycle.ts:1 reintroduces agent/loop lifecycle metadata"
+      },
+      {
+        name: "WorkflowNodeStepResult type",
+        relativePath: "src/core/implementation-lifecycle.ts",
+        content: "type WorkflowNodeStepResult = { output: unknown };",
+        expectedViolation:
+          "src/core/implementation-lifecycle.ts:1 reintroduces agent/loop lifecycle metadata"
+      }
+    ];
+
+    for (const testCase of cases) {
+      expect(
+        lifecycleStepMapViolations(testCase.relativePath, testCase.content),
+        testCase.name
+      ).toContain(testCase.expectedViolation);
+    }
+  });
+
+  it("keeps workspace lifecycle decisions off generic step-output maps", async () => {
+    const manifest = await readJson<RuntimeOwnershipManifest>(
+      "tests/fixtures/ownership/runtime-ownership.json"
+    );
+    const genericRuntimeFiles = Object.entries(manifest.files)
+      .filter(([, entry]) => entry.owner === "generic")
+      .map(([relativePath]) => relativePath)
+      .filter((relativePath) => relativePath.endsWith(".ts"))
+      .sort();
+    const violations = (
+      await Promise.all(
+        genericRuntimeFiles.map(async (relativePath) =>
+          lifecycleStepMapViolations(relativePath, await readText(relativePath))
+        )
+      )
+    ).flat();
+
+    expect(violations).toEqual([]);
   });
 
   it("does not allow TypeScript workflow entrypoints besides src/workflows/luna.ts", async () => {

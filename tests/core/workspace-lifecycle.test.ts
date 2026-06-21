@@ -3,9 +3,10 @@ import {
   initialImplementationLifecycleEvidence,
   markCommitResult,
   markValidationResult,
+  recordWorkflowNodeLifecycle,
   type ImplementationLifecycleEvidence
 } from "../../src/core/implementation-lifecycle.js";
-import { shouldPreserveWriteWorkspace } from "../../src/core/workspace-lifecycle.js";
+import { workspaceLifecycleDecision } from "../../src/core/workspace-lifecycle.js";
 
 function evidence(
   overrides: Partial<ImplementationLifecycleEvidence> = {}
@@ -17,6 +18,7 @@ function evidence(
     validationRan: true,
     validationPassed: true,
     diffCollectionSucceeded: true,
+    acceptanceAccepted: true,
     commitAttempted: true,
     commitSucceeded: true,
     ...overrides
@@ -27,14 +29,20 @@ const successfulInput = {
   commitEnabled: true,
   pushEnabled: false,
   pullRequestEnabled: false,
-  acceptanceAccepted: true,
   evidence: evidence()
 };
+
+function lifecycleDecision(input: typeof successfulInput): {
+  preserve: boolean;
+  reason: string;
+} {
+  return workspaceLifecycleDecision(input.evidence, input);
+}
 
 describe("workspace lifecycle", () => {
   it("preserves the workspace when commit is disabled", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
         commitEnabled: false
       })
@@ -43,7 +51,7 @@ describe("workspace lifecycle", () => {
 
   it("preserves the workspace when validation failed", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
         evidence: evidence({
           validationRan: true,
@@ -60,16 +68,16 @@ describe("workspace lifecycle", () => {
 
   it("preserves the workspace when acceptance failed", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
-        acceptanceAccepted: false
+        evidence: evidence({ acceptanceAccepted: false })
       })
     ).toEqual({ preserve: true, reason: "acceptance_failed" });
   });
 
   it("preserves the workspace when push failed", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
         pushEnabled: true,
         evidence: evidence({ pushAttempted: false })
@@ -79,7 +87,7 @@ describe("workspace lifecycle", () => {
 
   it("preserves the workspace when PR failed", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
         pullRequestEnabled: true,
         evidence: evidence({
@@ -91,7 +99,7 @@ describe("workspace lifecycle", () => {
   });
 
   it("allows cleanup when all enabled gates succeeded", () => {
-    expect(shouldPreserveWriteWorkspace(successfulInput)).toEqual({
+    expect(lifecycleDecision(successfulInput)).toEqual({
       preserve: false,
       reason: "success_cleanup"
     });
@@ -99,7 +107,7 @@ describe("workspace lifecycle", () => {
 
   it("allows cleanup when commit is enabled and push and PR are disabled after acceptance", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
         evidence: evidence({
           pushAttempted: false,
@@ -110,6 +118,25 @@ describe("workspace lifecycle", () => {
   });
 
   it("updates lifecycle evidence through typed helpers", () => {
+    const afterValidation = recordWorkflowNodeLifecycle(
+      initialImplementationLifecycleEvidence(),
+      { implementationLifecycle: "validation" },
+      { status: "succeeded", outcome: { validationPassed: true } }
+    );
+    const afterCommit = recordWorkflowNodeLifecycle(
+      afterValidation,
+      { implementationLifecycle: "commit" },
+      { status: "succeeded", outcome: { commitSucceeded: false } }
+    );
+
+    expect(afterCommit).toMatchObject({
+      implementationStarted: true,
+      validationRan: true,
+      validationPassed: true,
+      commitAttempted: true,
+      commitSucceeded: false
+    });
+
     expect(
       markCommitResult(
         markValidationResult(initialImplementationLifecycleEvidence(), {
@@ -125,4 +152,5 @@ describe("workspace lifecycle", () => {
       commitSucceeded: false
     });
   });
+
 });

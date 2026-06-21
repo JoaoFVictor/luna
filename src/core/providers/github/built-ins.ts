@@ -15,6 +15,7 @@ import type {
   RepoContext,
   WorkspaceRecord
 } from "../../types.js";
+import { PullRequestArtifactSchema } from "../../types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
   findingsFrom,
@@ -166,7 +167,25 @@ export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
 
 export const openPullRequestBuiltIn = defineBuiltInStep({
   name: "open_pull_request",
-  metadata: { locks: [{ resource: "repository", mode: "exclusive" }] },
+  metadata: {
+    implementationLifecycle: "pull_request",
+    implementationLifecycleOutcome: (output) => {
+      const result = PullRequestArtifactSchema.safeParse(output);
+      if (!result.success) {
+        const error = new Error(
+          "open_pull_request must return PullRequestArtifact"
+        ) as Error & { code: string };
+        error.code = "built_in_lifecycle_contract_invalid";
+        throw error;
+      }
+
+      return {
+        pullRequestAttempted:
+          !result.data.skipped && result.data.url !== undefined
+      };
+    },
+    locks: [{ resource: "repository", mode: "exclusive" }]
+  },
   async run({ state, input, dependencies = {} }) {
     const openPullRequest = dependencies.openPullRequest ?? defaultOpenPullRequest;
     const resolved = resolvedInput(input, state);

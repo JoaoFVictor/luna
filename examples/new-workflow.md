@@ -116,7 +116,10 @@ Graph rules:
 - `final_code_review_report`
 - `prepare_implementation_worktree`
 - `collect_task_context`
+- `run_validation_commands`
+- `record_implementation_validation`
 - `collect_worktree_diff`
+- `record_acceptance_decision`
 - `commit_changes`
 - `push_branch`
 - `open_pull_request`
@@ -160,7 +163,9 @@ and repair failed validation:
 
 The referenced agent must declare `mode: trusted_host_local_write` in
 `agent.yaml`. `trusted_host_local` runs on the host and can edit files in the
-worktree. Use it only for agents and repositories you trust.
+worktree. Use it only for agents and repositories you trust. In write workflows,
+use deterministic built-ins after agent or agent-loop nodes to record lifecycle
+gates used by workspace preserve/cleanup decisions.
 
 ## 6. Workflow Input References
 

@@ -217,7 +217,7 @@ describe("workflow scheduler", () => {
       builtInMetadata: () => ({})
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: "success",
       steps: {
         a: { id: "a" },
@@ -707,6 +707,11 @@ describe("workflow scheduler", () => {
       code: "scheduler_step_failed",
       details: { cause_code: "node_exploded", step_id: "a" }
     });
+    expect(result.primaryFailure).toMatchObject({
+      status: "failed",
+      code: "scheduler_step_failed",
+      details: { cause_code: "node_exploded", step_id: "a" }
+    });
     expect(result.steps.b).toEqual({
       status: "skipped",
       code: "scheduler_dependency_failed",
@@ -747,6 +752,13 @@ describe("workflow scheduler", () => {
 
     expect(result).toMatchObject({
       status: "failed",
+      primaryFailure: {
+        code: "scheduler_step_failed",
+        details: {
+          step_id: "workspace",
+          cause_code: "artifact_write_failed"
+        }
+      },
       steps: {
         workspace: {
           code: "scheduler_step_failed",

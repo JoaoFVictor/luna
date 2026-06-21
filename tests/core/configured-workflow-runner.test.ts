@@ -5,7 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
 import type { RunIdentityOptions } from "../../src/core/run-identity.js";
-import type { Invocation, RunIdentity, WorkspaceRecord } from "../../src/core/types.js";
+import type {
+  AcceptanceDecision,
+  Invocation,
+  RunIdentity,
+  WorkspaceRecord
+} from "../../src/core/types.js";
 
 const invocation: Invocation = {
   version: "2026-06",
@@ -73,6 +78,13 @@ const jiraRun: RunIdentity = {
   route_target: { type: "workflow", id: "implementation" },
   subject: { type: "jira_issue", id: "ABC-123" },
   started_at: "2026-06-20T00:00:00.000Z"
+};
+
+const acceptedDecision: AcceptanceDecision = {
+  status: "accepted",
+  summary: "Accepted",
+  blocking_reasons: [],
+  recommended_action: "approve"
 };
 
 function staticRunIdentity(run: RunIdentity) {
@@ -630,14 +642,26 @@ async function writeImplementationWorkflow(root: string): Promise<void> {
       "    after:",
       "      - workspace",
       "  - id: acceptance",
-      "    type: built_in",
-      "    uses: collect_task_context",
+      "    type: agent",
+      "    agent: change-acceptance-reviewer",
+      "    output_schema: acceptance_decision",
       "    artifacts:",
-      "      - path: acceptance.json",
+      "      - path: acceptance-review.json",
       "        source: $.steps.acceptance",
       "        format: json",
       "    after:",
       "      - validation",
+      "  - id: acceptance_decision",
+      "    type: built_in",
+      "    uses: record_acceptance_decision",
+      "    input:",
+      "      acceptance: $.steps.acceptance",
+      "    artifacts:",
+      "      - path: acceptance-decision.json",
+      "        source: $.steps.acceptance_decision",
+      "        format: json",
+      "    after:",
+      "      - acceptance",
       "  - id: commit",
       "    type: built_in",
       "    uses: commit_changes",
@@ -646,7 +670,7 @@ async function writeImplementationWorkflow(root: string): Promise<void> {
       "        source: $.steps.commit",
       "        format: json",
       "    after:",
-      "      - acceptance",
+      "      - acceptance_decision",
       "  - id: push",
       "    type: built_in",
       "    uses: push_branch",
@@ -934,8 +958,8 @@ async function runImplementationLifecycleScenario({
       return { passed: true };
     }
 
-    if (uses === "collect_task_context") {
-      return { status: "accepted" };
+    if (uses === "record_acceptance_decision") {
+      return acceptedDecision;
     }
 
     if (uses === "commit_changes") {
@@ -966,6 +990,7 @@ async function runImplementationLifecycleScenario({
     dependencies: {
       createRunIdentity: staticRunIdentity(jiraRun),
       runBuiltInStep,
+      runAgentStep: vi.fn(async () => acceptedDecision),
       cleanupWorktree
     }
   });
@@ -1058,6 +1083,17 @@ async function writeAgentLoopWorkflow(
       `      attempts: ${options.repairAttempts ?? "$.config.implementation.validation.repair_attempts"}`,
       "    after:",
       "      - workspace",
+      "  - id: implementation_validation",
+      "    type: built_in",
+      "    uses: record_implementation_validation",
+      "    input:",
+      "      implementation: $.steps.implementation",
+      "    artifacts:",
+      "      - path: implementation-validation.json",
+      "        source: $.steps.implementation_validation",
+      "        format: json",
+      "    after:",
+      "      - implementation",
       "  - id: diff",
       "    type: built_in",
       "    uses: collect_worktree_diff",
@@ -1066,7 +1102,7 @@ async function writeAgentLoopWorkflow(
       "        source: $.steps.diff",
       "        format: json",
       "    after:",
-      "      - implementation",
+      "      - implementation_validation",
       ""
     ].join("\n")
   );
@@ -1769,6 +1805,15 @@ describe("configured workflow runner", () => {
             events.push(`finish:${uses}`);
             activeSteps -= 1;
 
+            if (uses === "commit_changes") {
+              return {
+                enabled: true,
+                skipped: false,
+                commit_sha: `abc123-${events.length}`,
+                branch: "feature/abc-123"
+              };
+            }
+
             return { uses };
           })
         }
@@ -1786,10 +1831,18 @@ describe("configured workflow runner", () => {
       ).toHaveLength(2);
       await expect(
         readJson(root, "policy-locks", "run-1", "locked-a.json")
-      ).resolves.toEqual({ uses: "commit_changes" });
+      ).resolves.toMatchObject({
+        enabled: true,
+        skipped: false,
+        branch: "feature/abc-123"
+      });
       await expect(
         readJson(root, "policy-locks", "run-1", "locked-b.json")
-      ).resolves.toEqual({ uses: "commit_changes" });
+      ).resolves.toMatchObject({
+        enabled: true,
+        skipped: false,
+        branch: "feature/abc-123"
+      });
       await expect(
         readJson(root, "policy-locks", "run-1", "unlocked.json")
       ).resolves.toEqual({ uses: "preflight" });
@@ -1905,6 +1958,7 @@ describe("configured workflow runner", () => {
     try {
       await writeBaseConfig(root, "implementation");
       await writeImplementationWorkflow(root);
+      await writeAgent(root, "change-acceptance-reviewer");
       await writeImplementationConfig(root, { commitEnabled: true });
 
       const preparedWorkspace: WorkspaceRecord = {
@@ -1939,8 +1993,8 @@ describe("configured workflow runner", () => {
             return { passed: true };
           }
 
-          if (uses === "collect_task_context") {
-            return { status: "accepted" };
+          if (uses === "record_acceptance_decision") {
+            return acceptedDecision;
           }
 
           if (uses === "commit_changes") {
@@ -1975,6 +2029,7 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(jiraRun),
           runBuiltInStep,
+          runAgentStep: vi.fn(async () => acceptedDecision),
           cleanupWorktree: vi.fn(async () => cleanedWorkspace)
         }
       });
@@ -2029,6 +2084,10 @@ describe("configured workflow runner", () => {
           return preparedWorkspace;
         }
 
+        if (uses === "record_implementation_validation") {
+          return { passed: false };
+        }
+
         if (uses === "collect_worktree_diff") {
           return { files: ["src/index.ts"] };
         }
@@ -2063,6 +2122,7 @@ describe("configured workflow runner", () => {
         "preflight",
         "prepare_implementation_worktree",
         "agent_loop",
+        "record_implementation_validation",
         "collect_worktree_diff"
       ]);
       expect(runAgentLoopStep).toHaveBeenCalledWith(
@@ -2244,7 +2304,11 @@ describe("configured workflow runner", () => {
       name: "commit",
       config: { commitEnabled: true },
       outputs: {
-        commitOutput: { enabled: true, skipped: false }
+        commitOutput: {
+          enabled: true,
+          skipped: true,
+          reason: "commit disabled by gate"
+        }
       },
       reason: "commit_skipped_or_failed"
     },
@@ -2253,7 +2317,11 @@ describe("configured workflow runner", () => {
       config: { commitEnabled: true, pushEnabled: true },
       outputs: {
         commitOutput: { enabled: true, skipped: false, commit_sha: "abc123" },
-        pushOutput: { enabled: true, skipped: false }
+        pushOutput: {
+          enabled: true,
+          skipped: true,
+          reason: "push disabled by gate"
+        }
       },
       reason: "push_skipped_or_failed"
     },
@@ -2272,18 +2340,23 @@ describe("configured workflow runner", () => {
           remote: "origin",
           branch: "feature/abc-123"
         },
-        pullRequestOutput: { enabled: true, skipped: false }
+        pullRequestOutput: {
+          enabled: true,
+          skipped: true,
+          reason: "pull request disabled by gate"
+        }
       },
       reason: "pull_request_skipped_or_failed"
     }
   ])(
-    "preserves write-mode workspace when enabled $name output lacks success evidence",
+    "preserves write-mode workspace when enabled $name output is skipped",
     async ({ config, outputs, reason }) => {
       const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
       try {
         await writeBaseConfig(root, "implementation");
         await writeImplementationWorkflow(root);
+        await writeAgent(root, "change-acceptance-reviewer");
         await writeImplementationConfig(root, config);
 
         const { result, cleanupWorktree } = await runImplementationLifecycleScenario({

@@ -355,7 +355,10 @@ Built-in steps:
 - `final_code_review_report`
 - `prepare_implementation_worktree`
 - `collect_task_context`
+- `run_validation_commands`
+- `record_implementation_validation`
 - `collect_worktree_diff`
+- `record_acceptance_decision`
 - `commit_changes`
 - `push_branch`
 - `open_pull_request`

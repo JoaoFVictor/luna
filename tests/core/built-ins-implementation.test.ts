@@ -10,6 +10,7 @@ import {
 } from "../../src/core/providers/jira/built-ins.js";
 import { openPullRequestBuiltIn } from "../../src/core/providers/github/built-ins.js";
 import type {
+  AcceptanceDecision,
   CommitChangesArtifact,
   ImplementationConfig,
   Invocation,
@@ -112,8 +113,11 @@ const implementationWorkspace: ImplementationWorktreeRecord = {
   branch: "feature/abc-123-fix-checkout-validation"
 };
 
-const acceptedImplementation = {
-  status: "accepted"
+const acceptedImplementation: AcceptanceDecision = {
+  status: "accepted",
+  summary: "Accepted",
+  blocking_reasons: [],
+  recommended_action: "approve"
 };
 
 const validation: ValidationResult = {
@@ -257,6 +261,7 @@ describe("implementation built-ins", () => {
     ).resolves.toEqual(implementationWorkspace);
 
     expect(prepareImplementationWorktreeBuiltIn.metadata).toEqual({
+      implementationLifecycle: "workspace",
       capturesWorkspace: true,
       locks: [{ resource: "repository", mode: "exclusive" }]
     });

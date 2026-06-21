@@ -72,6 +72,18 @@ nodes:
     after:
       - implementation_plan
 
+  - id: implementation_validation
+    type: built_in
+    uses: record_implementation_validation
+    input:
+      implementation: $.steps.implementation
+    artifacts:
+      - path: implementation-validation.json
+        source: $.steps.implementation_validation
+        format: json
+    after:
+      - implementation
+
   - id: worktree_diff
     type: built_in
     uses: collect_worktree_diff
@@ -80,7 +92,7 @@ nodes:
         source: $.steps.worktree_diff
         format: json
     after:
-      - implementation
+      - implementation_validation
 
   - id: implementation_review
     type: agent
@@ -114,6 +126,18 @@ nodes:
     after:
       - implementation_review
 
+  - id: acceptance_decision
+    type: built_in
+    uses: record_acceptance_decision
+    input:
+      acceptance: $.steps.acceptance
+    artifacts:
+      - path: acceptance-decision.json
+        source: $.steps.acceptance_decision
+        format: json
+    after:
+      - acceptance
+
   - id: commit
     type: built_in
     uses: commit_changes
@@ -122,7 +146,7 @@ nodes:
         source: $.steps.commit
         format: json
     after:
-      - acceptance
+      - acceptance_decision
 
   - id: push
     type: built_in

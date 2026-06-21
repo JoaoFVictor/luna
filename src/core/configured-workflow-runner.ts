@@ -58,10 +58,10 @@ import {
   type RunIdentityOptions
 } from "./run-identity.js";
 import {
-  implementationLifecycleEvidenceFromSteps
+  lifecycleEvidenceFromSchedulerState
 } from "./implementation-lifecycle.js";
 import { assertSafeSegment } from "./path-security.js";
-import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
+import { workspaceLifecycleDecision } from "./workspace-lifecycle.js";
 import {
   defaultWorkflowObservabilityConfig,
   loadWorkflowDefinition,
@@ -603,7 +603,7 @@ async function finalizeSuccessWorkspace({
   workspaceConfig,
   workflowMode,
   implementationConfig,
-  steps,
+  lifecycleEvidence,
   cleanupWorktree
 }: {
   artifactStore: ArtifactStore;
@@ -613,7 +613,7 @@ async function finalizeSuccessWorkspace({
   workspaceConfig: AppConfig["workspace"];
   workflowMode: "git_managed_read_only" | "git_managed_write";
   implementationConfig?: RuntimeConfigState["implementation"];
-  steps: Record<string, unknown>;
+  lifecycleEvidence: ReturnType<typeof lifecycleEvidenceFromSchedulerState>;
   cleanupWorktree: typeof defaultCleanupWorktree;
 }): Promise<WorkspaceRecord | undefined> {
   if (workspaceRecord === undefined) {
@@ -628,7 +628,7 @@ async function finalizeSuccessWorkspace({
       repository,
       workspaceConfig,
       implementationConfig,
-      steps,
+      lifecycleEvidence,
       cleanupWorktree
     });
   }
@@ -681,7 +681,7 @@ function cleanupMayRemoveWorktree({
   workspaceConfig,
   workflowMode,
   implementationConfig,
-  steps,
+  lifecycleEvidence,
   success
 }: {
   workspaceRecord?: WorkspaceRecord;
@@ -689,7 +689,7 @@ function cleanupMayRemoveWorktree({
   workspaceConfig: AppConfig["workspace"];
   workflowMode: "git_managed_read_only" | "git_managed_write";
   implementationConfig?: RuntimeConfigState["implementation"];
-  steps: Record<string, unknown>;
+  lifecycleEvidence: ReturnType<typeof lifecycleEvidenceFromSchedulerState>;
   success: boolean;
 }): boolean {
   if (workspaceRecord === undefined || repository === undefined) {
@@ -704,20 +704,10 @@ function cleanupMayRemoveWorktree({
     return !workspaceConfig.preserve_on_success;
   }
 
-  return !shouldPreserveWriteWorkspace({
+  return !workspaceLifecycleDecision(lifecycleEvidence, {
     commitEnabled: implementationConfig?.commit.enabled ?? false,
     pushEnabled: implementationConfig?.push.enabled ?? false,
-    pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false,
-    acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
-    evidence: implementationLifecycleEvidenceFromSteps({
-      workspaceCreated: workspaceRecord !== undefined,
-      steps,
-      gates: {
-        commitEnabled: implementationConfig?.commit.enabled ?? false,
-        pushEnabled: implementationConfig?.push.enabled ?? false,
-        pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false
-      }
-    })
+    pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false
   }).preserve;
 }
 
@@ -785,7 +775,7 @@ async function finalizeWriteSuccessWorkspace({
   repository,
   workspaceConfig,
   implementationConfig,
-  steps,
+  lifecycleEvidence,
   cleanupWorktree
 }: {
   artifactStore: ArtifactStore;
@@ -794,23 +784,13 @@ async function finalizeWriteSuccessWorkspace({
   repository?: RepositoryConfig;
   workspaceConfig: AppConfig["workspace"];
   implementationConfig?: RuntimeConfigState["implementation"];
-  steps: Record<string, unknown>;
+  lifecycleEvidence: ReturnType<typeof lifecycleEvidenceFromSchedulerState>;
   cleanupWorktree: typeof defaultCleanupWorktree;
 }): Promise<WorkspaceRecord> {
-  const lifecycle = shouldPreserveWriteWorkspace({
+  const lifecycle = workspaceLifecycleDecision(lifecycleEvidence, {
     commitEnabled: implementationConfig?.commit.enabled ?? false,
     pushEnabled: implementationConfig?.push.enabled ?? false,
-    pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false,
-    acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
-    evidence: implementationLifecycleEvidenceFromSteps({
-      workspaceCreated: workspaceRecord !== undefined,
-      steps,
-      gates: {
-        commitEnabled: implementationConfig?.commit.enabled ?? false,
-        pushEnabled: implementationConfig?.push.enabled ?? false,
-        pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false
-      }
-    })
+    pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false
   });
 
   if (lifecycle.preserve) {
@@ -853,26 +833,6 @@ async function finalizeWriteSuccessWorkspace({
       failedWorkspace;
     throw error;
   }
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function acceptanceAcceptedFromSteps(steps: Record<string, unknown>): boolean {
-  const acceptance = recordValue(
-    steps.acceptance ?? steps.implementation_acceptance
-  );
-
-  if (acceptance === undefined) {
-    return false;
-  }
-
-  return acceptance.status === "accepted" || acceptance.decision === "approve";
 }
 
 function resolveAgentModel(
@@ -1051,30 +1011,6 @@ async function runWorkflowNode(
   });
 }
 
-function firstSchedulerFailure(
-  steps: Record<string, unknown>
-): { code: string; details?: ErrorArtifact["details"] } | undefined {
-  for (const value of Object.values(steps)) {
-    const record = recordValue(value);
-    if (record?.status !== "failed") {
-      continue;
-    }
-
-    const code = record.code;
-    if (typeof code !== "string" || code === "") {
-      continue;
-    }
-
-    const details = recordValue(record.details);
-    return {
-      code,
-      ...(details === undefined ? {} : { details })
-    };
-  }
-
-  return undefined;
-}
-
 export async function runConfiguredWorkflow({
   invocation,
   configRoot = resolveConfigRoot(),
@@ -1241,7 +1177,7 @@ export async function runConfiguredWorkflow({
       lockManager
     });
 
-    Object.assign(state.steps, scheduleResult.steps);
+    state.lifecycleEvidence = scheduleResult.lifecycleEvidence;
     workspaceRecord = scheduleResult.workspace;
     if (scheduleResult.workspace !== undefined) {
       persistedWorkspaceRecord = scheduleResult.workspace;
@@ -1249,7 +1185,7 @@ export async function runConfiguredWorkflow({
     }
 
     if (scheduleResult.status === "failed") {
-      const primaryFailure = firstSchedulerFailure(scheduleResult.steps);
+      const primaryFailure = scheduleResult.primaryFailure;
       const error = configuredWorkflowError(
         "Workflow scheduler failed",
         primaryFailure?.code ?? "scheduler_step_failed"
@@ -1270,7 +1206,7 @@ export async function runConfiguredWorkflow({
         workspaceConfig: configs.app.workspace,
         workflowMode: workflow.mode,
         implementationConfig: configs.runtimeConfig.implementation,
-        steps: state.steps,
+        lifecycleEvidence: lifecycleEvidenceFromSchedulerState(state),
         success: true
       }),
       run: async () =>
@@ -1282,7 +1218,7 @@ export async function runConfiguredWorkflow({
           workspaceConfig: configs.app.workspace,
           workflowMode: workflow.mode,
           implementationConfig: configs.runtimeConfig.implementation,
-          steps: state.steps,
+          lifecycleEvidence: lifecycleEvidenceFromSchedulerState(state),
           cleanupWorktree
         })
     });
@@ -1399,7 +1335,7 @@ export async function runConfiguredWorkflow({
             workspaceConfig: configs.app.workspace,
             workflowMode: workflowMode ?? "git_managed_read_only",
             implementationConfig: configs.runtimeConfig.implementation,
-            steps: {},
+            lifecycleEvidence: lifecycleEvidenceFromSchedulerState({}),
             success: false
           }),
           run: async () =>
