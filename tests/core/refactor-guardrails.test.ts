@@ -911,5 +911,20 @@ describe("refactor guardrails", () => {
         "Do not recommend src/core/types.ts."
       )
     ).toEqual([]);
+    expect(
+      deletedPathRecommendationViolations(
+        "docs.md",
+        [
+          "Do not recommend deleted paths in the section below.",
+          "Add shared contracts in src/core/types.ts."
+        ].join("\n")
+      )
+    ).toEqual(["docs.md:2 recommends deleted core path"]);
+    expect(
+      deletedPathRecommendationViolations(
+        "docs.md",
+        "For legacy runtime support, add src/core/flue-tools.ts."
+      )
+    ).toEqual(["docs.md:1 recommends deleted core path"]);
   });
 });

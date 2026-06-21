@@ -127,7 +127,15 @@ const deletedPathPatterns = [
 ] as const;
 
 const deletedPathWarningPattern =
-  /\bDo not\b|\bdo not\b|\bnot recommend\b|\bold\b|\blegacy\b|\bdeleted paths\b/;
+  /\b[Dd]o not\b|\bnot recommend\b|\bforbidden\b/;
+
+function isDeletedPathAllowedLine(line: string): boolean {
+  const trimmedLine = line.trim();
+  return (
+    deletedPathWarningPattern.test(trimmedLine) ||
+    trimmedLine.startsWith("rtk rg ")
+  );
+}
 
 export function realReviewPrCommandViolations(
   relativePath: string,
@@ -159,8 +167,7 @@ export function deletedPathRecommendationViolations(
       return [];
     }
 
-    const contextText = lines.slice(Math.max(0, index - 3), index + 4).join("\n");
-    return deletedPathWarningPattern.test(contextText)
+    return isDeletedPathAllowedLine(line)
       ? []
       : [`${relativePath}:${index + 1} recommends deleted core path`];
   });

@@ -24,9 +24,11 @@ Review Luna changes as architecture, not just code.
 - Public docs point authors to `agents/<id>/`, `workflows/<id>/`,
   `src/adapters/<id>/`, `src/core/built-ins/`, `src/core/tools/`, and
   `src/core/agent-runtime/flue/`.
-- Docs do not recommend old deleted paths such as `src/core/types.ts`,
-  `src/tools/repository-tools.ts`, `src/core/flue-*`,
-  `src/core/implementation-*`, or a built-ins barrel.
+- Docs do not recommend old deleted path `src/core/types.ts`.
+- Docs do not recommend old deleted path `src/tools/repository-tools.ts`.
+- Docs do not recommend old deleted path `src/core/flue-*`.
+- Docs do not recommend old deleted path `src/core/implementation-*`.
+- Docs do not recommend old built-ins barrel paths such as `built-ins/index.ts`.
 - Docs/examples changed when public behavior or authoring patterns changed.
 
 ## Review Order

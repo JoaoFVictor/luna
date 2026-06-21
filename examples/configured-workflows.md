@@ -626,8 +626,11 @@ draft PR.
 `config/implementation.yaml` controls:
 
 - `sandbox.type: trusted_host_local` for local host execution.
-- `validation.commands` for commands such as `rtk npm test` and
-  `rtk npm run typecheck`.
+- `validation.commands` for structured process entries such as
+  `cmd: "npm", args: ["test"]` and
+  `cmd: "npm", args: ["run", "typecheck"]`. Luna passes `cmd` and `args`
+  directly to the validation runner without a shell; keep `rtk` for commands
+  humans run in this repository, not for validation config entries.
 - `validation.repair_attempts` for agent repair loops after failed validation.
 - `commit.enabled`, `push.enabled`, and `change_request.enabled` for publishing.
 
