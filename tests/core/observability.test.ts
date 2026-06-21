@@ -1,19 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createLunaObservability,
-  type LunaObservabilityEvent,
+  customEvent,
+  runCompletedEvent,
+  type LunaEvent,
+  type LunaObservability,
+  type LunaObservabilityLevel,
   type LunaObservabilitySink
 } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySinks } from "../../src/core/observability/exporter-config.js";
+import { sanitizeJsonObject } from "../../src/core/observability/sanitize.js";
 
 function baseOptions(sinks: LunaObservabilitySink[]) {
   return {
     run: { id: "run-1", flueRunId: "flue-1", attempt: 2 },
     workflow: { id: "code-review" },
     sinks,
-    now: () => new Date("2026-06-20T12:00:00.000Z"),
-    createEventId: () => "event-fixed"
+    now: () => new Date("2026-06-20T12:00:00.000Z")
   };
+}
+
+function testEvent(
+  observability: LunaObservability,
+  severity: LunaObservabilityLevel,
+  type: string,
+  data?: Record<string, unknown>
+): LunaEvent {
+  return customEvent({
+    ...observability.eventContext(severity),
+    type,
+    ...(data === undefined ? {} : { data: sanitizeJsonObject(data) })
+  });
 }
 
 describe("Luna observability", () => {
@@ -85,8 +102,8 @@ describe("Luna observability", () => {
     ).toThrow("Required observability exporter flue_log is unavailable");
   });
 
-  it("decorates events with the flat Luna event contract", async () => {
-    const events: LunaObservabilityEvent[] = [];
+  it("decorates events with the normalized Luna event contract", async () => {
+    const events: LunaEvent[] = [];
     const observability = createLunaObservability(
       baseOptions([
         {
@@ -99,46 +116,47 @@ describe("Luna observability", () => {
       ])
     );
 
-    await observability.emit("info", "luna.test.event", {
-      step_id: "plan",
-      node_type: "agent",
-      agent_id: "reviewer",
-      subagent_id: "helper",
-      prompt_id: "prompt-1",
-      status: "completed",
-      duration_ms: 12,
-      ok: true
-    });
+    await observability.emit(
+      customEvent({
+        ...observability.eventContext("info"),
+        type: "luna.test.event",
+        step: { id: "plan", type: "agent" },
+        outcome: { status: "succeeded" },
+        data: sanitizeJsonObject({
+          agent_id: "reviewer",
+          subagent_id: "helper",
+          prompt_id: "prompt-1",
+          duration_ms: 12,
+          ok: true
+        })
+      })
+    );
 
     expect(events).toEqual([
       {
-        event: "luna.test.event",
-        run_id: "run-1",
-        workflow_id: "code-review",
-        schema_version: 1,
-        event_id: "event-fixed",
-        sequence: 1,
+        type: "luna.test.event",
+        severity: "info",
         timestamp: "2026-06-20T12:00:00.000Z",
-        level: "info",
-        flue_run_id: "flue-1",
-        run_attempt: 2,
-        step_id: "plan",
-        node_type: "agent",
-        agent_id: "reviewer",
-        subagent_id: "helper",
-        prompt_id: "prompt-1",
-        status: "completed",
-        duration_ms: 12,
-        attributes: { ok: true }
+        run: { id: "run-1", flueRunId: "flue-1", attempt: 2 },
+        workflow: { id: "code-review" },
+        step: { id: "plan", type: "agent" },
+        outcome: { status: "succeeded" },
+        data: {
+          agent_id: "reviewer",
+          subagent_id: "helper",
+          prompt_id: "prompt-1",
+          duration_ms: 12,
+          ok: true
+        }
       }
     ]);
-    expect(events[0]).not.toHaveProperty("type");
-    expect(events[0]).not.toHaveProperty("run");
-    expect(events[0]).not.toHaveProperty("workflow");
+    expect(events[0]).not.toHaveProperty("event");
+    expect(events[0]).not.toHaveProperty("run_id");
+    expect(events[0]).not.toHaveProperty("workflow_id");
   });
 
   it("redacts prompt and provider payload variants and sanitizes circular, bigint, and Error values", async () => {
-    const events: LunaObservabilityEvent[] = [];
+    const events: LunaEvent[] = [];
     const circular: Record<string, unknown> = { ok: true };
     circular.self = circular;
     const observability = createLunaObservability(
@@ -153,25 +171,27 @@ describe("Luna observability", () => {
       ])
     );
 
-    await observability.emit("info", "luna.prompt.completed", {
-      token: "token-value",
-      prompt: "raw prompt",
-      systemPrompt: "system prompt",
-      prompt_text: "prompt text",
-      provider_payload: { nested: "raw" },
-      providerPayload: { nested: "camel" },
-      "provider.payload": { nested: "dotted" },
-      count: 2n,
-      error: new Error("Authorization: Bearer token-value"),
-      circular
-    });
+    await observability.emit(
+      testEvent(observability, "info", "luna.prompt.completed", {
+        token: "token-value",
+        prompt: "raw prompt",
+        systemPrompt: "system prompt",
+        prompt_text: "prompt text",
+        provider_payload: { nested: "raw" },
+        providerPayload: { nested: "camel" },
+        "provider.payload": { nested: "dotted" },
+        count: 2n,
+        error: new Error("Authorization: Bearer token-value"),
+        circular
+      })
+    );
 
     expect(events[0]).toMatchObject({
-      error: {
-        name: "Error",
-        message: "Authorization: Bearer [REDACTED]"
-      },
-      attributes: {
+      data: {
+        error: {
+          name: "Error",
+          message: "Authorization: Bearer [REDACTED]"
+        },
         token: "[REDACTED]",
         prompt: "[REDACTED]",
         systemPrompt: "[REDACTED]",
@@ -189,7 +209,7 @@ describe("Luna observability", () => {
   });
 
   it("sanitizes an Error whose cause references itself", async () => {
-    const events: LunaObservabilityEvent[] = [];
+    const events: LunaEvent[] = [];
     const circularError = new Error("loop");
     circularError.cause = circularError;
     const observability = createLunaObservability(
@@ -204,11 +224,13 @@ describe("Luna observability", () => {
       ])
     );
 
-    await observability.emit("warn", "luna.test.circular-error", {
-      error: circularError
-    });
+    await observability.emit(
+      testEvent(observability, "warn", "luna.test.circular-error", {
+        error: circularError
+      })
+    );
 
-    expect(events[0]?.error).toMatchObject({
+    expect(events[0]?.data?.error).toMatchObject({
       name: "Error",
       message: "loop",
       cause: "[Circular]"
@@ -218,14 +240,14 @@ describe("Luna observability", () => {
 
   it("serializes concurrent emits and optional sink warnings in required sink order", async () => {
     const releases: Array<() => void> = [];
-    const requiredEvents: LunaObservabilityEvent[] = [];
+    const requiredEvents: LunaEvent[] = [];
     const observability = createLunaObservability(
       baseOptions([
         {
           id: "optional",
           required: false,
           append: async (event) => {
-            if (event.event === "first") {
+            if (event.type === "first") {
               throw new Error("network unavailable");
             }
           }
@@ -243,8 +265,10 @@ describe("Luna observability", () => {
       ])
     );
 
-    const first = observability.emit("info", "first");
-    const second = observability.emit("info", "second");
+    const first = observability.emit(testEvent(observability, "info", "first"));
+    const second = observability.emit(
+      testEvent(observability, "info", "second")
+    );
 
     await vi.waitFor(() => expect(releases).toHaveLength(1));
     releases.shift()?.();
@@ -255,25 +279,25 @@ describe("Luna observability", () => {
 
     await Promise.all([first, second]);
 
-    expect(requiredEvents.map((event) => [event.sequence, event.event])).toEqual([
-      [1, "first"],
-      [2, "luna.observability.sink.warning"],
-      [3, "second"]
+    expect(requiredEvents.map((event) => event.type)).toEqual([
+      "first",
+      "luna.observability.sink.warning",
+      "second"
     ]);
     expect(requiredEvents[1]).toMatchObject({
-      level: "warn",
-      error: {
-        name: "Error",
-        message: "network unavailable"
-      },
-      attributes: {
+      outcome: { status: "skipped" },
+      data: {
         sink_id: "optional",
-        required: false
+        required: false,
+        error: {
+          name: "Error",
+          message: "network unavailable"
+        }
       }
     });
   });
 
-  it("serializes concurrent emits so sequence numbers and sink writes stay ordered", async () => {
+  it("serializes concurrent emits so sink writes stay ordered", async () => {
     const releases: Array<() => void> = [];
     const written: number[] = [];
     const observability = createLunaObservability(
@@ -285,14 +309,16 @@ describe("Luna observability", () => {
             await new Promise<void>((resolve) => {
               releases.push(resolve);
             });
-            written.push(event.sequence);
+            written.push(event.type === "first" ? 1 : 2);
           }
         }
       ])
     );
 
-    const first = observability.emit("info", "first");
-    const second = observability.emit("info", "second");
+    const first = observability.emit(testEvent(observability, "info", "first"));
+    const second = observability.emit(
+      testEvent(observability, "info", "second")
+    );
 
     await vi.waitFor(() => expect(releases).toHaveLength(1));
     releases.shift()?.();
@@ -318,7 +344,12 @@ describe("Luna observability", () => {
     );
 
     await expect(
-      observability.emit("error", "luna.workflow.failed")
+      observability.emit(
+        runCompletedEvent({
+          ...observability.eventContext("error"),
+          status: "failed"
+        })
+      )
     ).rejects.toMatchObject({
       code: "observability_append_failed",
       hardFailure: true,
@@ -330,13 +361,13 @@ describe("Luna observability", () => {
       hardFailure: true,
       sinkId: "required-jsonl"
     });
-    await expect(observability.emit("info", "after-failure")).rejects.toBe(
-      observability.hardFailure()
-    );
+    await expect(
+      observability.emit(testEvent(observability, "info", "after-failure"))
+    ).rejects.toBe(observability.hardFailure());
   });
 
   it("close waits for queued events and preserves hard failure state", async () => {
-    const events: LunaObservabilityEvent[] = [];
+    const events: LunaEvent[] = [];
     const observability = createLunaObservability(
       baseOptions([
         {
@@ -349,18 +380,20 @@ describe("Luna observability", () => {
       ])
     );
 
-    const pending = observability.emit("info", "queued");
+    const pending = observability.emit(
+      testEvent(observability, "info", "queued")
+    );
 
     await expect(observability.close()).resolves.toBeUndefined();
     await pending;
 
-    expect(events.map((event) => event.event)).toEqual(["queued"]);
+    expect(events.map((event) => event.type)).toEqual(["queued"]);
     expect(observability.isHardFailed()).toBe(false);
     expect(observability.hardFailure()).toBeUndefined();
   });
 
   it("emits optional sink failures as warnings through required sinks when possible", async () => {
-    const requiredEvents: LunaObservabilityEvent[] = [];
+    const requiredEvents: LunaEvent[] = [];
     const observability = createLunaObservability(
       baseOptions([
         {
@@ -380,22 +413,23 @@ describe("Luna observability", () => {
       ])
     );
 
-    await observability.emit("info", "luna.test.event", { ok: true });
+    await observability.emit(
+      testEvent(observability, "info", "luna.test.event", { ok: true })
+    );
 
-    expect(requiredEvents.map((event) => event.event)).toEqual([
+    expect(requiredEvents.map((event) => event.type)).toEqual([
       "luna.test.event",
       "luna.observability.sink.warning"
     ]);
     expect(requiredEvents[1]).toMatchObject({
-      level: "warn",
-      sequence: 2,
-      error: {
-        name: "Error",
-        message: "network unavailable"
-      },
-      attributes: {
+      outcome: { status: "skipped" },
+      data: {
         sink_id: "optional",
-        required: false
+        required: false,
+        error: {
+          name: "Error",
+          message: "network unavailable"
+        }
       }
     });
   });

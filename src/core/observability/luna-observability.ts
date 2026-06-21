@@ -1,15 +1,30 @@
-import { randomUUID } from "node:crypto";
-import type {
-  LunaObservabilityEvent,
-  LunaObservabilityLevel,
-  LunaObservabilitySink
+import {
+  customEvent,
+  runCompletedEvent,
+  runStartedEvent,
+  stepFailedEvent,
+  stepSkippedEvent,
+  stepStartedEvent,
+  stepSucceededEvent,
+  type JsonObject,
+  type LunaEvent,
+  type LunaObservabilityLevel,
+  type LunaObservabilitySink
 } from "./events.js";
-import { sanitizeAttributes, sanitizeForObservability } from "./sanitize.js";
+import { sanitizeJsonObject } from "./sanitize.js";
 
-export type {
-  LunaObservabilityEvent,
-  LunaObservabilityLevel,
-  LunaObservabilitySink
+export {
+  customEvent,
+  runCompletedEvent,
+  runStartedEvent,
+  stepFailedEvent,
+  stepSkippedEvent,
+  stepStartedEvent,
+  stepSucceededEvent,
+  type JsonObject,
+  type LunaEvent,
+  type LunaObservabilityLevel,
+  type LunaObservabilitySink
 } from "./events.js";
 
 export type CreateLunaObservabilityOptions = {
@@ -23,18 +38,21 @@ export type CreateLunaObservabilityOptions = {
   };
   sinks: LunaObservabilitySink[];
   now?: () => Date;
-  createEventId?: () => string;
 };
 
 export type LunaObservability = {
-  emit(
-    level: LunaObservabilityLevel,
-    event: string,
-    attributes?: Record<string, unknown>
-  ): Promise<void>;
+  eventContext(severity: LunaObservabilityLevel): LunaEventContext;
+  emit(event: LunaEvent): Promise<void>;
   close(): Promise<void>;
   isHardFailed(): boolean;
   hardFailure(): ObservabilityAppendError | undefined;
+};
+
+export type LunaEventContext = {
+  severity: LunaObservabilityLevel;
+  run: LunaEvent["run"];
+  workflow: LunaEvent["workflow"];
+  timestamp: string;
 };
 
 type ObservabilityAppendError = Error & {
@@ -60,106 +78,31 @@ function appendError(
   return error;
 }
 
-const TOP_LEVEL_KEYS = new Set([
-  "step_id",
-  "node_type",
-  "agent_id",
-  "subagent_id",
-  "prompt_id",
-  "status",
-  "duration_ms",
-  "error"
-]);
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function splitEventFields(
-  input: Record<string, unknown> | undefined
-): {
-  topLevel: Partial<LunaObservabilityEvent>;
-  attributes: Record<string, unknown>;
-} {
-  const topLevel: Partial<LunaObservabilityEvent> = {};
-  const attributes: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(input ?? {})) {
-    if (key === "attributes" && value !== null && typeof value === "object") {
-      Object.assign(attributes, value as Record<string, unknown>);
-      continue;
-    }
-
-    if (!TOP_LEVEL_KEYS.has(key)) {
-      attributes[key] = value;
-      continue;
-    }
-
-    if (key === "duration_ms") {
-      const durationMs = numberValue(value);
-      if (durationMs !== undefined) {
-        topLevel.duration_ms = durationMs;
-      }
-      continue;
-    }
-
-    if (key === "error") {
-      topLevel.error = sanitizeForObservability(value);
-      continue;
-    }
-
-    const stringField = stringValue(value);
-    if (stringField !== undefined) {
-      (topLevel as Record<string, unknown>)[key] = stringField;
-    }
-  }
-
-  return { topLevel, attributes: sanitizeAttributes(attributes) };
-}
-
 export function createLunaObservability({
   run,
   workflow,
   sinks,
-  now = () => new Date(),
-  createEventId = randomUUID
+  now = () => new Date()
 }: CreateLunaObservabilityOptions): LunaObservability {
-  let sequence = 0;
   let tail = Promise.resolve();
   let hardFailure: ObservabilityAppendError | undefined;
   const requiredSinks = sinks.filter((sink) => sink.required !== false);
+  const eventRun = {
+    id: run.id,
+    ...(run.flueRunId === undefined ? {} : { flueRunId: run.flueRunId }),
+    attempt: run.attempt ?? 1
+  };
 
-  function createEvent(
-    level: LunaObservabilityLevel,
-    event: string,
-    attributes?: Record<string, unknown>
-  ): LunaObservabilityEvent {
-    sequence += 1;
-    const split = splitEventFields(attributes);
-
+  function eventContext(severity: LunaObservabilityLevel): LunaEventContext {
     return {
-      event,
-      run_id: run.id,
-      workflow_id: workflow.id,
-      schema_version: 1,
-      event_id: createEventId(),
-      sequence,
-      timestamp: now().toISOString(),
-      level,
-      ...(run.flueRunId === undefined ? {} : { flue_run_id: run.flueRunId }),
-      ...(run.attempt === undefined ? {} : { run_attempt: run.attempt }),
-      ...split.topLevel,
-      ...(Object.keys(split.attributes).length === 0
-        ? {}
-        : { attributes: split.attributes })
+      severity,
+      run: eventRun,
+      workflow,
+      timestamp: now().toISOString()
     };
   }
 
-  async function appendToRequiredSinks(event: LunaObservabilityEvent): Promise<void> {
+  async function appendToRequiredSinks(event: LunaEvent): Promise<void> {
     for (const sink of requiredSinks) {
       try {
         await sink.append(event);
@@ -170,7 +113,7 @@ export function createLunaObservability({
     }
   }
 
-  async function appendEvent(event: LunaObservabilityEvent): Promise<void> {
+  async function appendEvent(event: LunaEvent): Promise<void> {
     const optionalFailures: Array<{
       sink: LunaObservabilitySink;
       cause: unknown;
@@ -191,10 +134,15 @@ export function createLunaObservability({
     }
 
     for (const failure of optionalFailures) {
-      const warning = createEvent("warn", "luna.observability.sink.warning", {
-        sink_id: failure.sink.id ?? "unknown",
-        required: false,
-        error: sanitizeForObservability(failure.cause)
+      const warning = customEvent({
+        ...eventContext("warn"),
+        type: "luna.observability.sink.warning",
+        outcome: { status: "skipped" },
+        data: sanitizeJsonObject({
+          sink_id: failure.sink.id ?? "unknown",
+          required: false,
+          error: failure.cause
+        })
       });
 
       await appendToRequiredSinks(warning);
@@ -202,7 +150,8 @@ export function createLunaObservability({
   }
 
   return {
-    emit: async (level, eventName, attributes) => {
+    eventContext,
+    emit: async (event) => {
       if (hardFailure !== undefined) {
         throw hardFailure;
       }
@@ -212,7 +161,7 @@ export function createLunaObservability({
           throw hardFailure;
         }
 
-        await appendEvent(createEvent(level, eventName, attributes));
+        await appendEvent(event);
       });
 
       tail = next.catch(() => undefined);

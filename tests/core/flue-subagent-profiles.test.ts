@@ -57,6 +57,12 @@ async function writeSubagentFixture({
 
 function fakeObservability(): LunaObservability {
   return {
+    eventContext: (severity) => ({
+      severity,
+      run: { id: "run-1", attempt: 1 },
+      workflow: { id: "workflow-1" },
+      timestamp: "2026-06-20T12:00:00.000Z"
+    }),
     emit: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
     isHardFailed: () => false,
@@ -392,13 +398,15 @@ describe("flue subagent profiles", () => {
         });
 
         expect(observability.emit).toHaveBeenCalledWith(
-          "warn",
-          "luna.subagent.capability.rejected",
           expect.objectContaining({
-            agent_id: "change-reviewer",
-            capability: expected.split(":")[0],
-            id: expected.split(":")[1],
-            status: "rejected"
+            type: "luna.subagent.capability.rejected",
+            severity: "warn",
+            outcome: { status: "failed" },
+            data: expect.objectContaining({
+              agent_id: "change-reviewer",
+              capability: expected.split(":")[0],
+              id: expected.split(":")[1]
+            })
           })
         );
         expect(summary.rejected_capabilities).toEqual([

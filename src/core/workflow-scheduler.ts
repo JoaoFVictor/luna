@@ -1,5 +1,12 @@
 import type { BuiltInStepMetadata } from "./built-ins/index.js";
-import type { LunaObservability } from "./observability/luna-observability.js";
+import {
+  stepFailedEvent,
+  stepSkippedEvent,
+  stepStartedEvent,
+  stepSucceededEvent,
+  type LunaObservability
+} from "./observability/luna-observability.js";
+import { sanitizeJsonObject } from "./observability/sanitize.js";
 import {
   recordFailedStep,
   type ObservabilitySummary
@@ -365,22 +372,83 @@ export async function runWorkflowSchedule({
   };
   const maxConcurrency = normalizedMaxConcurrency(execution.max_concurrency);
 
-  async function emitSchedulerEvent(
-    level: "info" | "warn" | "error",
-    event: string,
-    attributes: Record<string, unknown>
+  async function emitStepEvent(
+    buildEvent: (
+      activeObservability: LunaObservability
+    ) => Parameters<LunaObservability["emit"]>[0]
   ): Promise<void> {
     if (observability === undefined) {
       return;
     }
 
     try {
-      await observability.emit(level, event, attributes);
+      await observability.emit(buildEvent(observability));
     } catch (error) {
       if (observability.isHardFailed()) {
         throw error;
       }
     }
+  }
+
+  async function emitStepStarted(node: WorkflowNode): Promise<void> {
+    await emitStepEvent((activeObservability) =>
+      stepStartedEvent({
+        ...activeObservability.eventContext("info"),
+        step: { id: node.id, type: node.type }
+      })
+    );
+  }
+
+  async function emitStepSucceeded(
+    node: WorkflowNode,
+    durationMs: number
+  ): Promise<void> {
+    await emitStepEvent((activeObservability) =>
+      stepSucceededEvent({
+        ...activeObservability.eventContext("info"),
+        step: { id: node.id, type: node.type },
+        data: sanitizeJsonObject({ duration_ms: durationMs })
+      })
+    );
+  }
+
+  async function emitStepFailed({
+    node,
+    durationMs,
+    error
+  }: {
+    node: WorkflowNode;
+    durationMs?: number;
+    error: unknown;
+  }): Promise<void> {
+    const errorCode = (error as { code?: unknown } | undefined)?.code;
+    const code = typeof errorCode === "string" ? errorCode : undefined;
+
+    await emitStepEvent((activeObservability) =>
+      stepFailedEvent({
+        ...activeObservability.eventContext("error"),
+        step: { id: node.id, type: node.type },
+        code,
+        data: sanitizeJsonObject({ duration_ms: durationMs, error })
+      })
+    );
+  }
+
+  async function emitStepSkipped(
+    node: WorkflowNode,
+    error: unknown
+  ): Promise<void> {
+    const errorCode = (error as { code?: unknown } | undefined)?.code;
+    const code = typeof errorCode === "string" ? errorCode : undefined;
+
+    await emitStepEvent((activeObservability) =>
+      stepSkippedEvent({
+        ...activeObservability.eventContext("warn"),
+        step: { id: node.id, type: node.type },
+        code,
+        data: sanitizeJsonObject({ error })
+      })
+    );
   }
 
   async function runOneNode(node: WorkflowNode): Promise<{
@@ -389,11 +457,7 @@ export async function runWorkflowSchedule({
     capturedWorkspace?: SchedulerWorkflowState["workspace"];
   }> {
     const startedAt = Date.now();
-    await emitSchedulerEvent("info", "luna.scheduler.step.started", {
-      step_id: node.id,
-      node_type: node.type,
-      status: "started"
-    });
+    await emitStepStarted(node);
 
     const metadata = builtInMetadata(node);
     try {
@@ -419,12 +483,7 @@ export async function runWorkflowSchedule({
 
       await writePlannedArtifacts(node, output, scheduleState);
       try {
-        await emitSchedulerEvent("info", "luna.scheduler.step.finished", {
-          step_id: node.id,
-          node_type: node.type,
-          status: "completed",
-          duration_ms: Date.now() - startedAt
-        });
+        await emitStepSucceeded(node, Date.now() - startedAt);
       } catch (error) {
         if (capturedWorkspace !== undefined) {
           Object.defineProperty(error, "workspaceRecord", {
@@ -442,11 +501,9 @@ export async function runWorkflowSchedule({
         ...(capturedWorkspace === undefined ? {} : { capturedWorkspace })
       };
     } catch (error) {
-      await emitSchedulerEvent("error", "luna.scheduler.step.failed", {
-        step_id: node.id,
-        node_type: node.type,
-        status: "failed",
-        duration_ms: Date.now() - startedAt,
+      await emitStepFailed({
+        node,
+        durationMs: Date.now() - startedAt,
         error
       });
       throw error;
@@ -473,14 +530,9 @@ export async function runWorkflowSchedule({
           code: skipped.code,
           message: "Workflow dependency failed"
         });
-        await emitSchedulerEvent("warn", "luna.scheduler.step.failed", {
-          step_id: node.id,
-          node_type: node.type,
-          status: "skipped",
-          error: {
-            code: skipped.code,
-            message: "Workflow dependency failed"
-          }
+        await emitStepSkipped(node, {
+          code: skipped.code,
+          message: "Workflow dependency failed"
         });
       }
     }
@@ -534,10 +586,8 @@ export async function runWorkflowSchedule({
               message: failure.message
             });
 
-            await emitSchedulerEvent("error", "luna.scheduler.step.failed", {
-              step_id: node.id,
-              node_type: node.type,
-              status: "failed",
+            await emitStepFailed({
+              node,
               error: {
                 code: failure.code,
                 cause_code: failure.details.cause_code,
@@ -579,10 +629,8 @@ export async function runWorkflowSchedule({
         message: failure.message
       });
 
-      await emitSchedulerEvent("error", "luna.scheduler.step.failed", {
-        step_id: node.id,
-        node_type: node.type,
-        status: "failed",
+      await emitStepFailed({
+        node,
         error: {
           code: failure.code,
           cause_code: failure.details.cause_code,

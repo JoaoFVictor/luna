@@ -24,6 +24,8 @@ import {
 } from "../core/flue-agent-capabilities.js";
 import { loadMcpConfig } from "../core/mcp-config.js";
 import { createFlueLogSink } from "../core/observability/flue-log-sink.js";
+import { customEvent } from "../core/observability/luna-observability.js";
+import { sanitizeJsonObject } from "../core/observability/sanitize.js";
 import {
   recordPromptOperation,
   recordPromptUsage,
@@ -99,17 +101,25 @@ async function emitPromptEvent(
   options: RunAgentStepOptions | RunAgentLoopStepOptions,
   level: "info" | "warn" | "error",
   event: string,
-  attributes: Record<string, unknown>
+  data: Record<string, unknown>,
+  outcome?: { status: "started" | "succeeded" | "failed" }
 ): Promise<void> {
   if (options.observability === undefined) {
     return;
   }
 
-  await options.observability.emit(level, event, {
-    step_id: options.node.id,
-    agent_id: options.agent.id,
-    ...attributes
-  });
+  await options.observability.emit(
+    customEvent({
+      ...options.observability.eventContext(level),
+      type: event,
+      step: { id: options.node.id, type: options.node.type },
+      outcome,
+      data: sanitizeJsonObject({
+        agent_id: options.agent.id,
+        ...data
+      })
+    })
+  );
 }
 
 async function recordPromptCompletion(
@@ -130,18 +140,16 @@ async function recordPromptCompletion(
     if (usage === undefined) {
       recordPromptUsageMissing(options.summary);
       await emitPromptEvent(options, "warn", "luna.prompt.usage_missing", {
-        prompt_id: promptId,
-        status: "completed"
-      });
+        prompt_id: promptId
+      }, { status: "succeeded" });
     } else {
       recordPromptUsage(options.summary, usage);
     }
 
     await emitPromptEvent(options, "info", "luna.prompt.finished", {
       prompt_id: promptId,
-      status: "completed",
       duration_ms: durationMs
-    });
+    }, { status: "succeeded" });
   } finally {
     await writeSummaryBestEffort(options.artifactStore, options.summary);
   }
@@ -158,10 +166,9 @@ async function recordPromptFailure(
   try {
     await emitPromptEvent(options, "error", "luna.prompt.failed", {
       prompt_id: promptId,
-      status: "failed",
       duration_ms: durationMs,
       error: promptErrorAttributes(error)
-    });
+    }, { status: "failed" });
   } finally {
     await writeSummaryBestEffort(options.artifactStore, options.summary);
   }
@@ -392,9 +399,8 @@ export async function runFlueAgentStep(
     const promptId = `agent:${options.node.id}`;
     const startedAtMs = Date.now();
     await emitPromptEvent(options, "info", "luna.prompt.started", {
-      prompt_id: promptId,
-      status: "started"
-    });
+      prompt_id: promptId
+    }, { status: "started" });
     let response: PromptResponseWithUsage & { data?: unknown };
     try {
       response = await session.prompt(
@@ -463,12 +469,9 @@ async function runWritableAgent(
   const startedAtMs = Date.now();
   await emitPromptEvent(options, "info", "luna.prompt.started", {
     prompt_id: promptId,
-    status: "started",
-    attributes: {
-      phase: input.phase,
-      attempt: input.attempt
-    }
-  });
+    phase: input.phase,
+    attempt: input.attempt
+  }, { status: "started" });
   let response: PromptResponseWithUsage & { data?: unknown };
   try {
     response = await session.prompt(writableAgentPrompt(options, input), {

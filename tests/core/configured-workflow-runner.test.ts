@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
-import type { LunaObservabilityEvent } from "../../src/core/observability/events.js";
+import type { LunaEvent } from "../../src/core/observability/events.js";
 import type { RunIdentityOptions } from "../../src/core/run-identity.js";
 import type { Invocation, RunIdentity, WorkspaceRecord } from "../../src/core/types.js";
 
@@ -1204,7 +1204,7 @@ describe("configured workflow runner", () => {
       await writeWorkflow(root);
       await writeReviewPlannerAgent(root);
 
-      const events: LunaObservabilityEvent[] = [];
+      const events: LunaEvent[] = [];
 
       const result = await runConfiguredWorkflow({
         invocation,
@@ -1242,20 +1242,18 @@ describe("configured workflow runner", () => {
       expect(events).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            event: "luna.workflow.routed",
-            run_id: "run-log",
-            flue_run_id: "flue-log",
-            workflow_id: "code-review"
+            type: "luna.run.routed",
+            run: { id: "run-log", flueRunId: "flue-log", attempt: 1 },
+            workflow: { id: "code-review" }
           }),
           expect.objectContaining({
-            event: "luna.workflow.finished",
-            run_id: "run-log",
-            flue_run_id: "flue-log",
-            workflow_id: "code-review"
+            type: "luna.run.completed",
+            run: { id: "run-log", flueRunId: "flue-log", attempt: 1 },
+            workflow: { id: "code-review" }
           })
         ])
       );
-      expect(events.map((event) => event.event)).not.toContain(
+      expect(events.map((event) => event.type)).not.toContain(
         "luna.run.succeeded"
       );
     } finally {
@@ -1270,7 +1268,7 @@ describe("configured workflow runner", () => {
       await writeBaseConfig(root);
       await writePreflightWorkflow(root, "code-review");
 
-      const optionalEvents: LunaObservabilityEvent[] = [];
+      const optionalEvents: LunaEvent[] = [];
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
@@ -1298,8 +1296,8 @@ describe("configured workflow runner", () => {
       });
 
       expect(result.status).toBe("success");
-      expect(optionalEvents.map((event) => event.event)).toContain(
-        "luna.workflow.started"
+      expect(optionalEvents.map((event) => event.type)).toContain(
+        "luna.run.started"
       );
 
       const runJson = await readJson(root, "code-review", "run-obs", "run.json");
@@ -1316,12 +1314,12 @@ describe("configured workflow runner", () => {
         .split("\n")
         .map((line) => JSON.parse(line));
 
-      expect(events.map((event) => event.event)).toEqual(
+      expect(events.map((event) => event.type)).toEqual(
         expect.arrayContaining([
-          "luna.workflow.started",
-          "luna.scheduler.step.started",
-          "luna.scheduler.step.finished",
-          "luna.workflow.finished",
+          "luna.run.started",
+          "luna.step.started",
+          "luna.step.succeeded",
+          "luna.run.completed",
           "luna.observability.sink.warning"
         ])
       );
@@ -1352,7 +1350,7 @@ describe("configured workflow runner", () => {
         "      required: false"
       ]);
 
-      const optionalEvents: LunaObservabilityEvent[] = [];
+      const optionalEvents: LunaEvent[] = [];
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
@@ -1393,8 +1391,8 @@ describe("configured workflow runner", () => {
         .split("\n")
         .map((line) => JSON.parse(line));
 
-      expect(events.map((event) => event.event)).toContain(
-        "luna.workflow.finished"
+      expect(events.map((event) => event.type)).toContain(
+        "luna.run.completed"
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -1457,7 +1455,7 @@ describe("configured workflow runner", () => {
       await writeBaseConfig(root);
       await writeWorkflow(root);
 
-      const events: LunaObservabilityEvent[] = [];
+      const events: LunaEvent[] = [];
 
       const result = await runConfiguredWorkflow({
         invocation,
@@ -1493,18 +1491,21 @@ describe("configured workflow runner", () => {
       expect(events).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            event: "luna.workflow.failed",
-            run_id: "run-fail",
-            flue_run_id: "flue-fail",
-            workflow_id: "code-review",
-            step_id: "preflight",
-            error: expect.objectContaining({
-              message: "Workflow scheduler failed"
+            type: "luna.run.completed",
+            run: { id: "run-fail", flueRunId: "flue-fail", attempt: 1 },
+            workflow: { id: "code-review" },
+            outcome: expect.objectContaining({ status: "failed" }),
+            data: expect.objectContaining({
+              error: expect.objectContaining({
+                message: "Workflow scheduler failed"
+              })
             })
           })
         ])
       );
-      expect(events.map((event) => event.event)).not.toContain("luna.run.failed");
+      expect(events.map((event) => event.type)).not.toContain(
+        "luna.workflow.failed"
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }

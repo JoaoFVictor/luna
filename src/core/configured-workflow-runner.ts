@@ -36,9 +36,13 @@ import { createJsonlEventSink } from "./observability/jsonl-sink.js";
 import { createObservabilitySinks } from "./observability/exporter-config.js";
 import {
   createLunaObservability,
+  customEvent,
+  runCompletedEvent,
+  runStartedEvent,
   type LunaObservability,
   type LunaObservabilitySink
 } from "./observability/luna-observability.js";
+import { sanitizeJsonObject } from "./observability/sanitize.js";
 import {
   createObservabilitySummary,
   writeSummaryBestEffort,
@@ -474,23 +478,6 @@ async function createRunObservability({
   await writeSummaryBestEffort(artifactStore, summary);
 
   return { observability, summary };
-}
-
-async function emitObservabilityBestEffort(
-  observability: LunaObservability | undefined,
-  level: "info" | "warn" | "error",
-  event: string,
-  attributes?: Record<string, unknown>
-): Promise<void> {
-  if (observability === undefined) {
-    return;
-  }
-
-  try {
-    await observability.emit(level, event, attributes);
-  } catch {
-    return;
-  }
 }
 
 async function ensureFailureArtifactStore({
@@ -1172,12 +1159,14 @@ export async function runConfiguredWorkflow({
       observabilityConfig: workflowObservabilityConfig,
       sinks: observabilitySinks
     }));
-    await observability.emit("info", "luna.workflow.started", {
-      status: "started"
-    });
-    await observability.emit("info", "luna.workflow.routed", {
-      status: "completed"
-    });
+    await observability.emit(runStartedEvent(observability.eventContext("info")));
+    await observability.emit(
+      customEvent({
+        ...observability.eventContext("info"),
+        type: "luna.run.routed",
+        outcome: { status: "succeeded" }
+      })
+    );
 
     repository = resolveRepository(
       invocation,
@@ -1318,9 +1307,12 @@ export async function runConfiguredWorkflow({
       report = finalReportFrom(output) ?? report;
     }
 
-    await observability.emit("info", "luna.workflow.finished", {
-      status: "completed"
-    });
+    await observability.emit(
+      runCompletedEvent({
+        ...observability.eventContext("info"),
+        status: "succeeded"
+      })
+    );
     await writeSummaryBestEffort(artifactStore, summary);
 
     return {
@@ -1369,17 +1361,24 @@ export async function runConfiguredWorkflow({
       }
     }
     const failureArtifactStore = artifactStore;
-    await emitObservabilityBestEffort(
-      observability,
-      "error",
-      "luna.workflow.failed",
-      {
-        status: "failed",
-        step_id: (error as { details?: ErrorArtifact["details"] })?.details
-          ?.step_id,
-        error
+    if (observability !== undefined) {
+      try {
+        await observability.emit(
+          runCompletedEvent({
+            ...observability.eventContext("error"),
+            status: "failed",
+            code: errorCode(error),
+            data: sanitizeJsonObject({
+              step_id: (error as { details?: ErrorArtifact["details"] })
+                ?.details?.step_id,
+              error
+            })
+          })
+        );
+      } catch {
+        // Failure artifacts remain the source of truth if observability fails here.
       }
-    );
+    }
     const artifact = errorArtifact(run.run_id, error);
     const artifactWriteError = await writeJsonBestEffort(
       artifactStore,

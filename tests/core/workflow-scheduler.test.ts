@@ -5,7 +5,7 @@ import {
   splitDeferredFinalReportNodes
 } from "../../src/core/workflow-scheduler.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
-import type { LunaObservabilityEvent } from "../../src/core/observability/events.js";
+import type { LunaEvent } from "../../src/core/observability/events.js";
 import type { WorkflowNode } from "../../src/core/workflow-definition.js";
 import type { SchedulerWorkflowState } from "../../src/core/workflow-state.js";
 
@@ -75,7 +75,7 @@ async function settlesTrueWithin(
 
 describe("workflow scheduler", () => {
   it("keeps parallel scheduler runs successful when an optional observability sink fails", async () => {
-    const requiredEvents: LunaObservabilityEvent[] = [];
+    const requiredEvents: LunaEvent[] = [];
     const started: string[] = [];
     const observability = createLunaObservability({
       run: { id: "run-1" },
@@ -114,12 +114,12 @@ describe("workflow scheduler", () => {
     expect(result.status).toBe("success");
     expect(started).toEqual(expect.arrayContaining(["a", "b"]));
     expect(requiredEvents.some((event) =>
-      event.event === "luna.observability.sink.warning"
+      event.type === "luna.observability.sink.warning"
     )).toBe(true);
   });
 
   it("stops before selecting the next batch after a required observability sink hard failure", async () => {
-    const events: LunaObservabilityEvent[] = [];
+    const events: LunaEvent[] = [];
     const requiredSinkFailure = new Error("required sink offline");
     const observability = createLunaObservability({
       run: { id: "run-1" },
@@ -130,7 +130,7 @@ describe("workflow scheduler", () => {
           required: true,
           append: (event) => {
             events.push(event);
-            if (event.event === "luna.scheduler.step.finished") {
+            if (event.type === "luna.step.succeeded") {
               throw requiredSinkFailure;
             }
           }
@@ -159,12 +159,8 @@ describe("workflow scheduler", () => {
     });
 
     expect(started).toEqual(["a"]);
-    expect(events.map((event) => event.event)).toContain(
-      "luna.scheduler.step.started"
-    );
-    expect(events.map((event) => event.event)).toContain(
-      "luna.scheduler.step.finished"
-    );
+    expect(events.map((event) => event.type)).toContain("luna.step.started");
+    expect(events.map((event) => event.type)).toContain("luna.step.succeeded");
   });
 
   it("preserves captured workspace on required observability hard failure after node success", async () => {
@@ -182,7 +178,7 @@ describe("workflow scheduler", () => {
           id: "required-test",
           required: true,
           append: (event) => {
-            if (event.event === "luna.scheduler.step.finished") {
+            if (event.type === "luna.step.succeeded") {
               throw new Error("required sink offline");
             }
           }
@@ -697,7 +693,7 @@ describe("workflow scheduler", () => {
     const cause = new Error("node exploded") as Error & { code: string };
     cause.code = "node_exploded";
     const writePlannedArtifacts = vi.fn(async () => undefined);
-    const events: LunaObservabilityEvent[] = [];
+    const events: LunaEvent[] = [];
     const observability = createLunaObservability({
       run: { id: "run-1" },
       workflow: { id: "code-review" },
@@ -742,12 +738,9 @@ describe("workflow scheduler", () => {
     expect(writePlannedArtifacts).not.toHaveBeenCalled();
     expect(events).toContainEqual(
       expect.objectContaining({
-        event: "luna.scheduler.step.failed",
-        step_id: "b",
-        status: "skipped",
-        error: expect.objectContaining({
-          code: "scheduler_dependency_failed"
-        })
+        type: "luna.step.skipped",
+        step: { id: "b", type: "built_in" },
+        outcome: { status: "skipped", code: "scheduler_dependency_failed" }
       })
     );
   });

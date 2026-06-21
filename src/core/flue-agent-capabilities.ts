@@ -6,7 +6,11 @@ import { resolveFlueSubagentProfiles } from "./flue-subagent-profiles.js";
 import { resolveFlueTools } from "./flue-tool-registry.js";
 import type { McpConfig } from "./mcp-config.js";
 import type { ResolvedModelProfiles } from "./model-config.js";
-import type { LunaObservability } from "./observability/luna-observability.js";
+import {
+  customEvent,
+  type LunaObservability
+} from "./observability/luna-observability.js";
+import { sanitizeJsonObject } from "./observability/sanitize.js";
 import type { ObservabilitySummary } from "./observability/summary.js";
 import type { WorkflowSubagentPolicy } from "./subagent-policy.js";
 
@@ -70,9 +74,21 @@ async function emitCapabilityEvent(
   observability: LunaObservability | undefined,
   level: "info" | "error",
   event: string,
-  attributes: Record<string, unknown>
+  data: Record<string, unknown>,
+  outcome: { status: "succeeded" | "failed" }
 ): Promise<void> {
-  await observability?.emit(level, event, attributes);
+  if (observability === undefined) {
+    return;
+  }
+
+  await observability.emit(
+    customEvent({
+      ...observability.eventContext(level),
+      type: event,
+      outcome,
+      data: sanitizeJsonObject(data)
+    })
+  );
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -150,12 +166,12 @@ export async function resolveFlueAgentCapabilities({
       "luna.capabilities.resolved",
       {
         agent_id: agent.id,
-        status: "completed",
         skills: skills.length,
         local_tools: localTools.length,
         mcp_tools: mcp.tools.length,
         subagents: subagents.length
-      }
+      },
+      { status: "succeeded" }
     );
 
     return {
@@ -171,10 +187,10 @@ export async function resolveFlueAgentCapabilities({
       "luna.capabilities.failed",
       {
         agent_id: agent.id,
-        status: "failed",
         ...(errorCode(cause) === undefined ? {} : { code: errorCode(cause) }),
         error: cause
-      }
+      },
+      { status: "failed" }
     );
 
     if (

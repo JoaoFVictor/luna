@@ -11,7 +11,11 @@ import {
   toFlueModelOptions,
   type ResolvedModelProfiles
 } from "./model-config.js";
-import type { LunaObservability } from "./observability/luna-observability.js";
+import {
+  customEvent,
+  type LunaObservability
+} from "./observability/luna-observability.js";
+import { sanitizeJsonObject } from "./observability/sanitize.js";
 import {
   recordRejectedCapability,
   type ObservabilitySummary
@@ -67,13 +71,21 @@ async function emitRejectedCapability({
     reason: rejection.reason
   });
 
-  await observability?.emit("warn", "luna.subagent.capability.rejected", {
-    agent_id: agentId,
-    status: "rejected",
-    capability: rejection.capability,
-    id: rejection.id,
-    reason: rejection.reason
-  });
+  if (observability !== undefined) {
+    await observability.emit(
+      customEvent({
+        ...observability.eventContext("warn"),
+        type: "luna.subagent.capability.rejected",
+        outcome: { status: "failed" },
+        data: sanitizeJsonObject({
+          agent_id: agentId,
+          capability: rejection.capability,
+          id: rejection.id,
+          reason: rejection.reason
+        })
+      })
+    );
+  }
 }
 
 async function rejectSubagentCapability({

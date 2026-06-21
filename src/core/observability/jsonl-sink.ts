@@ -1,5 +1,5 @@
 import type { ArtifactStore } from "../artifact-store.js";
-import type { LunaObservabilityEvent, LunaObservabilitySink } from "./events.js";
+import type { LunaEvent, LunaObservabilitySink } from "./events.js";
 import { sanitizeForObservability } from "./sanitize.js";
 
 export async function createJsonlEventSink(
@@ -11,7 +11,7 @@ export async function createJsonlEventSink(
   return {
     id: options.id ?? "jsonl",
     required: options.required ?? true,
-    append: async (event: LunaObservabilityEvent) => {
+    append: async (event: LunaEvent) => {
       await artifactStore.appendLine(
         "events.jsonl",
         sanitizeForObservability(event)

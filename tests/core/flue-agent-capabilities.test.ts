@@ -20,6 +20,12 @@ function tool(name: string): ToolDefinition {
 
 function fakeObservability(): LunaObservability {
   return {
+    eventContext: (severity) => ({
+      severity,
+      run: { id: "run-1", attempt: 1 },
+      workflow: { id: "workflow-1" },
+      timestamp: "2026-06-20T12:00:00.000Z"
+    }),
     emit: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
     isHardFailed: () => false,
@@ -149,15 +155,17 @@ describe("flue agent capabilities", () => {
       });
 
       expect(observability.emit).toHaveBeenCalledWith(
-        "info",
-        "luna.capabilities.resolved",
         expect.objectContaining({
-          agent_id: "code-implementer",
-          status: "completed",
-          skills: 1,
-          local_tools: 1,
-          mcp_tools: 0,
-          subagents: 0
+          type: "luna.capabilities.resolved",
+          severity: "info",
+          outcome: { status: "succeeded" },
+          data: expect.objectContaining({
+            agent_id: "code-implementer",
+            skills: 1,
+            local_tools: 1,
+            mcp_tools: 0,
+            subagents: 0
+          })
         })
       );
     } finally {
@@ -349,12 +357,14 @@ describe("flue agent capabilities", () => {
       ).rejects.toMatchObject({ code: "subagent_context_missing" });
 
       expect(observability.emit).toHaveBeenCalledWith(
-        "error",
-        "luna.capabilities.failed",
         expect.objectContaining({
-          agent_id: "code-implementer",
-          status: "failed",
-          code: "subagent_context_missing"
+          type: "luna.capabilities.failed",
+          severity: "error",
+          outcome: { status: "failed" },
+          data: expect.objectContaining({
+            agent_id: "code-implementer",
+            code: "subagent_context_missing"
+          })
         })
       );
     } finally {

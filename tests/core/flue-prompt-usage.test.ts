@@ -10,7 +10,7 @@ import {
   type ObservabilitySummary
 } from "../../src/core/observability/summary.js";
 import type { RunAgentStepOptions } from "../../src/core/configured-workflow-runner.js";
-import type { LunaObservabilityEvent } from "../../src/core/observability/events.js";
+import type { LunaEvent } from "../../src/core/observability/events.js";
 import { runFlueAgentStep } from "../../src/workflows/luna.js";
 
 async function testAgent(root: string): Promise<AgentDefinition> {
@@ -65,7 +65,7 @@ async function promptHarness({
 async function observabilityFixture(root: string): Promise<{
   artifactStore: ArtifactStore;
   summary: ObservabilitySummary;
-  events: LunaObservabilityEvent[];
+  events: LunaEvent[];
 }> {
   const artifactStore = new ArtifactStore(path.join(root, "artifacts"), "run-1");
   await artifactStore.initializeRunDirectory();
@@ -73,7 +73,7 @@ async function observabilityFixture(root: string): Promise<{
     runId: "run-1",
     workflowId: "code-review"
   });
-  const events: LunaObservabilityEvent[] = [];
+  const events: LunaEvent[] = [];
   return {
     artifactStore,
     summary,
@@ -90,7 +90,7 @@ function stepOptions({
   agent: AgentDefinition;
   artifactStore: ArtifactStore;
   summary: ObservabilitySummary;
-  events: LunaObservabilityEvent[];
+  events: LunaEvent[];
 }): RunAgentStepOptions {
   return {
     agent,
@@ -171,19 +171,20 @@ describe("Flue prompt usage observability", () => {
     ).resolves.toEqual({ summary: "ok" });
 
     const promptEvents = fixture.events.filter((event) =>
-      event.event.startsWith("luna.prompt.")
+      event.type.startsWith("luna.prompt.")
     );
 
-    expect(promptEvents.map((event) => event.event)).toEqual([
+    expect(promptEvents.map((event) => event.type)).toEqual([
       "luna.prompt.started",
       "luna.prompt.finished"
     ]);
     expect(promptEvents[0]).toMatchObject({
-      prompt_id: "agent:review",
-      step_id: "review",
-      agent_id: "reviewer"
+      data: {
+        prompt_id: "agent:review",
+        agent_id: "reviewer"
+      }
     });
-    expect(promptEvents[1]?.duration_ms).toEqual(expect.any(Number));
+    expect(promptEvents[1]?.data?.duration_ms).toEqual(expect.any(Number));
     expect(fixture.summary).toMatchObject({
       prompt_operations: 1,
       tokens: {
@@ -221,18 +222,20 @@ describe("Flue prompt usage observability", () => {
     ).resolves.toEqual({ summary: "ok" });
 
     const promptEvents = fixture.events.filter((event) =>
-      event.event.startsWith("luna.prompt.")
+      event.type.startsWith("luna.prompt.")
     );
 
-    expect(promptEvents.map((event) => event.event)).toEqual([
+    expect(promptEvents.map((event) => event.type)).toEqual([
       "luna.prompt.started",
       "luna.prompt.usage_missing",
       "luna.prompt.finished"
     ]);
     expect(promptEvents[1]).toMatchObject({
-      level: "warn",
-      prompt_id: "agent:review",
-      status: "completed"
+      type: "luna.prompt.usage_missing",
+      outcome: { status: "succeeded" },
+      data: {
+        prompt_id: "agent:review"
+      }
     });
     expect(fixture.summary).toMatchObject({
       prompt_operations: 1,
@@ -267,18 +270,20 @@ describe("Flue prompt usage observability", () => {
     ).rejects.toBe(failure);
 
     const promptEvents = fixture.events.filter((event) =>
-      event.event.startsWith("luna.prompt.")
+      event.type.startsWith("luna.prompt.")
     );
 
-    expect(promptEvents.map((event) => event.event)).toEqual([
+    expect(promptEvents.map((event) => event.type)).toEqual([
       "luna.prompt.started",
       "luna.prompt.failed"
     ]);
     expect(promptEvents[1]).toMatchObject({
-      prompt_id: "agent:review",
-      error: {
-        message: "model failed",
-        code: "model_failed"
+      data: {
+        prompt_id: "agent:review",
+        error: {
+          message: "model failed",
+          code: "model_failed"
+        }
       }
     });
     expect(fixture.summary).toMatchObject({
