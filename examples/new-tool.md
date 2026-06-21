@@ -43,7 +43,7 @@ new domain file there:
 
 ```ts
 import * as v from "valibot";
-import { runGit } from "../git.js";
+import { runGit } from "../git/client.js";
 import type { LunaToolDefinition } from "./contracts.js";
 
 const emptyParameters = v.object({});

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { cleanup } from "../../src/core/git-worktree-manager.js";
+import { cleanup } from "../../src/core/git/worktree-cleanup.js";
 import { prepare } from "../../src/core/providers/github/worktree-manager.js";
 import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
 import type { WorkspaceRecord } from "../../src/core/types.js";

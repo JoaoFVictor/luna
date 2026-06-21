@@ -6,7 +6,7 @@ import { lunaToolCatalog } from "../../src/core/tools/catalog.js";
 async function importRegistryWithGitMock() {
   vi.resetModules();
   const runGit = vi.fn(async () => "");
-  vi.doMock("../../src/core/git.js", () => ({ runGit }));
+  vi.doMock("../../src/core/git/client.js", () => ({ runGit }));
 
   const registry = await import(
     "../../src/core/agent-runtime/flue/tool-registry.js"
@@ -31,7 +31,7 @@ async function listFiles(relativeDirectory: string): Promise<string[]> {
 
 describe("flue tool registry", () => {
   afterEach(() => {
-    vi.doUnmock("../../src/core/git.js");
+    vi.doUnmock("../../src/core/git/client.js");
     vi.resetModules();
     vi.restoreAllMocks();
   });

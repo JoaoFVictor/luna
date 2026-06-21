@@ -3,7 +3,7 @@ import { commitChanges } from "../../src/core/write-mode/git-gates.js";
 import type { LocalTransactionJournalEntry } from "../../src/core/write-mode/transaction-journal.js";
 import type { AcceptanceDecision } from "../../src/core/types.js";
 import type { ValidationResult } from "../../src/core/agent-runtime/contracts.js";
-import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
+import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 
 type GitCall = {
   cwd: string;

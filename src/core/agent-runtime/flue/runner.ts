@@ -33,7 +33,7 @@ import {
 import { usageFromFlueResponse } from "./observability.js";
 import type { Invocation } from "../../types.js";
 import { runValidationCommands } from "../../validation-runner.js";
-import { collectWorktreeDiff } from "../../worktree-diff-collector.js";
+import { collectWorktreeDiff } from "../../git/diff/worktree-diff.js";
 
 type FlueAgentRunnerOptions = {
   ctx: FlueContext<Invocation>;

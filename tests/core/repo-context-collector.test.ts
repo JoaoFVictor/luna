@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
-import { collectRepoContext } from "../../src/core/repo-context-collector.js";
+import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 type FakeGitCall = {

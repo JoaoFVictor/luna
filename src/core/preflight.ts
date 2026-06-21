@@ -1,6 +1,6 @@
 import { stat as fsStat } from "node:fs/promises";
-import { runGit as defaultRunGit } from "./git.js";
-import { remoteUrlMatches } from "./remote-url.js";
+import { runGit as defaultRunGit } from "./git/client.js";
+import { remoteUrlMatches } from "./git/remote-url.js";
 import type {
   Invocation,
   RepositoryConfig

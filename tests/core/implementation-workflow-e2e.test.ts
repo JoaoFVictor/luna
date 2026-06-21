@@ -8,7 +8,7 @@ import {
   type ImplementationWorktreeRecord
 } from "../../src/core/write-mode/worktree.js";
 import type { Invocation, WorkspaceRecord } from "../../src/core/types.js";
-import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
+import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 
 const repoRoot = process.cwd();
 

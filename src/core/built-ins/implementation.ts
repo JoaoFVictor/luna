@@ -3,7 +3,7 @@ import {
 } from "../write-mode/worktree.js";
 import { safeJoin } from "../path-security.js";
 import { runValidationCommands as defaultRunValidationCommands } from "../validation-runner.js";
-import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../worktree-diff-collector.js";
+import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../git/diff/worktree-diff.js";
 import {
   commitChanges as defaultCommitChanges,
   pushBranch as defaultPushBranch
@@ -28,7 +28,7 @@ import {
   CommitChangesArtifactSchema,
   PushBranchArtifactSchema
 } from "../write-mode/types.js";
-import type { WorktreeDiff } from "../worktree-diff-collector.js";
+import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
 import { defineBuiltInStep } from "./registry.js";
 import {
   expectedRemoteUrlsFrom,

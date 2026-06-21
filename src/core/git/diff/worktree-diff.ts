@@ -1,7 +1,13 @@
 import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
-import { runGit as defaultRunGit } from "./git.js";
-import { redactString } from "./redactor.js";
+import { runGit as defaultRunGit } from "../client.js";
+import { redactString } from "../../redactor.js";
+import {
+  nulFields,
+  parseNumstat,
+  parseRawSubmodules,
+  type NumstatEntry
+} from "./parsers.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
@@ -71,16 +77,6 @@ function truncateBytes(
   };
 }
 
-function nulFields(output: string): string[] {
-  const fields = output.split("\0");
-
-  if (fields.at(-1) === "") {
-    fields.pop();
-  }
-
-  return fields;
-}
-
 function statusFromCodes(indexStatus: string, worktreeStatus: string): WorktreeFileStatus {
   const codes = [indexStatus, worktreeStatus];
 
@@ -148,78 +144,6 @@ function parseStatus(status: string): WorktreeDiffFile[] {
   }
 
   return files;
-}
-
-type NumstatEntry = {
-  binary: boolean;
-  additions: number;
-  deletions: number;
-};
-
-function parseCount(value: string): number {
-  return value === "-" ? 0 : Number.parseInt(value, 10);
-}
-
-function parseNumstat(numstat: string): Map<string, NumstatEntry> {
-  const entries = new Map<string, NumstatEntry>();
-  const fields = nulFields(numstat);
-
-  for (let index = 0; index < fields.length; ) {
-    const stats = fields[index++];
-    const firstTab = stats.indexOf("\t");
-    const secondTab = firstTab === -1 ? -1 : stats.indexOf("\t", firstTab + 1);
-
-    if (firstTab === -1 || secondTab === -1) {
-      continue;
-    }
-
-    const additions = stats.slice(0, firstTab);
-    const deletions = stats.slice(firstTab + 1, secondTab);
-    const pathInStats = stats.slice(secondTab + 1);
-    const path = pathInStats === "" ? fields[index + 1] : pathInStats;
-
-    if (pathInStats === "") {
-      index += 2;
-    }
-
-    if (!additions || !deletions || !path) {
-      continue;
-    }
-
-    entries.set(path, {
-      binary: additions === "-" && deletions === "-",
-      additions: parseCount(additions),
-      deletions: parseCount(deletions)
-    });
-  }
-
-  return entries;
-}
-
-function parseRawSubmodules(raw: string): Set<string> {
-  const submodules = new Set<string>();
-  const fields = nulFields(raw);
-
-  for (let index = 0; index < fields.length; ) {
-    const metadata = fields[index++];
-    const [, oldMode, newMode, , , statusCode] =
-      metadata.match(/^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/) ?? [];
-
-    if (!oldMode || !newMode || !statusCode) {
-      continue;
-    }
-
-    const isRenameOrCopy = statusCode.startsWith("R") || statusCode.startsWith("C");
-    const firstPath = fields[index++];
-    const secondPath = isRenameOrCopy ? fields[index++] : undefined;
-    const path = isRenameOrCopy ? secondPath : firstPath;
-
-    if (path && (oldMode === "160000" || newMode === "160000")) {
-      submodules.add(path);
-    }
-  }
-
-  return submodules;
 }
 
 function truncateUtf8ToBytes(content: string, maxBytes: number): string {

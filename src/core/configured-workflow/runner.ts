@@ -1,7 +1,7 @@
 import path from "node:path";
 import { writePlannedArtifacts } from "../artifact-write-plan.js";
 import { ArtifactStore } from "../artifact-store.js";
-import { cleanup as defaultCleanupWorktree } from "../git-worktree-manager.js";
+import { cleanup as defaultCleanupWorktree } from "../git/worktree-cleanup.js";
 import {
   builtInStepRegistry as defaultBuiltInStepRegistry
 } from "../built-ins/index.js";

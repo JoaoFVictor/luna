@@ -49,13 +49,13 @@ describe("trusted_host_local Flue agent loop runner", () => {
     const collectWorktreeDiff = vi.fn(async () => diffSummary);
 
     vi.doMock("@flue/runtime/node", () => ({ local }));
-    vi.doMock("../../src/core/git.js", () => ({ runGit }));
+    vi.doMock("../../src/core/git/client.js", () => ({ runGit }));
     vi.doMock("../../src/core/validation-runner.js", async (importOriginal) => ({
       ...(await importOriginal<typeof import("../../src/core/validation-runner.js")>()),
       runValidationCommands
     }));
-    vi.doMock("../../src/core/worktree-diff-collector.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/worktree-diff-collector.js")>()),
+    vi.doMock("../../src/core/git/diff/worktree-diff.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/git/diff/worktree-diff.js")>()),
       collectWorktreeDiff
     }));
 
@@ -456,8 +456,8 @@ describe("trusted_host_local Flue agent loop runner", () => {
       ...(await importOriginal<typeof import("../../src/core/validation-runner.js")>()),
       runValidationCommands
     }));
-    vi.doMock("../../src/core/worktree-diff-collector.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/worktree-diff-collector.js")>()),
+    vi.doMock("../../src/core/git/diff/worktree-diff.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/git/diff/worktree-diff.js")>()),
       collectWorktreeDiff
     }));
 

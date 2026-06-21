@@ -1,6 +1,6 @@
 import { validateFindingEvidence as defaultValidateFindingEvidence } from "../../evidence-validator.js";
 import { prepare as defaultPrepareWorktree } from "./worktree-manager.js";
-import { collectRepoContext as defaultCollectRepoContext } from "../../repo-context-collector.js";
+import { collectRepoContext as defaultCollectRepoContext } from "../../git/diff/repo-context.js";
 import {
   buildFinalReportJson as defaultBuildFinalReportJson,
   buildFinalReportMarkdown as defaultBuildFinalReportMarkdown

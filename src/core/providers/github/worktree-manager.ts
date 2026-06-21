@@ -2,7 +2,7 @@ import {
   mkdir as fsMkdir
 } from "node:fs/promises";
 import path from "node:path";
-import { runGit as defaultRunGit } from "../../git.js";
+import { runGit as defaultRunGit } from "../../git/client.js";
 import { safeJoin } from "../../path-security.js";
 import type {
   Invocation,

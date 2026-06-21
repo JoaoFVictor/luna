@@ -241,7 +241,7 @@ describe("read-only Flue agent runner", () => {
     const local = vi.fn();
     const runGit = vi.fn(async () => " M src/index.ts\n");
     vi.doMock("@flue/runtime/node", () => ({ local }));
-    vi.doMock("../../src/core/git.js", () => ({ runGit }));
+    vi.doMock("../../src/core/git/client.js", () => ({ runGit }));
 
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-"));
     const repositoryPath = path.join(root, "repo");

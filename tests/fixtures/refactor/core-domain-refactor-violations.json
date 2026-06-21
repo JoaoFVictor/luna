@@ -43,37 +43,7 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/configured-workflow/finalization.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/configured-workflow/node-runner.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/configured-workflow/runner.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/evidence-validator.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/git-failure.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/git-worktree-manager.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/git.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },
@@ -109,16 +79,6 @@
     },
     {
       "path": "src/core/redactor.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/remote-url.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/repo-context-collector.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },
@@ -169,11 +129,6 @@
     },
     {
       "path": "src/core/workspace-resolver.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/worktree-diff-collector.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     }

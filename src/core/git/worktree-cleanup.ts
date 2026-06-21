@@ -2,11 +2,11 @@ import {
   realpath as fsRealpath
 } from "node:fs/promises";
 import path from "node:path";
-import { runGit as defaultRunGit } from "./git.js";
-import { isInsideRoot } from "./path-security.js";
+import { runGit as defaultRunGit } from "./client.js";
+import { isInsideRoot } from "../path-security.js";
 import type {
   WorkspaceRecord
-} from "./types.js";
+} from "../types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Realpath = (path: string) => Promise<string>;

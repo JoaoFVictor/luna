@@ -17,7 +17,7 @@ import type {
   ChangeRequestRegistry
 } from "../change-request/contracts.js";
 import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
-import type { WorktreeDiff } from "../worktree-diff-collector.js";
+import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
 import type { WorkflowState } from "../workflow-state.js";
 
 export type MaybePromise<T> = T | Promise<T>;

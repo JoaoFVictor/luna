@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { runGit } from "../git.js";
+import { runGit } from "../git/client.js";
 import type {
   LunaToolDefinition,
   LunaToolDependencies

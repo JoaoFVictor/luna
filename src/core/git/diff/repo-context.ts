@@ -1,10 +1,15 @@
-import { runGit as defaultRunGit } from "./git.js";
+import { runGit as defaultRunGit } from "../client.js";
+import {
+  parseNameStatus,
+  parseNumstat,
+  parseRawDiff
+} from "./parsers.js";
 import type {
   ChangedFile,
   FileExcerpt,
   RepoContext,
   RepositoryConfig
-} from "./types.js";
+} from "../../types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
@@ -18,30 +23,6 @@ type CollectRepoContextOptions = {
   maxExcerptBytes?: number;
 };
 
-type FileStatus = ChangedFile["status"];
-
-type RawEntry = {
-  path: string;
-  previousPath?: string;
-  status: FileStatus;
-  oldMode: string;
-  newMode: string;
-  isSubmodule: boolean;
-};
-
-type NumstatEntry = {
-  path: string;
-  additions: number;
-  deletions: number;
-  binary: boolean;
-};
-
-type NameStatusEntry = {
-  path: string;
-  previousPath?: string;
-  status: FileStatus;
-};
-
 type PatchBudgetResult = {
   patch: string | null;
   truncated: boolean;
@@ -51,136 +32,6 @@ const DEFAULT_MAX_CHANGED_FILES = 100;
 const DEFAULT_MAX_DIFF_BYTES = 200_000;
 const DEFAULT_MAX_EXCERPT_BYTES = 8_000;
 const LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1";
-
-function statusFromCode(code: string): FileStatus {
-  switch (code[0]) {
-    case "A":
-      return "added";
-    case "M":
-      return "modified";
-    case "D":
-      return "deleted";
-    case "R":
-      return "renamed";
-    case "C":
-      return "copied";
-    case "T":
-      return "changed";
-    case "U":
-      return "unmerged";
-    default:
-      return "unknown";
-  }
-}
-
-function nulFields(output: string): string[] {
-  const fields = output.split("\0");
-
-  if (fields.at(-1) === "") {
-    fields.pop();
-  }
-
-  return fields;
-}
-
-function parseRaw(raw: string): Map<string, RawEntry> {
-  const entries = new Map<string, RawEntry>();
-  const fields = nulFields(raw);
-
-  for (let index = 0; index < fields.length; ) {
-    const metadata = fields[index++];
-    const [, oldMode, newMode, , , statusCode] =
-      metadata.match(/^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/) ?? [];
-
-    if (!oldMode || !newMode || !statusCode) {
-      continue;
-    }
-
-    const status = statusFromCode(statusCode);
-    const firstPath = fields[index++];
-    const secondPath = status === "renamed" || status === "copied" ? fields[index++] : undefined;
-    const path = status === "renamed" || status === "copied" ? secondPath : firstPath;
-    const previousPath = status === "renamed" ? firstPath : undefined;
-
-    if (!path) {
-      continue;
-    }
-
-    entries.set(path, {
-      path,
-      previousPath,
-      status,
-      oldMode,
-      newMode,
-      isSubmodule: oldMode === "160000" || newMode === "160000"
-    });
-  }
-
-  return entries;
-}
-
-function parseCount(value: string): number {
-  return value === "-" ? 0 : Number.parseInt(value, 10);
-}
-
-function parseNumstat(numstat: string): Map<string, NumstatEntry> {
-  const entries = new Map<string, NumstatEntry>();
-  const fields = nulFields(numstat);
-
-  for (let index = 0; index < fields.length; ) {
-    const stats = fields[index++];
-    const firstTab = stats.indexOf("\t");
-    const secondTab = firstTab === -1 ? -1 : stats.indexOf("\t", firstTab + 1);
-
-    if (firstTab === -1 || secondTab === -1) {
-      continue;
-    }
-
-    const additions = stats.slice(0, firstTab);
-    const deletions = stats.slice(firstTab + 1, secondTab);
-    const pathInStats = stats.slice(secondTab + 1);
-    const path = pathInStats === "" ? fields[index + 1] : pathInStats;
-
-    if (pathInStats === "") {
-      index += 2;
-    }
-
-    if (!additions || !deletions || !path) {
-      continue;
-    }
-
-    entries.set(path, {
-      path,
-      additions: parseCount(additions),
-      deletions: parseCount(deletions),
-      binary: additions === "-" && deletions === "-"
-    });
-  }
-
-  return entries;
-}
-
-function parseNameStatus(nameStatus: string): NameStatusEntry[] {
-  const entries: NameStatusEntry[] = [];
-  const fields = nulFields(nameStatus);
-
-  for (let index = 0; index < fields.length; ) {
-    const statusCode = fields[index++];
-    const status = statusFromCode(statusCode);
-    const firstPath = fields[index++];
-    const secondPath = status === "renamed" || status === "copied" ? fields[index++] : undefined;
-    const path = status === "renamed" || status === "copied" ? secondPath : firstPath;
-    const previousPath = status === "renamed" ? firstPath : undefined;
-
-    if (!path) {
-      continue;
-    }
-
-    entries.push({ path, previousPath, status });
-  }
-
-  return entries;
-}
 
 function lineCount(content: string): number {
   if (content.length === 0) {
@@ -251,7 +102,7 @@ export async function collectRepoContext({
   const statusShort = (await runGit(cwd, ["status", "--short"]))
     .split("\n")
     .filter((line) => line.length > 0);
-  const rawEntries = parseRaw(await runGit(cwd, ["diff", "--raw", "-z", baseSha, headSha]));
+  const rawEntries = parseRawDiff(await runGit(cwd, ["diff", "--raw", "-z", baseSha, headSha]));
   const numstatEntries = parseNumstat(
     await runGit(cwd, ["diff", "--numstat", "-z", baseSha, headSha])
   );

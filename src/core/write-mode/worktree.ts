@@ -1,7 +1,7 @@
 import { mkdir as fsMkdir } from "node:fs/promises";
 import path from "node:path";
-import { classifyGitFailure } from "../git-failure.js";
-import { runGit as defaultRunGit } from "../git.js";
+import { runGit as defaultRunGit } from "../git/client.js";
+import { classifyGitFailure } from "../git/errors.js";
 import {
   implementationBranchMetadata,
   type ImplementationBranchError,
