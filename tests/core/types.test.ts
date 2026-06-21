@@ -6,8 +6,6 @@ import {
   CodeReviewFindingsSchema,
   EvidenceRefSchema,
   FileExcerptSchema,
-  GitGateArtifactSchema,
-  ImplementationConfigSchema,
   InvocationSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
@@ -17,6 +15,10 @@ import {
   RoutingConfigSchema,
   ValidationResultSchema
 } from "../../src/core/types.js";
+import {
+  GitGateArtifactSchema,
+  ImplementationConfigSchema
+} from "../../src/core/write-mode/types.js";
 
 const validInvocation = {
   version: "2026-06",

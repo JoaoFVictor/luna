@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
 import { runPreflight } from "../../src/core/preflight.js";
-import type {
-  ImplementationConfig,
-  Invocation
-} from "../../src/core/types.js";
+import type { Invocation } from "../../src/core/types.js";
+import type { ImplementationConfig } from "../../src/core/write-mode/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 const pullRequest = githubPullRequestContextFrom(gitInvocation);

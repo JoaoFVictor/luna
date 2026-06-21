@@ -14,11 +14,11 @@ import { resolveModelProfiles } from "../../src/core/model-config.js";
 import { JiraConfigSchema } from "../../src/core/providers/jira/config.js";
 import {
   AppConfigSchema,
-  ImplementationConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RoutingConfigSchema
 } from "../../src/core/types.js";
+import { ImplementationConfigSchema } from "../../src/core/write-mode/types.js";
 
 const configSchemas = {
   "app.yaml": AppConfigSchema,

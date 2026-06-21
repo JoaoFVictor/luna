@@ -2,10 +2,10 @@ import { stat as fsStat } from "node:fs/promises";
 import { runGit as defaultRunGit } from "./git.js";
 import { remoteUrlMatches } from "./remote-url.js";
 import type {
-  ImplementationConfig,
   Invocation,
   RepositoryConfig
 } from "./types.js";
+import type { ImplementationConfig } from "./write-mode/types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Stat = (path: string) => Promise<{ isDirectory(): boolean }>;

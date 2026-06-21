@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { pushBranch } from "../../src/core/implementation-git-actions.js";
+import { pushBranch } from "../../src/core/write-mode/git-gates.js";
 import { openGitHubChangeRequest } from "../../src/core/providers/github/change-request-actions.js";
 import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact
-} from "../../src/core/types.js";
+} from "../../src/core/write-mode/types.js";
 
 type GitCall = {
   cwd: string;

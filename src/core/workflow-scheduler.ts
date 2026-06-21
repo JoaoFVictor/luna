@@ -1,12 +1,12 @@
 import type {
   BuiltInStepMetadata,
   ImplementationLifecycleOutcome
-} from "./built-ins/index.js";
+} from "./built-ins/types.js";
 import {
   initialImplementationLifecycleEvidence,
   recordWorkflowNodeLifecycle,
   type ImplementationLifecycleEvidence
-} from "./implementation-lifecycle.js";
+} from "./write-mode/lifecycle.js";
 import {
   stepFailedEvent,
   stepSkippedEvent,

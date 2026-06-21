@@ -1,4 +1,4 @@
-import type { ImplementationLifecycleEvidence } from "./implementation-lifecycle.js";
+import type { ImplementationLifecycleEvidence } from "./lifecycle.js";
 
 export function workspaceLifecycleDecision(
   evidence: ImplementationLifecycleEvidence,

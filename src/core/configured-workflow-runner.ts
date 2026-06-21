@@ -5,11 +5,13 @@ import { writePlannedArtifacts } from "./artifact-write-plan.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
 import {
-  builtInStepRegistry as defaultBuiltInStepRegistry,
-  type BuiltInStepDependencies,
-  type BuiltInStepMetadata,
-  type RunBuiltInStepOptions
+  builtInStepRegistry as defaultBuiltInStepRegistry
 } from "./built-ins/index.js";
+import type {
+  BuiltInStepDependencies,
+  BuiltInStepMetadata,
+  RunBuiltInStepOptions
+} from "./built-ins/types.js";
 import {
   loadOptionalYamlFile,
   loadYamlFile,
@@ -49,7 +51,7 @@ import {
 } from "./run-identity.js";
 import {
   lifecycleEvidenceFromSchedulerState
-} from "./implementation-lifecycle.js";
+} from "./write-mode/lifecycle.js";
 import { assertSafeSegment } from "./path-security.js";
 import {
   defaultWorkflowObservabilityConfig,
@@ -79,7 +81,6 @@ import {
 } from "./configured-workflow-node-runner.js";
 import {
   AppConfigSchema,
-  ImplementationConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RoutingConfigSchema,
@@ -95,6 +96,7 @@ import {
   type RunIdentity,
   type WorkspaceRecord
 } from "./types.js";
+import { ImplementationConfigSchema } from "./write-mode/types.js";
 
 export type { RunAgentLoopStepOptions, RunAgentStepOptions };
 

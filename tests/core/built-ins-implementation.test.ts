@@ -15,16 +15,18 @@ import {
 } from "../../src/core/providers/jira/built-ins.js";
 import type {
   AcceptanceDecision,
-  CommitChangesArtifact,
-  ImplementationConfig,
   Invocation,
-  PushBranchArtifact,
   RepositoryConfig,
   ValidationResult,
   WorkspaceRecord
 } from "../../src/core/types.js";
+import type {
+  CommitChangesArtifact,
+  ImplementationConfig,
+  PushBranchArtifact
+} from "../../src/core/write-mode/types.js";
 import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
-import type { ImplementationWorktreeRecord } from "../../src/core/implementation-worktree-manager.js";
+import type { ImplementationWorktreeRecord } from "../../src/core/write-mode/worktree.js";
 import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
 import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";
 import type { WorkflowState } from "../../src/core/workflow-state.js";

@@ -48,11 +48,6 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/built-ins/index.ts",
-      "rule": "export-star-barrel",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/config-loader.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
@@ -178,37 +173,12 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/implementation-branch.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/implementation-git-actions.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/implementation-lifecycle.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/implementation-worktree-manager.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/invocation-helpers.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },
     {
       "path": "src/core/json-value.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/local-transaction-journal.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },
@@ -309,11 +279,6 @@
     },
     {
       "path": "src/core/workflow-state.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/workspace-lifecycle.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     },

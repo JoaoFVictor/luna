@@ -4,11 +4,13 @@ import {
   buildImplementationReportMarkdown
 } from "../../src/core/providers/jira/report-builder.js";
 import type {
-  CommitChangesArtifact,
   Invocation,
-  PushBranchArtifact,
   ValidationResult
 } from "../../src/core/types.js";
+import type {
+  CommitChangesArtifact,
+  PushBranchArtifact
+} from "../../src/core/write-mode/types.js";
 import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
 
 const invocation: Invocation = {

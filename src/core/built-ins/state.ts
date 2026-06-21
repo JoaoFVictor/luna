@@ -1,13 +1,13 @@
-import type { ImplementationWorktreeRecord } from "../implementation-worktree-manager.js";
+import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
 import type {
   CodeReviewFindings,
   Finding,
-  ImplementationConfig,
   Invocation,
   RepositoryConfig,
   ValidationResult,
   WorkspaceRecord
 } from "../types.js";
+import type { ImplementationConfig } from "../write-mode/types.js";
 import { resolveWorkflowInput, type WorkflowState } from "../workflow-state.js";
 import { builtInError, type BuiltInErrorCode } from "./errors.js";
 

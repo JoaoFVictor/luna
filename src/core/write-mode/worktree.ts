@@ -1,19 +1,19 @@
 import { mkdir as fsMkdir } from "node:fs/promises";
 import path from "node:path";
-import { classifyGitFailure } from "./git-failure.js";
-import { runGit as defaultRunGit } from "./git.js";
+import { classifyGitFailure } from "../git-failure.js";
+import { runGit as defaultRunGit } from "../git.js";
 import {
   implementationBranchMetadata,
   type ImplementationBranchError,
   type ImplementationBranchSubject
-} from "./implementation-branch.js";
+} from "./branch.js";
 import {
   appendLocalTransactionJournalEntry,
   type AppendLocalTransactionJournalEntry,
   type LocalTransactionJournalEntry
-} from "./local-transaction-journal.js";
-import { safeJoin } from "./path-security.js";
-import type { RepositoryConfig, WorkspaceRecord } from "./types.js";
+} from "./transaction-journal.js";
+import { safeJoin } from "../path-security.js";
+import type { RepositoryConfig, WorkspaceRecord } from "../types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Mkdir = (

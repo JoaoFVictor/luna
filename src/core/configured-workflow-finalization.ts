@@ -1,6 +1,6 @@
 import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
-import { lifecycleEvidenceFromSchedulerState } from "./implementation-lifecycle.js";
-import { workspaceLifecycleDecision } from "./workspace-lifecycle.js";
+import { lifecycleEvidenceFromSchedulerState } from "./write-mode/lifecycle.js";
+import { workspaceLifecycleDecision } from "./write-mode/workspace-lifecycle.js";
 import type { ArtifactStore } from "./artifact-store.js";
 import type { SchedulerLockManager } from "./workflow-scheduler.js";
 import type {

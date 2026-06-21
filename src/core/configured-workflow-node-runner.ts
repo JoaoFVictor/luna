@@ -3,10 +3,12 @@ import {
   type AgentDefinition
 } from "./agent-definition.js";
 import {
-  runBuiltInStep as defaultRunBuiltInStep,
-  type BuiltInStepDependencies,
-  type RunBuiltInStepOptions
+  runBuiltInStep as defaultRunBuiltInStep
 } from "./built-ins/index.js";
+import type {
+  BuiltInStepDependencies,
+  RunBuiltInStepOptions
+} from "./built-ins/types.js";
 import { resolveWorkflowInput, type WorkflowState } from "./workflow-state.js";
 import type { WorkflowSubagentPolicy } from "./subagent-policy.js";
 import type { WorkflowNode } from "./workflow-definition.js";

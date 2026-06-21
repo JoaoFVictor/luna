@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { commitChanges } from "../../src/core/implementation-git-actions.js";
-import type { LocalTransactionJournalEntry } from "../../src/core/local-transaction-journal.js";
+import { commitChanges } from "../../src/core/write-mode/git-gates.js";
+import type { LocalTransactionJournalEntry } from "../../src/core/write-mode/transaction-journal.js";
 import type {
   AcceptanceDecision,
   ValidationResult

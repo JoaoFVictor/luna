@@ -22,6 +22,7 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 | Reusable worker | `agents/<id>/` | `examples/new-agent.md` |
 | Orchestration shape | `workflows/<id>/` | `examples/new-workflow.md` |
 | Deterministic workflow action | `src/core/built-ins/` | `examples/new-built-in.md` |
+| Write-mode git/workspace services | `src/core/write-mode/` | `skills/luna-create-built-in/SKILL.md` |
 | Agent-local callable function | `src/tools/` + registry | `examples/new-tool.md` |
 | LLM/runtime guidance | `skills/<id>/SKILL.md` | existing skills |
 
@@ -32,6 +33,8 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 - Workflow: order built-ins, agents, and agent loops.
 - Agent: perform model judgment with a schema output.
 - Built-in: deterministic TypeScript node called by YAML.
+- Write mode: deterministic git/worktree lifecycle services used by
+  implementation built-ins.
 - Tool: deterministic function exposed to an agent.
 - Skill: instructions loaded by an LLM or configured runtime agent.
 

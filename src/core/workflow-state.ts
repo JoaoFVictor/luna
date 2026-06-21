@@ -1,6 +1,6 @@
 import type {
   ImplementationLifecycleEvidence
-} from "./implementation-lifecycle.js";
+} from "./write-mode/lifecycle.js";
 import type {
   AppConfig,
   Invocation,

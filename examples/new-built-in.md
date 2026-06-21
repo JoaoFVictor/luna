@@ -20,7 +20,8 @@ Built-ins live under `src/core/built-ins/`.
 Current domain files:
 
 - `code-review.ts` for GitHub PR review steps.
-- `implementation.ts` for Jira implementation/write-mode steps.
+- `implementation.ts` for Jira implementation built-in steps; supporting
+  write-mode services live under `src/core/write-mode/`.
 
 Create a new domain file only when the capability does not belong to an
 existing domain. If you create a new domain file, create a matching focused
@@ -103,15 +104,11 @@ This is the source of truth for supported built-in names. `workflow-definition.t
 validates YAML through this catalog, and runtime execution resolves the same
 name through the registry.
 
-## 5. Re-export if needed
+## 5. Import direct owners
 
-If you created a new domain file, export it from `src/core/built-ins/index.ts`:
-
-```ts
-export * from "./my-domain.js";
-```
-
-Existing domain files are already re-exported.
+Do not add new barrel exports for built-in domain files. Runtime registration
+comes from `catalog.ts`; tests and other internal consumers should import the
+domain file that owns the step directly.
 
 ## 6. Use it from workflow YAML
 

@@ -1,20 +1,22 @@
 import type {
   AcceptanceDecision,
-  CommitChangesArtifact,
   Finding,
-  ImplementationConfig,
   Invocation,
-  PushBranchArtifact,
   RepoContext,
   RepositoryConfig,
   ValidationResult,
   WorkspaceRecord
 } from "../types.js";
 import type {
+  CommitChangesArtifact,
+  ImplementationConfig,
+  PushBranchArtifact
+} from "../write-mode/types.js";
+import type {
   ChangeRequestArtifact,
   ChangeRequestRegistry
 } from "../change-request/contracts.js";
-import type { ImplementationWorktreeRecord } from "../implementation-worktree-manager.js";
+import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
 import type { WorktreeDiff } from "../worktree-diff-collector.js";
 import type { WorkflowState } from "../workflow-state.js";
 

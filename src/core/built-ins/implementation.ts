@@ -1,13 +1,13 @@
 import {
   prepareImplementationWorktree as defaultPrepareImplementationWorktree
-} from "../implementation-worktree-manager.js";
+} from "../write-mode/worktree.js";
 import { safeJoin } from "../path-security.js";
 import { runValidationCommands as defaultRunValidationCommands } from "../validation-runner.js";
 import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../worktree-diff-collector.js";
 import {
   commitChanges as defaultCommitChanges,
   pushBranch as defaultPushBranch
-} from "../implementation-git-actions.js";
+} from "../write-mode/git-gates.js";
 import type {
   ChangeRequestArtifact,
   ChangeRequestRegistry
@@ -15,17 +15,21 @@ import type {
 import { ChangeRequestArtifactSchema } from "../change-request/contracts.js";
 import type {
   AcceptanceDecision,
-  CommitChangesArtifact,
-  PushBranchArtifact,
   ValidationResult
 } from "../types.js";
 import {
   AcceptanceDecisionSchema,
   AgentLoopResultSchema,
-  CommitChangesArtifactSchema,
-  PushBranchArtifactSchema,
   ValidationResultSchema
 } from "../types.js";
+import type {
+  CommitChangesArtifact,
+  PushBranchArtifact
+} from "../write-mode/types.js";
+import {
+  CommitChangesArtifactSchema,
+  PushBranchArtifactSchema
+} from "../write-mode/types.js";
 import type { WorktreeDiff } from "../worktree-diff-collector.js";
 import { defineBuiltInStep } from "./registry.js";
 import {

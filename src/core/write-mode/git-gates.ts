@@ -1,19 +1,21 @@
 import path from "node:path";
-import { classifyGitFailure, type GitFailure } from "./git-failure.js";
-import { runGit as defaultRunGit } from "./git.js";
+import { classifyGitFailure, type GitFailure } from "../git-failure.js";
+import { runGit as defaultRunGit } from "../git.js";
 import type {
   AppendLocalTransactionJournalEntry,
   LocalTransactionJournalEntry
-} from "./local-transaction-journal.js";
-import { appendLocalTransactionJournalEntry } from "./local-transaction-journal.js";
-import { remoteUrlMatches } from "./remote-url.js";
+} from "./transaction-journal.js";
+import { appendLocalTransactionJournalEntry } from "./transaction-journal.js";
+import { remoteUrlMatches } from "../remote-url.js";
 import type {
   AcceptanceDecision,
-  CommitChangesArtifact,
-  PushBranchArtifact,
   ValidationResult
+} from "../types.js";
+import type {
+  CommitChangesArtifact,
+  PushBranchArtifact
 } from "./types.js";
-import type { WorktreeDiff } from "./worktree-diff-collector.js";
+import type { WorktreeDiff } from "../worktree-diff-collector.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type ProcessFailure = {

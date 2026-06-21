@@ -1,4 +1,4 @@
-import type { BuiltInStepMetadata } from "./built-ins/index.js";
+import type { BuiltInStepMetadata } from "./built-ins/types.js";
 import type { WorkflowNode } from "./workflow-definition.js";
 
 export type WorkflowExecutionLocks = NonNullable<BuiltInStepMetadata["locks"]>;

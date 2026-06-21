@@ -1,12 +1,14 @@
 import { jiraIssueContextFrom } from "./task-context.js";
 import type { ChangeRequestArtifact } from "../../change-request/contracts.js";
 import type {
-  CommitChangesArtifact,
   Invocation,
   InvocationRepository,
-  PushBranchArtifact,
   ValidationResult
 } from "../../types.js";
+import type {
+  CommitChangesArtifact,
+  PushBranchArtifact
+} from "../../write-mode/types.js";
 
 type ImplementationWorktreeSummary = {
   path: string;

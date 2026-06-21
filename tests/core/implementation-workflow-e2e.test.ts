@@ -6,7 +6,7 @@ import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner
 import {
   prepareImplementationWorktree,
   type ImplementationWorktreeRecord
-} from "../../src/core/implementation-worktree-manager.js";
+} from "../../src/core/write-mode/worktree.js";
 import type { Invocation, WorkspaceRecord } from "../../src/core/types.js";
 import type { WorktreeDiff } from "../../src/core/worktree-diff-collector.js";
 

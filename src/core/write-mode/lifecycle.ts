@@ -1,8 +1,8 @@
 import type {
   BuiltInStepMetadata,
   ImplementationLifecycleOutcome
-} from "./built-ins/index.js";
-import type { SchedulerWorkflowState } from "./workflow-state.js";
+} from "../built-ins/types.js";
+import type { SchedulerWorkflowState } from "../workflow-state.js";
 
 export type ImplementationLifecycleEvidence = {
   workspaceCreated: boolean;

@@ -13,7 +13,8 @@ capabilities called by workflow YAML.
 - `src/core/built-ins/<domain>.ts`: exported step objects.
 - `src/core/built-ins/state.ts`: shared state/input parsing helpers only.
 - `src/core/built-ins/catalog.ts`: single source of supported built-in names.
-- `src/core/built-ins/index.ts`: public runtime registry and exports.
+- `src/core/write-mode/`: owned services and contracts for write-mode git
+  branches, worktrees, gates, lifecycle, and transaction journals.
 
 Use `defineBuiltInStep({ name, metadata?, run })`. Export each step
 individually as `<camelName>BuiltIn`.
@@ -33,6 +34,7 @@ from metadata.
 
 Add new built-ins to `defaultBuiltInSteps` in `catalog.ts`. Do not create a
 second built-in name list in workflow validation or runner code.
+Do not add barrel exports for new domain files; import owning modules directly.
 
 ## Testing
 

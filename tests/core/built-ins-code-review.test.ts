@@ -9,12 +9,12 @@ import {
 import type {
   AcceptanceDecision,
   Finding,
-  ImplementationConfig,
   Invocation,
   RepoContext,
   RepositoryConfig,
   WorkspaceRecord
 } from "../../src/core/types.js";
+import type { ImplementationConfig } from "../../src/core/write-mode/types.js";
 import type { WorkflowState } from "../../src/core/workflow-state.js";
 
 const invocation: Invocation = {
