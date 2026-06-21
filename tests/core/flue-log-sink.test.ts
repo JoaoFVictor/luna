@@ -6,7 +6,7 @@ const baseEvent = {
   type: "luna.info",
   severity: "info",
   timestamp: "2026-06-20T12:00:00.000Z",
-  run: { id: "run-1", flueRunId: "flue-1", attempt: 2 },
+  run: { id: "run-1", runtimeRunId: "flue-1", attempt: 2 },
   workflow: { id: "code-review" }
 } satisfies Omit<LunaEvent, "outcome" | "step" | "data">;
 

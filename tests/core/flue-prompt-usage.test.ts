@@ -123,7 +123,7 @@ function stepOptions({
       steps: {}
     },
     observability: createLunaObservability({
-      run: { id: "run-1", flueRunId: "flue-run-1", attempt: 1 },
+      run: { id: "run-1", runtimeRunId: "flue-run-1", attempt: 1 },
       workflow: { id: "code-review" },
       sinks: [
         {

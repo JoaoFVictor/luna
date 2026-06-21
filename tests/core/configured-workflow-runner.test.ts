@@ -287,12 +287,12 @@ describe("configured workflow runner", () => {
         expect.arrayContaining([
           expect.objectContaining({
             type: "luna.run.routed",
-            run: { id: "run-log", flueRunId: "flue-log", attempt: 1 },
+            run: { id: "run-log", runtimeRunId: "flue-log", attempt: 1 },
             workflow: { id: "code-review" }
           }),
           expect.objectContaining({
             type: "luna.run.completed",
-            run: { id: "run-log", flueRunId: "flue-log", attempt: 1 },
+            run: { id: "run-log", runtimeRunId: "flue-log", attempt: 1 },
             workflow: { id: "code-review" }
           })
         ])
@@ -536,7 +536,7 @@ describe("configured workflow runner", () => {
         expect.arrayContaining([
           expect.objectContaining({
             type: "luna.run.completed",
-            run: { id: "run-fail", flueRunId: "flue-fail", attempt: 1 },
+            run: { id: "run-fail", runtimeRunId: "flue-fail", attempt: 1 },
             workflow: { id: "code-review" },
             outcome: expect.objectContaining({ status: "failed" }),
             data: expect.objectContaining({

@@ -309,7 +309,7 @@ describe("run lock manager", () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
     const events: LunaEvent[] = [];
     const observability = createLunaObservability({
-      run: { id: "run-1", flueRunId: "flue-1" },
+      run: { id: "run-1", runtimeRunId: "flue-1" },
       workflow: { id: "code-review" },
       sinks: [
         {
@@ -338,7 +338,7 @@ describe("run lock manager", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "luna.lock.acquired",
-          run: { id: "run-1", flueRunId: "flue-1", attempt: 1 },
+          run: { id: "run-1", runtimeRunId: "flue-1", attempt: 1 },
           data: expect.objectContaining({
             "luna.resource": "repository:repo"
           })

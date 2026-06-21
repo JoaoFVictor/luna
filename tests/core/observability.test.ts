@@ -13,7 +13,7 @@ import { sanitizeJsonObject } from "../../src/core/observability/sanitize.js";
 
 function baseOptions(sinks: LunaObservabilitySink[]) {
   return {
-    run: { id: "run-1", flueRunId: "flue-1", attempt: 2 },
+    run: { id: "run-1", runtimeRunId: "flue-1", attempt: 2 },
     workflow: { id: "code-review" },
     sinks,
     now: () => new Date("2026-06-20T12:00:00.000Z")
@@ -137,7 +137,7 @@ describe("Luna observability", () => {
         type: "luna.test.event",
         severity: "info",
         timestamp: "2026-06-20T12:00:00.000Z",
-        run: { id: "run-1", flueRunId: "flue-1", attempt: 2 },
+        run: { id: "run-1", runtimeRunId: "flue-1", attempt: 2 },
         workflow: { id: "code-review" },
         step: { id: "plan", type: "agent" },
         outcome: { status: "succeeded" },

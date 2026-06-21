@@ -23,7 +23,7 @@ type ExpectedLunaEvent = {
   timestamp: string;
   run: {
     id: string;
-    flueRunId?: string;
+    runtimeRunId?: string;
     attempt: number;
   };
   workflow: {
@@ -47,7 +47,7 @@ const runtimeFiles = [
   "src/workflows/luna.ts"
 ];
 
-const run = { id: "run-1", flueRunId: "flue-1", attempt: 2 };
+const run = { id: "run-1", runtimeRunId: "flue-1", attempt: 2 };
 const workflow = { id: "code-review" };
 const timestamp = "2026-06-20T12:00:00.000Z";
 
@@ -83,6 +83,7 @@ function expectNormalizedEvent(event: LunaEvent): ExpectedLunaEvent {
   expect(event).not.toHaveProperty("run_id");
   expect(event).not.toHaveProperty("workflow_id");
   expect(event).not.toHaveProperty("attributes");
+  expect(event.run).not.toHaveProperty("flueRunId");
   return event;
 }
 
@@ -207,6 +208,7 @@ describe("luna event contract", () => {
       "luna.step.succeeded",
       expect.objectContaining({
         "luna.run_id": "run-1",
+        "luna.flue_run_id": "flue-1",
         "luna.workflow_id": "code-review",
         "luna.step_id": "plan",
         "luna.outcome_status": "succeeded"

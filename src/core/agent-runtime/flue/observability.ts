@@ -44,9 +44,9 @@ function attributesForEvent(event: LunaEvent): FlueLogAttributes {
     ...filteredAttributes,
     "luna.timestamp": event.timestamp,
     "luna.run_id": event.run.id,
-    ...(event.run.flueRunId === undefined
+    ...(event.run.runtimeRunId === undefined
       ? {}
-      : { "luna.flue_run_id": event.run.flueRunId }),
+      : { "luna.flue_run_id": event.run.runtimeRunId }),
     "luna.run_attempt": event.run.attempt,
     "luna.workflow_id": event.workflow.id,
     ...(event.step === undefined
