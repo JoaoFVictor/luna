@@ -7,6 +7,11 @@ import {
   type ImplementationBranchError,
   type ImplementationBranchSubject
 } from "./implementation-branch.js";
+import {
+  appendLocalTransactionJournalEntry,
+  type AppendLocalTransactionJournalEntry,
+  type LocalTransactionJournalEntry
+} from "./local-transaction-journal.js";
 import { safeJoin } from "./path-security.js";
 import type { RepositoryConfig, WorkspaceRecord } from "./types.js";
 
@@ -29,7 +34,8 @@ type ImplementationWorktreeErrorCode =
   | "branch_collision_retry_exhausted"
   | "invalid_base_ref"
   | "invalid_branch_length"
-  | "invalid_branch_pattern";
+  | "invalid_branch_pattern"
+  | "run_identity_missing";
 
 type ImplementationWorktreeError = Error & {
   code: ImplementationWorktreeErrorCode;
@@ -43,6 +49,9 @@ type PrepareImplementationWorktreeInput = {
   baseRef: string;
   branchPattern?: string;
   maxBranchLength?: number;
+  journalPath?: string;
+  appendJournalEntry?: AppendLocalTransactionJournalEntry;
+  now?: () => Date;
   runGit?: RunGit;
   mkdir?: Mkdir;
 };
@@ -56,6 +65,55 @@ function implementationWorktreeError(
   error.code = code;
 
   return error;
+}
+
+function errorSummary(error: unknown): { code: string; message: string } {
+  const code = (error as { code?: unknown })?.code;
+  const message =
+    error instanceof Error && error.message !== "" ? error.message : String(error);
+
+  return {
+    code: typeof code === "string" && code !== "" ? code : "unknown_error",
+    message
+  };
+}
+
+function worktreeJournalEntry({
+  runId,
+  phase,
+  timestamp,
+  repositoryPath,
+  worktreePath,
+  branchName,
+  cleanup,
+  originalFailure,
+  cleanupFailure
+}: {
+  runId: string;
+  phase: LocalTransactionJournalEntry["phase"];
+  timestamp: string;
+  repositoryPath: string;
+  worktreePath: string;
+  branchName?: string;
+  cleanup: LocalTransactionJournalEntry["cleanup"];
+  originalFailure?: LocalTransactionJournalEntry["originalFailure"];
+  cleanupFailure?: LocalTransactionJournalEntry["cleanupFailure"];
+}): LocalTransactionJournalEntry {
+  return {
+    runId,
+    operation: "worktree_create",
+    phase,
+    timestamp,
+    resources: {
+      worktreePath,
+      repositoryPath,
+      ...(branchName === undefined ? {} : { branchName })
+    },
+    cleanup,
+    indexRestoreStrategy: "none",
+    ...(originalFailure === undefined ? {} : { originalFailure }),
+    ...(cleanupFailure === undefined ? {} : { cleanupFailure })
+  };
 }
 
 async function validateBaseRef({
@@ -196,6 +254,21 @@ async function addWorktreeWithBranchRetry({
   );
 }
 
+async function rollbackCreatedWorktree({
+  repository,
+  worktreePath,
+  branch,
+  runGit
+}: {
+  repository: RepositoryConfig;
+  worktreePath: string;
+  branch: string;
+  runGit: RunGit;
+}): Promise<void> {
+  await runGit(repository.path, ["worktree", "remove", "--force", worktreePath]);
+  await runGit(repository.path, ["branch", "-D", branch]);
+}
+
 export async function prepareImplementationWorktree({
   subject,
   repository,
@@ -204,10 +277,33 @@ export async function prepareImplementationWorktree({
   baseRef,
   branchPattern = "feature/{slug}",
   maxBranchLength,
+  journalPath,
+  appendJournalEntry,
+  now = () => new Date(),
   runGit = defaultRunGit,
   mkdir = fsMkdir
 }: PrepareImplementationWorktreeInput): Promise<ImplementationWorktreeRecord> {
+  if (runId === "") {
+    throw implementationWorktreeError(
+      "Run identity is required before creating an implementation worktree",
+      "run_identity_missing"
+    );
+  }
+
   const worktreePath = await safeJoin(workspaceRoot, [repository.id, runId]);
+  const resolvedJournalPath =
+    journalPath ??
+    (await safeJoin(workspaceRoot, [
+      repository.id,
+      `${runId}.transactions.jsonl`
+    ]));
+  const appendJournal =
+    appendJournalEntry ??
+    (async (entry: LocalTransactionJournalEntry) =>
+      await appendLocalTransactionJournalEntry({
+        filePath: resolvedJournalPath,
+        entry
+      }));
 
   await validateBaseRef({ repository, baseRef, runGit });
   await mkdir(path.dirname(worktreePath), { recursive: true, mode: 0o700 });
@@ -218,29 +314,110 @@ export async function prepareImplementationWorktree({
       `${repository.remote}/${baseRef}`
     ])
   ).trim();
+  await appendJournal(
+    worktreeJournalEntry({
+      runId,
+      phase: "started",
+      timestamp: now().toISOString(),
+      repositoryPath: repository.path,
+      worktreePath,
+      cleanup: {
+        attempted: false,
+        branchRemovalAllowed: true
+      }
+    })
+  );
 
-  const expectedBranch = await addWorktreeWithBranchRetry({
-    subject,
-    repository,
-    branchPattern,
-    maxBranchLength,
-    runId,
-    worktreePath,
-    baseTarget: `${repository.remote}/${baseRef}`,
-    runGit
-  });
-
-  const actualBranch = (await runGit(worktreePath, [
-    "branch",
-    "--show-current"
-  ])).trim();
-
-  if (actualBranch !== expectedBranch) {
-    throw implementationWorktreeError(
-      `Worktree branch ${actualBranch} did not match expected ${expectedBranch}`,
-      "branch_mismatch"
+  let expectedBranch: string;
+  try {
+    expectedBranch = await addWorktreeWithBranchRetry({
+      subject,
+      repository,
+      branchPattern,
+      maxBranchLength,
+      runId,
+      worktreePath,
+      baseTarget: `${repository.remote}/${baseRef}`,
+      runGit
+    });
+  } catch (error) {
+    await appendJournal(
+      worktreeJournalEntry({
+        runId,
+        phase: "failed",
+        timestamp: now().toISOString(),
+        repositoryPath: repository.path,
+        worktreePath,
+        cleanup: {
+          attempted: false,
+          branchRemovalAllowed: true
+        },
+        originalFailure: errorSummary(error)
+      })
     );
+    throw error;
   }
+
+  try {
+    const actualBranch = (await runGit(worktreePath, [
+      "branch",
+      "--show-current"
+    ])).trim();
+
+    if (actualBranch !== expectedBranch) {
+      throw implementationWorktreeError(
+        `Worktree branch ${actualBranch} did not match expected ${expectedBranch}`,
+        "branch_mismatch"
+      );
+    }
+  } catch (error) {
+    let cleanupFailure: { code: string; message: string } | undefined;
+
+    try {
+      await rollbackCreatedWorktree({
+        repository,
+        worktreePath,
+        branch: expectedBranch,
+        runGit
+      });
+    } catch (error) {
+      cleanupFailure = errorSummary(error);
+    }
+
+    await appendJournal(
+      worktreeJournalEntry({
+        runId,
+        phase: "rolled_back",
+        timestamp: now().toISOString(),
+        repositoryPath: repository.path,
+        worktreePath,
+        branchName: expectedBranch,
+        cleanup: {
+          attempted: true,
+          action: "remove_worktree",
+          branchRemovalAllowed: true
+        },
+        originalFailure: errorSummary(error),
+        cleanupFailure
+      })
+    );
+    throw error;
+  }
+
+  await appendJournal(
+    worktreeJournalEntry({
+      runId,
+      phase: "succeeded",
+      timestamp: now().toISOString(),
+      repositoryPath: repository.path,
+      worktreePath,
+      branchName: expectedBranch,
+      cleanup: {
+        attempted: false,
+        branchRemovalAllowed: true
+      }
+    })
+  );
 
   return {
     run_id: runId,

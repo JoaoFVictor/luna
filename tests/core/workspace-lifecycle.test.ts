@@ -1,13 +1,34 @@
 import { describe, expect, it } from "vitest";
+import {
+  initialImplementationLifecycleEvidence,
+  markCommitResult,
+  markValidationResult,
+  type ImplementationLifecycleEvidence
+} from "../../src/core/implementation-lifecycle.js";
 import { shouldPreserveWriteWorkspace } from "../../src/core/workspace-lifecycle.js";
+
+function evidence(
+  overrides: Partial<ImplementationLifecycleEvidence> = {}
+): ImplementationLifecycleEvidence {
+  return {
+    ...initialImplementationLifecycleEvidence(),
+    workspaceCreated: true,
+    implementationStarted: true,
+    validationRan: true,
+    validationPassed: true,
+    diffCollectionSucceeded: true,
+    commitAttempted: true,
+    commitSucceeded: true,
+    ...overrides
+  };
+}
 
 const successfulInput = {
   commitEnabled: true,
-  validationPassed: true,
+  pushEnabled: false,
+  pullRequestEnabled: false,
   acceptanceAccepted: true,
-  commitSkippedOrFailed: false,
-  pushSkippedOrFailed: false,
-  pullRequestSkippedOrFailed: false
+  evidence: evidence()
 };
 
 describe("workspace lifecycle", () => {
@@ -24,7 +45,15 @@ describe("workspace lifecycle", () => {
     expect(
       shouldPreserveWriteWorkspace({
         ...successfulInput,
-        validationPassed: false
+        evidence: evidence({
+          validationRan: true,
+          validationPassed: false,
+          failureReason: {
+            phase: "validation",
+            code: "validation_failed",
+            message: "Validation failed"
+          }
+        })
       })
     ).toEqual({ preserve: true, reason: "validation_failed" });
   });
@@ -42,7 +71,8 @@ describe("workspace lifecycle", () => {
     expect(
       shouldPreserveWriteWorkspace({
         ...successfulInput,
-        pushSkippedOrFailed: true
+        pushEnabled: true,
+        evidence: evidence({ pushAttempted: false })
       })
     ).toEqual({ preserve: true, reason: "push_skipped_or_failed" });
   });
@@ -51,7 +81,11 @@ describe("workspace lifecycle", () => {
     expect(
       shouldPreserveWriteWorkspace({
         ...successfulInput,
-        pullRequestSkippedOrFailed: true
+        pullRequestEnabled: true,
+        evidence: evidence({
+          pushAttempted: true,
+          pullRequestAttempted: false
+        })
       })
     ).toEqual({ preserve: true, reason: "pull_request_skipped_or_failed" });
   });
@@ -67,9 +101,28 @@ describe("workspace lifecycle", () => {
     expect(
       shouldPreserveWriteWorkspace({
         ...successfulInput,
-        pushSkippedOrFailed: false,
-        pullRequestSkippedOrFailed: false
+        evidence: evidence({
+          pushAttempted: false,
+          pullRequestAttempted: false
+        })
       })
     ).toEqual({ preserve: false, reason: "success_cleanup" });
+  });
+
+  it("updates lifecycle evidence through typed helpers", () => {
+    expect(
+      markCommitResult(
+        markValidationResult(initialImplementationLifecycleEvidence(), {
+          ran: true,
+          passed: true
+        }),
+        { attempted: true, succeeded: false }
+      )
+    ).toMatchObject({
+      validationRan: true,
+      validationPassed: true,
+      commitAttempted: true,
+      commitSucceeded: false
+    });
   });
 });

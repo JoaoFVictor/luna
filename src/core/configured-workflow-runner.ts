@@ -52,6 +52,9 @@ import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
 } from "./run-identity.js";
+import {
+  implementationLifecycleEvidenceFromSteps
+} from "./implementation-lifecycle.js";
 import { assertSafeSegment, safeJoin } from "./path-security.js";
 import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
 import {
@@ -762,20 +765,18 @@ function cleanupMayRemoveWorktree({
 
   return !shouldPreserveWriteWorkspace({
     commitEnabled: implementationConfig?.commit.enabled ?? false,
-    validationPassed: validationPassedFromSteps(steps),
+    pushEnabled: implementationConfig?.push.enabled ?? false,
+    pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false,
     acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
-    commitSkippedOrFailed: commitSkippedOrFailed(
-      implementationConfig?.commit.enabled ?? false,
-      steps.commit ?? steps.commit_changes
-    ),
-    pushSkippedOrFailed: pushSkippedOrFailed(
-      implementationConfig?.push.enabled ?? false,
-      steps.push ?? steps.push_branch
-    ),
-    pullRequestSkippedOrFailed: pullRequestSkippedOrFailed(
-      implementationConfig?.pull_request.enabled ?? false,
-      steps.pull_request ?? steps.open_pull_request
-    )
+    evidence: implementationLifecycleEvidenceFromSteps({
+      workspaceCreated: workspaceRecord !== undefined,
+      steps,
+      gates: {
+        commitEnabled: implementationConfig?.commit.enabled ?? false,
+        pushEnabled: implementationConfig?.push.enabled ?? false,
+        pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false
+      }
+    })
   }).preserve;
 }
 
@@ -857,20 +858,18 @@ async function finalizeWriteSuccessWorkspace({
 }): Promise<WorkspaceRecord> {
   const lifecycle = shouldPreserveWriteWorkspace({
     commitEnabled: implementationConfig?.commit.enabled ?? false,
-    validationPassed: validationPassedFromSteps(steps),
+    pushEnabled: implementationConfig?.push.enabled ?? false,
+    pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false,
     acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
-    commitSkippedOrFailed: commitSkippedOrFailed(
-      implementationConfig?.commit.enabled ?? false,
-      steps.commit ?? steps.commit_changes
-    ),
-    pushSkippedOrFailed: pushSkippedOrFailed(
-      implementationConfig?.push.enabled ?? false,
-      steps.push ?? steps.push_branch
-    ),
-    pullRequestSkippedOrFailed: pullRequestSkippedOrFailed(
-      implementationConfig?.pull_request.enabled ?? false,
-      steps.pull_request ?? steps.open_pull_request
-    )
+    evidence: implementationLifecycleEvidenceFromSteps({
+      workspaceCreated: workspaceRecord !== undefined,
+      steps,
+      gates: {
+        commitEnabled: implementationConfig?.commit.enabled ?? false,
+        pushEnabled: implementationConfig?.push.enabled ?? false,
+        pullRequestEnabled: implementationConfig?.pull_request.enabled ?? false
+      }
+    })
   });
 
   if (lifecycle.preserve) {
@@ -923,39 +922,6 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
-function booleanAt(
-  value: unknown,
-  pathSegments: readonly string[]
-): boolean | undefined {
-  let current = value;
-
-  for (const segment of pathSegments) {
-    const record = recordValue(current);
-    if (record === undefined) {
-      return undefined;
-    }
-
-    current = record[segment];
-  }
-
-  return typeof current === "boolean" ? current : undefined;
-}
-
-function validationPassedFromSteps(steps: Record<string, unknown>): boolean {
-  for (const value of Object.values(steps)) {
-    const passed =
-      booleanAt(value, ["final_validation", "passed"]) ??
-      booleanAt(value, ["validation", "passed"]) ??
-      booleanAt(value, ["passed"]);
-
-    if (passed !== undefined) {
-      return passed;
-    }
-  }
-
-  return false;
-}
-
 function acceptanceAcceptedFromSteps(steps: Record<string, unknown>): boolean {
   const acceptance = recordValue(
     steps.acceptance ?? steps.implementation_acceptance
@@ -966,72 +932,6 @@ function acceptanceAcceptedFromSteps(steps: Record<string, unknown>): boolean {
   }
 
   return acceptance.status === "accepted" || acceptance.decision === "approve";
-}
-
-function gateSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
-  if (!gateEnabled) {
-    return false;
-  }
-
-  const record = recordValue(value);
-  if (record === undefined) {
-    return true;
-  }
-
-  return record.skipped === true || record.status === "failed";
-}
-
-function nonEmptyString(value: unknown): boolean {
-  return typeof value === "string" && value !== "";
-}
-
-function positiveInteger(value: unknown): boolean {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
-
-function gateSkippedOrFailedWithoutEvidence(
-  gateEnabled: boolean,
-  value: unknown,
-  hasSuccessEvidence: (record: Record<string, unknown>) => boolean
-): boolean {
-  if (!gateEnabled) {
-    return false;
-  }
-
-  if (gateSkippedOrFailed(gateEnabled, value)) {
-    return true;
-  }
-
-  const record = recordValue(value);
-  return record === undefined || !hasSuccessEvidence(record);
-}
-
-function commitSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
-  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) =>
-    nonEmptyString(record.commit_sha)
-  );
-}
-
-function pushSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
-  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) => {
-    if (record.pushed === true) {
-      return true;
-    }
-
-    return (
-      nonEmptyString(record.remote) &&
-      (nonEmptyString(record.branch) || nonEmptyString(record.ref))
-    );
-  });
-}
-
-function pullRequestSkippedOrFailed(
-  gateEnabled: boolean,
-  value: unknown
-): boolean {
-  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) =>
-    nonEmptyString(record.url) || positiveInteger(record.number)
-  );
 }
 
 function resolveAgentModel(

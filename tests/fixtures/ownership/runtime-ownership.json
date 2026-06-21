@@ -41,7 +41,15 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
+    "src/core/append-only-jsonl-writer.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
     "src/core/artifact-store.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/atomic-write.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
@@ -113,6 +121,10 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
+    "src/core/git-failure.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
     "src/core/git-worktree-manager.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
@@ -125,7 +137,15 @@
       "owner": "provider:github",
       "reason": "Owns GitHub-specific adapter or runtime context behavior."
     },
+    "src/core/implementation-branch.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
     "src/core/implementation-git-actions.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/implementation-lifecycle.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
@@ -148,6 +168,14 @@
     "src/core/jira-issue-context.ts": {
       "owner": "provider:jira",
       "reason": "Owns Jira-specific adapter, auth, or runtime context behavior."
+    },
+    "src/core/json-value.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/local-transaction-journal.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
     "src/core/mcp-config.ts": {
       "owner": "generic",
@@ -347,42 +375,47 @@
         "category": "jira"
       },
       {
-        "line": 80,
+        "line": 78,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 93,
+        "line": 78,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 93,
+        "line": 97,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 96,
+        "line": 97,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 145,
+        "line": 100,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 192,
+        "line": 149,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 193,
+        "line": 196,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 236,
+        "line": 197,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 240,
         "marker": "jira",
         "category": "jira"
       }
@@ -441,22 +474,7 @@
     ],
     "src/core/configured-workflow-runner.ts": [
       {
-        "line": 73,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 285,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 285,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 287,
+        "line": 76,
         "marker": "jira",
         "category": "jira"
       },
@@ -471,12 +489,27 @@
         "category": "jira"
       },
       {
-        "line": 293,
+        "line": 290,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 293,
+        "line": 291,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 291,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 296,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 296,
         "marker": "jira",
         "category": "jira"
       }
@@ -553,23 +586,6 @@
       },
       {
         "line": 146,
-        "marker": "jira",
-        "category": "jira"
-      }
-    ],
-    "src/core/implementation-worktree-manager.ts": [
-      {
-        "line": 4,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 4,
-        "marker": "jira-issue-context",
-        "category": "jira"
-      },
-      {
-        "line": 360,
         "marker": "jira",
         "category": "jira"
       }

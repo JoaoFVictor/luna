@@ -780,7 +780,7 @@ async function runImplementationLifecycleScenario({
 
     if (uses === "final_implementation_report") {
       return {
-        json: { workspace: undefined },
+        json: {},
         markdown: "# Implementation\n"
       };
     }
@@ -3060,12 +3060,13 @@ describe("configured workflow runner", () => {
       await writeWorkflow(root);
       await writeReviewPlannerAgent(root);
 
+      const untargetedInvocation: Invocation = {
+        ...invocation,
+        action: "opened"
+      };
+      delete untargetedInvocation.target;
       const result = await runConfiguredWorkflow({
-        invocation: {
-          ...invocation,
-          target: undefined,
-          action: "opened"
-        } as unknown as Invocation,
+        invocation: untargetedInvocation,
         configRoot: root,
         workflowsRoot: path.join(root, "workflows"),
         dependencies: {

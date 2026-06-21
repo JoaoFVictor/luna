@@ -7,6 +7,7 @@ import { implementationBranchMetadata } from "../../src/core/implementation-bran
 import {
   prepareImplementationWorktree
 } from "../../src/core/implementation-worktree-manager.js";
+import type { LocalTransactionJournalEntry } from "../../src/core/local-transaction-journal.js";
 import type { RepositoryConfig } from "../../src/core/types.js";
 
 type GitCall = {
@@ -120,6 +121,7 @@ describe("implementation worktree manager", () => {
     const runId = "20260619t120000z-jira-abc-123";
     const baseSha = "1111111111111111111111111111111111111111";
     const calls: GitCall[] = [];
+    const journalEntries: LocalTransactionJournalEntry[] = [];
     const expectedPath = path.join(workspaceRoot, repository.id, runId);
     const branch = expectedBranch({ runId });
 
@@ -130,6 +132,9 @@ describe("implementation worktree manager", () => {
         workspaceRoot,
         runId,
         baseRef: "main",
+        appendJournalEntry: async (entry) => {
+          journalEntries.push(entry);
+        },
         runGit: async (cwd, args) => {
           calls.push({ cwd, args });
 
@@ -182,10 +187,316 @@ describe("implementation worktree manager", () => {
           args: ["branch", "--show-current"]
         }
       ]);
+      expect(journalEntries).toEqual([
+        expect.objectContaining({
+          runId,
+          operation: "worktree_create",
+          phase: "started",
+          resources: {
+            worktreePath: expectedPath,
+            repositoryPath: repository.path
+          },
+          cleanup: {
+            attempted: false,
+            branchRemovalAllowed: true
+          },
+          indexRestoreStrategy: "none"
+        }),
+        expect.objectContaining({
+          runId,
+          operation: "worktree_create",
+          phase: "succeeded",
+          resources: {
+            worktreePath: expectedPath,
+            repositoryPath: repository.path,
+            branchName: branch
+          },
+          cleanup: {
+            attempted: false,
+            branchRemovalAllowed: true
+          },
+          indexRestoreStrategy: "none"
+        })
+      ]);
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
   });
+
+  it("fails missing run identity before creating a worktree", async () => {
+    const workspaceRoot = await tempRoot();
+    const calls: GitCall[] = [];
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId: "",
+          baseRef: "main",
+          runGit: async (cwd, args) => {
+            calls.push({ cwd, args });
+            return "";
+          }
+        })
+      ).rejects.toMatchObject({ code: "run_identity_missing" });
+
+      expect(calls).toEqual([]);
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("journals rollback only after a post-create branch invariant failure", async () => {
+    const workspaceRoot = await tempRoot();
+    const runId = "run-a1";
+    const branch = expectedBranch({ runId });
+    const wrongBranch = "feature/wrong";
+    const events: string[] = [];
+    const journalEntries: LocalTransactionJournalEntry[] = [];
+    const expectedPath = path.join(workspaceRoot, repository.id, runId);
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId,
+          baseRef: "main",
+          appendJournalEntry: async (entry) => {
+            journalEntries.push(entry);
+            events.push(`journal:${entry.phase}`);
+          },
+          runGit: async (_cwd, args) => {
+            if (args[0] === "rev-parse") {
+              return "1111111111111111111111111111111111111111\n";
+            }
+
+            if (args[0] === "worktree" && args[1] === "add") {
+              events.push("worktree_add");
+            }
+
+            if (args[0] === "branch" && args[1] === "--show-current") {
+              return `${wrongBranch}\n`;
+            }
+
+            if (args[0] === "worktree" && args[1] === "remove") {
+              events.push("cleanup_worktree");
+            }
+
+            if (args[0] === "branch" && args[1] === "-D") {
+              events.push("cleanup_branch");
+            }
+
+            return "";
+          }
+        })
+      ).rejects.toMatchObject({ code: "branch_mismatch" });
+
+      expect(events).toEqual([
+        "journal:started",
+        "worktree_add",
+        "cleanup_worktree",
+        "cleanup_branch",
+        "journal:rolled_back"
+      ]);
+      expect(journalEntries.at(-1)).toMatchObject({
+        runId,
+        operation: "worktree_create",
+        phase: "rolled_back",
+        resources: {
+          worktreePath: expectedPath,
+          repositoryPath: repository.path,
+          branchName: branch
+        },
+        cleanup: {
+          attempted: true,
+          action: "remove_worktree",
+          branchRemovalAllowed: true
+        },
+        indexRestoreStrategy: "none",
+        originalFailure: {
+          code: "branch_mismatch",
+          message: expect.stringContaining(wrongBranch)
+        }
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("journals cleanup failures after post-create invariant failures", async () => {
+    const workspaceRoot = await tempRoot();
+    const runId = "run-a1";
+    const branch = expectedBranch({ runId });
+    const cleanupError = Object.assign(new Error("remove failed"), {
+      code: "remove_failed"
+    });
+    const journalEntries: LocalTransactionJournalEntry[] = [];
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId,
+          baseRef: "main",
+          appendJournalEntry: async (entry) => {
+            journalEntries.push(entry);
+          },
+          runGit: async (_cwd, args) => {
+            if (args[0] === "rev-parse") {
+              return "1111111111111111111111111111111111111111\n";
+            }
+
+            if (args[0] === "branch" && args[1] === "--show-current") {
+              return "feature/wrong\n";
+            }
+
+            if (args[0] === "worktree" && args[1] === "remove") {
+              throw cleanupError;
+            }
+
+            return "";
+          }
+        })
+      ).rejects.toMatchObject({ code: "branch_mismatch" });
+
+      expect(journalEntries.at(-1)).toMatchObject({
+        phase: "rolled_back",
+        resources: {
+          branchName: branch
+        },
+        cleanup: {
+          attempted: true,
+          action: "remove_worktree",
+          branchRemovalAllowed: true
+        },
+        cleanupFailure: {
+          code: "remove_failed",
+          message: "remove failed"
+        }
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("journals rollback when post-create branch verification throws", async () => {
+    const workspaceRoot = await tempRoot();
+    const runId = "run-a1";
+    const branch = expectedBranch({ runId });
+    const verificationError = Object.assign(new Error("branch read failed"), {
+      code: "branch_read_failed"
+    });
+    const events: string[] = [];
+    const journalEntries: LocalTransactionJournalEntry[] = [];
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId,
+          baseRef: "main",
+          appendJournalEntry: async (entry) => {
+            journalEntries.push(entry);
+            events.push(`journal:${entry.phase}`);
+          },
+          runGit: async (_cwd, args) => {
+            if (args[0] === "rev-parse") {
+              return "1111111111111111111111111111111111111111\n";
+            }
+
+            if (args[0] === "worktree" && args[1] === "add") {
+              events.push("worktree_add");
+            }
+
+            if (args[0] === "branch" && args[1] === "--show-current") {
+              throw verificationError;
+            }
+
+            if (args[0] === "worktree" && args[1] === "remove") {
+              events.push("cleanup_worktree");
+            }
+
+            if (args[0] === "branch" && args[1] === "-D") {
+              events.push("cleanup_branch");
+            }
+
+            return "";
+          }
+        })
+      ).rejects.toMatchObject({ code: "branch_read_failed" });
+
+      expect(events).toEqual([
+        "journal:started",
+        "worktree_add",
+        "cleanup_worktree",
+        "cleanup_branch",
+        "journal:rolled_back"
+      ]);
+      expect(journalEntries.at(-1)).toMatchObject({
+        phase: "rolled_back",
+        resources: {
+          branchName: branch
+        },
+        cleanup: {
+          attempted: true,
+          action: "remove_worktree",
+          branchRemovalAllowed: true
+        },
+        originalFailure: {
+          code: "branch_read_failed",
+          message: "branch read failed"
+        }
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("does not cleanup before post-create invariants run", async () => {
+    const workspaceRoot = await tempRoot();
+    const events: string[] = [];
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId: "run-a1",
+          baseRef: "main",
+          runGit: async (_cwd, args) => {
+            if (args[0] === "rev-parse") {
+              return "1111111111111111111111111111111111111111\n";
+            }
+
+            if (args[0] === "worktree" && args[1] === "add") {
+              events.push("worktree_add");
+              throw new Error("create failed");
+            }
+
+            if (args[0] === "worktree" && args[1] === "remove") {
+              events.push("cleanup_worktree");
+            }
+
+            return "";
+          }
+        })
+      ).rejects.toThrow("create failed");
+
+      expect(events).toEqual(["worktree_add"]);
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
 
   it("preserves a stable hash derived from the full run id in the final branch name", async () => {
     const workspaceRoot = await tempRoot();
