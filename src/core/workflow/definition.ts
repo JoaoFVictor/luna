@@ -32,19 +32,7 @@ const OptionalExporterConfigSchema = z
 
 const ObservabilityConfigSchema = z
   .object({
-    exporters: z
-      .object({
-        jsonl: z
-          .object({
-            enabled: z.boolean().optional(),
-            required: z.boolean().optional()
-          })
-          .strict()
-          .optional(),
-        flue_log: OptionalExporterConfigSchema.optional()
-      })
-      .strict()
-      .optional()
+    exporters: z.record(OptionalExporterConfigSchema).optional()
   })
   .strict()
   .optional();
@@ -180,13 +168,20 @@ export type WorkflowExecution = {
 };
 export type WorkflowObservabilityConfig = {
   exporters: {
-    flue_log: { enabled: boolean; required: boolean };
+    runtime_log: { enabled: boolean; required: boolean };
   };
 };
 export const defaultWorkflowObservabilityConfig: WorkflowObservabilityConfig = {
   exporters: {
-    flue_log: { enabled: true, required: false }
+    runtime_log: { enabled: true, required: false }
   }
+};
+type WorkflowObservabilityExporterName =
+  keyof WorkflowObservabilityConfig["exporters"];
+export type WorkflowDefinitionLoadOptions = {
+  observabilityExporterAliases?: Readonly<
+    Record<string, WorkflowObservabilityExporterName>
+  >;
 };
 export type WorkflowGraph = z.infer<typeof WorkflowGraphShapeSchema>;
 export type WorkflowNode = WorkflowGraph["nodes"][number];
@@ -371,18 +366,35 @@ function validateWorkflowGraph(graph: WorkflowGraph): void {
 }
 
 function normalizeObservabilityConfig(
-  config: z.infer<typeof ObservabilityConfigSchema>
+  config: z.infer<typeof ObservabilityConfigSchema>,
+  options: WorkflowDefinitionLoadOptions = {}
 ): WorkflowObservabilityConfig {
   if (config?.exporters?.jsonl !== undefined) {
     throw new Error("events.jsonl is mandatory and cannot be configured");
   }
 
+  const runtimeLog = {
+    ...defaultWorkflowObservabilityConfig.exporters.runtime_log
+  };
+
+  for (const [exporterName, exporterConfig] of Object.entries(
+    config?.exporters ?? {}
+  )) {
+    const canonicalName =
+      options.observabilityExporterAliases?.[exporterName] ?? exporterName;
+    if (canonicalName !== "runtime_log") {
+      throw workflowDefinitionError(
+        `Unsupported observability exporter: ${exporterName}`,
+        "config_schema_invalid"
+      );
+    }
+
+    Object.assign(runtimeLog, exporterConfig);
+  }
+
   return {
     exporters: {
-      flue_log: {
-        ...defaultWorkflowObservabilityConfig.exporters.flue_log,
-        ...config?.exporters?.flue_log
-      }
+      runtime_log: runtimeLog
     }
   };
 }
@@ -398,7 +410,8 @@ function normalizeSubagentPolicy(
 
 export async function loadWorkflowDefinition(
   workflowsRoot: string,
-  workflowId: string
+  workflowId: string,
+  options: WorkflowDefinitionLoadOptions = {}
 ): Promise<WorkflowDefinition> {
   assertSafeSegment(workflowId);
   const directory = path.join(workflowsRoot, workflowId);
@@ -431,7 +444,7 @@ export async function loadWorkflowDefinition(
         ? {}
         : { lock_timeout_ms: metadata.execution.lock_timeout_ms })
     },
-    observability: normalizeObservabilityConfig(metadata.observability),
+    observability: normalizeObservabilityConfig(metadata.observability, options),
     subagent_policy: normalizeSubagentPolicy(metadata.subagent_policy)
   };
 }

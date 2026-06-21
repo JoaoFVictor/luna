@@ -34,7 +34,7 @@ function testEvent(
 }
 
 describe("Luna observability", () => {
-  it("always includes jsonl as required and appends enabled flue_log", () => {
+  it("always includes jsonl as required and appends enabled runtime_log sinks", () => {
     const jsonlSink: LunaObservabilitySink = {
       id: "original-jsonl",
       append: async () => undefined
@@ -47,20 +47,20 @@ describe("Luna observability", () => {
     const sinks = createObservabilitySinks({
       config: {
         exporters: {
-          flue_log: { enabled: true, required: false }
+          runtime_log: { enabled: true, required: false }
         }
       },
       jsonlSink,
-      flueLogSinks: [flueLogSink]
+      runtimeLogSinks: [flueLogSink]
     });
 
     expect(sinks).toEqual([
       expect.objectContaining({ id: "jsonl", required: true }),
-      expect.objectContaining({ id: "flue_log", required: false })
+      expect.objectContaining({ id: "runtime_log", required: false })
     ]);
   });
 
-  it("omits disabled flue_log but keeps jsonl", () => {
+  it("omits disabled runtime_log but keeps jsonl", () => {
     const jsonlSink: LunaObservabilitySink = {
       id: "original-jsonl",
       append: async () => undefined
@@ -73,18 +73,18 @@ describe("Luna observability", () => {
     const sinks = createObservabilitySinks({
       config: {
         exporters: {
-          flue_log: { enabled: false, required: false }
+          runtime_log: { enabled: false, required: false }
         }
       },
       jsonlSink,
-      flueLogSinks: [flueLogSink]
+      runtimeLogSinks: [flueLogSink]
     });
 
     expect(sinks.map((sink) => sink.id)).toEqual(["jsonl"]);
     expect(sinks[0]).toMatchObject({ required: true });
   });
 
-  it("fails when flue_log is required but unavailable", () => {
+  it("fails when runtime_log is required but unavailable", () => {
     const jsonlSink: LunaObservabilitySink = {
       id: "original-jsonl",
       append: async () => undefined
@@ -94,12 +94,12 @@ describe("Luna observability", () => {
       createObservabilitySinks({
         config: {
           exporters: {
-            flue_log: { enabled: true, required: true }
+            runtime_log: { enabled: true, required: true }
           }
         },
         jsonlSink
       })
-    ).toThrow("Required observability exporter flue_log is unavailable");
+    ).toThrow("Required observability exporter runtime_log is unavailable");
   });
 
   it("decorates events with the normalized Luna event contract", async () => {

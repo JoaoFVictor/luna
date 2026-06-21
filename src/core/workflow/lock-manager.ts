@@ -14,7 +14,6 @@ export type RunLockManagerOptions = {
   root: string;
   runId: string;
   runtimeRunId?: string;
-  flueRunId?: string;
   timeoutMs: number;
   staleAfterMs: number;
   observability?: LunaObservability;
@@ -30,7 +29,7 @@ type LockOwnerMetadata = {
   resource: string;
   mode: LockMode;
   run_id: string;
-  flue_run_id?: string;
+  runtime_run_id?: string;
   owner_token?: string;
   pid: number;
   heartbeat_at: string;
@@ -109,8 +108,8 @@ function parseOwnerMetadata(content: string): LockOwnerMetadata | undefined {
     return undefined;
   }
 
-  const flueRunId = (parsed as LockOwnerMetadata).flue_run_id;
-  if (flueRunId !== undefined && typeof flueRunId !== "string") {
+  const runtimeRunId = (parsed as LockOwnerMetadata).runtime_run_id;
+  if (runtimeRunId !== undefined && typeof runtimeRunId !== "string") {
     return undefined;
   }
 
@@ -125,7 +124,7 @@ function parseOwnerMetadata(content: string): LockOwnerMetadata | undefined {
 export class RunLockManager {
   private readonly root: string;
   private readonly runId: string;
-  private readonly flueRunId: string | undefined;
+  private readonly runtimeRunId: string | undefined;
   private readonly timeoutMs: number;
   private readonly staleAfterMs: number;
   private readonly heartbeatIntervalMs: number;
@@ -147,7 +146,7 @@ export class RunLockManager {
 
     this.root = options.root;
     this.runId = options.runId;
-    this.flueRunId = options.runtimeRunId ?? options.flueRunId;
+    this.runtimeRunId = options.runtimeRunId;
     this.timeoutMs = options.timeoutMs;
     this.staleAfterMs = options.staleAfterMs;
     this.heartbeatIntervalMs = heartbeatIntervalMs;
@@ -266,7 +265,9 @@ export class RunLockManager {
       resource,
       mode,
       run_id: this.runId,
-      ...(this.flueRunId === undefined ? {} : { flue_run_id: this.flueRunId }),
+      ...(this.runtimeRunId === undefined
+        ? {}
+        : { runtime_run_id: this.runtimeRunId }),
       owner_token: ownerToken,
       pid: process.pid,
       heartbeat_at: new Date().toISOString()

@@ -293,9 +293,9 @@ Every run writes:
   failed-step counts, rejected-capability counts, and prompt usage gaps.
 
 `events.jsonl` is mandatory and cannot be disabled. Optional exporters attach
-beside it. Today the accepted optional exporter key is `flue_log`; OpenTelemetry,
-Braintrust, and Sentry are future exporter targets, not accepted workflow config
-keys.
+beside it. Today the accepted optional exporter key is `runtime_log`;
+OpenTelemetry, Braintrust, and Sentry are future exporter targets, not accepted
+workflow config keys. `flue_log` is accepted as a legacy Flue runtime alias.
 
 Workflow YAML can set optional observability exporters and the workflow-level
 subagent write policy:
@@ -303,7 +303,7 @@ subagent write policy:
 ```yaml
 observability:
   exporters:
-    flue_log:
+    runtime_log:
       enabled: true
       required: false
 

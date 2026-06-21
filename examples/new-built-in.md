@@ -100,9 +100,9 @@ export const defaultBuiltInSteps = Object.freeze([
 ] as const);
 ```
 
-This is the source of truth for supported built-in names. `workflow-definition.ts`
-validates YAML through this catalog, and runtime execution resolves the same
-name through the registry.
+This is the source of truth for supported built-in names.
+`src/core/workflow/definition.ts` validates YAML through this catalog, and
+runtime execution resolves the same name through the registry.
 
 ## 5. Import direct owners
 

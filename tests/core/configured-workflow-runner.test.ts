@@ -381,7 +381,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("keeps events.jsonl when flue_log exporter is disabled", async () => {
+  it("keeps events.jsonl when runtime_log exporter is disabled", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -389,7 +389,7 @@ describe("configured workflow runner", () => {
       await writePreflightWorkflow(root, "code-review", [
         "observability:",
         "  exporters:",
-        "    flue_log:",
+        "    runtime_log:",
         "      enabled: false",
         "      required: false"
       ]);
@@ -438,6 +438,55 @@ describe("configured workflow runner", () => {
       expect(events.map((event) => event.type)).toContain(
         "luna.run.completed"
       );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts legacy flue_log exporter config through the configured workflow runtime boundary", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writePreflightWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    flue_log:",
+        "      enabled: false",
+        "      required: false"
+      ]);
+
+      const optionalEvents: LunaEvent[] = [];
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        runtimeRunId: "flue-compat",
+        nonceFactory: () => "compat",
+        observabilitySinks: [
+          {
+            id: "legacy-flue-log",
+            required: false,
+            append: (event) => {
+              optionalEvents.push(event);
+            }
+          }
+        ],
+        dependencies: {
+          now: () => new Date("2026-06-20T00:00:00.000Z"),
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-compat",
+            flue_run_id: "flue-compat"
+          }),
+          runBuiltInStep: vi.fn(async () => ({ status: "ok" }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(optionalEvents).toEqual([]);
+      await expect(
+        pathExists(artifactPath(root, "code-review", "run-compat", "events.jsonl"))
+      ).resolves.toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

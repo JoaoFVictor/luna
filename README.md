@@ -254,13 +254,16 @@ policy:
 ```yaml
 observability:
   exporters:
-    flue_log:
+    runtime_log:
       enabled: true
       required: false
 
 subagent_policy:
   allow_write: false
 ```
+
+`flue_log` is accepted as a legacy Flue runtime alias, but `runtime_log` is the
+canonical workflow key.
 
 Workflow YAML may tune scheduler execution:
 

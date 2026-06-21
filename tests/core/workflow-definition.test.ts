@@ -497,7 +497,7 @@ describe("workflow definition loader", () => {
     });
   });
 
-  it("defaults observability to mandatory jsonl and optional flue_log", async () => {
+  it("defaults observability to mandatory jsonl and optional runtime_log", async () => {
     const root = await tempWorkflowRoot();
     try {
       await writeMinimalWorkflow(root);
@@ -506,7 +506,7 @@ describe("workflow definition loader", () => {
 
       expect(definition.observability).toEqual({
         exporters: {
-          flue_log: { enabled: true, required: false }
+          runtime_log: { enabled: true, required: false }
         }
       });
     } finally {
@@ -563,22 +563,40 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("loads explicit optional flue_log exporter config", async () => {
+  it("loads explicit optional runtime_log exporter config", async () => {
     const root = await tempWorkflowRoot();
     try {
       await writeMinimalWorkflow(root, "code-review", [
         "observability:",
         "  exporters:",
-        "    flue_log:",
+        "    runtime_log:",
         "      enabled: false",
         "      required: false"
       ]);
 
       const definition = await loadWorkflowDefinition(root, "code-review");
 
-      expect(definition.observability.exporters.flue_log).toEqual({
+      expect(definition.observability.exporters.runtime_log).toEqual({
         enabled: false,
         required: false
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Flue exporter aliases out of the generic workflow definition", async () => {
+    const root = await tempWorkflowRoot();
+    try {
+      await writeMinimalWorkflow(root, "code-review", [
+        "observability:",
+        "  exporters:",
+        "    flue_log:",
+        "      enabled: false"
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).rejects.toMatchObject({
+        code: "config_schema_invalid"
       });
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -48,6 +48,7 @@ import {
 } from "../model-config.js";
 import { ImplementationConfigSchema } from "../write-mode/types.js";
 import type { ConfiguredWorkflowBootstrap } from "./contracts.js";
+import { configuredWorkflowDefinitionLoadOptions } from "./workflow-definition-compatibility.js";
 
 export type ConfiguredWorkflowBootstrapDependencies = {
   createRunIdentity: (
@@ -122,7 +123,11 @@ async function loadConfiguredWorkflow(
   workflowId: string
 ): Promise<WorkflowDefinition> {
   try {
-    return await loadWorkflowDefinition(workflowsRoot, workflowId);
+    return await loadWorkflowDefinition(
+      workflowsRoot,
+      workflowId,
+      configuredWorkflowDefinitionLoadOptions
+    );
   } catch (cause) {
     const error = configuredWorkflowError(
       `Failed to load workflow configuration: ${workflowId}`,
@@ -203,7 +208,7 @@ export async function createRunObservability({
     sinks: createObservabilitySinks({
       config: observabilityConfig,
       jsonlSink,
-      flueLogSinks: sinks
+      runtimeLogSinks: sinks
     })
   });
 

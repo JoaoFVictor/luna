@@ -143,7 +143,7 @@ describe("run lock manager", () => {
     const manager = new RunLockManager({
       root,
       runId: "run-1",
-      flueRunId: "flue-1",
+      runtimeRunId: "runtime-1",
       timeoutMs: 1000,
       staleAfterMs: 6000
     });
@@ -156,8 +156,9 @@ describe("run lock manager", () => {
     expect(JSON.parse(content)).toMatchObject({
       resource: "repository:repo",
       run_id: "run-1",
-      flue_run_id: "flue-1"
+      runtime_run_id: "runtime-1"
     });
+    expect(JSON.parse(content)).not.toHaveProperty("flue_run_id");
     await release();
   });
 
@@ -324,7 +325,7 @@ describe("run lock manager", () => {
     const manager = new RunLockManager({
       root,
       runId: "run-1",
-      flueRunId: "flue-1",
+      runtimeRunId: "flue-1",
       timeoutMs: 1000,
       staleAfterMs: 3000,
       observability
