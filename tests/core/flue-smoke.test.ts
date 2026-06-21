@@ -111,7 +111,6 @@ async function runFlueSmoke(
         env: {
           ...process.env,
           NODE_ENV: "test",
-          LUNA_FAKE_REVIEW_NODES: "1",
           LUNA_CONFIG_ROOT: configRoot
         },
         timeout: 30_000
@@ -197,6 +196,45 @@ async function writeSmokeConfig(
     ].join("\n"),
     "utf8"
   );
+  await mkdir(path.join(root, "workflows", "code-review"), { recursive: true });
+  await writeFile(
+    path.join(root, "workflows", "code-review", "workflow.yaml"),
+    [
+      "id: code-review",
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "workflows", "code-review", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: preflight",
+      "    type: built_in",
+      "    uses: preflight",
+      "    artifacts:",
+      "      - path: final-report.json",
+      "        source: $.steps.preflight",
+      "        format: json",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "workflows", "code-review", "input.schema.json"),
+    JSON.stringify({ type: "object", additionalProperties: true }),
+    "utf8"
+  );
+  await writeFile(
+    path.join(root, "workflows", "code-review", "output.schema.json"),
+    JSON.stringify({ type: "object", additionalProperties: true }),
+    "utf8"
+  );
 }
 
 describe("Flue local run smoke", () => {
@@ -231,14 +269,5 @@ describe("Flue local run smoke", () => {
     await expect(pathExists(path.join(runRoot, "final-report.json"))).resolves.toBe(
       true
     );
-    await expect(pathExists(path.join(runRoot, "review-plan.json"))).resolves.toBe(
-      true
-    );
-    await expect(
-      pathExists(path.join(runRoot, "code-review-findings.json"))
-    ).resolves.toBe(true);
-    await expect(
-      pathExists(path.join(runRoot, "acceptance-review.json"))
-    ).resolves.toBe(true);
   });
 });

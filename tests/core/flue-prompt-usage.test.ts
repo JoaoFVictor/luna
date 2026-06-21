@@ -11,7 +11,7 @@ import {
 } from "../../src/core/observability/summary.js";
 import type { RunAgentStepOptions } from "../../src/core/configured-workflow-runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
-import { runFlueAgentStep } from "../../src/workflows/luna.js";
+import { runFlueAgentStep } from "../../src/core/flue-agent-runner.js";
 
 async function testAgent(root: string): Promise<AgentDefinition> {
   const directory = path.join(root, "agents", "reviewer");
@@ -100,7 +100,7 @@ function stepOptions({
       agent: "reviewer",
       output_schema: "review"
     },
-    model: { model: "openai/gpt-test", thinkingLevel: "medium" },
+    model: { model: "openai/gpt-test", reasoning_effort: "medium" },
     agentsRoot: path.dirname(agent.directory),
     modelProfiles: {
       deep: { model: "openai/gpt-test", reasoning_effort: "medium" }

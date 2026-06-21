@@ -207,7 +207,7 @@ describe("flue modules", () => {
             input: {},
             artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
-          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          model: { model: "openai/planner-test", reasoning_effort: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -240,7 +240,7 @@ describe("flue modules", () => {
             input: {},
             artifacts: [{ path: "code-review-findings.json", source: "$.steps.code_review", format: "json", required: true }]
           },
-          model: { model: "openai/reviewer-test", thinkingLevel: "high" },
+          model: { model: "openai/reviewer-test", reasoning_effort: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -273,7 +273,7 @@ describe("flue modules", () => {
             input: {},
             artifacts: [{ path: "acceptance-review.json", source: "$.steps.acceptance", format: "json", required: true }]
           },
-          model: { model: "openai/acceptance-test", thinkingLevel: "low" },
+          model: { model: "openai/acceptance-test", reasoning_effort: "low" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -425,7 +425,7 @@ describe("flue modules", () => {
             input: {},
             artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
-          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          model: { model: "openai/planner-test", reasoning_effort: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -545,7 +545,7 @@ describe("flue modules", () => {
             input: {},
             artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
-          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          model: { model: "openai/planner-test", reasoning_effort: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -654,7 +654,7 @@ describe("flue modules", () => {
             input: {},
             artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
-          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          model: { model: "openai/planner-test", reasoning_effort: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -754,7 +754,7 @@ describe("flue modules", () => {
             input: {},
             artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
-          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          model: { model: "openai/planner-test", reasoning_effort: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -883,7 +883,7 @@ describe("flue modules", () => {
             },
             repair: { attempts: 0 }
           },
-          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          model: { model: "openai/implementer-test", reasoning_effort: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -1107,7 +1107,7 @@ describe("flue modules", () => {
             },
             repair: { attempts: 0 }
           },
-          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          model: { model: "openai/implementer-test", reasoning_effort: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -1276,7 +1276,7 @@ describe("flue modules", () => {
             },
             repair: { attempts: 1 }
           },
-          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          model: { model: "openai/implementer-test", reasoning_effort: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -1430,7 +1430,7 @@ describe("flue modules", () => {
             },
             repair: { attempts: 0 }
           },
-          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          model: { model: "openai/implementer-test", reasoning_effort: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -1515,7 +1515,7 @@ describe("flue modules", () => {
             },
             repair: { attempts: 0 }
           },
-          model: { model: "openai/planner-test", thinkingLevel: "medium" },
+          model: { model: "openai/planner-test", reasoning_effort: "medium" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -1597,7 +1597,7 @@ describe("flue modules", () => {
             },
             repair: { attempts: 0 }
           } as never,
-          model: { model: "openai/implementer-test", thinkingLevel: "high" },
+          model: { model: "openai/implementer-test", reasoning_effort: "high" },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },

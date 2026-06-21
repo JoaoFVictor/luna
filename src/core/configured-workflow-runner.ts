@@ -22,10 +22,8 @@ import {
 } from "./config-loader.js";
 import {
   resolveModelProfiles,
-  toFlueModelOptions,
   type ResolvedModelProfiles
 } from "./model-config.js";
-import type { McpConfig } from "./mcp-config.js";
 import { assertJsonValue, type JsonValue } from "./json-value.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import {
@@ -85,6 +83,7 @@ import {
   type ErrorArtifact,
   type Invocation,
   type ModelsConfig,
+  type ModelProfile,
   type RepositoriesConfig,
   type RepositoryConfig,
   type RouteTarget,
@@ -105,13 +104,12 @@ type BuiltInMetadataRegistry = {
 export type RunAgentStepOptions = {
   agent: AgentDefinition;
   node: Extract<WorkflowNode, { type: "agent" }>;
-  model: ReturnType<typeof toFlueModelOptions>;
+  model: ModelProfile;
   agentsRoot: string;
   modelProfiles: ResolvedModelProfiles;
   workflowSubagentPolicy: WorkflowSubagentPolicy;
   input: Record<string, unknown>;
   state: WorkflowState;
-  mcpConfig?: McpConfig;
   observability?: LunaObservability;
   summary?: ObservabilitySummary;
   artifactStore?: ArtifactStore;
@@ -140,7 +138,7 @@ type ResolvedAgentLoopNode = Omit<
 export type RunAgentLoopStepOptions = {
   agent: AgentDefinition;
   node: ResolvedAgentLoopNode;
-  model: ReturnType<typeof toFlueModelOptions>;
+  model: ModelProfile;
   agentsRoot: string;
   modelProfiles: ResolvedModelProfiles;
   workflowSubagentPolicy: WorkflowSubagentPolicy;
@@ -149,7 +147,6 @@ export type RunAgentLoopStepOptions = {
   validation: ResolvedAgentLoopNode["validation"];
   repair: ResolvedAgentLoopNode["repair"];
   state: WorkflowState;
-  mcpConfig?: McpConfig;
   observability?: LunaObservability;
   summary?: ObservabilitySummary;
   artifactStore?: ArtifactStore;
@@ -838,7 +835,7 @@ async function finalizeWriteSuccessWorkspace({
 function resolveAgentModel(
   agent: AgentDefinition,
   modelProfiles: ResolvedModelProfiles
-): ReturnType<typeof toFlueModelOptions> {
+): ModelProfile {
   const profile = modelProfiles[agent.model_profile];
 
   if (profile === undefined) {
@@ -848,7 +845,7 @@ function resolveAgentModel(
     );
   }
 
-  return toFlueModelOptions(profile);
+  return profile;
 }
 
 function validateAgentLoopCommands(value: unknown): ValidationCommand[] {

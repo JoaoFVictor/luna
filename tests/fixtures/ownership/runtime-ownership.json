@@ -97,6 +97,10 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
+    "src/core/flue-agent-runner.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
     "src/core/flue-cli.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."

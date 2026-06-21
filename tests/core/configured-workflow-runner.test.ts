@@ -2174,6 +2174,39 @@ describe("configured workflow runner", () => {
     }
   });
 
+  it("returns agent_step_runner_missing when an agent dependency is not configured", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeReviewPlannerAgent(root);
+
+      await expect(
+        runConfiguredWorkflow({
+          invocation,
+          configRoot: root,
+          dependencies: {
+            createRunIdentity: staticRunIdentity(githubRun),
+            runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
+              uses === "collect_repo_context"
+                ? { files: [] }
+                : { status: "ok" }
+            )
+          }
+        })
+      ).rejects.toMatchObject({
+        code: "scheduler_step_failed",
+        details: {
+          step_id: "review_plan",
+          cause_code: "agent_step_runner_missing"
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("returns agent_loop_runner_missing when an agent_loop dependency is not configured", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
@@ -3289,7 +3322,7 @@ describe("configured workflow runner", () => {
           }),
           model: {
             model: "openai-codex/gpt-5.4-mini",
-            thinkingLevel: "medium"
+            reasoning_effort: "medium"
           },
           agentsRoot: path.join(root, "agents"),
           modelProfiles: {
