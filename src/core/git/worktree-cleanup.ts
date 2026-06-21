@@ -3,10 +3,8 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { runGit as defaultRunGit } from "./client.js";
-import { isInsideRoot } from "../path-security.js";
-import type {
-  WorkspaceRecord
-} from "../types.js";
+import { isInsideRoot } from "../security/path.js";
+import type { WorkspaceRecord } from "../write-mode/types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Realpath = (path: string) => Promise<string>;

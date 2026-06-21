@@ -1,51 +1,5 @@
 {
-  "currentWave": 0,
-  "finalMode": false,
-  "violations": [
-    {
-      "path": "src/adapters/registry.ts",
-      "rule": "generic-provider-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/built-ins/catalog.ts",
-      "rule": "generic-provider-import",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/configured-workflow-errors.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/json-value.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/path-security.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/preflight.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/redactor.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/types.ts",
-      "rule": "global-core-types-barrel",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/validation-runner.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    }
-  ]
+  "currentWave": 7,
+  "finalMode": true,
+  "violations": []
 }

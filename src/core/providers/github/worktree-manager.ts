@@ -3,9 +3,9 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { runGit as defaultRunGit } from "../../git/client.js";
-import { safeJoin } from "../../path-security.js";
+import { safeJoin } from "../../security/path.js";
 import type { Invocation } from "../../invocation/types.js";
-import type { WorkspaceRecord } from "../../types.js";
+import type { WorkspaceRecord } from "../../write-mode/types.js";
 import type { RepositoryConfig } from "../../config/schemas.js";
 import { githubPullRequestContextFrom } from "./pull-request-context.js";
 

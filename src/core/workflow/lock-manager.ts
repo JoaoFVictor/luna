@@ -6,7 +6,7 @@ import {
   type LunaObservability
 } from "../observability/luna-observability.js";
 import { sanitizeJsonObject } from "../observability/sanitize.js";
-import { slugify } from "../path-security.js";
+import { slugify } from "../security/path.js";
 
 export type LockMode = "exclusive";
 

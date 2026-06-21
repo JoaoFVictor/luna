@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runValidationCommands } from "../../src/core/validation-runner.js";
+import { runValidationCommands } from "../../src/core/validation/runner.js";
 
 describe("validation runner", () => {
   it("returns passed false for non-zero exit codes without throwing", async () => {

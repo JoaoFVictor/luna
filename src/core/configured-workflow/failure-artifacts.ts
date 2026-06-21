@@ -1,5 +1,5 @@
 import type { ArtifactStore } from "../artifacts/store.js";
-import { errorArtifact } from "../configured-workflow-errors.js";
+import { errorArtifact } from "./errors.js";
 import type {
   FailureArtifactWriter,
   FailureArtifactWriterDependencies,

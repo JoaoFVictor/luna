@@ -11,7 +11,7 @@ import {
   RepositoryRefSchema,
   type HeadRepositoryRef,
   type RepositoryRef
-} from "../../types.js";
+} from "../../git/diff/types.js";
 import type {
   InvocationSubject,
   NormalizedInvocation

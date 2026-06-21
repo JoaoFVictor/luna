@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ImplementationConfig } from "./write-mode/types.js";
 
 const NonEmptyStringSchema = z.string().min(1);
+
 export const RepositoryRefSchema = z
   .object({
     owner: NonEmptyStringSchema,
@@ -15,29 +15,6 @@ export const HeadRepositoryRefSchema = RepositoryRefSchema.extend({
   fork: z.boolean().optional()
 }).strict();
 export type HeadRepositoryRef = z.infer<typeof HeadRepositoryRefSchema>;
-
-export const ValidationCommandSchema = z
-  .object({
-    cmd: NonEmptyStringSchema,
-    args: z.array(z.string()).optional(),
-    timeout_ms: z.number().int().positive().optional()
-  })
-  .strict();
-export type ValidationCommand = z.infer<typeof ValidationCommandSchema>;
-
-export type RuntimeConfigState = {
-  implementation?: ImplementationConfig["implementation"];
-};
-
-export const WorkspaceRecordSchema = z
-  .object({
-    run_id: NonEmptyStringSchema,
-    path: NonEmptyStringSchema,
-    preserved: z.boolean(),
-    reason: NonEmptyStringSchema
-  })
-  .strict();
-export type WorkspaceRecord = z.infer<typeof WorkspaceRecordSchema>;
 
 export const FileExcerptSchema = z
   .object({
@@ -104,13 +81,3 @@ export const RepoContextSchema = z
   })
   .strict();
 export type RepoContext = z.infer<typeof RepoContextSchema>;
-
-export const ErrorArtifactSchema = z
-  .object({
-    run_id: NonEmptyStringSchema.optional(),
-    message: NonEmptyStringSchema,
-    code: NonEmptyStringSchema.optional(),
-    details: z.record(z.unknown()).optional()
-  })
-  .strict();
-export type ErrorArtifact = z.infer<typeof ErrorArtifactSchema>;

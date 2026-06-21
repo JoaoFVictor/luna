@@ -50,8 +50,8 @@ describe("trusted_host_local Flue agent loop runner", () => {
 
     vi.doMock("@flue/runtime/node", () => ({ local }));
     vi.doMock("../../src/core/git/client.js", () => ({ runGit }));
-    vi.doMock("../../src/core/validation-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/validation-runner.js")>()),
+    vi.doMock("../../src/core/validation/runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/validation/runner.js")>()),
       runValidationCommands
     }));
     vi.doMock("../../src/core/git/diff/worktree-diff.js", async (importOriginal) => ({
@@ -452,8 +452,8 @@ describe("trusted_host_local Flue agent loop runner", () => {
     vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/validation-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/validation-runner.js")>()),
+    vi.doMock("../../src/core/validation/runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/validation/runner.js")>()),
       runValidationCommands
     }));
     vi.doMock("../../src/core/git/diff/worktree-diff.js", async (importOriginal) => ({

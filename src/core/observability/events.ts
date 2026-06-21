@@ -1,7 +1,7 @@
 import {
   assertJsonValue,
   type JsonValue
-} from "../json-value.js";
+} from "../json/value.js";
 
 export type JsonObject = { [key: string]: JsonValue };
 

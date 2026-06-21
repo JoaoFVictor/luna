@@ -11,7 +11,7 @@ import type {
   RunBuiltInStepOptions
 } from "../built-ins/types.js";
 import { resolveConfigRoot } from "../config/loader.js";
-import { assertJsonValue, type JsonValue } from "../json-value.js";
+import { assertJsonValue, type JsonValue } from "../json/value.js";
 import { routeInvocation as defaultRouteInvocation } from "../invocation/router.js";
 import {
   RunLockManager,
@@ -54,7 +54,7 @@ import {
   configuredWorkflowError,
   errorCode,
   errorMessage
-} from "../configured-workflow-errors.js";
+} from "./errors.js";
 import {
   configuredWorkflowNodeRunner,
   type RunAgentLoopStepOptions,
@@ -86,10 +86,8 @@ import type {
   RunLockPort
 } from "./contracts.js";
 import type { Invocation, RunIdentity } from "../invocation/types.js";
-import {
-  type ErrorArtifact,
-  type WorkspaceRecord
-} from "../types.js";
+import type { ErrorArtifact } from "./errors.js";
+import type { WorkspaceRecord } from "../write-mode/types.js";
 import type { RepositoryConfig } from "../config/schemas.js";
 
 export type { RunAgentLoopStepOptions, RunAgentStepOptions };

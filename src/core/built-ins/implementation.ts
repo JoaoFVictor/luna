@@ -1,8 +1,8 @@
 import {
   prepareImplementationWorktree as defaultPrepareImplementationWorktree
 } from "../write-mode/worktree.js";
-import { safeJoin } from "../path-security.js";
-import { runValidationCommands as defaultRunValidationCommands } from "../validation-runner.js";
+import { safeJoin } from "../security/path.js";
+import { runValidationCommands as defaultRunValidationCommands } from "../validation/runner.js";
 import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../git/diff/worktree-diff.js";
 import {
   commitChanges as defaultCommitChanges,

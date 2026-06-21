@@ -36,6 +36,8 @@ type CoreDomainViolationManifest = {
 const allowedCompositionRoots = new Set([
   "src/workflows/luna.ts",
   "src/cli.ts",
+  "src/adapters/registry.ts",
+  "src/core/built-ins/catalog.ts",
   "src/core/change-request/default-registry.ts"
 ]);
 
@@ -519,7 +521,7 @@ describe("refactor guardrails", () => {
     const sourceFileSet = new Set(sourceFiles);
     const violationKeys = new Set<string>();
 
-    expect(manifest.currentWave).toBe(0);
+    expect(manifest.currentWave).toBe(7);
     expect(typeof manifest.finalMode).toBe("boolean");
 
     for (const violation of manifest.violations) {

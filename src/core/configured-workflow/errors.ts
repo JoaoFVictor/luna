@@ -1,4 +1,16 @@
-import type { ErrorArtifact } from "./types.js";
+import { z } from "zod";
+
+const NonEmptyStringSchema = z.string().min(1);
+
+export const ErrorArtifactSchema = z
+  .object({
+    run_id: NonEmptyStringSchema.optional(),
+    message: NonEmptyStringSchema,
+    code: NonEmptyStringSchema.optional(),
+    details: z.record(z.unknown()).optional()
+  })
+  .strict();
+export type ErrorArtifact = z.infer<typeof ErrorArtifactSchema>;
 
 export function configuredWorkflowError(
   message: string,

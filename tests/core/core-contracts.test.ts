@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   FileExcerptSchema,
   RepoContextSchema
-} from "../../src/core/types.js";
+} from "../../src/core/git/diff/types.js";
 import {
   InvocationSchema,
   RunIdentitySchema,

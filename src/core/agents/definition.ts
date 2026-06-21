@@ -6,7 +6,7 @@ import {
   assertNoDuplicateCapabilities
 } from "./capabilities.js";
 import { loadYamlFile } from "../config/loader.js";
-import { assertSafeSegment, isInsideRoot } from "../path-security.js";
+import { assertSafeSegment, isInsideRoot } from "../security/path.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 

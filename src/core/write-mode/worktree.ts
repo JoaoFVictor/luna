@@ -12,9 +12,9 @@ import {
   type AppendLocalTransactionJournalEntry,
   type LocalTransactionJournalEntry
 } from "./transaction-journal.js";
-import { safeJoin } from "../path-security.js";
+import { safeJoin } from "../security/path.js";
 import type { RepositoryConfig } from "../config/schemas.js";
-import type { WorkspaceRecord } from "../types.js";
+import type { WorkspaceRecord } from "./types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Mkdir = (

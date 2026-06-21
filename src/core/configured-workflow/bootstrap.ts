@@ -6,7 +6,7 @@ import {
   loadOptionalYamlFile,
   loadYamlFile
 } from "../config/loader.js";
-import { configuredWorkflowError } from "../configured-workflow-errors.js";
+import { configuredWorkflowError } from "./errors.js";
 import { createObservabilitySinks } from "../observability/exporter-config.js";
 import { createJsonlEventSink } from "../observability/jsonl-sink.js";
 import {
@@ -19,7 +19,7 @@ import {
   writeSummaryBestEffort,
   type ObservabilitySummary
 } from "../observability/summary.js";
-import { assertSafeSegment } from "../path-security.js";
+import { assertSafeSegment } from "../security/path.js";
 import { routeInvocation as defaultRouteInvocation } from "../invocation/router.js";
 import type { RunIdentityOptions } from "../invocation/run-identity.js";
 import {
@@ -37,7 +37,7 @@ import {
   type ModelsConfig,
   type RepositoriesConfig
 } from "../config/schemas.js";
-import type { RuntimeConfigState } from "../types.js";
+import type { RuntimeConfigState } from "./contracts.js";
 import {
   defaultWorkflowObservabilityConfig,
   type WorkflowDefinition,

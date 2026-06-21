@@ -1,7 +1,7 @@
 import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
 import { runGit as defaultRunGit } from "../client.js";
-import { redactString } from "../../redactor.js";
+import { redactString } from "../../security/redactor.js";
 import {
   nulFields,
   parseNumstat,

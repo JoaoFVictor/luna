@@ -8,7 +8,7 @@ import {
 } from "./artifact-write-plan.js";
 import { isBuiltInStepName } from "../built-ins/catalog.js";
 import { loadYamlFile } from "../config/loader.js";
-import { assertSafeSegment, isInsideRoot } from "../path-security.js";
+import { assertSafeSegment, isInsideRoot } from "../security/path.js";
 import {
   defaultWorkflowSubagentPolicy,
   type WorkflowSubagentPolicy

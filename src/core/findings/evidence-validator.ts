@@ -1,4 +1,4 @@
-import type { RepoContext } from "../types.js";
+import type { RepoContext } from "../git/diff/types.js";
 import type { Finding } from "./types.js";
 
 function hasValidEvidence(

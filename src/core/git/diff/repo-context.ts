@@ -9,7 +9,7 @@ import type {
   ChangedFile,
   FileExcerpt,
   RepoContext
-} from "../../types.js";
+} from "./types.js";
 import type { RepositoryConfig } from "../../config/schemas.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;

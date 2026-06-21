@@ -2,10 +2,8 @@ import type {
   ImplementationLifecycleEvidence
 } from "../write-mode/lifecycle.js";
 import type { Invocation, RunIdentity } from "../invocation/types.js";
-import type {
-  RuntimeConfigState,
-  WorkspaceRecord
-} from "../types.js";
+import type { RuntimeConfigState } from "../configured-workflow/contracts.js";
+import type { WorkspaceRecord } from "../write-mode/types.js";
 import type { AppConfig, RepositoryConfig } from "../config/schemas.js";
 
 export type WorkflowState = {

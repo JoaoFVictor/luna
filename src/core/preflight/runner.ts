@@ -1,9 +1,9 @@
 import { stat as fsStat } from "node:fs/promises";
-import { runGit as defaultRunGit } from "./git/client.js";
-import { remoteUrlMatches } from "./git/remote-url.js";
-import type { Invocation } from "./invocation/types.js";
-import type { RepositoryConfig } from "./config/schemas.js";
-import type { ImplementationConfig } from "./write-mode/types.js";
+import { runGit as defaultRunGit } from "../git/client.js";
+import { remoteUrlMatches } from "../git/remote-url.js";
+import type { Invocation } from "../invocation/types.js";
+import type { RepositoryConfig } from "../config/schemas.js";
+import type { ImplementationConfig } from "../write-mode/types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Stat = (path: string) => Promise<{ isDirectory(): boolean }>;

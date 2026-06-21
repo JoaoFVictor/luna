@@ -1,4 +1,4 @@
-import { slugify } from "../path-security.js";
+import { slugify } from "../security/path.js";
 import type { Invocation, RunIdentity } from "./types.js";
 
 export type RunIdentityOptions = {

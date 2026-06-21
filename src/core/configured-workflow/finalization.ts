@@ -3,12 +3,10 @@ import { lifecycleEvidenceFromSchedulerState } from "../write-mode/lifecycle.js"
 import { workspaceLifecycleDecision } from "../write-mode/workspace-lifecycle.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { SchedulerLockManager } from "../workflow/scheduler.js";
-import type {
-  RuntimeConfigState,
-  WorkspaceRecord
-} from "../types.js";
+import type { RuntimeConfigState } from "./contracts.js";
+import type { WorkspaceRecord } from "../write-mode/types.js";
 import type { AppConfig, RepositoryConfig } from "../config/schemas.js";
-import { configuredWorkflowError } from "../configured-workflow-errors.js";
+import { configuredWorkflowError } from "./errors.js";
 import type { ConfiguredWorkflowFinalizer } from "./contracts.js";
 
 export type ConfiguredWorkflowFailureFinalizationOptions = {

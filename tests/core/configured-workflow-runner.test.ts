@@ -7,7 +7,7 @@ import type { LunaEvent } from "../../src/core/observability/events.js";
 import type { RunIdentityOptions } from "../../src/core/invocation/run-identity.js";
 import type {
   WorkspaceRecord
-} from "../../src/core/types.js";
+} from "../../src/core/write-mode/types.js";
 import type {
   Invocation,
   RunIdentity

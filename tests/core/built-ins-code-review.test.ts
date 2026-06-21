@@ -7,9 +7,9 @@ import {
   validateCodeReviewFindingsBuiltIn
 } from "../../src/core/providers/github/built-ins.js";
 import type {
-  RepoContext,
   WorkspaceRecord
-} from "../../src/core/types.js";
+} from "../../src/core/write-mode/types.js";
+import type { RepoContext } from "../../src/core/git/diff/types.js";
 import type { Invocation } from "../../src/core/invocation/types.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 import type { Finding } from "../../src/core/findings/types.js";

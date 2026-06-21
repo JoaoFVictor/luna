@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ChangeRequestConfigSchema } from "../change-request/contracts.js";
-import { ValidationCommandSchema } from "../types.js";
+import { ValidationCommandSchema } from "../validation/runner.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -24,6 +24,16 @@ export const PushBranchArtifactSchema = GitGateArtifactSchema.extend({
   branch: NonEmptyStringSchema.optional()
 }).strict();
 export type PushBranchArtifact = z.infer<typeof PushBranchArtifactSchema>;
+
+export const WorkspaceRecordSchema = z
+  .object({
+    run_id: NonEmptyStringSchema,
+    path: NonEmptyStringSchema,
+    preserved: z.boolean(),
+    reason: NonEmptyStringSchema
+  })
+  .strict();
+export type WorkspaceRecord = z.infer<typeof WorkspaceRecordSchema>;
 
 export const ImplementationConfigSchema = z
   .object({

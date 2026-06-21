@@ -1,31 +1,14 @@
 import { z } from "zod";
+import {
+  ValidationCommandResultSchema,
+  ValidationResultSchema,
+  type ValidationCommandResult,
+  type ValidationResult
+} from "../validation/runner.js";
 
 const NonEmptyStringSchema = z.string().min(1);
-
-export const ValidationCommandResultSchema = z
-  .object({
-    cmd: NonEmptyStringSchema,
-    args: z.array(z.string()).optional(),
-    exit_code: z.number().int().nullable(),
-    stdout: z.string(),
-    stderr: z.string(),
-    stdout_truncated: z.boolean(),
-    stderr_truncated: z.boolean(),
-    duration_ms: z.number().int().nonnegative(),
-    timed_out: z.boolean()
-  })
-  .strict();
-export type ValidationCommandResult = z.infer<
-  typeof ValidationCommandResultSchema
->;
-
-export const ValidationResultSchema = z
-  .object({
-    passed: z.boolean(),
-    commands: z.array(ValidationCommandResultSchema).optional()
-  })
-  .strict();
-export type ValidationResult = z.infer<typeof ValidationResultSchema>;
+export type { ValidationCommandResult, ValidationResult };
+export { ValidationCommandResultSchema, ValidationResultSchema };
 
 export const AgentLoopAttemptSchema = z
   .object({

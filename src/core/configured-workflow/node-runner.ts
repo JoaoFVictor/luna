@@ -16,14 +16,14 @@ import type { ResolvedModelProfiles } from "../config/models.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type {
   ValidationCommand
-} from "../types.js";
+} from "../validation/runner.js";
 import type { ModelProfile } from "../config/schemas.js";
-import { ValidationCommandSchema } from "../types.js";
+import { ValidationCommandSchema } from "../validation/runner.js";
 import type {
   LunaObservability
 } from "../observability/luna-observability.js";
 import type { ObservabilitySummary } from "../observability/summary.js";
-import { configuredWorkflowError } from "../configured-workflow-errors.js";
+import { configuredWorkflowError } from "./errors.js";
 import type { ConfiguredWorkflowNodeRunner } from "./contracts.js";
 
 type MaybePromise<T> = T | Promise<T>;

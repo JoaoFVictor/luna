@@ -5,9 +5,10 @@ import {
   buildFinalReportJson as defaultBuildFinalReportJson,
   buildFinalReportMarkdown as defaultBuildFinalReportMarkdown
 } from "./report-builder.js";
-import { runPreflight as defaultRunPreflight } from "../../preflight.js";
+import { runPreflight as defaultRunPreflight } from "../../preflight/runner.js";
 import type { Invocation } from "../../invocation/types.js";
-import type { RepoContext, WorkspaceRecord } from "../../types.js";
+import type { RepoContext } from "../../git/diff/types.js";
+import type { WorkspaceRecord } from "../../write-mode/types.js";
 import type {
   CodeReviewFindings
 } from "../../findings/types.js";
