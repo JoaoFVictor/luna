@@ -319,6 +319,58 @@ describe("core zod schemas", () => {
     ).toBeDefined();
   });
 
+  it("accepts non-empty change request provider names", () => {
+    expect(
+      ImplementationConfigSchema.parse({
+        implementation: {
+          branch_pattern: "feature/{slug}",
+          commit: { enabled: false },
+          push: { enabled: false, remote: "origin" },
+          change_request: {
+            enabled: false,
+            provider: "unsupported-provider",
+            draft: true,
+            base_ref: "main"
+          },
+          sandbox: { type: "trusted_host_local", env_allowlist: [] },
+          validation: {
+            repair_attempts: 1,
+            max_output_bytes: 200000,
+            commands: [{ cmd: "npm", args: ["test"] }]
+          }
+        }
+      })
+    ).toMatchObject({
+      implementation: {
+        change_request: {
+          provider: "unsupported-provider"
+        }
+      }
+    });
+
+    expect(() =>
+      ImplementationConfigSchema.parse({
+        implementation: {
+          branch_pattern: "feature/{slug}",
+          commit: { enabled: false },
+          push: { enabled: false, remote: "origin" },
+          change_request: {
+            enabled: false,
+            provider: "",
+            draft: true,
+            base_ref: "main"
+          },
+          sandbox: { type: "trusted_host_local", env_allowlist: [] },
+          validation: {
+            repair_attempts: 1,
+            max_output_bytes: 200000,
+            commands: [{ cmd: "npm", args: ["test"] }]
+          }
+        }
+      })
+    ).toThrow();
+  });
+
   it("accepts implementation runtime result artifacts", () => {
     expect(
       ValidationResultSchema.parse({

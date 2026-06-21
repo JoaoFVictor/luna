@@ -53,16 +53,6 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/change-request-actions.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/change-request-actions.ts",
-      "rule": "generic-provider-import",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/config-loader.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7

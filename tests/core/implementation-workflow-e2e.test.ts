@@ -280,11 +280,16 @@ describe("implementation workflow e2e", () => {
                   skipped: true,
                   reason: "disabled"
                 })),
-                openChangeRequest: vi.fn(async () => ({
-                  enabled: false,
-                  skipped: true,
-                  reason: "disabled"
-                })),
+                changeRequestRegistry: {
+                  get: vi.fn(() => ({
+                    provider: "github",
+                    open: vi.fn(async () => ({
+                      enabled: false,
+                      skipped: true,
+                      reason: "disabled"
+                    }))
+                  }))
+                },
                 buildImplementationReportJson: vi.fn((input) => ({
                   status: input.status,
                   branch: input.branch,
@@ -488,10 +493,15 @@ describe("implementation workflow e2e", () => {
               calls.push("push_branch");
               return { enabled: false, skipped: true, reason: "disabled" };
             }),
-            openChangeRequest: vi.fn(async () => {
-              calls.push("open_change_request");
-              return { enabled: false, skipped: true, reason: "disabled" };
-            }),
+            changeRequestRegistry: {
+              get: vi.fn(() => ({
+                provider: "github",
+                open: vi.fn(async () => {
+                  calls.push("open_change_request");
+                  return { enabled: false, skipped: true, reason: "disabled" };
+                })
+              }))
+            },
             buildImplementationReportJson: vi.fn((input) => {
               calls.push("final_implementation_report");
               return {

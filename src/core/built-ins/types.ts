@@ -1,6 +1,5 @@
 import type {
   AcceptanceDecision,
-  ChangeRequestArtifact,
   CommitChangesArtifact,
   Finding,
   ImplementationConfig,
@@ -11,6 +10,10 @@ import type {
   ValidationResult,
   WorkspaceRecord
 } from "../types.js";
+import type {
+  ChangeRequestArtifact,
+  ChangeRequestRegistry
+} from "../change-request/contracts.js";
 import type { ImplementationWorktreeRecord } from "../implementation-worktree-manager.js";
 import type { WorktreeDiff } from "../worktree-diff-collector.js";
 import type { WorkflowState } from "../workflow-state.js";
@@ -139,17 +142,7 @@ export type BuiltInStepDependencies = {
     remote: string;
     expectedRemoteUrls: readonly string[];
   }) => MaybePromise<PushBranchArtifact>;
-  openChangeRequest?: (input: {
-    enabled: boolean;
-    provider: string;
-    cwd: string;
-    push: PushBranchArtifact;
-    branch: string;
-    baseRef?: string;
-    draft: boolean;
-    title: string;
-    body?: string;
-  }) => MaybePromise<ChangeRequestArtifact>;
+  changeRequestRegistry?: ChangeRequestRegistry;
   buildImplementationReportJson?: (input: {
     invocation: Invocation;
     status: string;

@@ -3,8 +3,8 @@ import {
   buildImplementationReportMarkdown as defaultBuildImplementationReportMarkdown
 } from "./report-builder.js";
 import { jiraIssueContextFrom } from "./task-context.js";
+import type { ChangeRequestArtifact } from "../../change-request/contracts.js";
 import type {
-  ChangeRequestArtifact,
   CommitChangesArtifact,
   Invocation,
   PushBranchArtifact,

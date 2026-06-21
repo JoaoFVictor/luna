@@ -6,10 +6,10 @@ import {
 import type {
   CommitChangesArtifact,
   Invocation,
-  ChangeRequestArtifact,
   PushBranchArtifact,
   ValidationResult
 } from "../../src/core/types.js";
+import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
 
 const invocation: Invocation = {
   version: "2026-06",

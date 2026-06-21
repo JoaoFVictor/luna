@@ -8,18 +8,20 @@ import {
   commitChanges as defaultCommitChanges,
   pushBranch as defaultPushBranch
 } from "../implementation-git-actions.js";
-import { openChangeRequest as defaultOpenChangeRequest } from "../change-request-actions.js";
+import type {
+  ChangeRequestArtifact,
+  ChangeRequestRegistry
+} from "../change-request/contracts.js";
+import { ChangeRequestArtifactSchema } from "../change-request/contracts.js";
 import type {
   AcceptanceDecision,
   CommitChangesArtifact,
-  ChangeRequestArtifact,
   PushBranchArtifact,
   ValidationResult
 } from "../types.js";
 import {
   AcceptanceDecisionSchema,
   AgentLoopResultSchema,
-  ChangeRequestArtifactSchema,
   CommitChangesArtifactSchema,
   PushBranchArtifactSchema,
   ValidationResultSchema
@@ -281,42 +283,48 @@ export const pushBranchBuiltIn = defineBuiltInStep({
   }
 });
 
-export const openChangeRequestBuiltIn = defineBuiltInStep({
-  name: "open_change_request",
-  metadata: {
-    implementationLifecycle: "change_request",
-    implementationLifecycleOutcome: (output) => {
-      const result = ChangeRequestArtifactSchema.safeParse(output);
-      if (!result.success) {
-        throw lifecycleContractError(
-          "open_change_request must return ChangeRequestArtifact"
-        );
-      }
+export function createOpenChangeRequestBuiltIn(
+  defaultChangeRequestRegistry: ChangeRequestRegistry
+) {
+  return defineBuiltInStep({
+    name: "open_change_request",
+    metadata: {
+      implementationLifecycle: "change_request",
+      implementationLifecycleOutcome: (output) => {
+        const result = ChangeRequestArtifactSchema.safeParse(output);
+        if (!result.success) {
+          throw lifecycleContractError(
+            "open_change_request must return ChangeRequestArtifact"
+          );
+        }
 
-      return {
-        changeRequestAttempted:
-          !result.data.skipped && result.data.url !== undefined
-      };
+        return {
+          changeRequestAttempted:
+            !result.data.skipped && result.data.url !== undefined
+        };
+      },
+      locks: [{ resource: "repository", mode: "exclusive" }]
     },
-    locks: [{ resource: "repository", mode: "exclusive" }]
-  },
-  async run({ state, input, dependencies = {} }) {
-    const openChangeRequest =
-      dependencies.openChangeRequest ?? defaultOpenChangeRequest;
-    const resolved = resolvedInput(input, state);
-    const implementation = requiredImplementationFrom(state);
-    const workspace = implementationWorkspaceFrom(state);
+    async run({ state, input, dependencies = {} }) {
+      const changeRequestRegistry =
+        dependencies.changeRequestRegistry ?? defaultChangeRequestRegistry;
+      const resolved = resolvedInput(input, state);
+      const implementation = requiredImplementationFrom(state);
+      const workspace = implementationWorkspaceFrom(state);
+      const changeRequestProvider = changeRequestRegistry.get(
+        implementation.change_request.provider
+      );
 
-    return await openChangeRequest({
-      enabled: implementation.change_request.enabled,
-      provider: implementation.change_request.provider,
-      cwd: workspace.path,
-      push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
-      branch: workspace.branch,
-      baseRef: implementation.change_request.base_ref,
-      draft: implementation.change_request.draft,
-      title: requiredInput(resolved.title as string | undefined, "title"),
-      body: typeof resolved.body === "string" ? resolved.body : undefined
-    });
-  }
-});
+      return await changeRequestProvider.open({
+        enabled: implementation.change_request.enabled,
+        cwd: workspace.path,
+        push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
+        branch: workspace.branch,
+        baseRef: implementation.change_request.base_ref,
+        draft: implementation.change_request.draft,
+        title: requiredInput(resolved.title as string | undefined, "title"),
+        body: typeof resolved.body === "string" ? resolved.body : undefined
+      });
+    }
+  });
+}

@@ -8,17 +8,22 @@ import {
 import {
   collectWorktreeDiffBuiltIn,
   commitChangesBuiltIn,
-  openChangeRequestBuiltIn,
+  createOpenChangeRequestBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   pushBranchBuiltIn,
   recordAcceptanceDecisionBuiltIn,
   recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
 } from "./implementation.js";
+import { defaultChangeRequestRegistry } from "../change-request/default-registry.js";
 import {
   collectTaskContextBuiltIn,
   finalImplementationReportBuiltIn
 } from "../providers/jira/built-ins.js";
+
+export const openChangeRequestBuiltIn = createOpenChangeRequestBuiltIn(
+  defaultChangeRequestRegistry
+);
 
 export const defaultBuiltInSteps = Object.freeze([
   preflightBuiltIn,

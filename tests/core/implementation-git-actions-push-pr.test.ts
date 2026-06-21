@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { pushBranch } from "../../src/core/implementation-git-actions.js";
 import { openGitHubChangeRequest } from "../../src/core/providers/github/change-request-actions.js";
+import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
 import type {
   CommitChangesArtifact,
-  ChangeRequestArtifact,
   PushBranchArtifact
 } from "../../src/core/types.js";
 
@@ -309,12 +309,16 @@ describe("openGitHubChangeRequest", () => {
   it("creates a draft GitHub PR against the configured base ref", async () => {
     const { input, calls } = prInput();
 
-    await expect(openGitHubChangeRequest(input)).resolves.toEqual({
+    const artifact = await openGitHubChangeRequest(input);
+
+    expect(artifact).toEqual({
       enabled: true,
       skipped: false,
       provider: "github",
       url: "https://github.com/swinggo-dev/swg-front-nuxt/pull/42"
     } satisfies ChangeRequestArtifact);
+    expect(artifact.provider).toBe("github");
+    expect(artifact.url).toMatch(/^https?:\/\//);
     expect(calls).toEqual([
       { cwd, args: ["auth", "status"] },
       {

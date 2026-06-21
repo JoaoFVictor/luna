@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChangeRequestConfigSchema } from "./change-request/contracts.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 const AbsoluteUrlSchema = z.string().url();
@@ -290,12 +291,6 @@ export const PushBranchArtifactSchema = GitGateArtifactSchema.extend({
 }).strict();
 export type PushBranchArtifact = z.infer<typeof PushBranchArtifactSchema>;
 
-export const ChangeRequestArtifactSchema = GitGateArtifactSchema.extend({
-  provider: z.literal("github").optional(),
-  url: NonEmptyStringSchema.optional()
-}).strict();
-export type ChangeRequestArtifact = z.infer<typeof ChangeRequestArtifactSchema>;
-
 export const ImplementationConfigSchema = z
   .object({
     implementation: z
@@ -312,14 +307,7 @@ export const ImplementationConfigSchema = z
             remote: NonEmptyStringSchema
           })
           .strict(),
-        change_request: z
-          .object({
-            enabled: z.boolean(),
-            provider: z.literal("github"),
-            draft: z.boolean(),
-            base_ref: NonEmptyStringSchema
-          })
-          .strict(),
+        change_request: ChangeRequestConfigSchema,
         sandbox: z
           .object({
             type: z.literal("trusted_host_local"),
