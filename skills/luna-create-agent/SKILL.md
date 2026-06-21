@@ -36,7 +36,7 @@ Keep orchestration in `workflows/<id>/graph.yaml`, not in agent instructions.
 ## Capabilities
 
 - `skills`: relative paths to `SKILL.md`.
-- `tools`: IDs from `src/core/flue-tool-registry.ts`.
+- `tools`: IDs from `src/core/tools/catalog.ts`.
 - `mcp_servers`: IDs from `config/mcp.yaml`.
 - `subagents`: referenced Luna agent IDs.
 

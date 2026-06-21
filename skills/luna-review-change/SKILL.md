@@ -16,7 +16,8 @@ Review Luna changes as architecture, not just code.
   agents.
 - Agents stay reusable and schemas match workflow inputs.
 - Built-ins are registered only through `src/core/built-ins/catalog.ts`.
-- Tools are registered only through `src/core/flue-tool-registry.ts`.
+- Tools are registered only through `src/core/tools/catalog.ts`; Flue
+  materialization stays in `src/core/agent-runtime/flue/tool-registry.ts`.
 - Docs/examples changed when public behavior or authoring patterns changed.
 
 ## Review Order

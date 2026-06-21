@@ -23,7 +23,7 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 | Orchestration shape | `workflows/<id>/` | `examples/new-workflow.md` |
 | Deterministic workflow action | `src/core/built-ins/` | `examples/new-built-in.md` |
 | Write-mode git/workspace services | `src/core/write-mode/` | `skills/luna-create-built-in/SKILL.md` |
-| Agent-local callable function | `src/tools/` + registry | `examples/new-tool.md` |
+| Agent-local callable function | `src/core/tools/` + `src/core/tools/catalog.ts` | `examples/new-tool.md` |
 | LLM/runtime guidance | `skills/<id>/SKILL.md` | existing skills |
 
 ## Boundaries
