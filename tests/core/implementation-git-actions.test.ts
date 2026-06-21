@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   commitChanges,
-  openPullRequest,
   pushBranch
 } from "../../src/core/implementation-git-actions.js";
+import { openPullRequest } from "../../src/core/providers/github/implementation-actions.js";
 import type {
   CommitChangesArtifact,
   PullRequestArtifact,
@@ -941,7 +941,6 @@ describe("implementation git actions", () => {
           cwd,
           push: pushed,
           branch,
-          provider: "github",
           baseRef: "main",
           draft: true,
           title: commitMessage,
@@ -978,16 +977,6 @@ describe("implementation git actions", () => {
         enabled: true,
         skipped: true,
         reason: "no_push"
-      });
-    });
-
-    it("skips when the provider is not github", async () => {
-      const { input } = prInput({ provider: "gitlab" });
-
-      await expect(openPullRequest(input)).resolves.toEqual({
-        enabled: true,
-        skipped: true,
-        reason: "provider_unsupported"
       });
     });
 

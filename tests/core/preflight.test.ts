@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { githubPullRequestContextFrom } from "../../src/core/github-pr-context.js";
+import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
 import { runPreflight } from "../../src/core/preflight.js";
 import type {
   ImplementationConfig,

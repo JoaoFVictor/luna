@@ -1,6 +1,4 @@
-import { execFile } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
 import { classifyGitFailure, type GitFailure } from "./git-failure.js";
 import { runGit as defaultRunGit } from "./git.js";
 import type {
@@ -12,13 +10,11 @@ import { remoteUrlMatches } from "./remote-url.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact,
-  PullRequestArtifact,
   ValidationResult
 } from "./types.js";
 import type { WorktreeDiff } from "./worktree-diff-collector.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
-type RunGh = (cwd: string, args: readonly string[]) => Promise<string>;
 type ProcessFailure = {
   code?: unknown;
   exitCode?: unknown;
@@ -26,35 +22,15 @@ type ProcessFailure = {
   signal?: unknown;
   timedOut?: unknown;
 };
-type PullRequestError = Error & {
-  code: "pull_request_create_failed";
-  cause?: unknown;
-};
-
 type AcceptanceLike =
   | { status?: string; decision?: string; accepted?: boolean }
   | boolean;
-
-const execFileAsync = promisify(execFile);
-
-async function defaultRunGh(cwd: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync("gh", [...args], { cwd });
-
-  return stdout;
-}
 
 function skipped(
   enabled: boolean,
   reason: string
 ): { enabled: boolean; skipped: true; reason: string } {
   return { enabled, skipped: true, reason };
-}
-
-function pullRequestError(message: string, cause: unknown): PullRequestError {
-  const error = new Error(message, { cause }) as PullRequestError;
-  error.code = "pull_request_create_failed";
-
-  return error;
 }
 
 function isAccepted(acceptance: AcceptanceLike): boolean {
@@ -508,81 +484,5 @@ export async function pushBranch({
     skipped: false,
     remote,
     branch
-  };
-}
-
-export async function openPullRequest({
-  enabled,
-  cwd,
-  push,
-  branch,
-  provider,
-  baseRef,
-  draft,
-  title,
-  body,
-  runGh = defaultRunGh
-}: {
-  enabled: boolean;
-  cwd: string;
-  push: PushBranchArtifact;
-  branch: string;
-  provider: string;
-  baseRef?: string;
-  draft: boolean;
-  title: string;
-  body?: string;
-  runGh?: RunGh;
-}): Promise<PullRequestArtifact> {
-  if (!enabled) {
-    return skipped(false, "disabled");
-  }
-
-  if (push.skipped) {
-    return skipped(true, "no_push");
-  }
-
-  if (push.branch !== branch) {
-    return skipped(true, "branch_mismatch");
-  }
-
-  if (provider !== "github") {
-    return skipped(true, "provider_unsupported");
-  }
-
-  if (baseRef === undefined || baseRef.trim() === "") {
-    return skipped(true, "base_ref_missing");
-  }
-
-  try {
-    await runGh(cwd, ["auth", "status"]);
-  } catch {
-    return skipped(true, "gh_not_authenticated");
-  }
-
-  const args = ["pr", "create"];
-
-  if (draft) {
-    args.push("--draft");
-  }
-
-  args.push("--base", baseRef, "--head", branch, "--title", title);
-
-  if (body !== undefined) {
-    args.push("--body", body);
-  }
-
-  let url: string;
-  try {
-    url = (await runGh(cwd, args)).trim();
-  } catch (cause) {
-    throw pullRequestError("Failed to create GitHub pull request", cause);
-  }
-
-  return {
-    enabled: true,
-    skipped: false,
-    provider: "github",
-    ...(url === "" ? {} : { url })
   };
 }

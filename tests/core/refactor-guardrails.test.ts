@@ -25,6 +25,12 @@ type OwnershipEntry = {
   reason: string;
 };
 
+type CompositionEdge = {
+  from: string;
+  to: string;
+  reason: string;
+};
+
 type ProviderOccurrence = {
   line: number;
   marker: string;
@@ -34,7 +40,7 @@ type ProviderOccurrence = {
 type RuntimeOwnershipManifest = {
   schemaVersion: 1;
   files: Record<string, OwnershipEntry>;
-  wave0ProviderBoundaryInventory: Record<string, ProviderOccurrence[]>;
+  compositionEdges: CompositionEdge[];
 };
 
 type NonRuntimeOwnershipManifest = {
@@ -63,7 +69,35 @@ const ownershipFixturePaths = new Set([
 ]);
 
 const providerMarkerPattern =
-  /github-pr-context|github-pr-url|jira-issue-context|jira-task-url|jira-auth|provider_unsupported|provider_payload|providerPayload|provider\.payload|provider\/model|provider_cost_unit|openai-codex|test-provider|github|jira/gi;
+  /github-pr-context|github-pr-url|jira-issue-context|jira-task-url|jira-auth|provider_payload|providerPayload|provider\.payload|provider\/model|provider_cost_unit|openai-codex|test-provider|github|jira/gi;
+
+const runtimeProviderMarkers = [
+  "github-pr-context",
+  "github-pr-url",
+  "jira-issue-context",
+  "jira-task-url",
+  "jira-auth",
+  "github",
+  "jira"
+].sort((left, right) => right.length - left.length);
+
+const exactCommandMarkers = ["gh"];
+
+const compositionRootPaths = new Set([
+  "src/adapters/registry.ts",
+  "src/core/built-ins/catalog.ts"
+]);
+
+const genericRuntimeProviderMarkerLiteralAllowlist = new Map<string, Map<string, number>>([
+  [
+    "src/core/repo-context-collector.ts",
+    new Map([["version https://git-lfs.github.com/spec/v1", 1]])
+  ],
+  [
+    "src/core/types.ts",
+    new Map([["github", 2]])
+  ]
+]);
 
 const legacyArtifactShapeAllowlist = new Set([
   "tests/fixtures/workflows/legacy-artifact-string.graph.yaml",
@@ -109,34 +143,189 @@ async function listFiles(relativeDirectory: string): Promise<string[]> {
   return nested.flat().sort();
 }
 
+function isProviderOwner(owner: RuntimeOwner): boolean {
+  return owner.startsWith("provider:");
+}
+
+function compositionEdgeKey(edge: Pick<CompositionEdge, "from" | "to">): string {
+  return `${edge.from} -> ${edge.to}`;
+}
+
+function runtimeOwnerForPath(
+  manifest: RuntimeOwnershipManifest,
+  relativePath: string
+): OwnershipEntry {
+  const entry = manifest.files[relativePath];
+  expect(entry, `${relativePath} is missing from runtime ownership manifest`)
+    .toBeDefined();
+
+  return entry;
+}
+
+function providerMarkerFromText(text: string): string | undefined {
+  const normalized = text.toLowerCase();
+
+  if (exactCommandMarkers.includes(normalized)) {
+    return normalized;
+  }
+
+  return runtimeProviderMarkers.find((marker) => normalized.includes(marker));
+}
+
+function providerMarkersInSource(
+  relativePath: string,
+  content: string
+): ProviderOccurrence[] {
+  const sourceFile = ts.createSourceFile(
+    relativePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  const occurrences: ProviderOccurrence[] = [];
+  const literalAllowlist = new Map(
+    genericRuntimeProviderMarkerLiteralAllowlist.get(relativePath) ??
+      []
+  );
+
+  function record(marker: string, node: ts.Node): void {
+    const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    occurrences.push({
+      line: line + 1,
+      marker,
+      category: providerCategory(marker)
+    });
+  }
+
+  function visit(node: ts.Node): void {
+    if (ts.isStringLiteralLike(node)) {
+      const remainingAllowances = literalAllowlist.get(node.text) ?? 0;
+      if (remainingAllowances > 0) {
+        literalAllowlist.set(node.text, remainingAllowances - 1);
+        return;
+      }
+
+      const marker = providerMarkerFromText(node.text);
+      if (marker !== undefined) {
+        record(marker, node);
+      }
+    } else if (ts.isIdentifier(node)) {
+      const marker = providerMarkerFromText(node.text);
+      if (marker !== undefined) {
+        record(marker, node);
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  for (const [literal, remainingAllowances] of literalAllowlist) {
+    if (remainingAllowances !== 0) {
+      occurrences.push({
+        line: 1,
+        marker: `allowlist_not_consumed:${literal}`,
+        category: providerCategory(literal)
+      });
+    }
+  }
+
+  return occurrences;
+}
+
+function resolvedRuntimeImport(
+  importer: string,
+  specifier: string,
+  sourceFiles: ReadonlySet<string>
+): string | undefined {
+  if (!specifier.startsWith(".")) {
+    return undefined;
+  }
+
+  const base = path.posix.normalize(path.posix.join(path.posix.dirname(importer), specifier));
+  const candidates = [
+    base.endsWith(".js") ? `${base.slice(0, -3)}.ts` : `${base}.ts`,
+    path.posix.join(base, "index.ts")
+  ];
+
+  return candidates.find((candidate) => sourceFiles.has(candidate));
+}
+
+function runtimeImportsFromSource(
+  relativePath: string,
+  content: string,
+  sourceFiles: ReadonlySet<string>
+): string[] {
+  const sourceFile = ts.createSourceFile(
+    relativePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  const imports: string[] = [];
+
+  function addSpecifier(specifier: ts.Expression): void {
+    if (!ts.isStringLiteralLike(specifier)) {
+      return;
+    }
+
+    const resolved = resolvedRuntimeImport(relativePath, specifier.text, sourceFiles);
+    if (resolved !== undefined) {
+      imports.push(resolved);
+    }
+  }
+
+  function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node)) {
+      addSpecifier(node.moduleSpecifier);
+    }
+
+    if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined) {
+      addSpecifier(node.moduleSpecifier);
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments[0] !== undefined
+    ) {
+      addSpecifier(node.arguments[0]);
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return [...new Set(imports)].sort();
+}
+
 function runtimeOwnerFor(relativePath: string): OwnershipEntry {
-  if (relativePath === "src/core/built-ins/catalog.ts") {
+  if (compositionRootPaths.has(relativePath)) {
     return {
       owner: "composition-root",
-      reason: "Registers built-ins at the runtime composition root."
+      reason: "Connects provider-owned modules at an explicit runtime composition root."
     };
   }
 
   if (
     relativePath.startsWith("src/adapters/github-pr-url/") ||
-    relativePath.includes("github-pr-context") ||
     relativePath.includes("/providers/github/")
   ) {
     return {
       owner: "provider:github",
-      reason: "Owns GitHub-specific adapter or runtime context behavior."
+      reason: "Owns GitHub-specific adapter, action, or runtime context behavior."
     };
   }
 
   if (
     relativePath.startsWith("src/adapters/jira-task-url/") ||
-    relativePath.includes("jira-issue-context") ||
-    relativePath.includes("jira-auth") ||
     relativePath.includes("/providers/jira/")
   ) {
     return {
       owner: "provider:jira",
-      reason: "Owns Jira-specific adapter, auth, or runtime context behavior."
+      reason: "Owns Jira-specific adapter, auth, config, task, or report behavior."
     };
   }
 
@@ -181,28 +370,6 @@ function countLines(content: string): number {
 
   const normalizedContent = content.endsWith("\n") ? content.slice(0, -1) : content;
   return normalizedContent.split(/\r?\n/).length;
-}
-
-async function runtimeProviderBoundaryInventory(
-  files: Record<string, OwnershipEntry>
-): Promise<RuntimeOwnershipManifest["wave0ProviderBoundaryInventory"]> {
-  const inventory: RuntimeOwnershipManifest["wave0ProviderBoundaryInventory"] = {};
-
-  for (const [relativePath, entry] of Object.entries(files)) {
-    if (entry.owner !== "generic") {
-      continue;
-    }
-
-    const markers = markerInventory(
-      await readFile(path.join(repoRoot, relativePath), "utf8"),
-      providerMarkerPattern
-    );
-    if (markers.length > 0) {
-      inventory[relativePath] = markers;
-    }
-  }
-
-  return inventory;
 }
 
 async function nonRuntimeProviderInventory(): Promise<NonRuntimeOwnershipManifest["files"]> {
@@ -446,6 +613,7 @@ describe("refactor guardrails", () => {
 
     expect(manifest.schemaVersion).toBe(1);
     expect(Object.keys(manifest.files).sort()).toEqual(sourceFiles);
+    expect(Array.isArray(manifest.compositionEdges)).toBe(true);
 
     for (const entry of Object.values(manifest.files)) {
       expect(allowedRuntimeOwners).toContain(entry.owner);
@@ -453,8 +621,96 @@ describe("refactor guardrails", () => {
       expect(entry.reason.trim().length).toBeGreaterThan(0);
     }
 
+    for (const edge of manifest.compositionEdges) {
+      expect(edge.from).toEqual(expect.any(String));
+      expect(edge.to).toEqual(expect.any(String));
+      expect(edge.reason).toEqual(expect.any(String));
+      expect(edge.reason.trim().length).toBeGreaterThan(0);
+      await assertExists(edge.from);
+      await assertExists(edge.to);
+      expect(manifest.files[edge.from]?.owner).toBe("composition-root");
+      expect(isProviderOwner(manifest.files[edge.to]?.owner)).toBe(true);
+    }
+
     expect(Object.fromEntries(sourceFiles.map((file) => [file, runtimeOwnerFor(file)])))
       .toEqual(manifest.files);
+  });
+
+  it("enforces runtime provider ownership import boundaries", async () => {
+    const manifest = await readJson<RuntimeOwnershipManifest>(
+      "tests/fixtures/ownership/runtime-ownership.json"
+    );
+    const sourceFiles = new Set(Object.keys(manifest.files));
+    const compositionEdges = new Set(
+      manifest.compositionEdges.map((edge) => compositionEdgeKey(edge))
+    );
+    const violations: string[] = [];
+
+    for (const relativePath of sourceFiles) {
+      const owner = runtimeOwnerForPath(manifest, relativePath).owner;
+      const imports = runtimeImportsFromSource(
+        relativePath,
+        await readText(relativePath),
+        sourceFiles
+      );
+
+      for (const importedPath of imports) {
+        const importedOwner = runtimeOwnerForPath(manifest, importedPath).owner;
+        if (!isProviderOwner(importedOwner)) {
+          continue;
+        }
+
+        if (owner === "generic") {
+          violations.push(`${relativePath} imports provider-owned ${importedPath}`);
+          continue;
+        }
+
+        if (
+          owner === "composition-root" &&
+          !compositionEdges.has(compositionEdgeKey({ from: relativePath, to: importedPath }))
+        ) {
+          violations.push(
+            `${relativePath} imports provider-owned ${importedPath} without compositionEdge`
+          );
+          continue;
+        }
+
+        if (
+          isProviderOwner(owner) &&
+          owner !== importedOwner &&
+          !compositionEdges.has(compositionEdgeKey({ from: relativePath, to: importedPath }))
+        ) {
+          violations.push(
+            `${relativePath} imports cross-provider ${importedPath} without compositionEdge`
+          );
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  it("keeps provider markers out of generic runtime files", async () => {
+    const manifest = await readJson<RuntimeOwnershipManifest>(
+      "tests/fixtures/ownership/runtime-ownership.json"
+    );
+    const violations: Record<string, ProviderOccurrence[]> = {};
+
+    for (const [relativePath, entry] of Object.entries(manifest.files)) {
+      if (entry.owner !== "generic") {
+        continue;
+      }
+
+      const markers = providerMarkersInSource(
+        relativePath,
+        await readText(relativePath)
+      );
+      if (markers.length > 0) {
+        violations[relativePath] = markers;
+      }
+    }
+
+    expect(violations).toEqual({});
   });
 
   it("does not allow TypeScript workflow entrypoints besides src/workflows/luna.ts", async () => {
@@ -568,19 +824,17 @@ describe("refactor guardrails", () => {
     }
   });
 
-  it("records provider-boundary inventory in non-enforcing Wave 0 mode", async () => {
-    const runtimeManifest = await readJson<RuntimeOwnershipManifest>(
-      "tests/fixtures/ownership/runtime-ownership.json"
-    );
+  it("requires non-runtime provider marker paths to stay explicit", async () => {
     const nonRuntimeManifest = await readJson<NonRuntimeOwnershipManifest>(
       "tests/fixtures/ownership/non-runtime-ownership.json"
     );
 
-    expect(runtimeManifest.schemaVersion).toBe(1);
     expect(nonRuntimeManifest.schemaVersion).toBe(1);
-    expect(await runtimeProviderBoundaryInventory(runtimeManifest.files))
-      .toEqual(runtimeManifest.wave0ProviderBoundaryInventory);
     expect(await nonRuntimeProviderInventory()).toEqual(nonRuntimeManifest.files);
+
+    for (const relativePath of Object.keys(nonRuntimeManifest.files)) {
+      await assertExists(relativePath);
+    }
   });
 
   it("checks docs and catalog inventories without changing runtime contracts", async () => {

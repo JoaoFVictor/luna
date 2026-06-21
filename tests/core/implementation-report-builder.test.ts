@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildImplementationReportJson,
   buildImplementationReportMarkdown
-} from "../../src/core/implementation-report-builder.js";
+} from "../../src/core/providers/jira/report-builder.js";
 import type {
   CommitChangesArtifact,
   Invocation,

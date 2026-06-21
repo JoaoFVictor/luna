@@ -1324,6 +1324,11 @@
     ],
     "tests/core/built-ins-code-review.test.ts": [
       {
+        "line": 8,
+        "marker": "github",
+        "category": "github"
+      },
+      {
         "line": 22,
         "marker": "github",
         "category": "github"
@@ -1384,22 +1389,32 @@
         "category": "github"
       },
       {
-        "line": 308,
+        "line": 309,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 312,
+        "line": 313,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 325,
+        "line": 326,
         "marker": "github",
         "category": "github"
       }
     ],
     "tests/core/built-ins-implementation.test.ts": [
+      {
+        "line": 10,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 11,
+        "marker": "github",
+        "category": "github"
+      },
       {
         "line": 27,
         "marker": "github",
@@ -1496,27 +1511,22 @@
         "category": "github"
       },
       {
-        "line": 412,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 447,
+        "line": 450,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 526,
+        "line": 528,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 526,
+        "line": 528,
         "marker": "jira",
         "category": "jira"
       },
       {
-        "line": 530,
+        "line": 532,
         "marker": "github",
         "category": "github"
       }
@@ -1533,7 +1543,7 @@
         "category": "github"
       },
       {
-        "line": 142,
+        "line": 159,
         "marker": "github",
         "category": "github"
       }
@@ -1739,7 +1749,12 @@
     ],
     "tests/core/config-loader.test.ts": [
       {
-        "line": 17,
+        "line": 14,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 14,
         "marker": "jira",
         "category": "jira"
       },
@@ -2604,17 +2619,22 @@
     ],
     "tests/core/git-worktree-manager.test.ts": [
       {
-        "line": 9,
+        "line": 6,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 9,
-        "marker": "github-pr-context",
+        "line": 7,
+        "marker": "github",
         "category": "github"
       },
       {
-        "line": 13,
+        "line": 7,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 11,
         "marker": "github",
         "category": "github"
       }
@@ -2632,7 +2652,7 @@
       },
       {
         "line": 5,
-        "marker": "github-pr-context",
+        "marker": "github",
         "category": "github"
       },
       {
@@ -2683,6 +2703,11 @@
     ],
     "tests/core/implementation-git-actions.test.ts": [
       {
+        "line": 6,
+        "marker": "github",
+        "category": "github"
+      },
+      {
         "line": 34,
         "marker": "github",
         "category": "github"
@@ -2718,47 +2743,37 @@
         "category": "github"
       },
       {
-        "line": 944,
+        "line": 952,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 953,
+        "line": 1023,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 984,
+        "line": 1062,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 990,
-        "marker": "provider_unsupported",
-        "category": "provider"
-      },
-      {
-        "line": 1034,
+        "line": 1068,
         "marker": "github",
         "category": "github"
       },
       {
-        "line": 1073,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 1079,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 1080,
+        "line": 1069,
         "marker": "github",
         "category": "github"
       }
     ],
     "tests/core/implementation-report-builder.test.ts": [
+      {
+        "line": 5,
+        "marker": "jira",
+        "category": "jira"
+      },
       {
         "line": 16,
         "marker": "jira",
@@ -2973,8 +2988,8 @@
         "category": "jira"
       },
       {
-        "line": 8,
-        "marker": "jira-auth",
+        "line": 9,
+        "marker": "jira",
         "category": "jira"
       },
       {
@@ -3021,7 +3036,7 @@
       },
       {
         "line": 5,
-        "marker": "jira-issue-context",
+        "marker": "jira",
         "category": "jira"
       },
       {
@@ -3323,7 +3338,7 @@
       },
       {
         "line": 2,
-        "marker": "github-pr-context",
+        "marker": "github",
         "category": "github"
       },
       {
@@ -3674,7 +3689,7 @@
       },
       {
         "line": 2,
-        "marker": "github-pr-context",
+        "marker": "github",
         "category": "github"
       },
       {
@@ -3690,22 +3705,37 @@
     ],
     "tests/core/repo-context-real-git.test.ts": [
       {
+        "line": 5,
+        "marker": "github",
+        "category": "github"
+      },
+      {
         "line": 6,
         "marker": "github",
         "category": "github"
       },
       {
         "line": 6,
-        "marker": "github-pr-context",
+        "marker": "github",
         "category": "github"
       },
       {
-        "line": 51,
+        "line": 41,
+        "marker": "github",
+        "category": "github"
+      },
+      {
+        "line": 102,
         "marker": "github",
         "category": "github"
       }
     ],
     "tests/core/report-builder.test.ts": [
+      {
+        "line": 5,
+        "marker": "github",
+        "category": "github"
+      },
       {
         "line": 15,
         "marker": "github",
@@ -4126,6 +4156,18 @@
         "line": 73,
         "marker": "github",
         "category": "github"
+      }
+    ],
+    "workflows/implementation/graph.yaml": [
+      {
+        "line": 142,
+        "marker": "jira",
+        "category": "jira"
+      },
+      {
+        "line": 143,
+        "marker": "jira",
+        "category": "jira"
       }
     ],
     "workflows/implementation/input.schema.json": [

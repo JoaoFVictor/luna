@@ -1,20 +1,20 @@
 import {
   collectRepoContextBuiltIn,
   finalCodeReviewReportBuiltIn,
+  openPullRequestBuiltIn,
   prepareWorktreeBuiltIn,
   preflightBuiltIn,
   validateCodeReviewFindingsBuiltIn
-} from "./code-review.js";
+} from "../providers/github/built-ins.js";
 import {
   collectTaskContextBuiltIn,
   collectWorktreeDiffBuiltIn,
   commitChangesBuiltIn,
   finalImplementationReportBuiltIn,
-  openPullRequestBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   pushBranchBuiltIn,
   runValidationCommandsBuiltIn
-} from "./implementation.js";
+} from "../providers/jira/built-ins.js";
 
 export const defaultBuiltInSteps = Object.freeze([
   preflightBuiltIn,

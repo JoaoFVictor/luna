@@ -74,7 +74,7 @@ export type Invocation = NormalizedInvocation;
 export const RepositoryConfigSchema = z
   .object({
     id: NonEmptyStringSchema,
-    provider: z.literal("github"),
+    provider: NonEmptyStringSchema,
     owner: NonEmptyStringSchema,
     name: NonEmptyStringSchema,
     path: NonEmptyStringSchema,
@@ -198,29 +198,6 @@ export const AppConfigSchema = z
   })
   .strict();
 export type AppConfig = z.infer<typeof AppConfigSchema>;
-
-const JiraFieldConfigSchema = z
-  .object({
-    field_id: NonEmptyStringSchema,
-    format: NonEmptyStringSchema
-  })
-  .strict();
-
-export const JiraConfigSchema = z
-  .object({
-    instances: z.array(
-      z
-        .object({
-          id: NonEmptyStringSchema,
-          base_url: NonEmptyStringSchema,
-          repository_field: JiraFieldConfigSchema,
-          acceptance_criteria_field: JiraFieldConfigSchema.optional()
-        })
-        .strict()
-    )
-  })
-  .strict();
-export type JiraConfig = z.infer<typeof JiraConfigSchema>;
 
 export const ValidationCommandSchema = z
   .object({
@@ -382,30 +359,7 @@ export const ImplementationConfigSchema = z
   });
 export type ImplementationConfig = z.infer<typeof ImplementationConfigSchema>;
 
-export const LunaAuthConfigSchema = z
-  .object({
-    providers: z
-      .object({
-        jira: z
-          .record(
-            z
-              .object({
-                base_url: NonEmptyStringSchema,
-                auth_type: z.literal("basic_api_token"),
-                email: NonEmptyStringSchema,
-                api_token: NonEmptyStringSchema
-              })
-              .strict()
-          )
-          .optional()
-      })
-      .strict()
-  })
-  .strict();
-export type LunaAuthConfig = z.infer<typeof LunaAuthConfigSchema>;
-
 export type RuntimeConfigState = {
-  jira?: JiraConfig;
   implementation?: ImplementationConfig["implementation"];
 };
 

@@ -2,8 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { prepare } from "../../src/core/git-worktree-manager.js";
-import { githubPullRequestContextFrom } from "../../src/core/github-pr-context.js";
+import { prepare } from "../../src/core/providers/github/worktree-manager.js";
+import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
 import { collectRepoContext } from "../../src/core/repo-context-collector.js";
 import {
   createRealGitReviewFixture,
@@ -38,17 +38,17 @@ describe("repo context collector with real Git", () => {
       workspaceRoot,
       runId: "real-git-fork-ref"
     });
+    const pullRequest = githubPullRequestContextFrom(created.invocation);
 
     const context = await collectRepoContext({
-      invocation: created.invocation,
       repository: {
         ...created.repository,
         path: workspace.path
       },
+      baseSha: pullRequest.references.base_sha,
+      headSha: pullRequest.references.head_sha,
       maxExcerptBytes: 64
     });
-
-    const pullRequest = githubPullRequestContextFrom(created.invocation);
     expect(pullRequest.head_repository.full_name).not.toBe(
       pullRequest.base_repository.full_name
     );
@@ -99,10 +99,12 @@ describe("repo context collector with real Git", () => {
 
   it("collects real Git metadata for rename, delete, binary, large, LFS, and submodule changes", async () => {
     const created = await fixture();
+    const pullRequest = githubPullRequestContextFrom(created.invocation);
 
     const context = await collectRepoContext({
-      invocation: created.invocation,
       repository: created.repository,
+      baseSha: pullRequest.references.base_sha,
+      headSha: pullRequest.references.head_sha,
       maxExcerptBytes: 32
     });
     const file = (filePath: string) =>

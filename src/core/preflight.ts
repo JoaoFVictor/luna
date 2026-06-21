@@ -1,10 +1,5 @@
 import { stat as fsStat } from "node:fs/promises";
 import { runGit as defaultRunGit } from "./git.js";
-import {
-  githubPullRequestContextFrom,
-  type GitHubPullRequestContext
-} from "./github-pr-context.js";
-import { jiraIssueContextFrom } from "./jira-issue-context.js";
 import { remoteUrlMatches } from "./remote-url.js";
 import type {
   ImplementationConfig,
@@ -57,26 +52,37 @@ function preflightError(
   return error;
 }
 
-function validateInvocation(invocation: Invocation): GitHubPullRequestContext {
-  try {
-    return githubPullRequestContextFrom(invocation);
-  } catch (cause) {
+function expectedRefsFromInvocation(invocation: Invocation): PreflightResult["expected"] {
+  const baseRef = invocation.references?.base_ref;
+  const baseSha = invocation.references?.base_sha;
+  const headSha = invocation.references?.head_sha;
+
+  if (
+    baseRef === undefined ||
+    baseRef.trim() === "" ||
+    baseSha === undefined ||
+    baseSha.trim() === "" ||
+    headSha === undefined ||
+    headSha.trim() === ""
+  ) {
     throw preflightError(
-      "Invocation is missing required PR metadata",
-      "invalid_invocation",
-      cause
+      "Invocation is missing required read-mode refs",
+      "invalid_invocation"
     );
   }
+
+  return {
+    base_ref: baseRef,
+    base_sha: baseSha,
+    head_sha: headSha
+  };
 }
 
 function validateWriteInvocation(writeInvocation: Invocation): void {
-  try {
-    jiraIssueContextFrom(writeInvocation);
-  } catch (cause) {
+  if (writeInvocation.repository === undefined || writeInvocation.subject === undefined) {
     throw preflightError(
       "Invocation is missing required write-mode metadata",
-      "invalid_invocation",
-      cause
+      "invalid_invocation"
     );
   }
 }
@@ -170,13 +176,13 @@ export async function runPreflight({
   stat?: Stat;
 }): Promise<PreflightResult> {
   const mode = workflow?.mode ?? "git_managed_read_only";
-  let pullRequestContext: GitHubPullRequestContext | undefined;
+  let expected: PreflightResult["expected"] = {};
 
   if (mode === "git_managed_write") {
     validateWriteInvocation(invocation);
     assertWriteGateConsistency(implementation);
   } else {
-    pullRequestContext = validateInvocation(invocation);
+    expected = expectedRefsFromInvocation(invocation);
   }
 
   await assertRepositoryPathExists(repository, stat);
@@ -197,13 +203,6 @@ export async function runPreflight({
       remote: repository.remote,
       remote_url: remoteUrl
     },
-    expected:
-      pullRequestContext !== undefined
-        ? {
-            base_ref: pullRequestContext.base_ref,
-            base_sha: pullRequestContext.references.base_sha,
-            head_sha: pullRequestContext.references.head_sha
-          }
-        : {}
+    expected
   };
 }

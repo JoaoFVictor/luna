@@ -1,10 +1,10 @@
-import { githubPullRequestContextFrom } from "./github-pr-context.js";
+import { githubPullRequestContextFrom } from "./pull-request-context.js";
 import type {
   AcceptanceDecision,
   Finding,
   Invocation,
   WorkspaceRecord
-} from "./types.js";
+} from "../../types.js";
 
 const severityRank: Record<Finding["severity"], number> = {
   critical: 0,

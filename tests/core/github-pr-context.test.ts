@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   githubPullRequestContextFrom,
   type GitHubPullRequestContext
-} from "../../src/core/github-pr-context.js";
+} from "../../src/core/providers/github/pull-request-context.js";
 import type { NormalizedInvocation } from "../../src/core/types.js";
 
 const invocation: NormalizedInvocation = {

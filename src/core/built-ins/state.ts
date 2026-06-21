@@ -1,6 +1,4 @@
-import { githubPullRequestContextFrom } from "../github-pr-context.js";
 import type { ImplementationWorktreeRecord } from "../implementation-worktree-manager.js";
-import { jiraIssueContextFrom } from "../jira-issue-context.js";
 import type {
   CodeReviewFindings,
   Finding,
@@ -39,42 +37,6 @@ export function asRecord(
   }
 
   return value as Record<string, unknown>;
-}
-
-export function githubPullRequestInvocationFrom(state: WorkflowState): Invocation {
-  const invocation = requiredState(
-    state.invocation as Invocation | undefined,
-    "invocation"
-  );
-
-  try {
-    githubPullRequestContextFrom(invocation);
-  } catch {
-    throw builtInError(
-      "Built-in step requires GitHub pull request invocation",
-      "built_in_unsupported"
-    );
-  }
-
-  return invocation;
-}
-
-export function jiraIssueInvocationFrom(state: WorkflowState): Invocation {
-  const invocation = requiredState(
-    state.invocation as Invocation | undefined,
-    "invocation"
-  );
-
-  try {
-    jiraIssueContextFrom(invocation);
-  } catch {
-    throw builtInError(
-      "Built-in step requires Jira issue invocation",
-      "built_in_unsupported"
-    );
-  }
-
-  return invocation;
 }
 
 export function repositoryFrom(state: WorkflowState): RepositoryConfig {

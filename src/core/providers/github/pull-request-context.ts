@@ -5,7 +5,7 @@ import {
   requireReferences,
   requireRepository,
   requireSubject
-} from "./invocation-helpers.js";
+} from "../../invocation-helpers.js";
 import {
   HeadRepositoryRefSchema,
   RepositoryRefSchema,
@@ -13,7 +13,7 @@ import {
   type InvocationSubject,
   type NormalizedInvocation,
   type RepositoryRef
-} from "./types.js";
+} from "../../types.js";
 
 const PullRequestPayloadSchema = z
   .object({

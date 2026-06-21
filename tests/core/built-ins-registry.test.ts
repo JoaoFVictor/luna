@@ -135,7 +135,24 @@ describe("built-in step registry", () => {
               name: "hello-world"
             },
             subject: { type: "pull_request", id: "42" },
-            payload: { pull_request: { number: 42 } }
+            references: {
+              base_ref: "main",
+              base_sha: "base-sha",
+              head_sha: "head-sha"
+            },
+            payload: {
+              pull_request: { number: 42 },
+              base_repository: {
+                owner: "octo-org",
+                name: "hello-world",
+                full_name: "octo-org/hello-world"
+              },
+              head_repository: {
+                owner: "octo-org",
+                name: "hello-world",
+                full_name: "octo-org/hello-world"
+              }
+            }
           },
           repository: {
             id: "repo",

@@ -26,7 +26,7 @@ import {
   type ResolvedModelProfiles
 } from "./model-config.js";
 import type { McpConfig } from "./mcp-config.js";
-import type { FinalReportJson } from "./report-builder.js";
+import { assertJsonValue, type JsonValue } from "./json-value.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import {
   RunLockManager,
@@ -74,7 +74,6 @@ import { resolveRepository as defaultResolveRepository } from "./workspace-resol
 import {
   AppConfigSchema,
   ImplementationConfigSchema,
-  JiraConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RoutingConfigSchema,
@@ -204,7 +203,7 @@ export type ConfiguredWorkflowSuccessResult = {
   run: RunIdentity;
   workflow_id: string;
   steps: Record<string, unknown>;
-  report?: FinalReportJson;
+  report?: JsonValue;
   workspace?: WorkspaceRecord;
 };
 
@@ -286,15 +285,13 @@ async function loadConfigs(configRoot: string): Promise<{
 async function loadRuntimeConfig(
   configRoot: string
 ): Promise<RuntimeConfigState> {
-  const jiraPath = path.join(configRoot, "jira.yaml");
   const implementationPath = path.join(configRoot, "implementation.yaml");
-  const [jira, implementation] = await Promise.all([
-    loadOptionalYamlFile(jiraPath, JiraConfigSchema),
-    loadOptionalYamlFile(implementationPath, ImplementationConfigSchema)
-  ]);
+  const implementation = await loadOptionalYamlFile(
+    implementationPath,
+    ImplementationConfigSchema
+  );
 
   return {
-    ...(jira === undefined ? {} : { jira }),
     ...(implementation === undefined
       ? {}
       : { implementation: implementation.implementation })
@@ -403,12 +400,18 @@ function builtInMetadata(
   return activeRegistry.require(node.uses).metadata ?? {};
 }
 
-function finalReportFrom(output: unknown): FinalReportJson | undefined {
+function finalReportFrom(output: unknown): JsonValue | undefined {
   if (typeof output !== "object" || output === null || Array.isArray(output)) {
     return undefined;
   }
 
-  return (output as { json?: FinalReportJson }).json;
+  const report = (output as { json?: unknown }).json;
+  if (report === undefined) {
+    return undefined;
+  }
+
+  assertJsonValue(report, "$.report");
+  return report;
 }
 
 function artifactRootForWorkflow(root: string, workflowId: string): string {
@@ -1298,7 +1301,7 @@ export async function runConfiguredWorkflow({
       state.workspace = finalWorkspace;
     }
 
-    let report: FinalReportJson | undefined;
+    let report: JsonValue | undefined;
     for (const node of deferredFinalReportNodes) {
       const output = await runWorkflowNode(node, state, {
         ...nodeRuntimeContext,

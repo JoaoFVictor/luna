@@ -5,7 +5,7 @@ import {
   preflightBuiltIn,
   prepareWorktreeBuiltIn,
   validateCodeReviewFindingsBuiltIn
-} from "../../src/core/built-ins/code-review.js";
+} from "../../src/core/providers/github/built-ins.js";
 import type {
   AcceptanceDecision,
   Finding,
@@ -229,11 +229,12 @@ describe("code review built-ins", () => {
     ).resolves.toEqual(repoContext);
 
     expect(collectRepoContext).toHaveBeenCalledWith({
-      invocation,
       repository: {
         ...repository,
         path: workspace.path
-      }
+      },
+      baseSha: invocation.references?.base_sha,
+      headSha: invocation.references?.head_sha
     });
   });
 

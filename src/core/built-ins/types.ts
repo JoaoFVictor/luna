@@ -56,8 +56,9 @@ export type BuiltInStepDependencies = {
     runId: string;
   }) => MaybePromise<WorkspaceRecord>;
   collectRepoContext?: (input: {
-    invocation: Invocation;
     repository: RepositoryConfig;
+    baseSha: string;
+    headSha: string;
   }) => MaybePromise<RepoContext>;
   validateFindingEvidence?: (
     repoContext: RepoContext,
@@ -122,7 +123,6 @@ export type BuiltInStepDependencies = {
     cwd: string;
     push: PushBranchArtifact;
     branch: string;
-    provider: string;
     baseRef?: string;
     draft: boolean;
     title: string;

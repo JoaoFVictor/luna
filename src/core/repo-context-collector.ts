@@ -1,9 +1,7 @@
 import { runGit as defaultRunGit } from "./git.js";
-import { githubPullRequestContextFrom } from "./github-pr-context.js";
 import type {
   ChangedFile,
   FileExcerpt,
-  Invocation,
   RepoContext,
   RepositoryConfig
 } from "./types.js";
@@ -11,8 +9,9 @@ import type {
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
 type CollectRepoContextOptions = {
-  invocation: Invocation;
   repository: RepositoryConfig;
+  baseSha: string;
+  headSha: string;
   runGit?: RunGit;
   maxChangedFiles?: number;
   maxDiffBytes?: number;
@@ -238,16 +237,14 @@ function patchWithinBudget(patch: string, remainingBytes: number): PatchBudgetRe
 }
 
 export async function collectRepoContext({
-  invocation,
   repository,
+  baseSha,
+  headSha,
   runGit = defaultRunGit,
   maxChangedFiles = DEFAULT_MAX_CHANGED_FILES,
   maxDiffBytes = DEFAULT_MAX_DIFF_BYTES,
   maxExcerptBytes = DEFAULT_MAX_EXCERPT_BYTES
 }: CollectRepoContextOptions): Promise<RepoContext> {
-  const pullRequest = githubPullRequestContextFrom(invocation);
-  const baseSha = pullRequest.references.base_sha;
-  const headSha = pullRequest.references.head_sha;
   const cwd = repository.path;
 
   const mergeBase = (await runGit(cwd, ["merge-base", baseSha, headSha])).trim();

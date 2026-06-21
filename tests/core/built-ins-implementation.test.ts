@@ -4,11 +4,11 @@ import {
   collectWorktreeDiffBuiltIn,
   commitChangesBuiltIn,
   finalImplementationReportBuiltIn,
-  openPullRequestBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   pushBranchBuiltIn,
   runValidationCommandsBuiltIn
-} from "../../src/core/built-ins/implementation.js";
+} from "../../src/core/providers/jira/built-ins.js";
+import { openPullRequestBuiltIn } from "../../src/core/providers/github/built-ins.js";
 import type {
   CommitChangesArtifact,
   ImplementationConfig,
@@ -400,6 +400,10 @@ describe("implementation built-ins", () => {
             push: pushArtifact
           }
         }),
+        input: {
+          title: "ABC-123: Fix checkout validation",
+          body: "Reject invalid checkout payloads."
+        },
         dependencies: { openPullRequest }
       })
     ).resolves.toEqual(pullRequestArtifact);
@@ -409,7 +413,6 @@ describe("implementation built-ins", () => {
       cwd: implementationWorkspace.path,
       push: pushArtifact,
       branch: implementationWorkspace.branch,
-      provider: "github",
       baseRef: "main",
       draft: true,
       title: "ABC-123: Fix checkout validation",
@@ -521,7 +524,6 @@ describe("implementation built-ins", () => {
     prepareImplementationWorktreeBuiltIn,
     collectTaskContextBuiltIn,
     commitChangesBuiltIn,
-    openPullRequestBuiltIn,
     finalImplementationReportBuiltIn
   ])("rejects GitHub invocation for Jira-only built-in $name", async (builtIn) => {
     await expect(
@@ -670,6 +672,7 @@ describe("implementation built-ins", () => {
     });
     await openPullRequestBuiltIn.run({
       state: implementationState({ steps: { push: pushArtifact } }),
+      input: { title: "ABC-123: Fix checkout validation" },
       dependencies: { openPullRequest }
     });
     await finalImplementationReportBuiltIn.run({

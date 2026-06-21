@@ -1,41 +1,59 @@
 import {
   prepareImplementationWorktree as defaultPrepareImplementationWorktree
-} from "../implementation-worktree-manager.js";
-import { safeJoin } from "../path-security.js";
-import { runValidationCommands as defaultRunValidationCommands } from "../validation-runner.js";
-import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../worktree-diff-collector.js";
+} from "../../implementation-worktree-manager.js";
+import { safeJoin } from "../../path-security.js";
+import { runValidationCommands as defaultRunValidationCommands } from "../../validation-runner.js";
+import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../../worktree-diff-collector.js";
 import {
   commitChanges as defaultCommitChanges,
-  openPullRequest as defaultOpenPullRequest,
   pushBranch as defaultPushBranch
-} from "../implementation-git-actions.js";
+} from "../../implementation-git-actions.js";
 import {
   buildImplementationReportJson as defaultBuildImplementationReportJson,
   buildImplementationReportMarkdown as defaultBuildImplementationReportMarkdown
-} from "../implementation-report-builder.js";
-import { jiraIssueContextFrom } from "../jira-issue-context.js";
+} from "./report-builder.js";
+import { jiraIssueContextFrom } from "./task-context.js";
 import type {
   CommitChangesArtifact,
   Invocation,
   PullRequestArtifact,
   PushBranchArtifact,
   ValidationResult
-} from "../types.js";
-import type { WorktreeDiff } from "../worktree-diff-collector.js";
-import { defineBuiltInStep } from "./registry.js";
+} from "../../types.js";
+import type { WorktreeDiff } from "../../worktree-diff-collector.js";
+import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
   expectedRemoteUrlsFrom,
   finalValidationFrom,
   implementationWorkspaceFrom,
-  jiraIssueInvocationFrom,
   repositoryFrom,
   requiredImplementationFrom,
+  requiredState,
   resolvedInput,
   runIdFrom,
   stepValue,
   workspaceFrom,
   workspaceRootFrom
-} from "./state.js";
+} from "../../built-ins/state.js";
+import { builtInError } from "../../built-ins/errors.js";
+
+function jiraIssueInvocationFrom(state: { invocation?: unknown }): Invocation {
+  const invocation = requiredState(
+    state.invocation as Invocation | undefined,
+    "invocation"
+  );
+
+  try {
+    jiraIssueContextFrom(invocation);
+  } catch {
+    throw builtInError(
+      "Built-in step requires Jira issue invocation",
+      "built_in_unsupported"
+    );
+  }
+
+  return invocation;
+}
 
 function implementationTitle(invocation: Invocation): string {
   const task = jiraIssueContextFrom(invocation);
@@ -189,31 +207,6 @@ export const pushBranchBuiltIn = defineBuiltInStep({
       branch: workspace.branch,
       remote: implementation.push.remote,
       expectedRemoteUrls: expectedRemoteUrlsFrom(repository)
-    });
-  }
-});
-
-export const openPullRequestBuiltIn = defineBuiltInStep({
-  name: "open_pull_request",
-  metadata: { locks: [{ resource: "repository", mode: "exclusive" }] },
-  async run({ state, input, dependencies = {} }) {
-    const openPullRequest = dependencies.openPullRequest ?? defaultOpenPullRequest;
-    const resolved = resolvedInput(input, state);
-    const implementation = requiredImplementationFrom(state);
-    const workspace = implementationWorkspaceFrom(state);
-    const invocation = jiraIssueInvocationFrom(state);
-    const task = jiraIssueContextFrom(invocation);
-
-    return await openPullRequest({
-      enabled: implementation.pull_request.enabled,
-      cwd: workspace.path,
-      push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
-      branch: workspace.branch,
-      provider: implementation.pull_request.provider,
-      baseRef: implementation.pull_request.base_ref,
-      draft: implementation.pull_request.draft,
-      title: implementationTitle(invocation),
-      body: task.description
     });
   }
 });

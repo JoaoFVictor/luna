@@ -137,6 +137,10 @@ nodes:
   - id: pull_request
     type: built_in
     uses: open_pull_request
+    input:
+      push: $.steps.push
+      title: $.steps.task_context.jira.summary
+      body: $.steps.task_context.jira.description
     artifacts:
       - path: pull-request.json
         source: $.steps.pull_request

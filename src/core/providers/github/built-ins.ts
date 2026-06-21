@@ -1,43 +1,65 @@
-import { validateFindingEvidence as defaultValidateFindingEvidence } from "../evidence-validator.js";
-import { prepare as defaultPrepareWorktree } from "../git-worktree-manager.js";
-import { collectRepoContext as defaultCollectRepoContext } from "../repo-context-collector.js";
+import { validateFindingEvidence as defaultValidateFindingEvidence } from "../../evidence-validator.js";
+import { prepare as defaultPrepareWorktree } from "./worktree-manager.js";
+import { collectRepoContext as defaultCollectRepoContext } from "../../repo-context-collector.js";
 import {
   buildFinalReportJson as defaultBuildFinalReportJson,
   buildFinalReportMarkdown as defaultBuildFinalReportMarkdown
-} from "../report-builder.js";
-import { runPreflight as defaultRunPreflight } from "../preflight.js";
+} from "./report-builder.js";
+import { openPullRequest as defaultOpenPullRequest } from "./implementation-actions.js";
+import { runPreflight as defaultRunPreflight } from "../../preflight.js";
 import type {
   AcceptanceDecision,
   CodeReviewFindings,
   Invocation,
+  PushBranchArtifact,
   RepoContext,
   WorkspaceRecord
-} from "../types.js";
-import { defineBuiltInStep } from "./registry.js";
+} from "../../types.js";
+import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
   findingsFrom,
-  githubPullRequestInvocationFrom,
   repositoryFrom,
   requiredInput,
   requiredState,
+  requiredImplementationFrom,
   resolvedInput,
   runIdFrom,
+  stepValue,
   workspaceFrom,
   workspaceRootFrom,
   workflowFrom,
-  implementationFrom
-} from "./state.js";
+  implementationFrom,
+  implementationWorkspaceFrom
+} from "../../built-ins/state.js";
+import { builtInError } from "../../built-ins/errors.js";
+import { githubPullRequestContextFrom } from "./pull-request-context.js";
+
+function githubPullRequestInvocationFrom(state: { invocation?: unknown }): Invocation {
+  const invocation = requiredState(
+    state.invocation as Invocation | undefined,
+    "invocation"
+  );
+
+  try {
+    githubPullRequestContextFrom(invocation);
+  } catch {
+    throw builtInError(
+      "Built-in step requires GitHub pull request invocation",
+      "built_in_unsupported"
+    );
+  }
+
+  return invocation;
+}
 
 export const preflightBuiltIn = defineBuiltInStep({
   name: "preflight",
   async run({ state, dependencies = {} }) {
     const runPreflight = dependencies.runPreflight ?? defaultRunPreflight;
+    const invocation = githubPullRequestInvocationFrom(state);
 
     return await runPreflight({
-      invocation: requiredState(
-        state.invocation as Invocation | undefined,
-        "invocation"
-      ),
+      invocation,
       repository: repositoryFrom(state),
       workflow: workflowFrom(state),
       implementation: implementationFrom(state)
@@ -69,13 +91,16 @@ export const collectRepoContextBuiltIn = defineBuiltInStep({
     const collectRepoContext =
       dependencies.collectRepoContext ?? defaultCollectRepoContext;
     const workspace = workspaceFrom(state);
+    const invocation = githubPullRequestInvocationFrom(state);
+    const pullRequest = githubPullRequestContextFrom(invocation);
 
     return await collectRepoContext({
-      invocation: githubPullRequestInvocationFrom(state),
       repository: {
         ...repositoryFrom(state),
         path: workspace.path
-      }
+      },
+      baseSha: pullRequest.references.base_sha,
+      headSha: pullRequest.references.head_sha
     });
   }
 });
@@ -133,5 +158,27 @@ export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
         acceptance
       })
     };
+  }
+});
+
+export const openPullRequestBuiltIn = defineBuiltInStep({
+  name: "open_pull_request",
+  metadata: { locks: [{ resource: "repository", mode: "exclusive" }] },
+  async run({ state, input, dependencies = {} }) {
+    const openPullRequest = dependencies.openPullRequest ?? defaultOpenPullRequest;
+    const resolved = resolvedInput(input, state);
+    const implementation = requiredImplementationFrom(state);
+    const workspace = implementationWorkspaceFrom(state);
+
+    return await openPullRequest({
+      enabled: implementation.pull_request.enabled,
+      cwd: workspace.path,
+      push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
+      branch: workspace.branch,
+      baseRef: implementation.pull_request.base_ref,
+      draft: implementation.pull_request.draft,
+      title: requiredInput(resolved.title as string | undefined, "title"),
+      body: typeof resolved.body === "string" ? resolved.body : undefined
+    });
   }
 });

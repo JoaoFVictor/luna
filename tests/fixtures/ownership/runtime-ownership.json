@@ -3,23 +3,23 @@
   "files": {
     "src/adapters/github-pr-url/adapter.ts": {
       "owner": "provider:github",
-      "reason": "Owns GitHub-specific adapter or runtime context behavior."
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
     },
     "src/adapters/github-pr-url/index.ts": {
       "owner": "provider:github",
-      "reason": "Owns GitHub-specific adapter or runtime context behavior."
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
     },
     "src/adapters/jira-task-url/adapter.ts": {
       "owner": "provider:jira",
-      "reason": "Owns Jira-specific adapter, auth, or runtime context behavior."
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
     },
     "src/adapters/jira-task-url/index.ts": {
       "owner": "provider:jira",
-      "reason": "Owns Jira-specific adapter, auth, or runtime context behavior."
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
     },
     "src/adapters/registry.ts": {
-      "owner": "generic",
-      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+      "owner": "composition-root",
+      "reason": "Connects provider-owned modules at an explicit runtime composition root."
     },
     "src/adapters/types.ts": {
       "owner": "generic",
@@ -59,17 +59,9 @@
     },
     "src/core/built-ins/catalog.ts": {
       "owner": "composition-root",
-      "reason": "Registers built-ins at the runtime composition root."
-    },
-    "src/core/built-ins/code-review.ts": {
-      "owner": "generic",
-      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+      "reason": "Connects provider-owned modules at an explicit runtime composition root."
     },
     "src/core/built-ins/errors.ts": {
-      "owner": "generic",
-      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
-    },
-    "src/core/built-ins/implementation.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
@@ -137,10 +129,6 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
-    "src/core/github-pr-context.ts": {
-      "owner": "provider:github",
-      "reason": "Owns GitHub-specific adapter or runtime context behavior."
-    },
     "src/core/implementation-branch.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
@@ -153,10 +141,6 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
-    "src/core/implementation-report-builder.ts": {
-      "owner": "generic",
-      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
-    },
     "src/core/implementation-worktree-manager.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
@@ -164,14 +148,6 @@
     "src/core/invocation-helpers.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
-    },
-    "src/core/jira-auth.ts": {
-      "owner": "provider:jira",
-      "reason": "Owns Jira-specific adapter, auth, or runtime context behavior."
-    },
-    "src/core/jira-issue-context.ts": {
-      "owner": "provider:jira",
-      "reason": "Owns Jira-specific adapter, auth, or runtime context behavior."
     },
     "src/core/json-value.ts": {
       "owner": "generic",
@@ -229,6 +205,46 @@
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
+    "src/core/providers/github/built-ins.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/github/implementation-actions.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/github/pull-request-context.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/github/report-builder.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/github/worktree-manager.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/jira/auth.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/providers/jira/built-ins.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/providers/jira/config.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/providers/jira/report-builder.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/providers/jira/task-context.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
     "src/core/redactor.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
@@ -238,10 +254,6 @@
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
     "src/core/repo-context-collector.ts": {
-      "owner": "generic",
-      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
-    },
-    "src/core/report-builder.ts": {
       "owner": "generic",
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     },
@@ -302,602 +314,26 @@
       "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
     }
   },
-  "wave0ProviderBoundaryInventory": {
-    "src/adapters/registry.ts": [
-      {
-        "line": 4,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 4,
-        "marker": "github-pr-url",
-        "category": "github"
-      },
-      {
-        "line": 5,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 5,
-        "marker": "jira-task-url",
-        "category": "jira"
-      },
-      {
-        "line": 108,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 109,
-        "marker": "jira",
-        "category": "jira"
-      }
-    ],
-    "src/core/built-ins/code-review.ts": [
-      {
-        "line": 19,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 58,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 74,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 122,
-        "marker": "github",
-        "category": "github"
-      }
-    ],
-    "src/core/built-ins/implementation.ts": [
-      {
-        "line": 16,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 16,
-        "marker": "jira-issue-context",
-        "category": "jira"
-      },
-      {
-        "line": 30,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 41,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 79,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 79,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 98,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 98,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 101,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 150,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 204,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 205,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 248,
-        "marker": "jira",
-        "category": "jira"
-      }
-    ],
-    "src/core/built-ins/state.ts": [
-      {
-        "line": 1,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 1,
-        "marker": "github-pr-context",
-        "category": "github"
-      },
-      {
-        "line": 3,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 3,
-        "marker": "jira-issue-context",
-        "category": "jira"
-      },
-      {
-        "line": 44,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 51,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 54,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 62,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 69,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 72,
-        "marker": "jira",
-        "category": "jira"
-      }
-    ],
-    "src/core/configured-workflow-runner.ts": [
-      {
-        "line": 77,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 289,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 289,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 291,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 292,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 292,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 297,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 297,
-        "marker": "jira",
-        "category": "jira"
-      }
-    ],
-    "src/core/git-worktree-manager.ts": [
-      {
-        "line": 7,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 7,
-        "marker": "github-pr-context",
-        "category": "github"
-      },
-      {
-        "line": 150,
-        "marker": "github",
-        "category": "github"
-      }
-    ],
-    "src/core/implementation-git-actions.ts": [
-      {
-        "line": 549,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 550,
-        "marker": "provider_unsupported",
-        "category": "provider"
-      },
-      {
-        "line": 579,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 585,
-        "marker": "github",
-        "category": "github"
-      }
-    ],
-    "src/core/implementation-report-builder.ts": [
-      {
-        "line": 1,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 1,
-        "marker": "jira-issue-context",
-        "category": "jira"
-      },
-      {
-        "line": 37,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 104,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 107,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 146,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 146,
-        "marker": "jira",
-        "category": "jira"
-      }
-    ],
-    "src/core/model-config.ts": [
-      {
-        "line": 69,
-        "marker": "provider/model",
-        "category": "provider"
-      }
-    ],
-    "src/core/observability/sanitize.ts": [
-      {
-        "line": 7,
-        "marker": "provider_payload",
-        "category": "provider"
-      },
-      {
-        "line": 8,
-        "marker": "providerpayload",
-        "category": "provider"
-      },
-      {
-        "line": 9,
-        "marker": "provider.payload",
-        "category": "provider"
-      }
-    ],
-    "src/core/observability/summary.ts": [
-      {
-        "line": 13,
-        "marker": "provider_cost_unit",
-        "category": "provider"
-      },
-      {
-        "line": 63,
-        "marker": "provider_cost_unit",
-        "category": "provider"
-      },
-      {
-        "line": 238,
-        "marker": "provider_cost_unit",
-        "category": "provider"
-      }
-    ],
-    "src/core/pi-auth.ts": [
-      {
-        "line": 66,
-        "marker": "openai-codex",
-        "category": "provider"
-      },
-      {
-        "line": 132,
-        "marker": "openai-codex",
-        "category": "provider"
-      }
-    ],
-    "src/core/preflight.ts": [
-      {
-        "line": 4,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 5,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 6,
-        "marker": "github-pr-context",
-        "category": "github"
-      },
-      {
-        "line": 7,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 7,
-        "marker": "jira-issue-context",
-        "category": "jira"
-      },
-      {
-        "line": 60,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 62,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 74,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 173,
-        "marker": "github",
-        "category": "github"
-      }
-    ],
-    "src/core/redactor.ts": [
-      {
-        "line": 65,
-        "marker": "github",
-        "category": "github"
-      }
-    ],
-    "src/core/remote-url.ts": [
-      {
-        "line": 1,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 1,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 2,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 3,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 4,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 24,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 26,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 34,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 39,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 44,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 49,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 50,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 51,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 53,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 56,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 64,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 68,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 75,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 76,
-        "marker": "github",
-        "category": "github"
-      }
-    ],
-    "src/core/repo-context-collector.ts": [
-      {
-        "line": 2,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 2,
-        "marker": "github-pr-context",
-        "category": "github"
-      },
-      {
-        "line": 54,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 248,
-        "marker": "github",
-        "category": "github"
-      }
-    ],
-    "src/core/report-builder.ts": [
-      {
-        "line": 1,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 1,
-        "marker": "github-pr-context",
-        "category": "github"
-      },
-      {
-        "line": 80,
-        "marker": "github",
-        "category": "github"
-      }
-    ],
-    "src/core/types.ts": [
-      {
-        "line": 77,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 202,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 209,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 216,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 217,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 223,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 223,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 317,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 341,
-        "marker": "github",
-        "category": "github"
-      },
-      {
-        "line": 389,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 408,
-        "marker": "jira",
-        "category": "jira"
-      },
-      {
-        "line": 408,
-        "marker": "jira",
-        "category": "jira"
-      }
-    ]
-  }
+  "compositionEdges": [
+    {
+      "from": "src/adapters/registry.ts",
+      "to": "src/adapters/github-pr-url/index.ts",
+      "reason": "Registers the GitHub pull request URL adapter at the adapter composition root."
+    },
+    {
+      "from": "src/adapters/registry.ts",
+      "to": "src/adapters/jira-task-url/index.ts",
+      "reason": "Registers the Jira task URL adapter at the adapter composition root."
+    },
+    {
+      "from": "src/core/built-ins/catalog.ts",
+      "to": "src/core/providers/github/built-ins.ts",
+      "reason": "Registers GitHub-owned built-ins at the built-in composition root."
+    },
+    {
+      "from": "src/core/built-ins/catalog.ts",
+      "to": "src/core/providers/jira/built-ins.ts",
+      "reason": "Registers Jira-owned built-ins at the built-in composition root."
+    }
+  ]
 }
