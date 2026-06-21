@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { RunLockManager } from "../../src/core/run-lock-manager.js";
+import { RunLockManager } from "../../src/core/workflow/lock-manager.js";
 import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
 

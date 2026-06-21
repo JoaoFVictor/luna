@@ -41,7 +41,7 @@ import {
   loadWorkflowDefinition,
   type WorkflowDefinition,
   type WorkflowObservabilityConfig
-} from "../workflow-definition.js";
+} from "../workflow/definition.js";
 import {
   resolveModelProfiles,
   type ResolvedModelProfiles

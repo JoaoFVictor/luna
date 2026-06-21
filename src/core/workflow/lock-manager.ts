@@ -4,9 +4,9 @@ import path from "node:path";
 import {
   customEvent,
   type LunaObservability
-} from "./observability/luna-observability.js";
-import { sanitizeJsonObject } from "./observability/sanitize.js";
-import { slugify } from "./path-security.js";
+} from "../observability/luna-observability.js";
+import { sanitizeJsonObject } from "../observability/sanitize.js";
+import { slugify } from "../path-security.js";
 
 export type LockMode = "exclusive";
 

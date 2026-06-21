@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   normalizeArtifactWritePlans,
   writePlannedArtifacts
-} from "../../src/core/artifact-write-plan.js";
-import type { SchedulerWorkflowState } from "../../src/core/workflow-state.js";
+} from "../../src/core/workflow/artifact-write-plan.js";
+import type { SchedulerWorkflowState } from "../../src/core/workflow/state.js";
 
 function workflowState(steps: Record<string, unknown> = {}): SchedulerWorkflowState {
   return {
@@ -147,5 +147,54 @@ describe("artifact write plans", () => {
     expect(artifactStore.writeJson).toHaveBeenCalledWith("preflight.json", {
       ok: true
     });
+  });
+
+  it("writes declared artifact plans in deterministic order", async () => {
+    const artifactWritePlan: string[] = [];
+    const artifactStore = {
+      writeJson: vi.fn(async (name: string) => {
+        artifactWritePlan.push(name);
+        return name;
+      }),
+      writeMarkdown: vi.fn(async (name: string) => {
+        artifactWritePlan.push(name);
+        return name;
+      })
+    };
+    const node = builtInArtifactNode("final_report", [
+      {
+        path: "summary.json",
+        source: "$.steps.final_report.summary",
+        format: "json"
+      },
+      {
+        path: "details.json",
+        source: "$.steps.final_report.details",
+        format: "json"
+      },
+      {
+        path: "final-report.md",
+        source: "$.steps.final_report.markdown",
+        format: "markdown"
+      }
+    ]);
+
+    await writePlannedArtifacts({
+      artifactStore,
+      node,
+      output: {
+        summary: { ok: true },
+        details: { count: 2 },
+        markdown: "# Report"
+      },
+      state: workflowState()
+    });
+
+    const expectedDeterministicOrder = [
+      "summary.json",
+      "details.json",
+      "final-report.md"
+    ];
+    expect(artifactWritePlan).toEqual(expectedDeterministicOrder);
   });
 });

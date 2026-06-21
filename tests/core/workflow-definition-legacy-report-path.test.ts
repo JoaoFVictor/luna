@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadWorkflowDefinition } from "../../src/core/workflow-definition.js";
+import { loadWorkflowDefinition } from "../../src/core/workflow/definition.js";
 
 async function copyLegacyFixture(fixtureName: string): Promise<string> {
   const root = path.join(tmpdir(), `luna-legacy-report-path-${crypto.randomUUID()}`);

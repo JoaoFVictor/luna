@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveRepository } from "../../src/core/workspace-resolver.js";
+import { resolveRepository } from "../../src/core/workflow/workspace-resolver.js";
 import type { Invocation } from "../../src/core/types.js";
 import { gitRepository } from "../fixtures/git-repo.js";
 

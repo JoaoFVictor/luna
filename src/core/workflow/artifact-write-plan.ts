@@ -1,9 +1,9 @@
 import path from "node:path";
 import { z } from "zod";
-import type { ArtifactStore } from "./artifact-store.js";
-import { assertJsonValue } from "./json-value.js";
-import type { WorkflowNode } from "./workflow-definition.js";
-import type { SchedulerWorkflowState } from "./workflow-state.js";
+import type { ArtifactStore } from "../artifact-store.js";
+import { assertJsonValue } from "../json-value.js";
+import type { WorkflowNode } from "./definition.js";
+import type { SchedulerWorkflowState } from "./state.js";
 
 export type ArtifactFormat = "json" | "markdown";
 

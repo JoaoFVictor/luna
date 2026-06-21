@@ -18,11 +18,6 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/artifact-write-plan.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/atomic-write.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
@@ -88,42 +83,12 @@
       "removeByWave": 7
     },
     {
-      "path": "src/core/run-lock-manager.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
       "path": "src/core/types.ts",
       "rule": "global-core-types-barrel",
       "removeByWave": 7
     },
     {
       "path": "src/core/validation-runner.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/workflow-definition.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/workflow-execution-policy.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/workflow-scheduler.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/workflow-state.ts",
-      "rule": "src-core-root-implementation-file",
-      "removeByWave": 7
-    },
-    {
-      "path": "src/core/workspace-resolver.ts",
       "rule": "src-core-root-implementation-file",
       "removeByWave": 7
     }

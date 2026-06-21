@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
-import { loadWorkflowDefinition } from "../../src/core/workflow-definition.js";
+import { loadWorkflowDefinition } from "../../src/core/workflow/definition.js";
 import {
   assertDocsCatalogDriftGuardrail,
   realReviewPrCommandViolations
@@ -55,7 +55,7 @@ const legacyArtifactTestContractAllowlist = new Set([
 ]);
 
 const legacyReportPathRuntimeAllowlist = new Set([
-  "src/core/workflow-definition.ts"
+  "src/core/workflow/definition.ts"
 ]);
 
 async function readJson<T>(relativePath: string): Promise<T> {
@@ -822,8 +822,8 @@ describe("refactor guardrails", () => {
 
   it("does not expose the legacy artifact shape in workflow TypeScript contracts", async () => {
     const checkedFiles = [
-      "src/core/workflow-definition.ts",
-      "src/core/workflow-scheduler.ts",
+      "src/core/workflow/definition.ts",
+      "src/core/workflow/scheduler.ts",
       "src/core/configured-workflow/runner.ts"
     ];
 

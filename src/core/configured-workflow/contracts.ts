@@ -9,8 +9,8 @@ import type {
   RunIdentity,
   WorkspaceRecord
 } from "../types.js";
-import type { WorkflowDefinition, WorkflowNode } from "../workflow-definition.js";
-import type { WorkflowState } from "../workflow-state.js";
+import type { WorkflowDefinition, WorkflowNode } from "../workflow/definition.js";
+import type { WorkflowState } from "../workflow/state.js";
 import type {
   ConfiguredWorkflowBootstrapConfigs,
   ConfiguredWorkflowBootstrapOptions,

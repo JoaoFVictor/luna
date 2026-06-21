@@ -1,4 +1,4 @@
-import type { Invocation, RepositoryConfig } from "./types.js";
+import type { Invocation, RepositoryConfig } from "../types.js";
 
 type RepositoryResolverError = Error & {
   code: "repository_not_configured";

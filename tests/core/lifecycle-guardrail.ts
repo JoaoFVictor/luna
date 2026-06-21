@@ -191,7 +191,7 @@ export function lifecycleStepMapViolations(
         "src/core/write-mode/lifecycle.ts",
         "src/core/write-mode/workspace-lifecycle.ts",
         "src/core/configured-workflow/runner.ts",
-        "src/core/workflow-scheduler.ts"
+        "src/core/workflow/scheduler.ts"
       ].includes(relativePath)
     ) {
       if (

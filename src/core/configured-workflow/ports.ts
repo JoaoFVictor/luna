@@ -1,4 +1,4 @@
-import type { SchedulerLockManager } from "../workflow-scheduler.js";
+import type { SchedulerLockManager } from "../workflow/scheduler.js";
 import type { ObservabilityPort, RunLockPort } from "./contracts.js";
 import type { LunaObservability } from "../observability/luna-observability.js";
 

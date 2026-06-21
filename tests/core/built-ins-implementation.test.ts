@@ -29,7 +29,7 @@ import type { ChangeRequestArtifact } from "../../src/core/change-request/contra
 import type { ImplementationWorktreeRecord } from "../../src/core/write-mode/worktree.js";
 import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";
-import type { WorkflowState } from "../../src/core/workflow-state.js";
+import type { WorkflowState } from "../../src/core/workflow/state.js";
 
 const githubInvocation: Invocation = {
   version: "2026-06",

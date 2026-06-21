@@ -1,31 +1,31 @@
 import type {
   BuiltInStepMetadata,
   ImplementationLifecycleOutcome
-} from "./built-ins/types.js";
+} from "../built-ins/types.js";
 import {
   initialImplementationLifecycleEvidence,
   recordWorkflowNodeLifecycle,
   type ImplementationLifecycleEvidence
-} from "./write-mode/lifecycle.js";
+} from "../write-mode/lifecycle.js";
 import {
   stepFailedEvent,
   stepSkippedEvent,
   stepStartedEvent,
   stepSucceededEvent,
   type LunaObservability
-} from "./observability/luna-observability.js";
-import { sanitizeJsonObject } from "./observability/sanitize.js";
+} from "../observability/luna-observability.js";
+import { sanitizeJsonObject } from "../observability/sanitize.js";
 import {
   recordFailedStep,
   type ObservabilitySummary
-} from "./observability/summary.js";
+} from "../observability/summary.js";
 import {
   selectReadyBatchWithPolicy,
   type WorkflowExecutionLocks,
   type WorkflowExecutionPlanItem
-} from "./workflow-execution-policy.js";
-import type { WorkflowNode } from "./workflow-definition.js";
-import type { SchedulerWorkflowState } from "./workflow-state.js";
+} from "./execution-policy.js";
+import type { WorkflowNode } from "./definition.js";
+import type { SchedulerWorkflowState } from "./state.js";
 
 export type SchedulerExecution = {
   max_concurrency: number;

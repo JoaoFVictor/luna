@@ -1,5 +1,5 @@
 import path from "node:path";
-import { writePlannedArtifacts } from "../artifact-write-plan.js";
+import { writePlannedArtifacts } from "../workflow/artifact-write-plan.js";
 import { ArtifactStore } from "../artifact-store.js";
 import { cleanup as defaultCleanupWorktree } from "../git/worktree-cleanup.js";
 import {
@@ -16,7 +16,7 @@ import { routeInvocation as defaultRouteInvocation } from "../router.js";
 import {
   RunLockManager,
   type RunLockManagerOptions
-} from "../run-lock-manager.js";
+} from "../workflow/lock-manager.js";
 import {
   customEvent,
   runCompletedEvent,
@@ -32,8 +32,8 @@ import {
 import {
   runWorkflowSchedule,
   type SchedulerLockManager
-} from "../workflow-scheduler.js";
-import { splitDeferredFinalReportNodesByPolicy } from "../workflow-execution-policy.js";
+} from "../workflow/scheduler.js";
+import { splitDeferredFinalReportNodesByPolicy } from "../workflow/execution-policy.js";
 import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
@@ -42,9 +42,9 @@ import { lifecycleEvidenceFromSchedulerState } from "../write-mode/lifecycle.js"
 import {
   defaultWorkflowObservabilityConfig,
   type WorkflowNode
-} from "../workflow-definition.js";
-import type { SchedulerWorkflowState } from "../workflow-state.js";
-import { resolveRepository as defaultResolveRepository } from "../workspace-resolver.js";
+} from "../workflow/definition.js";
+import type { SchedulerWorkflowState } from "../workflow/state.js";
+import { resolveRepository as defaultResolveRepository } from "../workflow/workspace-resolver.js";
 import {
   cleanupMayRemoveWorktree,
   configuredWorkflowFinalizer,

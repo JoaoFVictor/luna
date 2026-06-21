@@ -1,6 +1,6 @@
 import type {
   ImplementationLifecycleEvidence
-} from "./write-mode/lifecycle.js";
+} from "../write-mode/lifecycle.js";
 import type {
   AppConfig,
   Invocation,
@@ -8,7 +8,7 @@ import type {
   RunIdentity,
   RuntimeConfigState,
   WorkspaceRecord
-} from "./types.js";
+} from "../types.js";
 
 export type WorkflowState = {
   invocation: unknown;

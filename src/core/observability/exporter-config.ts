@@ -1,4 +1,4 @@
-import type { WorkflowObservabilityConfig } from "../workflow-definition.js";
+import type { WorkflowObservabilityConfig } from "../workflow/definition.js";
 import type { LunaObservabilitySink } from "./events.js";
 
 export type CreateObservabilitySinksOptions = {

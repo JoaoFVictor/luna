@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   selectReadyBatchWithPolicy,
   splitDeferredFinalReportNodesByPolicy
-} from "../../src/core/workflow-execution-policy.js";
-import type { WorkflowNode } from "../../src/core/workflow-definition.js";
+} from "../../src/core/workflow/execution-policy.js";
+import type { WorkflowNode } from "../../src/core/workflow/definition.js";
 
 type BuiltInWorkflowNode = Extract<WorkflowNode, { type: "built_in" }>;
 type AgentWorkflowNode = Extract<WorkflowNode, { type: "agent" }>;

@@ -15,7 +15,7 @@ import type {
 import type { Finding } from "../../src/core/findings/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 import type { ImplementationConfig } from "../../src/core/write-mode/types.js";
-import type { WorkflowState } from "../../src/core/workflow-state.js";
+import type { WorkflowState } from "../../src/core/workflow/state.js";
 
 const invocation: Invocation = {
   version: "2026-06",

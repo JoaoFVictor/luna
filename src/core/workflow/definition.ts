@@ -6,13 +6,13 @@ import {
   assertNoDuplicateArtifactPaths,
   normalizeArtifactWritePlans
 } from "./artifact-write-plan.js";
-import { isBuiltInStepName } from "./built-ins/catalog.js";
-import { loadYamlFile } from "./config-loader.js";
-import { assertSafeSegment, isInsideRoot } from "./path-security.js";
+import { isBuiltInStepName } from "../built-ins/catalog.js";
+import { loadYamlFile } from "../config-loader.js";
+import { assertSafeSegment, isInsideRoot } from "../path-security.js";
 import {
   defaultWorkflowSubagentPolicy,
   type WorkflowSubagentPolicy
-} from "./agents/subagent-policy.js";
+} from "../agents/subagent-policy.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 

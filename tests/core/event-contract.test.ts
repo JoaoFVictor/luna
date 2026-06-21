@@ -41,9 +41,9 @@ type ExpectedLunaEvent = {
 };
 
 const runtimeFiles = [
-  "src/core/workflow-scheduler.ts",
+  "src/core/workflow/scheduler.ts",
   "src/core/configured-workflow/runner.ts",
-  "src/core/run-lock-manager.ts",
+  "src/core/workflow/lock-manager.ts",
   "src/workflows/luna.ts"
 ];
 
