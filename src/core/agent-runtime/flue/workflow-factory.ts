@@ -23,7 +23,7 @@ export async function runLunaWorkflowWithFlue(
     invocation: ctx.payload,
     configRoot,
     projectRoot,
-    flueRunId: ctx.id,
+    runtimeRunId: ctx.id,
     observabilitySinks: [createFlueLogSink(ctx.log)],
     dependencies: createFlueAgentRunner({ ctx, mcpConfig })
   });

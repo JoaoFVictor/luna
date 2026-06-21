@@ -85,6 +85,9 @@ export const acceptedDecision: AcceptanceDecision = {
 export function staticRunIdentity(run: RunIdentity) {
   return (_invocation: Invocation, options: RunIdentityOptions): RunIdentity => ({
     ...run,
+    ...(options.runtimeRunId === undefined
+      ? {}
+      : { flue_run_id: options.runtimeRunId }),
     workflow_id: options.workflowId,
     attempt: options.attempt,
     started_at: options.date.toISOString()

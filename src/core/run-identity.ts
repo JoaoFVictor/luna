@@ -5,6 +5,7 @@ export type RunIdentityOptions = {
   attempt: number;
   date: Date;
   workflowId: string;
+  runtimeRunId?: string;
   flueRunId?: string;
   nonce: string;
 };
@@ -71,7 +72,13 @@ export function createRunIdentity(
   invocation: Invocation,
   options: RunIdentityOptions
 ): RunIdentity {
-  const { attempt, date, workflowId, flueRunId, nonce } = options;
+  const {
+    attempt,
+    date,
+    workflowId,
+    runtimeRunId = options.flueRunId,
+    nonce
+  } = options;
   if (!Number.isSafeInteger(attempt) || attempt < 1) {
     throw runIdentityError("Run attempt must be a positive integer");
   }
@@ -81,7 +88,7 @@ export function createRunIdentity(
     safeIdentityPart(workflowId, "workflow id"),
     invocationSlug(invocation),
     `a${attempt}`,
-    flueSuffix(flueRunId),
+    flueSuffix(runtimeRunId),
     safeIdentityPart(nonce, "nonce")
   ].filter((part): part is string => part !== undefined && part !== "");
 
@@ -92,7 +99,7 @@ export function createRunIdentity(
 
   return {
     run_id,
-    ...(flueRunId === undefined ? {} : { flue_run_id: flueRunId }),
+    ...(runtimeRunId === undefined ? {} : { flue_run_id: runtimeRunId }),
     workflow_id: workflowId,
     attempt,
     source: invocation.source,

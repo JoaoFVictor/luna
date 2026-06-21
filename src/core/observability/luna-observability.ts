@@ -30,6 +30,7 @@ export {
 export type CreateLunaObservabilityOptions = {
   run: {
     id: string;
+    runtimeRunId?: string;
     flueRunId?: string;
     attempt?: number;
   };
@@ -89,7 +90,9 @@ export function createLunaObservability({
   const requiredSinks = sinks.filter((sink) => sink.required !== false);
   const eventRun = {
     id: run.id,
-    ...(run.flueRunId === undefined ? {} : { flueRunId: run.flueRunId }),
+    ...((run.runtimeRunId ?? run.flueRunId) === undefined
+      ? {}
+      : { flueRunId: run.runtimeRunId ?? run.flueRunId }),
     attempt: run.attempt ?? 1
   };
 

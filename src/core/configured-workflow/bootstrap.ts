@@ -47,6 +47,7 @@ import {
   type ResolvedModelProfiles
 } from "../model-config.js";
 import { ImplementationConfigSchema } from "../write-mode/types.js";
+import type { ConfiguredWorkflowBootstrap } from "./contracts.js";
 
 export type ConfiguredWorkflowBootstrapDependencies = {
   createRunIdentity: (
@@ -57,7 +58,7 @@ export type ConfiguredWorkflowBootstrapDependencies = {
   ArtifactStore: typeof ArtifactStore;
 };
 
-export type ConfiguredWorkflowConfigs = {
+export type ConfiguredWorkflowBootstrapConfigs = {
   app: AppConfig;
   repositories: RepositoriesConfig;
   routing: RoutingConfig;
@@ -67,7 +68,7 @@ export type ConfiguredWorkflowConfigs = {
 
 export async function loadConfigs(
   configRoot: string
-): Promise<ConfiguredWorkflowConfigs> {
+): Promise<ConfiguredWorkflowBootstrapConfigs> {
   const app = await loadYamlFile(
     path.join(configRoot, "app.yaml"),
     AppConfigSchema
@@ -195,7 +196,7 @@ export async function createRunObservability({
   const observability = createLunaObservability({
     run: {
       id: run.run_id,
-      flueRunId: run.flue_run_id,
+      runtimeRunId: run.flue_run_id,
       attempt: run.attempt
     },
     workflow: { id: workflowId },
@@ -211,91 +212,22 @@ export async function createRunObservability({
   return { observability, summary };
 }
 
-export async function ensureFailureArtifactStore({
-  artifactStore,
-  Store,
-  configs,
-  run,
-  makeRunIdentity,
-  invocation,
-  workflowId,
-  attempt,
-  date,
-  flueRunId,
-  nonce
-}: {
-  artifactStore?: ArtifactStore;
-  Store: typeof ArtifactStore;
-  configs: { app: AppConfig };
-  run?: RunIdentity;
-  makeRunIdentity: (
-    invocation: Invocation,
-    options: RunIdentityOptions
-  ) => RunIdentity;
-  invocation: Invocation;
-  workflowId?: string;
-  attempt: number;
-  date: Date;
-  flueRunId?: string;
-  nonce: string;
-}): Promise<{
-  artifactStore: ArtifactStore;
-  run: RunIdentity;
-  workflowId: string;
-}> {
-  if (artifactStore !== undefined && run !== undefined) {
-    return { artifactStore, run, workflowId: run.workflow_id };
-  }
-
-  const failureWorkflowId = workflowId ?? "_failed";
-  const failureRun = makeRunIdentity(invocation, {
-    workflowId: failureWorkflowId,
-    attempt,
-    date,
-    flueRunId,
-    nonce
-  });
-  const failureArtifactStore = new Store(
-    artifactRootForWorkflow(configs.app.artifacts.root, failureWorkflowId),
-    failureRun.run_id
-  );
-  await failureArtifactStore.initializeRunDirectory();
-  await failureArtifactStore.writeJson("invocation.json", invocation);
-  await failureArtifactStore.writeJson("run.json", failureRun);
-
-  return {
-    artifactStore: failureArtifactStore,
-    run: failureRun,
-    workflowId: failureWorkflowId
-  };
-}
-
-export async function bootstrapConfiguredWorkflowRun({
-  invocation,
-  configRoot,
-  workflowsRoot,
-  agentsRoot,
-  flueRunId,
-  observabilitySinks,
-  dependencies,
-  attempt,
-  date,
-  nonce,
-  configs
-}: {
+export type ConfiguredWorkflowBootstrapOptions = {
   invocation: Invocation;
   configRoot: string;
   workflowsRoot?: string;
   agentsRoot?: string;
-  flueRunId?: string;
+  runtimeRunId?: string;
   observabilitySinks: LunaObservabilitySink[];
   dependencies: ConfiguredWorkflowBootstrapDependencies;
   attempt: number;
   date: Date;
   nonce: string;
-  configs?: ConfiguredWorkflowConfigs;
-}): Promise<{
-  configs: ConfiguredWorkflowConfigs;
+  configs?: ConfiguredWorkflowBootstrapConfigs;
+};
+
+export type ConfiguredWorkflowBootstrapResult = {
+  configs: ConfiguredWorkflowBootstrapConfigs;
   workflow: WorkflowDefinition;
   workflowId: string;
   run: RunIdentity;
@@ -305,7 +237,21 @@ export async function bootstrapConfiguredWorkflowRun({
   modelProfiles: ResolvedModelProfiles;
   resolvedAgentsRoot: string;
   workflowObservabilityConfig: WorkflowObservabilityConfig;
-}> {
+};
+
+async function bootstrapConfiguredWorkflowRun({
+  invocation,
+  configRoot,
+  workflowsRoot,
+  agentsRoot,
+  runtimeRunId,
+  observabilitySinks,
+  dependencies,
+  attempt,
+  date,
+  nonce,
+  configs
+}: ConfiguredWorkflowBootstrapOptions): Promise<ConfiguredWorkflowBootstrapResult> {
   const activeConfigs = configs ?? (await loadConfigs(configRoot));
   const modelProfiles = resolveModelProfiles(activeConfigs.models);
   const resolvedAgentsRoot = await resolveConfiguredDirectoryRoot(
@@ -333,7 +279,7 @@ export async function bootstrapConfiguredWorkflowRun({
     workflowId,
     attempt,
     date,
-    flueRunId,
+    runtimeRunId,
     nonce
   });
   const artifactStore = new dependencies.ArtifactStore(
@@ -364,3 +310,7 @@ export async function bootstrapConfiguredWorkflowRun({
     workflowObservabilityConfig
   };
 }
+
+export const configuredWorkflowBootstrap: ConfiguredWorkflowBootstrap = {
+  bootstrap: bootstrapConfiguredWorkflowRun
+};

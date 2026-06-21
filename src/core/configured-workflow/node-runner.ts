@@ -24,6 +24,7 @@ import type {
 } from "../observability/luna-observability.js";
 import type { ObservabilitySummary } from "../observability/summary.js";
 import { configuredWorkflowError } from "../configured-workflow-errors.js";
+import type { ConfiguredWorkflowNodeRunner } from "./contracts.js";
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -272,3 +273,8 @@ export async function runWorkflowNode(
     artifactStore: context.artifactStore
   });
 }
+
+export const configuredWorkflowNodeRunner: ConfiguredWorkflowNodeRunner = {
+  runNode: async ({ node, state, context }) =>
+    await runWorkflowNode(node, state, context)
+};

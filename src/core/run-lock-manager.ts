@@ -13,6 +13,7 @@ export type LockMode = "exclusive";
 export type RunLockManagerOptions = {
   root: string;
   runId: string;
+  runtimeRunId?: string;
   flueRunId?: string;
   timeoutMs: number;
   staleAfterMs: number;
@@ -146,7 +147,7 @@ export class RunLockManager {
 
     this.root = options.root;
     this.runId = options.runId;
-    this.flueRunId = options.flueRunId;
+    this.flueRunId = options.runtimeRunId ?? options.flueRunId;
     this.timeoutMs = options.timeoutMs;
     this.staleAfterMs = options.staleAfterMs;
     this.heartbeatIntervalMs = heartbeatIntervalMs;

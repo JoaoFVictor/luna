@@ -10,6 +10,23 @@ import type {
   WorkspaceRecord
 } from "../types.js";
 import { configuredWorkflowError } from "../configured-workflow-errors.js";
+import type { ConfiguredWorkflowFinalizer } from "./contracts.js";
+
+export type ConfiguredWorkflowFailureFinalizationOptions = {
+  artifactStore: ArtifactStore;
+  workspaceRecord?: WorkspaceRecord;
+  persistedWorkspaceRecord?: WorkspaceRecord;
+  repository?: RepositoryConfig;
+  workspaceConfig: AppConfig["workspace"];
+  cleanupWorktree: typeof defaultCleanupWorktree;
+};
+
+export type ConfiguredWorkflowSuccessFinalizationOptions =
+  ConfiguredWorkflowFailureFinalizationOptions & {
+    workflowMode: "git_managed_read_only" | "git_managed_write";
+    implementationConfig?: RuntimeConfigState["implementation"];
+    lifecycleEvidence: ReturnType<typeof lifecycleEvidenceFromSchedulerState>;
+  };
 
 export async function finalizeFailureWorkspace({
   artifactStore,
@@ -18,14 +35,9 @@ export async function finalizeFailureWorkspace({
   repository,
   workspaceConfig,
   cleanupWorktree
-}: {
-  artifactStore: ArtifactStore;
-  workspaceRecord?: WorkspaceRecord;
-  persistedWorkspaceRecord?: WorkspaceRecord;
-  repository?: RepositoryConfig;
-  workspaceConfig: AppConfig["workspace"];
-  cleanupWorktree: typeof defaultCleanupWorktree;
-}): Promise<WorkspaceRecord | undefined> {
+}: ConfiguredWorkflowFailureFinalizationOptions): Promise<
+  WorkspaceRecord | undefined
+> {
   if (workspaceRecord === undefined) {
     return undefined;
   }
@@ -77,17 +89,9 @@ export async function finalizeSuccessWorkspace({
   implementationConfig,
   lifecycleEvidence,
   cleanupWorktree
-}: {
-  artifactStore: ArtifactStore;
-  workspaceRecord?: WorkspaceRecord;
-  persistedWorkspaceRecord?: WorkspaceRecord;
-  repository?: RepositoryConfig;
-  workspaceConfig: AppConfig["workspace"];
-  workflowMode: "git_managed_read_only" | "git_managed_write";
-  implementationConfig?: RuntimeConfigState["implementation"];
-  lifecycleEvidence: ReturnType<typeof lifecycleEvidenceFromSchedulerState>;
-  cleanupWorktree: typeof defaultCleanupWorktree;
-}): Promise<WorkspaceRecord | undefined> {
+}: ConfiguredWorkflowSuccessFinalizationOptions): Promise<
+  WorkspaceRecord | undefined
+> {
   if (workspaceRecord === undefined) {
     return undefined;
   }
@@ -146,6 +150,11 @@ export async function finalizeSuccessWorkspace({
   await artifactStore.writeJson("workspace.json", finalWorkspace);
   return finalWorkspace;
 }
+
+export const configuredWorkflowFinalizer: ConfiguredWorkflowFinalizer = {
+  finalizeSuccessWorkspace,
+  finalizeFailureWorkspace
+};
 
 export function cleanupMayRemoveWorktree({
   workspaceRecord,

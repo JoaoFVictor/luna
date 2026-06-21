@@ -3,11 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
-import type {
-  FailureArtifactWriter,
-  ObservabilityPort,
-  RunLockPort
-} from "../../src/core/configured-workflow/contracts.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
 import type { RunIdentityOptions } from "../../src/core/run-identity.js";
 import type {
@@ -117,41 +112,6 @@ async function writeParallelProbeWorkflow(root: string): Promise<void> {
 
 
 describe("configured workflow runner", () => {
-  it("defines runtime-neutral configured workflow ports", async () => {
-    const lockPort: RunLockPort = {
-      acquire: async ({ runtimeRunId }) => ({
-        runtimeRunId,
-        release: async () => undefined
-      }),
-      heartbeat: async ({ runtimeRunId }) => runtimeRunId
-    };
-    const observabilityPort: ObservabilityPort = {
-      emit: async ({ runtimeRunId }) => runtimeRunId
-    };
-    const failureArtifactWriter: FailureArtifactWriter = {
-      writeFailure: async ({ runtimeRunId }) => ({ runtimeRunId })
-    };
-
-    expect(await lockPort.heartbeat({ runtimeRunId: "run-123" })).toBe(
-      "run-123"
-    );
-    await expect(
-      lockPort.acquire({ runtimeRunId: "run-123", resource: "repository:repo" })
-    ).resolves.toMatchObject({ runtimeRunId: "run-123" });
-    await expect(
-      observabilityPort.emit({
-        runtimeRunId: "run-123",
-        event: { type: "luna.test" }
-      })
-    ).resolves.toBe("run-123");
-    await expect(
-      failureArtifactWriter.writeFailure({
-        runtimeRunId: "run-123",
-        error: new Error("boom")
-      })
-    ).resolves.toEqual({ runtimeRunId: "run-123" });
-  });
-
   it("routes and uses routed workflow options when creating the final run identity", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
@@ -164,9 +124,9 @@ describe("configured workflow runner", () => {
       const createRunIdentity = vi.fn(
         (receivedInvocation: Invocation, options: RunIdentityOptions): RunIdentity => ({
           run_id: `run-${options.workflowId}`,
-          ...(options.flueRunId === undefined
+          ...(options.runtimeRunId === undefined
             ? {}
-            : { flue_run_id: options.flueRunId }),
+            : { flue_run_id: options.runtimeRunId }),
           workflow_id: options.workflowId,
           attempt: options.attempt,
           source: receivedInvocation.source,
@@ -192,7 +152,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-1",
+        runtimeRunId: "flue-1",
         nonceFactory: () => "nonce-1",
         dependencies: {
           now: () => fixedDate,
@@ -213,7 +173,7 @@ describe("configured workflow runner", () => {
         invocation,
         expect.objectContaining({
           workflowId: "code-review",
-          flueRunId: "flue-1",
+          runtimeRunId: "flue-1",
           nonce: "nonce-1",
           attempt: 1,
           date: fixedDate
@@ -288,7 +248,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-log",
+        runtimeRunId: "flue-log",
         nonceFactory: () => "log",
         observabilitySinks: [
           {
@@ -351,7 +311,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-obs",
+        runtimeRunId: "flue-obs",
         nonceFactory: () => "obs",
         observabilitySinks: [
           {
@@ -433,7 +393,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-disabled",
+        runtimeRunId: "flue-disabled",
         nonceFactory: () => "disabled",
         observabilitySinks: [
           {
@@ -489,7 +449,7 @@ describe("configured workflow runner", () => {
       const result = await runConfiguredWorkflow({
         invocation,
         configRoot: root,
-        flueRunId: "flue-log",
+        runtimeRunId: "flue-log",
         nonceFactory: () => "log",
         observabilitySinks: [
           {
@@ -540,7 +500,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         throwOnError: false,
-        flueRunId: "flue-fail",
+        runtimeRunId: "flue-fail",
         nonceFactory: () => "fail",
         observabilitySinks: [
           {
@@ -601,7 +561,7 @@ describe("configured workflow runner", () => {
         invocation,
         configRoot: root,
         throwOnError: false,
-        flueRunId: "flue-fail",
+        runtimeRunId: "flue-fail",
         nonceFactory: () => "fail",
         observabilitySinks: [
           {

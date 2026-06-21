@@ -47,29 +47,44 @@ import type { SchedulerWorkflowState } from "../workflow-state.js";
 import { resolveRepository as defaultResolveRepository } from "../workspace-resolver.js";
 import {
   cleanupMayRemoveWorktree,
-  finalizeFailureWorkspace,
-  finalizeSuccessWorkspace,
+  configuredWorkflowFinalizer,
   withRepositoryCleanupLock
 } from "./finalization.js";
 import {
   configuredWorkflowError,
-  errorArtifact,
   errorCode,
   errorMessage
 } from "../configured-workflow-errors.js";
 import {
-  runWorkflowNode,
+  configuredWorkflowNodeRunner,
   type RunAgentLoopStepOptions,
   type RunAgentStepOptions,
   type WorkflowNodeRuntimeContext
 } from "./node-runner.js";
 import {
-  bootstrapConfiguredWorkflowRun,
+  configuredWorkflowBootstrap,
   createRunObservability,
   createRunNonce,
-  ensureFailureArtifactStore,
   loadConfigs
 } from "./bootstrap.js";
+import { createFailureArtifactWriter } from "./failure-artifacts.js";
+import {
+  createObservabilityPort,
+  createRunLockPort,
+  schedulerLockManagerFromPort
+} from "./ports.js";
+import type {
+  ConfiguredWorkflowBootstrap,
+  ConfiguredWorkflowFinalizer,
+  ConfiguredWorkflowNodeRunner,
+  ConfiguredWorkflowResult,
+  ConfiguredWorkflowRunner,
+  ConfiguredWorkflowFailureResult,
+  ConfiguredWorkflowSuccessResult,
+  FailureArtifactWriter,
+  ObservabilityPortFactory,
+  RunLockPort
+} from "./contracts.js";
 import {
   type ErrorArtifact,
   type Invocation,
@@ -105,6 +120,12 @@ export type ConfiguredWorkflowRunnerDependencies = {
   builtInStepRegistry?: BuiltInMetadataRegistry;
   builtInStepDependencies?: BuiltInStepDependencies;
   lockManagerFactory?: (options: RunLockManagerOptions) => SchedulerLockManager;
+  lockPortFactory?: (options: RunLockManagerOptions) => RunLockPort;
+  observabilityPortFactory?: ObservabilityPortFactory;
+  bootstrap?: ConfiguredWorkflowBootstrap;
+  nodeRunner?: ConfiguredWorkflowNodeRunner;
+  finalizer?: ConfiguredWorkflowFinalizer;
+  failureArtifactWriter?: FailureArtifactWriter;
   ArtifactStore?: typeof ArtifactStore;
   now?: () => Date;
 };
@@ -115,7 +136,7 @@ export type RunConfiguredWorkflowOptions = {
   projectRoot?: string;
   workflowsRoot?: string;
   agentsRoot?: string;
-  flueRunId?: string;
+  runtimeRunId?: string;
   observabilitySinks?: LunaObservabilitySink[];
   nonceFactory?: () => string;
   dependencies?: ConfiguredWorkflowRunnerDependencies;
@@ -123,26 +144,11 @@ export type RunConfiguredWorkflowOptions = {
   throwOnError?: boolean;
 };
 
-export type ConfiguredWorkflowSuccessResult = {
-  status: "success";
-  run: RunIdentity;
-  workflow_id: string;
-  steps: Record<string, unknown>;
-  report?: JsonValue;
-  workspace?: WorkspaceRecord;
+export type {
+  ConfiguredWorkflowFailureResult,
+  ConfiguredWorkflowResult,
+  ConfiguredWorkflowSuccessResult
 };
-
-export type ConfiguredWorkflowFailureResult = {
-  status: "failed";
-  run: RunIdentity;
-  workflow_id?: string;
-  error: ErrorArtifact;
-  workspace?: WorkspaceRecord;
-};
-
-export type ConfiguredWorkflowResult =
-  | ConfiguredWorkflowSuccessResult
-  | ConfiguredWorkflowFailureResult;
 
 function topologicalNodes(nodes: WorkflowNode[]): WorkflowNode[] {
   const remaining = new Map(nodes.map((node) => [node.id, node]));
@@ -208,26 +214,13 @@ function finalReportFrom(output: unknown): JsonValue | undefined {
   return report;
 }
 
-async function writeJsonBestEffort(
-  artifactStore: ArtifactStore,
-  name: string,
-  value: unknown
-): Promise<unknown> {
-  try {
-    await artifactStore.writeJson(name, value);
-    return undefined;
-  } catch (error) {
-    return error;
-  }
-}
-
 export async function runConfiguredWorkflow({
   invocation,
   configRoot = resolveConfigRoot(),
   projectRoot,
   workflowsRoot,
   agentsRoot,
-  flueRunId,
+  runtimeRunId,
   observabilitySinks = [],
   nonceFactory,
   dependencies = {},
@@ -246,6 +239,27 @@ export async function runConfiguredWorkflow({
     dependencies.cleanupWorktree ?? defaultCleanupWorktree;
   const activeBuiltInStepRegistry =
     dependencies.builtInStepRegistry ?? defaultBuiltInStepRegistry;
+  const bootstrapPort = dependencies.bootstrap ?? configuredWorkflowBootstrap;
+  const nodeRunner = dependencies.nodeRunner ?? configuredWorkflowNodeRunner;
+  const finalizer = dependencies.finalizer ?? configuredWorkflowFinalizer;
+  const failureArtifactWriter =
+    dependencies.failureArtifactWriter ??
+    createFailureArtifactWriter({
+      Store,
+      configs,
+      makeRunIdentity
+    });
+  const createLockPort =
+    dependencies.lockPortFactory ??
+    ((options: RunLockManagerOptions) => {
+      const createLockManager =
+        dependencies.lockManagerFactory ??
+        ((managerOptions: RunLockManagerOptions) =>
+          new RunLockManager(managerOptions));
+      return createRunLockPort(createLockManager(options));
+    });
+  const createObservability =
+    dependencies.observabilityPortFactory ?? createObservabilityPort;
   let workflowId: string | undefined;
   let workflowMode:
     | "git_managed_read_only"
@@ -262,12 +276,12 @@ export async function runConfiguredWorkflow({
   let workflowObservabilityConfig = defaultWorkflowObservabilityConfig;
 
   try {
-    const bootstrap = await bootstrapConfiguredWorkflowRun({
+    const bootstrap = await bootstrapPort.bootstrap({
       invocation,
       configRoot,
       workflowsRoot,
       agentsRoot,
-      flueRunId,
+      runtimeRunId,
       observabilitySinks,
       dependencies: {
         createRunIdentity: makeRunIdentity,
@@ -287,14 +301,20 @@ export async function runConfiguredWorkflow({
     artifactStore = bootstrap.artifactStore;
     observability = bootstrap.observability;
     summary = bootstrap.summary;
-    await observability.emit(runStartedEvent(observability.eventContext("info")));
-    await observability.emit(
-      customEvent({
+    const observabilityPort = createObservability(observability);
+    const activeRuntimeRunId = runtimeRunId ?? run.run_id;
+    await observabilityPort.emit({
+      runtimeRunId: activeRuntimeRunId,
+      event: runStartedEvent(observability.eventContext("info"))
+    });
+    await observabilityPort.emit({
+      runtimeRunId: activeRuntimeRunId,
+      event: customEvent({
         ...observability.eventContext("info"),
         type: "luna.run.routed",
         outcome: { status: "succeeded" }
       })
-    );
+    });
 
     repository = resolveRepository(invocation, configs.repositories.repositories);
     const configuredLockRoot = configs.app.locks?.root ?? ".luna/locks";
@@ -302,19 +322,20 @@ export async function runConfiguredWorkflow({
     const lockRoot = path.isAbsolute(configuredLockRoot)
       ? configuredLockRoot
       : path.resolve(runtimeRoot, configuredLockRoot);
-    const createLockManager =
-      dependencies.lockManagerFactory ??
-      ((options: RunLockManagerOptions) => new RunLockManager(options));
-    lockManager = createLockManager({
+    const lockPort = createLockPort({
       root: lockRoot,
       runId: run.run_id,
-      flueRunId: run.flue_run_id,
+      runtimeRunId,
       timeoutMs:
         workflow.execution.lock_timeout_ms ??
         configs.app.locks?.timeout_ms ??
         120000,
       staleAfterMs: configs.app.locks?.stale_after_ms ?? 600000,
       observability
+    });
+    lockManager = schedulerLockManagerFromPort({
+      port: lockPort,
+      runtimeRunId: activeRuntimeRunId
     });
 
     const state: SchedulerWorkflowState = {
@@ -354,7 +375,7 @@ export async function runConfiguredWorkflow({
       observability,
       summary,
       runNode: async ({ node, state }) =>
-        await runWorkflowNode(node, state, nodeRuntimeContext),
+        await nodeRunner.runNode({ node, state, context: nodeRuntimeContext }),
       writePlannedArtifacts: async (node, output, state) =>
         await writePlannedArtifacts({
           artifactStore: activeArtifactStore,
@@ -399,7 +420,7 @@ export async function runConfiguredWorkflow({
         success: true
       }),
       run: async () =>
-        await finalizeSuccessWorkspace({
+        await finalizer.finalizeSuccessWorkspace({
           artifactStore: successArtifactStore,
           workspaceRecord,
           persistedWorkspaceRecord,
@@ -418,9 +439,13 @@ export async function runConfiguredWorkflow({
 
     let report: JsonValue | undefined;
     for (const node of deferredFinalReportNodes) {
-      const output = await runWorkflowNode(node, state, {
-        ...nodeRuntimeContext,
-        artifactStore
+      const output = await nodeRunner.runNode({
+        node,
+        state,
+        context: {
+          ...nodeRuntimeContext,
+          artifactStore
+        }
       });
 
       await writePlannedArtifacts({
@@ -433,12 +458,13 @@ export async function runConfiguredWorkflow({
       report = finalReportFrom(output) ?? report;
     }
 
-    await observability.emit(
-      runCompletedEvent({
+    await observabilityPort.emit({
+      runtimeRunId: activeRuntimeRunId,
+      event: runCompletedEvent({
         ...observability.eventContext("info"),
         status: "succeeded"
       })
-    );
+    });
     await writeSummaryBestEffort(artifactStore, summary);
 
     return {
@@ -457,22 +483,22 @@ export async function runConfiguredWorkflow({
       workspaceRecord = failedWorkspace;
     }
 
-    const failure = await ensureFailureArtifactStore({
+    const failure = await failureArtifactWriter.writeFailure({
       artifactStore,
-      Store,
-      configs,
       run,
-      makeRunIdentity,
       invocation,
       workflowId,
       attempt,
       date,
-      flueRunId,
-      nonce
+      runtimeRunId: runtimeRunId ?? run?.run_id ?? "_failed",
+      nonce,
+      error
     });
     artifactStore = failure.artifactStore;
     run = failure.run;
     workflowId = failure.workflowId;
+    const artifact = failure.error;
+    const artifactWriteError = failure.artifactWriteError;
     if (observability === undefined || summary === undefined) {
       try {
         ({ observability, summary } = await createRunObservability({
@@ -490,8 +516,9 @@ export async function runConfiguredWorkflow({
     const failureArtifactStore = artifactStore;
     if (observability !== undefined) {
       try {
-        await observability.emit(
-          runCompletedEvent({
+        await createObservability(observability).emit({
+          runtimeRunId: runtimeRunId ?? run.run_id,
+          event: runCompletedEvent({
             ...observability.eventContext("error"),
             status: "failed",
             code: errorCode(error),
@@ -501,17 +528,11 @@ export async function runConfiguredWorkflow({
               error
             })
           })
-        );
+        });
       } catch {
         // Failure artifacts remain the source of truth if observability fails here.
       }
     }
-    const artifact = errorArtifact(run.run_id, error);
-    const artifactWriteError = await writeJsonBestEffort(
-      artifactStore,
-      "error.json",
-      artifact
-    );
     await writeSummaryBestEffort(artifactStore, summary);
     let finalWorkspace: WorkspaceRecord | undefined;
     const workspaceWriteError = await (async () => {
@@ -529,7 +550,7 @@ export async function runConfiguredWorkflow({
             success: false
           }),
           run: async () =>
-            await finalizeFailureWorkspace({
+            await finalizer.finalizeFailureWorkspace({
               artifactStore: failureArtifactStore,
               workspaceRecord,
               persistedWorkspaceRecord,
@@ -568,3 +589,7 @@ export async function runConfiguredWorkflow({
     };
   }
 }
+
+export const configuredWorkflowRunner = {
+  run: runConfiguredWorkflow
+} satisfies ConfiguredWorkflowRunner;

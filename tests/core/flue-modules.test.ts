@@ -45,7 +45,7 @@ describe("flue workflow entrypoint", () => {
         invocation: gitInvocation,
         configRoot: "config",
         projectRoot: process.cwd(),
-        flueRunId: "flue-1",
+        runtimeRunId: "flue-1",
         observabilitySinks: expect.arrayContaining([
           expect.objectContaining({ id: "flue-log", required: false })
         ])
