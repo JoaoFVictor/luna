@@ -160,6 +160,46 @@ describe("luna event contract", () => {
     ).toThrow("Invalid JSON value");
   });
 
+  it("does not promote stale Flue run aliases into generic event run ids", async () => {
+    const staleRun = {
+      id: "run-stale",
+      flueRunId: "flue-stale",
+      attempt: 3
+    } as unknown as LunaEvent["run"];
+    const constructed = runStartedEvent({
+      severity: "info",
+      run: staleRun,
+      workflow,
+      timestamp
+    });
+    const emitted: LunaEvent[] = [];
+    const observability = createLunaObservability({
+      run: staleRun,
+      workflow,
+      sinks: [
+        {
+          id: "memory",
+          append: (event) => {
+            emitted.push(event);
+          }
+        }
+      ],
+      now: () => new Date(timestamp)
+    });
+
+    await observability.emit(
+      runStartedEvent({
+        ...observability.eventContext("info")
+      })
+    );
+
+    for (const event of [constructed, emitted[0]]) {
+      expect(event.run).toEqual({ id: "run-stale", attempt: 3 });
+      expect(event.run).not.toHaveProperty("flueRunId");
+      expect(event.run).not.toHaveProperty("runtimeRunId");
+    }
+  });
+
   it("fans out the same normalized event shape to JSONL, Flue log, and summary sinks", async () => {
     const jsonlLines: JsonValue[] = [];
     const artifactStore = {
