@@ -130,7 +130,7 @@
         "validation",
         "commit",
         "push",
-        "pull_request",
+        "change_request",
         "warnings"
       ],
       "properties": {
@@ -142,7 +142,7 @@
         },
         "status": {
           "type": "string",
-          "enum": ["validation_failed", "ready_for_pr", "completed_with_skips"]
+          "enum": ["validation_failed", "ready_for_change_request", "completed_with_skips"]
         },
         "branch": {
           "type": "string",
@@ -160,8 +160,8 @@
         "push": {
           "$ref": "#/definitions/push_action"
         },
-        "pull_request": {
-          "$ref": "#/definitions/pull_request_action"
+        "change_request": {
+          "$ref": "#/definitions/change_request_action"
         },
         "warnings": {
           "type": "array",
@@ -303,7 +303,7 @@
         }
       }
     },
-    "pull_request_action": {
+    "change_request_action": {
       "type": "object",
       "additionalProperties": false,
       "required": ["enabled", "skipped", "status"],

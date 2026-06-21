@@ -50,8 +50,6 @@ The common command shape is:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --from <adapter> <value>
 ```
 
-`--workflow <id>` is an alias for `--target workflow:<id>`.
-
 The lower-level JSON path is useful for tests and automation:
 
 ```bash
@@ -94,10 +92,13 @@ Built-in steps:
 - `final_code_review_report`
 - `prepare_implementation_worktree`
 - `collect_task_context`
+- `run_validation_commands`
+- `record_implementation_validation`
 - `collect_worktree_diff`
+- `record_acceptance_decision`
 - `commit_changes`
 - `push_branch`
-- `open_pull_request`
+- `open_change_request`
 - `final_implementation_report`
 
 Local tools:
@@ -196,7 +197,10 @@ graphs pass it repository context and review instructions with the same shape:
   type: agent
   agent: change-reviewer
   output_schema: code_review_findings
-  artifact: release-risk-review.json
+  artifacts:
+    - path: release-risk-review.json
+      source: $.steps.release_risk_review
+      format: json
   input:
     invocation: $.invocation
     repo_context: $.steps.repo_context
@@ -211,12 +215,12 @@ schema changes. Reuse an existing agent when only the workflow context changes.
 
 Subagents are agent capabilities, not graph nodes. They run as read-only Flue
 profiles by default using the referenced agent's description, instructions,
-model profile, skills, and explicitly safe local tools. Trusted write subagents
-require workflow-level `subagent_policy.allow_write: true` plus a per-subagent
-tool allowlist on the parent agent. Flue subagents cannot declare `mcp_servers`
-or nested `subagents` in Luna. Use graph nodes when the result must have its own
-artifact, schema, workflow gate, MCP access, another delegation tree, or
-independent write step. Use Flue subagents for lightweight internal delegation
+model profile, and skills. Read-only subagents cannot declare local tools, MCP
+servers, or nested subagents. Trusted write subagents require workflow-level
+`subagent_policy.allow_write: true` plus a per-subagent tool allowlist on the
+parent agent. Use graph nodes when the result must have its own artifact,
+schema, workflow gate, MCP access, another delegation tree, or independent write
+step. Use Flue subagents for lightweight internal delegation
 inside a parent agent.
 
 ## MCP Capabilities
@@ -341,19 +345,28 @@ nodes:
   - id: preflight
     type: built_in
     uses: preflight
-    artifact: preflight.json
+    artifacts:
+      - path: preflight.json
+        source: $.steps.preflight
+        format: json
 
   - id: workspace
     type: built_in
     uses: prepare_worktree
-    artifact: workspace.json
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
     after:
       - preflight
 
   - id: repo_context
     type: built_in
     uses: collect_repo_context
-    artifact: repo-context.json
+    artifacts:
+      - path: repo-context.json
+        source: $.steps.repo_context
+        format: json
     after:
       - workspace
 
@@ -361,7 +374,10 @@ nodes:
     type: agent
     agent: my-agent
     output_schema: my_output
-    artifact: my-agent-output.json
+    artifacts:
+      - path: my-agent-output.json
+        source: $.steps.my_agent_step
+        format: json
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
@@ -379,7 +395,10 @@ Built-in node:
 - id: repo_context
   type: built_in
   uses: collect_repo_context
-  artifact: repo-context.json
+  artifacts:
+    - path: repo-context.json
+      source: $.steps.repo_context
+      format: json
   after:
     - workspace
 ```
@@ -391,7 +410,10 @@ Agent node:
   type: agent
   agent: change-reviewer
   output_schema: code_review_findings
-  artifact: code-review-findings.json
+  artifacts:
+    - path: code-review-findings.json
+      source: $.steps.code_review
+      format: json
   input:
     invocation: $.invocation
     repo_context: $.steps.repo_context
@@ -406,10 +428,16 @@ Agent loop node:
   type: agent_loop
   agent: code-implementer
   output_schema: implementation_result
-  artifact:
-    attempts: implementation-attempts.json
-    validation: validation.json
-    result: implementation-result.json
+  artifacts:
+    - path: implementation-attempts.json
+      source: $.steps.implementation.attempts
+      format: json
+    - path: validation.json
+      source: $.steps.implementation.validation
+      format: json
+    - path: implementation-result.json
+      source: $.steps.implementation.result
+      format: json
   sandbox:
     type: trusted_host_local
     cwd: $.workspace.path
@@ -421,12 +449,18 @@ Agent loop node:
     attempts: $.config.implementation.validation.repair_attempts
 ```
 
-`artifact` can be a string or, for built-ins that write multiple files, a map:
+`artifacts` maps explicit state sources to files in the run artifact directory:
 
 ```yaml
-artifact:
-  json: final-report.json
-  markdown: final-report.md
+artifacts:
+  - path: final-report.json
+    source: $.steps.final_report.json
+    format: json
+    required: true
+  - path: final-report.md
+    source: $.steps.final_report.markdown
+    format: markdown
+    required: true
 ```
 
 ## Workflow Input References
@@ -574,8 +608,9 @@ npm run flue:build
 
 The `implementation` workflow is a `git_managed_write` workflow. It creates a
 writable worktree, runs `code-implementer` through `trusted_host_local`, validates
-the result, reviews it, and then optionally commits, pushes, and opens a draft
-GitHub PR.
+the result, reviews it, and then optionally commits, pushes, and opens a change
+request. The first supported change request provider is GitHub, which opens a
+draft PR.
 
 `config/implementation.yaml` controls:
 
@@ -583,9 +618,9 @@ GitHub PR.
 - `validation.commands` for commands such as `npm test` and
   `npm run typecheck`.
 - `validation.repair_attempts` for agent repair loops after failed validation.
-- `commit.enabled`, `push.enabled`, and `pull_request.enabled` for publishing.
+- `commit.enabled`, `push.enabled`, and `change_request.enabled` for publishing.
 
-Publishing gates are ordered. Push requires commit, and draft PR creation
+Publishing gates are ordered. Push requires commit, and change request creation
 requires push. If commit is disabled, validation fails, acceptance rejects the
 change, or a publishing gate is skipped or fails, Luna preserves the write
 worktree for inspection.

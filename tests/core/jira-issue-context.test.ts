@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   jiraIssueContextFrom,
   type JiraIssueContext
-} from "../../src/core/jira-issue-context.js";
+} from "../../src/core/providers/jira/task-context.js";
 import type { NormalizedInvocation } from "../../src/core/types.js";
 
 const invocation: NormalizedInvocation = {

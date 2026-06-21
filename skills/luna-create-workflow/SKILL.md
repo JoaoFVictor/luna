@@ -39,6 +39,28 @@ Rules:
 Use `after` dependencies for ordering. Duplicate ids, unknown dependencies, and
 cycles are invalid.
 
+For `git_managed_write` workflows, keep lifecycle decisions in deterministic
+built-ins. If an agent or agent-loop output participates in workspace
+preserve/cleanup decisions, add a built-in node after it to record the typed
+lifecycle gate. Built-ins expose lifecycle metadata through their TypeScript
+registry definitions.
+
+## Artifacts
+
+Workflow nodes write files through explicit `artifacts` plans:
+
+```yaml
+artifacts:
+  - path: output.json
+    source: $.steps.node_id
+    format: json
+    required: true
+```
+
+`format` is `json` or `markdown`. `required` defaults to `true`.
+Artifact sources must start with `$.steps.<node-id>` and may use plain dot
+property segments such as `$.steps.final_report.markdown`.
+
 ## State References
 
 Node `input` can reference:

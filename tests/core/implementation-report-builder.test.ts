@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildImplementationReportJson,
   buildImplementationReportMarkdown
-} from "../../src/core/implementation-report-builder.js";
+} from "../../src/core/providers/jira/report-builder.js";
 import type {
   CommitChangesArtifact,
   Invocation,
-  PullRequestArtifact,
+  ChangeRequestArtifact,
   PushBranchArtifact,
   ValidationResult
 } from "../../src/core/types.js";
@@ -69,7 +69,7 @@ const push: PushBranchArtifact = {
   branch: "feature/abc-123-fix-checkout-validation"
 };
 
-const pullRequest: PullRequestArtifact = {
+const changeRequest: ChangeRequestArtifact = {
   enabled: true,
   skipped: false,
   provider: "github",
@@ -78,17 +78,17 @@ const pullRequest: PullRequestArtifact = {
 
 const reportInput = {
   invocation,
-  status: "ready_for_pr",
+  status: "ready_for_change_request",
   branch: "feature/abc-123-fix-checkout-validation",
   worktree: {
     path: "/tmp/luna/swg-front-nuxt/run-1",
     preserved: true,
-    reason: "pull_request_created"
+    reason: "change_request_created"
   },
   validation,
   commit,
   push,
-  pullRequest,
+  changeRequest,
   trustedHostLocal: true
 } as const;
 
@@ -106,12 +106,12 @@ describe("implementation report builder", () => {
         owner: "swinggo-dev",
         name: "swg-front-nuxt"
       },
-      status: "ready_for_pr",
+      status: "ready_for_change_request",
       branch: "feature/abc-123-fix-checkout-validation",
       worktree: {
         path: "/tmp/luna/swg-front-nuxt/run-1",
         preserved: true,
-        reason: "pull_request_created"
+        reason: "change_request_created"
       },
       validation: {
         passed: true,
@@ -133,7 +133,7 @@ describe("implementation report builder", () => {
         remote: "origin",
         branch: "feature/abc-123-fix-checkout-validation"
       },
-      pull_request: {
+      change_request: {
         enabled: true,
         skipped: false,
         status: "opened",
@@ -152,14 +152,14 @@ describe("implementation report builder", () => {
 
     expect(markdown).toContain("# Luna Implementation Report");
     expect(markdown).toContain("Jira: ABC-123");
-    expect(markdown).toContain("Status: ready_for_pr");
+    expect(markdown).toContain("Status: ready_for_change_request");
     expect(markdown).toContain("Branch: feature/abc-123-fix-checkout-validation");
     expect(markdown).toContain("Worktree: /tmp/luna/swg-front-nuxt/run-1");
-    expect(markdown).toContain("Worktree state: preserved (pull_request_created)");
+    expect(markdown).toContain("Worktree state: preserved (change_request_created)");
     expect(markdown).toContain("Validation: passed");
     expect(markdown).toContain("Commit: created");
     expect(markdown).toContain("Push: pushed");
-    expect(markdown).toContain("Pull request: opened");
+    expect(markdown).toContain("Change request: opened");
     expect(markdown).toContain(
       "trusted_host_local execution can access host filesystem, credentials, network, and local CLIs."
     );

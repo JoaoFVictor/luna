@@ -1,0 +1,372 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "src/adapters/github-pr-url/adapter.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/adapters/github-pr-url/index.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/adapters/jira-task-url/adapter.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/adapters/jira-task-url/index.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/adapters/registry.ts": {
+      "owner": "composition-root",
+      "reason": "Connects provider-owned modules at an explicit runtime composition root."
+    },
+    "src/adapters/types.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/cli.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/agent-capabilities.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/agent-definition.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/agent-loop-runner.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/append-only-jsonl-writer.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/artifact-store.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/artifact-write-plan.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/atomic-write.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/built-ins/catalog.ts": {
+      "owner": "composition-root",
+      "reason": "Connects provider-owned modules at an explicit runtime composition root."
+    },
+    "src/core/built-ins/errors.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/built-ins/implementation.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/built-ins/index.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/built-ins/registry.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/built-ins/state.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/built-ins/types.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/change-request-actions.ts": {
+      "owner": "composition-root",
+      "reason": "Connects provider-owned modules at an explicit runtime composition root."
+    },
+    "src/core/config-loader.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/configured-workflow-runner.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/configured-workflow-errors.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/configured-workflow-finalization.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/configured-workflow-node-runner.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/evidence-validator.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/flue-agent-capabilities.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/flue-agent-runner.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/flue-cli.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/flue-mcp-capabilities.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/flue-skill-loader.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/flue-subagent-profiles.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/flue-tool-registry.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/git-failure.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/git-worktree-manager.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/git.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/implementation-branch.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/implementation-git-actions.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/implementation-lifecycle.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/implementation-worktree-manager.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/invocation-helpers.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/json-value.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/local-transaction-journal.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/mcp-config.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/model-config.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/observability/events.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/observability/exporter-config.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/observability/flue-log-sink.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/observability/jsonl-sink.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/observability/luna-observability.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/observability/sanitize.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/observability/summary.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/path-security.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/pi-auth.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/preflight.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/providers/github/built-ins.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/github/change-request-actions.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/github/pull-request-context.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/github/report-builder.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/github/worktree-manager.ts": {
+      "owner": "provider:github",
+      "reason": "Owns GitHub-specific adapter, action, or runtime context behavior."
+    },
+    "src/core/providers/jira/auth.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/providers/jira/built-ins.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/providers/jira/config.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/providers/jira/report-builder.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/providers/jira/task-context.ts": {
+      "owner": "provider:jira",
+      "reason": "Owns Jira-specific adapter, auth, config, task, or report behavior."
+    },
+    "src/core/redactor.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/remote-url.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/repo-context-collector.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/router.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/run-identity.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/run-lock-manager.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/subagent-policy.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/types.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/validation-runner.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/workflow-definition.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/workflow-execution-policy.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/workflow-scheduler.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/workflow-state.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/workspace-lifecycle.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/workspace-resolver.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/core/worktree-diff-collector.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/tools/repository-tools.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    },
+    "src/workflows/luna.ts": {
+      "owner": "generic",
+      "reason": "Shared runtime code that must not grow provider-specific behavior unnoticed."
+    }
+  },
+  "compositionEdges": [
+    {
+      "from": "src/adapters/registry.ts",
+      "to": "src/adapters/github-pr-url/index.ts",
+      "reason": "Registers the GitHub pull request URL adapter at the adapter composition root."
+    },
+    {
+      "from": "src/adapters/registry.ts",
+      "to": "src/adapters/jira-task-url/index.ts",
+      "reason": "Registers the Jira task URL adapter at the adapter composition root."
+    },
+    {
+      "from": "src/core/built-ins/catalog.ts",
+      "to": "src/core/providers/github/built-ins.ts",
+      "reason": "Registers GitHub-owned built-ins at the built-in composition root."
+    },
+    {
+      "from": "src/core/built-ins/catalog.ts",
+      "to": "src/core/providers/jira/built-ins.ts",
+      "reason": "Registers Jira-owned built-ins at the built-in composition root."
+    },
+    {
+      "from": "src/core/change-request-actions.ts",
+      "to": "src/core/providers/github/change-request-actions.ts",
+      "reason": "Dispatches change request publishing to the configured GitHub provider implementation."
+    }
+  ]
+}

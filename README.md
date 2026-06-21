@@ -96,8 +96,7 @@ For complete walkthroughs, see:
   Luna's normalized invocation format.
 - **Invocation**: the normalized request Luna routes and passes into a workflow.
 - **Router**: chooses the workflow from `--target workflow:<id>`, the
-  invocation `target`, or `config/routing.yaml`. `--workflow <id>` is an alias
-  for `--target workflow:<id>`.
+  invocation `target`, or `config/routing.yaml`.
 - **Workflow**: a YAML graph of ordered nodes under `workflows/<workflow-id>/`.
 - **Agent**: a configured Flue agent under `agents/<agent-id>/`, with YAML
   metadata, Markdown instructions, and a JSON Schema output contract.
@@ -182,12 +181,12 @@ Flue subagents run inside the parent agent session. They are not workflow graph
 nodes and do not create separate Luna artifacts automatically.
 
 Subagents are read-only Flue profiles by default. Luna uses the referenced
-agent's description, instructions, model profile, skills, and explicitly safe
-local tools. Trusted write subagents require both workflow-level
+agent's description, instructions, model profile, and skills. Read-only
+subagents cannot declare local tools, MCP servers, or nested subagents. Trusted
+write subagents require both workflow-level
 `subagent_policy.allow_write: true` and a per-subagent `policy.allow_tools`
-allowlist. Flue subagents cannot declare `mcp_servers` or nested `subagents` in
-Luna. Use a workflow graph node when delegated work needs MCP access, another
-delegation tree, its own artifact, schema, or workflow gate.
+allowlist. Use a workflow graph node when delegated work needs MCP access,
+another delegation tree, its own artifact, schema, or workflow gate.
 
 ## Project Structure
 
@@ -227,6 +226,16 @@ Artifact directories are always resolved as:
 Workflow YAML does not define a separate artifact namespace. The routed
 `workflow_id` is the only namespace.
 
+Workflow nodes write explicit artifact plans:
+
+```yaml
+artifacts:
+  - path: output.json
+    source: $.steps.node_id
+    format: json
+    required: true
+```
+
 Each run also writes Luna-owned observability artifacts:
 
 - `run.json`: strict run identity.
@@ -257,7 +266,7 @@ Workflow YAML may tune scheduler execution:
 
 ```yaml
 execution:
-  max_concurrency: 1
+  max_concurrency: 2
   lock_timeout_ms: 120000
 ```
 
@@ -311,11 +320,13 @@ repositories:
       - https://github.com/org/repo.git
 ```
 
-`config/implementation.yaml` keeps commit, push, and pull request creation
+`config/implementation.yaml` keeps commit, push, and change request creation
 disabled by default. Enabling push requires commit to be enabled, and enabling a
-draft PR requires both commit and push to be enabled. When commit is disabled,
-validation fails, acceptance rejects the work, or a git publishing gate fails,
-Luna preserves the write worktree so you can inspect or continue the changes.
+change request requires both commit and push to be enabled. The first supported
+change request provider is GitHub, which opens a draft PR. When commit is
+disabled, validation fails, acceptance rejects the work, or a git publishing
+gate fails, Luna preserves the write worktree so you can inspect or continue the
+changes.
 
 ## Current Inventory
 
@@ -346,10 +357,13 @@ Built-in steps:
 - `final_code_review_report`
 - `prepare_implementation_worktree`
 - `collect_task_context`
+- `run_validation_commands`
+- `record_implementation_validation`
 - `collect_worktree_diff`
+- `record_acceptance_decision`
 - `commit_changes`
 - `push_branch`
-- `open_pull_request`
+- `open_change_request`
 - `final_implementation_report`
 
 Local tools:

@@ -1,10 +1,10 @@
 import type {
   AcceptanceDecision,
+  ChangeRequestArtifact,
   CommitChangesArtifact,
   Finding,
   ImplementationConfig,
   Invocation,
-  PullRequestArtifact,
   PushBranchArtifact,
   RepoContext,
   RepositoryConfig,
@@ -17,8 +17,29 @@ import type { WorkflowState } from "../workflow-state.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 
+export type ImplementationLifecyclePhase =
+  | "workspace"
+  | "validation"
+  | "diff"
+  | "acceptance"
+  | "commit"
+  | "push"
+  | "change_request";
+
+export type ImplementationLifecycleOutcome = {
+  readonly validationPassed?: boolean;
+  readonly acceptanceAccepted?: boolean;
+  readonly commitSucceeded?: boolean;
+  readonly pushAttempted?: boolean;
+  readonly changeRequestAttempted?: boolean;
+};
+
 export type BuiltInStepMetadata = {
-  readonly deferUntilAfterWorkspaceLifecycle?: boolean;
+  readonly deferredLifecycle?: "final_report";
+  readonly implementationLifecycle?: ImplementationLifecyclePhase;
+  readonly implementationLifecycleOutcome?: (
+    output: unknown
+  ) => ImplementationLifecycleOutcome | undefined;
   readonly capturesWorkspace?: boolean;
   readonly locks?: readonly {
     readonly resource: "repository";
@@ -56,8 +77,9 @@ export type BuiltInStepDependencies = {
     runId: string;
   }) => MaybePromise<WorkspaceRecord>;
   collectRepoContext?: (input: {
-    invocation: Invocation;
     repository: RepositoryConfig;
+    baseSha: string;
+    headSha: string;
   }) => MaybePromise<RepoContext>;
   validateFindingEvidence?: (
     repoContext: RepoContext,
@@ -66,7 +88,6 @@ export type BuiltInStepDependencies = {
   buildFinalReportJson?: (input: {
     acceptance: AcceptanceDecision;
     findings: readonly Finding[];
-    reportPath: string;
     workspace?: WorkspaceRecord;
   }) => unknown;
   buildFinalReportMarkdown?: (input: {
@@ -75,7 +96,10 @@ export type BuiltInStepDependencies = {
     acceptance: AcceptanceDecision;
   }) => string;
   prepareImplementationWorktree?: (input: {
-    invocation: Invocation;
+    subject: {
+      key: string;
+      title?: string;
+    };
     repository: RepositoryConfig;
     workspaceRoot: string;
     runId: string;
@@ -95,7 +119,7 @@ export type BuiltInStepDependencies = {
     enabled: boolean;
     cwd: string;
     validation: ValidationResult;
-    acceptance: unknown;
+    acceptance: AcceptanceDecision;
     diff: WorktreeDiff;
     branch: string;
     remote: string;
@@ -103,6 +127,9 @@ export type BuiltInStepDependencies = {
     branchPattern: string;
     expectedRemoteUrls: readonly string[];
     message: string;
+    runId?: string;
+    repositoryPath?: string;
+    journalPath?: string;
   }) => MaybePromise<CommitChangesArtifact>;
   pushBranch?: (input: {
     enabled: boolean;
@@ -112,17 +139,17 @@ export type BuiltInStepDependencies = {
     remote: string;
     expectedRemoteUrls: readonly string[];
   }) => MaybePromise<PushBranchArtifact>;
-  openPullRequest?: (input: {
+  openChangeRequest?: (input: {
     enabled: boolean;
+    provider: string;
     cwd: string;
     push: PushBranchArtifact;
     branch: string;
-    provider: string;
     baseRef?: string;
     draft: boolean;
     title: string;
     body?: string;
-  }) => MaybePromise<PullRequestArtifact>;
+  }) => MaybePromise<ChangeRequestArtifact>;
   buildImplementationReportJson?: (input: {
     invocation: Invocation;
     status: string;
@@ -135,7 +162,7 @@ export type BuiltInStepDependencies = {
     validation: ValidationResult;
     commit: CommitChangesArtifact;
     push: PushBranchArtifact;
-    pullRequest: PullRequestArtifact;
+    changeRequest: ChangeRequestArtifact;
     trustedHostLocal: boolean;
   }) => unknown;
   buildImplementationReportMarkdown?: (input: {
@@ -150,7 +177,7 @@ export type BuiltInStepDependencies = {
     validation: ValidationResult;
     commit: CommitChangesArtifact;
     push: PushBranchArtifact;
-    pullRequest: PullRequestArtifact;
+    changeRequest: ChangeRequestArtifact;
     trustedHostLocal: boolean;
   }) => string;
 };

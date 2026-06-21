@@ -1,14 +1,14 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { implementationBranchMetadata } from "../../src/core/implementation-branch.js";
 import {
   prepareImplementationWorktree
 } from "../../src/core/implementation-worktree-manager.js";
-import type {
-  Invocation,
-  RepositoryConfig
-} from "../../src/core/types.js";
+import type { LocalTransactionJournalEntry } from "../../src/core/local-transaction-journal.js";
+import type { RepositoryConfig } from "../../src/core/types.js";
 
 type GitCall = {
   cwd: string;
@@ -24,52 +24,117 @@ const repository: RepositoryConfig = {
   remote: "origin"
 };
 
-const invocation: Invocation = {
-  version: "2026-06",
-  source: "jira",
-  event: "issue",
-  action: "selected",
-  repository: {
-    provider: "github",
-    owner: "swinggo-dev",
-    name: "swg-front-nuxt"
-  },
-  subject: {
-    type: "jira_issue",
-    id: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    title: "Fix checkout validation"
-  },
-  payload: {
-    jira: {
-      instance_id: "company",
-      description: "Reject invalid checkout payloads.",
-      acceptance_criteria: "Invalid payloads fail validation.",
-      status: "To Do",
-      issue_type: "Task"
-    }
-  }
+const subject = {
+  key: "ABC-123",
+  title: "Fix checkout validation"
 };
 
 async function tempRoot(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), "luna-implementation-worktrees-"));
 }
 
+function normalizeSlugPart(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function expectedBranch({
+  branchPattern = "feature/{slug}",
+  runId,
+  collisionAttempt = 1,
+  maxBranchLength,
+  branchSubject = subject
+}: {
+  branchPattern?: string;
+  runId: string;
+  collisionAttempt?: number;
+  maxBranchLength?: number;
+  branchSubject?: { key: string; title?: string };
+}): string {
+  const branchSeed = [
+    normalizeSlugPart(branchSubject.key) || "subject",
+    normalizeSlugPart(branchSubject.title ?? branchSubject.key)
+  ]
+    .filter((part, index, parts) => part !== "" && parts.indexOf(part) === index)
+    .join("-");
+  const runHash = createHash("sha256").update(runId).digest("hex").slice(0, 12);
+  const collisionSuffix = collisionAttempt === 1 ? "" : `-r${collisionAttempt}`;
+  const suffix = `-${runHash}${collisionSuffix}`;
+  const staticLength = branchPattern.length - "{slug}".length;
+  const seedBudget =
+    maxBranchLength === undefined
+      ? branchSeed.length
+      : maxBranchLength - staticLength - suffix.length;
+  const truncatedSeed = branchSeed.slice(0, seedBudget).replace(/-+$/g, "");
+
+  return branchPattern.replace("{slug}", `${truncatedSeed}${suffix}`);
+}
+
 describe("implementation worktree manager", () => {
-  it("fetches the base ref with argv, creates a feature branch, and records workspace metadata", async () => {
+  it("builds branch metadata with a literal run hash suffix and collision suffix", () => {
+    expect(
+      implementationBranchMetadata({
+        subject,
+        branchPattern: "luna/{slug}",
+        runId: "run-a1"
+      })
+    ).toEqual({
+      branchSeed: "abc-123-fix-checkout-validation",
+      branchName: "luna/abc-123-fix-checkout-validation-ab8836ebf8cb",
+      collisionAttempt: 1,
+      collisionSuffix: ""
+    });
+
+    expect(
+      implementationBranchMetadata({
+        subject,
+        branchPattern: "luna/{slug}",
+        runId: "run-a1",
+        collisionAttempt: 2
+      })
+    ).toMatchObject({
+      branchName: "luna/abc-123-fix-checkout-validation-ab8836ebf8cb-r2",
+      collisionSuffix: "-r2"
+    });
+  });
+
+  it("rejects branch patterns with more than one slug placeholder", () => {
+    expect(() =>
+      implementationBranchMetadata({
+        subject,
+        branchPattern: "luna/{slug}/{slug}",
+        runId: "run-a1"
+      })
+    ).toThrow(
+      expect.objectContaining({
+        code: "invalid_branch_pattern"
+      })
+    );
+  });
+
+  it("fetches the base ref with argv, validates the branch with git, creates a feature branch, and records workspace metadata", async () => {
     const workspaceRoot = await tempRoot();
     const runId = "20260619t120000z-jira-abc-123";
     const baseSha = "1111111111111111111111111111111111111111";
     const calls: GitCall[] = [];
+    const journalEntries: LocalTransactionJournalEntry[] = [];
     const expectedPath = path.join(workspaceRoot, repository.id, runId);
+    const branch = expectedBranch({ runId });
 
     try {
       const record = await prepareImplementationWorktree({
-        invocation,
+        subject,
         repository,
         workspaceRoot,
         runId,
         baseRef: "main",
+        appendJournalEntry: async (entry) => {
+          journalEntries.push(entry);
+        },
         runGit: async (cwd, args) => {
           calls.push({ cwd, args });
 
@@ -78,7 +143,7 @@ describe("implementation worktree manager", () => {
           }
 
           if (args[0] === "branch" && args[1] === "--show-current") {
-            return "feature/abc-123-fix-checkout-validation-abc-123\n";
+            return `${branch}\n`;
           }
 
           return "";
@@ -94,7 +159,7 @@ describe("implementation worktree manager", () => {
         remote: "origin",
         base_ref: "main",
         base_sha: baseSha,
-        branch: "feature/abc-123-fix-checkout-validation-abc-123"
+        branch
       });
       expect(calls).toEqual([
         {
@@ -111,50 +176,340 @@ describe("implementation worktree manager", () => {
         },
         {
           cwd: repository.path,
-          args: [
-            "for-each-ref",
-            "--format=%(refname)",
-            "refs/heads/feature/abc-123-fix-checkout-validation-abc-123",
-            "refs/remotes/origin/feature/abc-123-fix-checkout-validation-abc-123"
-          ]
+          args: ["check-ref-format", "--branch", branch]
         },
         {
           cwd: repository.path,
-          args: [
-            "ls-remote",
-            "--heads",
-            "origin",
-            "feature/abc-123-fix-checkout-validation-abc-123"
-          ]
-        },
-        {
-          cwd: repository.path,
-          args: [
-            "worktree",
-            "add",
-            "-b",
-            "feature/abc-123-fix-checkout-validation-abc-123",
-            expectedPath,
-            "origin/main"
-          ]
+          args: ["worktree", "add", "-b", branch, expectedPath, "origin/main"]
         },
         {
           cwd: expectedPath,
           args: ["branch", "--show-current"]
         }
       ]);
+      expect(journalEntries).toEqual([
+        expect.objectContaining({
+          runId,
+          operation: "worktree_create",
+          phase: "started",
+          resources: {
+            worktreePath: expectedPath,
+            repositoryPath: repository.path
+          },
+          cleanup: {
+            attempted: false,
+            branchRemovalAllowed: true
+          },
+          indexRestoreStrategy: "none"
+        }),
+        expect.objectContaining({
+          runId,
+          operation: "worktree_create",
+          phase: "succeeded",
+          resources: {
+            worktreePath: expectedPath,
+            repositoryPath: repository.path,
+            branchName: branch
+          },
+          cleanup: {
+            attempted: false,
+            branchRemovalAllowed: true
+          },
+          indexRestoreStrategy: "none"
+        })
+      ]);
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
   });
 
-  it("appends a run-specific suffix to implementation branches", async () => {
+  it("fails missing run identity before creating a worktree", async () => {
+    const workspaceRoot = await tempRoot();
+    const calls: GitCall[] = [];
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId: "",
+          baseRef: "main",
+          runGit: async (cwd, args) => {
+            calls.push({ cwd, args });
+            return "";
+          }
+        })
+      ).rejects.toMatchObject({ code: "run_identity_missing" });
+
+      expect(calls).toEqual([]);
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("journals rollback only after a post-create branch invariant failure", async () => {
+    const workspaceRoot = await tempRoot();
+    const runId = "run-a1";
+    const branch = expectedBranch({ runId });
+    const wrongBranch = "feature/wrong";
+    const events: string[] = [];
+    const journalEntries: LocalTransactionJournalEntry[] = [];
+    const expectedPath = path.join(workspaceRoot, repository.id, runId);
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId,
+          baseRef: "main",
+          appendJournalEntry: async (entry) => {
+            journalEntries.push(entry);
+            events.push(`journal:${entry.phase}`);
+          },
+          runGit: async (_cwd, args) => {
+            if (args[0] === "rev-parse") {
+              return "1111111111111111111111111111111111111111\n";
+            }
+
+            if (args[0] === "worktree" && args[1] === "add") {
+              events.push("worktree_add");
+            }
+
+            if (args[0] === "branch" && args[1] === "--show-current") {
+              return `${wrongBranch}\n`;
+            }
+
+            if (args[0] === "worktree" && args[1] === "remove") {
+              events.push("cleanup_worktree");
+            }
+
+            if (args[0] === "branch" && args[1] === "-D") {
+              events.push("cleanup_branch");
+            }
+
+            return "";
+          }
+        })
+      ).rejects.toMatchObject({ code: "branch_mismatch" });
+
+      expect(events).toEqual([
+        "journal:started",
+        "worktree_add",
+        "cleanup_worktree",
+        "cleanup_branch",
+        "journal:rolled_back"
+      ]);
+      expect(journalEntries.at(-1)).toMatchObject({
+        runId,
+        operation: "worktree_create",
+        phase: "rolled_back",
+        resources: {
+          worktreePath: expectedPath,
+          repositoryPath: repository.path,
+          branchName: branch
+        },
+        cleanup: {
+          attempted: true,
+          action: "remove_worktree",
+          branchRemovalAllowed: true
+        },
+        indexRestoreStrategy: "none",
+        originalFailure: {
+          code: "branch_mismatch",
+          message: expect.stringContaining(wrongBranch)
+        }
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("journals cleanup failures after post-create invariant failures", async () => {
+    const workspaceRoot = await tempRoot();
+    const runId = "run-a1";
+    const branch = expectedBranch({ runId });
+    const cleanupError = Object.assign(new Error("remove failed"), {
+      code: "remove_failed"
+    });
+    const journalEntries: LocalTransactionJournalEntry[] = [];
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId,
+          baseRef: "main",
+          appendJournalEntry: async (entry) => {
+            journalEntries.push(entry);
+          },
+          runGit: async (_cwd, args) => {
+            if (args[0] === "rev-parse") {
+              return "1111111111111111111111111111111111111111\n";
+            }
+
+            if (args[0] === "branch" && args[1] === "--show-current") {
+              return "feature/wrong\n";
+            }
+
+            if (args[0] === "worktree" && args[1] === "remove") {
+              throw cleanupError;
+            }
+
+            return "";
+          }
+        })
+      ).rejects.toMatchObject({ code: "branch_mismatch" });
+
+      expect(journalEntries.at(-1)).toMatchObject({
+        phase: "rolled_back",
+        resources: {
+          branchName: branch
+        },
+        cleanup: {
+          attempted: true,
+          action: "remove_worktree",
+          branchRemovalAllowed: true
+        },
+        cleanupFailure: {
+          code: "remove_failed",
+          message: "remove failed"
+        }
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("journals rollback when post-create branch verification throws", async () => {
+    const workspaceRoot = await tempRoot();
+    const runId = "run-a1";
+    const branch = expectedBranch({ runId });
+    const verificationError = Object.assign(new Error("branch read failed"), {
+      code: "branch_read_failed"
+    });
+    const events: string[] = [];
+    const journalEntries: LocalTransactionJournalEntry[] = [];
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId,
+          baseRef: "main",
+          appendJournalEntry: async (entry) => {
+            journalEntries.push(entry);
+            events.push(`journal:${entry.phase}`);
+          },
+          runGit: async (_cwd, args) => {
+            if (args[0] === "rev-parse") {
+              return "1111111111111111111111111111111111111111\n";
+            }
+
+            if (args[0] === "worktree" && args[1] === "add") {
+              events.push("worktree_add");
+            }
+
+            if (args[0] === "branch" && args[1] === "--show-current") {
+              throw verificationError;
+            }
+
+            if (args[0] === "worktree" && args[1] === "remove") {
+              events.push("cleanup_worktree");
+            }
+
+            if (args[0] === "branch" && args[1] === "-D") {
+              events.push("cleanup_branch");
+            }
+
+            return "";
+          }
+        })
+      ).rejects.toMatchObject({ code: "branch_read_failed" });
+
+      expect(events).toEqual([
+        "journal:started",
+        "worktree_add",
+        "cleanup_worktree",
+        "cleanup_branch",
+        "journal:rolled_back"
+      ]);
+      expect(journalEntries.at(-1)).toMatchObject({
+        phase: "rolled_back",
+        resources: {
+          branchName: branch
+        },
+        cleanup: {
+          attempted: true,
+          action: "remove_worktree",
+          branchRemovalAllowed: true
+        },
+        originalFailure: {
+          code: "branch_read_failed",
+          message: "branch read failed"
+        }
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("does not cleanup before post-create invariants run", async () => {
+    const workspaceRoot = await tempRoot();
+    const events: string[] = [];
+
+    try {
+      await expect(
+        prepareImplementationWorktree({
+          subject,
+          repository,
+          workspaceRoot,
+          runId: "run-a1",
+          baseRef: "main",
+          runGit: async (_cwd, args) => {
+            if (args[0] === "rev-parse") {
+              return "1111111111111111111111111111111111111111\n";
+            }
+
+            if (args[0] === "worktree" && args[1] === "add") {
+              events.push("worktree_add");
+              throw new Error("create failed");
+            }
+
+            if (args[0] === "worktree" && args[1] === "remove") {
+              events.push("cleanup_worktree");
+            }
+
+            return "";
+          }
+        })
+      ).rejects.toThrow("create failed");
+
+      expect(events).toEqual(["worktree_add"]);
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+
+  it("preserves a stable hash derived from the full run id in the final branch name", async () => {
     const workspaceRoot = await tempRoot();
     const runId = "20260618t150405123z-implementation-jira-issue-a1-nonce";
+    const branch = expectedBranch({ branchPattern: "luna/{slug}", runId });
+    const sameTailDifferentRun = expectedBranch({
+      branchPattern: "luna/{slug}",
+      runId: "20260619t150405123z-implementation-jira-issue-a1-nonce"
+    });
 
     try {
       const record = await prepareImplementationWorktree({
-        invocation,
+        subject,
         repository,
         workspaceRoot,
         runId,
@@ -166,159 +521,41 @@ describe("implementation worktree manager", () => {
           }
 
           if (args[0] === "branch" && args[1] === "--show-current") {
-            return "luna/abc-123-fix-checkout-validation-a1-nonce\n";
+            return `${branch}\n`;
           }
 
           return "";
         }
       });
 
-      expect(record.branch).toMatch(/^luna\/abc-123-/);
-      expect(record.branch).toContain("nonce");
-      expect(record.branch).toBe(
-        "luna/abc-123-fix-checkout-validation-a1-nonce"
-      );
+      expect(record.branch).toBe(branch);
+      expect(record.branch).toMatch(/^luna\/abc-123-fix-checkout-validation-[0-9a-f]{12}$/);
+      expect(record.branch).not.toContain("a1-nonce");
+      expect(branch).not.toBe(sameTailDifferentRun);
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
   });
 
-  it.each([
-    {
-      existingRef: "refs/heads/feature/abc-123-fix-checkout-validation-run-a1",
-      label: "local"
-    },
-    {
-      existingRef: "refs/remotes/origin/feature/abc-123-fix-checkout-validation-run-a1",
-      label: "remote"
-    }
-  ])("appends -2 when the $label branch exists", async ({ existingRef }) => {
+  it("truncates the branch seed without truncating the hash suffix", async () => {
     const workspaceRoot = await tempRoot();
-    const calls: GitCall[] = [];
+    const runId = "run-a1";
+    const branchSubject = {
+      key: "ABC-123",
+      title: "Corrigir validação de checkout com documentos extras"
+    };
+    const branch = expectedBranch({
+      runId,
+      maxBranchLength: 35,
+      branchSubject
+    });
 
     try {
       const record = await prepareImplementationWorktree({
-        invocation,
+        subject: branchSubject,
         repository,
         workspaceRoot,
-        runId: "run-a1",
-        baseRef: "main",
-        runGit: async (cwd, args) => {
-          calls.push({ cwd, args });
-
-          if (args[0] === "rev-parse") {
-            return "1111111111111111111111111111111111111111\n";
-          }
-
-          if (args[0] === "ls-remote") {
-            return "";
-          }
-
-          if (
-            args[0] === "for-each-ref" &&
-            args.includes("refs/heads/feature/abc-123-fix-checkout-validation-run-a1")
-          ) {
-            return `${existingRef}\n`;
-          }
-
-          if (args[0] === "branch" && args[1] === "--show-current") {
-            return "feature/abc-123-fix-checkout-validation-run-a1-2\n";
-          }
-
-          return "";
-        }
-      });
-
-      expect(record.branch).toBe("feature/abc-123-fix-checkout-validation-run-a1-2");
-      expect(calls).toContainEqual({
-        cwd: repository.path,
-        args: [
-          "worktree",
-          "add",
-          "-b",
-          "feature/abc-123-fix-checkout-validation-run-a1-2",
-          path.join(workspaceRoot, repository.id, "run-a1"),
-          "origin/main"
-        ]
-      });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("appends -2 when the real remote branch exists without a local tracking ref", async () => {
-    const workspaceRoot = await tempRoot();
-    const calls: GitCall[] = [];
-
-    try {
-      const record = await prepareImplementationWorktree({
-        invocation,
-        repository,
-        workspaceRoot,
-        runId: "run-a1",
-        baseRef: "main",
-        runGit: async (cwd, args) => {
-          calls.push({ cwd, args });
-
-          if (args[0] === "rev-parse") {
-            return "1111111111111111111111111111111111111111\n";
-          }
-
-          if (
-            args[0] === "ls-remote" &&
-            args[3] === "feature/abc-123-fix-checkout-validation-run-a1"
-          ) {
-            return "2222222222222222222222222222222222222222\trefs/heads/feature/abc-123-fix-checkout-validation\n";
-          }
-
-          if (args[0] === "branch" && args[1] === "--show-current") {
-            return "feature/abc-123-fix-checkout-validation-run-a1-2\n";
-          }
-
-          return "";
-        }
-      });
-
-      expect(record.branch).toBe("feature/abc-123-fix-checkout-validation-run-a1-2");
-      expect(calls).toContainEqual({
-        cwd: repository.path,
-        args: [
-          "ls-remote",
-          "--heads",
-          "origin",
-          "feature/abc-123-fix-checkout-validation-run-a1"
-        ]
-      });
-      expect(calls).toContainEqual({
-        cwd: repository.path,
-        args: [
-          "ls-remote",
-          "--heads",
-          "origin",
-          "feature/abc-123-fix-checkout-validation-run-a1-2"
-        ]
-      });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("ASCII-normalizes and truncates the summary portion before adding a collision suffix", async () => {
-    const workspaceRoot = await tempRoot();
-
-    try {
-      const record = await prepareImplementationWorktree({
-        invocation: {
-          ...invocation,
-          subject: {
-            ...invocation.subject!,
-            id: "ABC-123",
-            title: "Corrigir validação de checkout com documentos extras"
-          }
-        },
-        repository,
-        workspaceRoot,
-        runId: "run-a1",
+        runId,
         baseRef: "main",
         maxBranchLength: 35,
         runGit: async (_cwd, args) => {
@@ -326,40 +563,37 @@ describe("implementation worktree manager", () => {
             return "1111111111111111111111111111111111111111\n";
           }
 
-          if (args[0] === "ls-remote") {
-            return "";
-          }
-
-          if (
-            args[0] === "for-each-ref" &&
-            args.includes("refs/heads/feature/abc-123-corrigir-val-run-a1")
-          ) {
-            return "refs/remotes/origin/feature/abc-123-corrigir-validacao\n";
-          }
-
           if (args[0] === "branch" && args[1] === "--show-current") {
-            return "feature/abc-123-corrigir-v-run-a1-2\n";
+            return `${branch}\n`;
           }
 
           return "";
         }
       });
 
-      expect(record.branch).toBe("feature/abc-123-corrigir-v-run-a1-2");
+      expect(record.branch).toBe(branch);
+      expect(record.branch).toHaveLength(35);
+      expect(record.branch).toMatch(/^feature\/abc-123-[a-z0-9-]+-[0-9a-f]{12}$/);
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
   });
 
-  it("retries branch creation with a bounded suffix when git reports an existing branch", async () => {
+  it("changes the retry suffix only after git worktree add reports a branch collision", async () => {
     const workspaceRoot = await tempRoot();
     const runId = "20260618t150405123z-implementation-jira-issue-a1-nonce";
     const calls: GitCall[] = [];
+    const firstBranch = expectedBranch({ branchPattern: "luna/{slug}", runId });
+    const retryBranch = expectedBranch({
+      branchPattern: "luna/{slug}",
+      runId,
+      collisionAttempt: 2
+    });
     let worktreeAttempts = 0;
 
     try {
       const record = await prepareImplementationWorktree({
-        invocation,
+        subject,
         repository,
         workspaceRoot,
         runId,
@@ -376,23 +610,22 @@ describe("implementation worktree manager", () => {
             worktreeAttempts += 1;
 
             if (worktreeAttempts === 1) {
-              throw Object.assign(new Error("fatal: a branch named already exists"), {
-                code: "branch_exists"
-              });
+              throw Object.assign(
+                new Error("fatal: a branch named 'abc' already exists"),
+                { stderr: "fatal: a branch named 'abc' already exists\n" }
+              );
             }
           }
 
           if (args[0] === "branch" && args[1] === "--show-current") {
-            return "luna/abc-123-fix-checkout-validation-a1-nonce-2\n";
+            return `${retryBranch}\n`;
           }
 
           return "";
         }
       });
 
-      expect(record.branch).toBe(
-        "luna/abc-123-fix-checkout-validation-a1-nonce-2"
-      );
+      expect(record.branch).toBe(retryBranch);
       expect(
         calls.filter((call) => call.args[0] === "worktree" && call.args[1] === "add")
       ).toEqual([
@@ -402,7 +635,7 @@ describe("implementation worktree manager", () => {
             "worktree",
             "add",
             "-b",
-            "luna/abc-123-fix-checkout-validation-a1-nonce",
+            firstBranch,
             path.join(workspaceRoot, repository.id, runId),
             "origin/main"
           ]
@@ -413,12 +646,47 @@ describe("implementation worktree manager", () => {
             "worktree",
             "add",
             "-b",
-            "luna/abc-123-fix-checkout-validation-a1-nonce-2",
+            retryBranch,
             path.join(workspaceRoot, repository.id, runId),
             "origin/main"
           ]
         }
       ]);
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("does not probe local or remote refs before creating the branch", async () => {
+    const workspaceRoot = await tempRoot();
+    const calls: GitCall[] = [];
+    const runId = "run-a1";
+    const branch = expectedBranch({ runId });
+
+    try {
+      await prepareImplementationWorktree({
+        subject,
+        repository,
+        workspaceRoot,
+        runId,
+        baseRef: "main",
+        runGit: async (cwd, args) => {
+          calls.push({ cwd, args });
+
+          if (args[0] === "rev-parse") {
+            return "1111111111111111111111111111111111111111\n";
+          }
+
+          if (args[0] === "branch" && args[1] === "--show-current") {
+            return `${branch}\n`;
+          }
+
+          return "";
+        }
+      });
+
+      expect(calls.some((call) => call.args[0] === "for-each-ref")).toBe(false);
+      expect(calls.some((call) => call.args[0] === "ls-remote")).toBe(false);
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
@@ -432,7 +700,7 @@ describe("implementation worktree manager", () => {
     try {
       await expect(
         prepareImplementationWorktree({
-          invocation,
+          subject,
           repository,
           workspaceRoot,
           runId,
@@ -445,7 +713,10 @@ describe("implementation worktree manager", () => {
 
             if (args[0] === "worktree" && args[1] === "add") {
               attemptedBranches.push(String(args[3]));
-              throw new Error("fatal: a branch named already exists");
+              throw Object.assign(
+                new Error("fatal: a branch named 'abc' already exists"),
+                { stderr: "fatal: a branch named 'abc' already exists\n" }
+              );
             }
 
             return "";
@@ -453,13 +724,13 @@ describe("implementation worktree manager", () => {
         })
       ).rejects.toMatchObject({ code: "branch_collision_retry_exhausted" });
 
-      expect(attemptedBranches).toEqual([
-        "luna/abc-123-fix-checkout-validation-a1-nonce",
-        "luna/abc-123-fix-checkout-validation-a1-nonce-2",
-        "luna/abc-123-fix-checkout-validation-a1-nonce-3",
-        "luna/abc-123-fix-checkout-validation-a1-nonce-4",
-        "luna/abc-123-fix-checkout-validation-a1-nonce-5"
-      ]);
+      expect(attemptedBranches).toEqual([1, 2, 3, 4, 5].map((attempt) =>
+        expectedBranch({
+          branchPattern: "luna/{slug}",
+          runId,
+          collisionAttempt: attempt
+        })
+      ));
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
@@ -474,7 +745,7 @@ describe("implementation worktree manager", () => {
     try {
       await expect(
         prepareImplementationWorktree({
-          invocation,
+          subject,
           repository,
           workspaceRoot,
           runId,
@@ -507,40 +778,13 @@ describe("implementation worktree manager", () => {
     try {
       await expect(
         prepareImplementationWorktree({
-          invocation,
+          subject,
           repository,
           workspaceRoot,
           runId: "20260618t150405123z-implementation-jira-issue-a1-nonce",
           baseRef: "main",
           branchPattern: "luna/{slug}",
           maxBranchLength: 10,
-          runGit: async (_cwd, args) => {
-            if (args[0] === "rev-parse") {
-              return "1111111111111111111111111111111111111111\n";
-            }
-
-            return "";
-          }
-        })
-      ).rejects.toMatchObject({ code: "invalid_branch_length" });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("rejects branch length limits that cannot fit the issue key plus run suffix", async () => {
-    const workspaceRoot = await tempRoot();
-
-    try {
-      await expect(
-        prepareImplementationWorktree({
-          invocation,
-          repository,
-          workspaceRoot,
-          runId: "20260618t150405123z-implementation-jira-issue-a1-nonce",
-          baseRef: "main",
-          branchPattern: "luna/{slug}",
-          maxBranchLength: 20,
           runGit: async (_cwd, args) => {
             if (args[0] === "rev-parse") {
               return "1111111111111111111111111111111111111111\n";
@@ -562,7 +806,7 @@ describe("implementation worktree manager", () => {
     try {
       await expect(
         prepareImplementationWorktree({
-          invocation,
+          subject,
           repository,
           workspaceRoot,
           runId: "run-a1",
@@ -596,7 +840,7 @@ describe("implementation worktree manager", () => {
     try {
       await expect(
         prepareImplementationWorktree({
-          invocation,
+          subject,
           repository: {
             ...repository,
             id: "../outside"

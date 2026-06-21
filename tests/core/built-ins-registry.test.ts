@@ -61,10 +61,12 @@ describe("built-in step registry", () => {
       "prepare_implementation_worktree",
       "collect_task_context",
       "run_validation_commands",
+      "record_implementation_validation",
       "collect_worktree_diff",
+      "record_acceptance_decision",
       "commit_changes",
       "push_branch",
-      "open_pull_request",
+      "open_change_request",
       "final_implementation_report"
     ]);
     expect(isBuiltInStepName("preflight")).toBe(true);
@@ -85,7 +87,7 @@ describe("built-in step registry", () => {
       locks: [{ resource: "repository", mode: "exclusive" }]
     });
     expect(finalReport.metadata).toEqual({
-      deferUntilAfterWorkspaceLifecycle: true
+      deferredLifecycle: "final_report"
     });
     expect(Object.isFrozen(prepareWorktree)).toBe(true);
     expect(Object.isFrozen(prepareWorktree.metadata)).toBe(true);
@@ -106,7 +108,7 @@ describe("built-in step registry", () => {
       "prepare_implementation_worktree",
       "commit_changes",
       "push_branch",
-      "open_pull_request"
+      "open_change_request"
     ]);
 
     for (const name of lockedNames) {
@@ -135,7 +137,24 @@ describe("built-in step registry", () => {
               name: "hello-world"
             },
             subject: { type: "pull_request", id: "42" },
-            payload: { pull_request: { number: 42 } }
+            references: {
+              base_ref: "main",
+              base_sha: "base-sha",
+              head_sha: "head-sha"
+            },
+            payload: {
+              pull_request: { number: 42 },
+              base_repository: {
+                owner: "octo-org",
+                name: "hello-world",
+                full_name: "octo-org/hello-world"
+              },
+              head_repository: {
+                owner: "octo-org",
+                name: "hello-world",
+                full_name: "octo-org/hello-world"
+              }
+            }
           },
           repository: {
             id: "repo",

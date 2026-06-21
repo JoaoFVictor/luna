@@ -121,12 +121,8 @@
     "final_report": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["report_path", "acceptance", "findings"],
+      "required": ["acceptance", "findings"],
       "properties": {
-        "report_path": {
-          "type": "string",
-          "minLength": 1
-        },
         "acceptance": {
           "$ref": "#/definitions/acceptance"
         },

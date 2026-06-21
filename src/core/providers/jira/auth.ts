@@ -1,10 +1,30 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { ZodError } from "zod";
-import {
-  LunaAuthConfigSchema,
-  type LunaAuthConfig
-} from "./types.js";
+import { z, ZodError } from "zod";
+
+const NonEmptyStringSchema = z.string().min(1);
+
+export const LunaAuthConfigSchema = z
+  .object({
+    providers: z
+      .object({
+        jira: z
+          .record(
+            z
+              .object({
+                base_url: NonEmptyStringSchema,
+                auth_type: z.literal("basic_api_token"),
+                email: NonEmptyStringSchema,
+                api_token: NonEmptyStringSchema
+              })
+              .strict()
+          )
+          .optional()
+      })
+      .strict()
+  })
+  .strict();
+export type LunaAuthConfig = z.infer<typeof LunaAuthConfigSchema>;
 
 export type JiraAuth = NonNullable<LunaAuthConfig["providers"]["jira"]>[string];
 

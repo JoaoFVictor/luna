@@ -4,17 +4,21 @@ import {
   prepareWorktreeBuiltIn,
   preflightBuiltIn,
   validateCodeReviewFindingsBuiltIn
-} from "./code-review.js";
+} from "../providers/github/built-ins.js";
 import {
-  collectTaskContextBuiltIn,
   collectWorktreeDiffBuiltIn,
   commitChangesBuiltIn,
-  finalImplementationReportBuiltIn,
-  openPullRequestBuiltIn,
+  openChangeRequestBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   pushBranchBuiltIn,
+  recordAcceptanceDecisionBuiltIn,
+  recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
 } from "./implementation.js";
+import {
+  collectTaskContextBuiltIn,
+  finalImplementationReportBuiltIn
+} from "../providers/jira/built-ins.js";
 
 export const defaultBuiltInSteps = Object.freeze([
   preflightBuiltIn,
@@ -25,10 +29,12 @@ export const defaultBuiltInSteps = Object.freeze([
   prepareImplementationWorktreeBuiltIn,
   collectTaskContextBuiltIn,
   runValidationCommandsBuiltIn,
+  recordImplementationValidationBuiltIn,
   collectWorktreeDiffBuiltIn,
+  recordAcceptanceDecisionBuiltIn,
   commitChangesBuiltIn,
   pushBranchBuiltIn,
-  openPullRequestBuiltIn,
+  openChangeRequestBuiltIn,
   finalImplementationReportBuiltIn
 ] as const);
 

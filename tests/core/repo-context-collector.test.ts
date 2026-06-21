@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { githubPullRequestContextFrom } from "../../src/core/github-pr-context.js";
+import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
 import { collectRepoContext } from "../../src/core/repo-context-collector.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
@@ -147,8 +147,9 @@ describe("repo context collector", () => {
     const calls: FakeGitCall[] = [];
 
     const context = await collectRepoContext({
-      invocation: gitInvocation,
       repository: gitRepository,
+      baseSha,
+      headSha,
       maxChangedFiles: 7,
       maxDiffBytes: 150,
       maxExcerptBytes: 60,
@@ -287,8 +288,9 @@ describe("repo context collector", () => {
 
   it("marks raw mode 160000 entries as submodules", async () => {
     const context = await collectRepoContext({
-      invocation: gitInvocation,
       repository: gitRepository,
+      baseSha,
+      headSha,
       maxChangedFiles: 8,
       runGit: async (_cwd, args) => gitOutputFor(args)
     });
@@ -303,8 +305,9 @@ describe("repo context collector", () => {
 
   it("enforces UTF-8 byte budgets for patches and excerpts", async () => {
     const context = await collectRepoContext({
-      invocation: gitInvocation,
       repository: gitRepository,
+      baseSha,
+      headSha,
       maxDiffBytes: 5,
       maxExcerptBytes: 5,
       runGit: async (_cwd, args) => {
@@ -353,8 +356,9 @@ describe("repo context collector", () => {
 
   it("records patch omission reasons and partial truncation metadata", async () => {
     const context = await collectRepoContext({
-      invocation: gitInvocation,
       repository: gitRepository,
+      baseSha,
+      headSha,
       maxChangedFiles: 8,
       maxDiffBytes: 150,
       runGit: async (_cwd, args) => gitOutputFor(args)

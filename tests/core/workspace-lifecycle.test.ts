@@ -1,19 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { shouldPreserveWriteWorkspace } from "../../src/core/workspace-lifecycle.js";
+import {
+  initialImplementationLifecycleEvidence,
+  markCommitResult,
+  markValidationResult,
+  recordWorkflowNodeLifecycle,
+  type ImplementationLifecycleEvidence
+} from "../../src/core/implementation-lifecycle.js";
+import { workspaceLifecycleDecision } from "../../src/core/workspace-lifecycle.js";
+
+function evidence(
+  overrides: Partial<ImplementationLifecycleEvidence> = {}
+): ImplementationLifecycleEvidence {
+  return {
+    ...initialImplementationLifecycleEvidence(),
+    workspaceCreated: true,
+    implementationStarted: true,
+    validationRan: true,
+    validationPassed: true,
+    diffCollectionSucceeded: true,
+    acceptanceAccepted: true,
+    commitAttempted: true,
+    commitSucceeded: true,
+    ...overrides
+  };
+}
 
 const successfulInput = {
   commitEnabled: true,
-  validationPassed: true,
-  acceptanceAccepted: true,
-  commitSkippedOrFailed: false,
-  pushSkippedOrFailed: false,
-  pullRequestSkippedOrFailed: false
+  pushEnabled: false,
+  changeRequestEnabled: false,
+  evidence: evidence()
 };
+
+function lifecycleDecision(input: typeof successfulInput): {
+  preserve: boolean;
+  reason: string;
+} {
+  return workspaceLifecycleDecision(input.evidence, input);
+}
 
 describe("workspace lifecycle", () => {
   it("preserves the workspace when commit is disabled", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
         commitEnabled: false
       })
@@ -22,42 +51,55 @@ describe("workspace lifecycle", () => {
 
   it("preserves the workspace when validation failed", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
-        validationPassed: false
+        evidence: evidence({
+          validationRan: true,
+          validationPassed: false,
+          failureReason: {
+            phase: "validation",
+            code: "validation_failed",
+            message: "Validation failed"
+          }
+        })
       })
     ).toEqual({ preserve: true, reason: "validation_failed" });
   });
 
   it("preserves the workspace when acceptance failed", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
-        acceptanceAccepted: false
+        evidence: evidence({ acceptanceAccepted: false })
       })
     ).toEqual({ preserve: true, reason: "acceptance_failed" });
   });
 
   it("preserves the workspace when push failed", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
-        pushSkippedOrFailed: true
+        pushEnabled: true,
+        evidence: evidence({ pushAttempted: false })
       })
     ).toEqual({ preserve: true, reason: "push_skipped_or_failed" });
   });
 
   it("preserves the workspace when PR failed", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
-        pullRequestSkippedOrFailed: true
+        changeRequestEnabled: true,
+        evidence: evidence({
+          pushAttempted: true,
+          changeRequestAttempted: false
+        })
       })
-    ).toEqual({ preserve: true, reason: "pull_request_skipped_or_failed" });
+    ).toEqual({ preserve: true, reason: "change_request_skipped_or_failed" });
   });
 
   it("allows cleanup when all enabled gates succeeded", () => {
-    expect(shouldPreserveWriteWorkspace(successfulInput)).toEqual({
+    expect(lifecycleDecision(successfulInput)).toEqual({
       preserve: false,
       reason: "success_cleanup"
     });
@@ -65,11 +107,50 @@ describe("workspace lifecycle", () => {
 
   it("allows cleanup when commit is enabled and push and PR are disabled after acceptance", () => {
     expect(
-      shouldPreserveWriteWorkspace({
+      lifecycleDecision({
         ...successfulInput,
-        pushSkippedOrFailed: false,
-        pullRequestSkippedOrFailed: false
+        evidence: evidence({
+          pushAttempted: false,
+          changeRequestAttempted: false
+        })
       })
     ).toEqual({ preserve: false, reason: "success_cleanup" });
   });
+
+  it("updates lifecycle evidence through typed helpers", () => {
+    const afterValidation = recordWorkflowNodeLifecycle(
+      initialImplementationLifecycleEvidence(),
+      { implementationLifecycle: "validation" },
+      { status: "succeeded", outcome: { validationPassed: true } }
+    );
+    const afterCommit = recordWorkflowNodeLifecycle(
+      afterValidation,
+      { implementationLifecycle: "commit" },
+      { status: "succeeded", outcome: { commitSucceeded: false } }
+    );
+
+    expect(afterCommit).toMatchObject({
+      implementationStarted: true,
+      validationRan: true,
+      validationPassed: true,
+      commitAttempted: true,
+      commitSucceeded: false
+    });
+
+    expect(
+      markCommitResult(
+        markValidationResult(initialImplementationLifecycleEvidence(), {
+          ran: true,
+          passed: true
+        }),
+        { attempted: true, succeeded: false }
+      )
+    ).toMatchObject({
+      validationRan: true,
+      validationPassed: true,
+      commitAttempted: true,
+      commitSucceeded: false
+    });
+  });
+
 });

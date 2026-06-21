@@ -3,7 +3,8 @@
 This recipe runs Luna's bundled `implementation` workflow against a Jira task.
 The workflow creates a writable git worktree, runs a trusted local implementer,
 validates the result, reviews it, and optionally commits, pushes, and opens a
-draft GitHub PR.
+change request. The first supported change request provider is GitHub, which
+opens a draft PR.
 
 ## 1. Install Dependencies
 
@@ -97,7 +98,7 @@ implementation:
   push:
     enabled: false
     remote: origin
-  pull_request:
+  change_request:
     enabled: false
     provider: github
     draft: true
@@ -120,10 +121,10 @@ implementation:
 `trusted_host_local` is trusted-operator mode and can edit the local worktree.
 The implementer agent declares `trusted_host_local_write`.
 
-Commit, push, and draft PR creation are optional and disabled by default.
-Enabling push requires commit, and enabling a draft PR requires push. If commit
-is disabled, validation fails, acceptance rejects the change, or a publishing
-gate fails, Luna preserves the write worktree for inspection.
+Commit, push, and change request creation are optional and disabled by default.
+Enabling push requires commit, and enabling a change request requires push. If
+commit is disabled, validation fails, acceptance rejects the change, or a
+publishing gate fails, Luna preserves the write worktree for inspection.
 
 ## 6. Run The Workflow
 

@@ -5,12 +5,14 @@ import {
   jiraAuthForInstance,
   loadLunaAuth,
   type JiraAuth
-} from "../../core/jira-auth.js";
+} from "../../core/providers/jira/auth.js";
+import {
+  JiraConfigSchema,
+  type JiraConfig
+} from "../../core/providers/jira/config.js";
 import {
   InvocationSchema,
-  JiraConfigSchema,
-  type Invocation,
-  type JiraConfig
+  type Invocation
 } from "../../core/types.js";
 import type { AdapterInput, InputAdapter } from "../types.js";
 

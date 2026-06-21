@@ -9,8 +9,6 @@ The CLI shape should stay generic:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from my-adapter value
 ```
 
-`--workflow <id>` is an alias for `--target workflow:<id>`.
-
 Do not add workflow-specific commands such as:
 
 ```bash
@@ -124,9 +122,9 @@ An adapter should not:
 - Create git worktrees.
 - Write final artifacts.
 - Hide how the workflow is selected.
-- Enable commit, push, or pull request creation directly. For the
+- Enable commit, push, or change request creation directly. For the
   `implementation` workflow, `config/implementation.yaml` controls optional
-  commit, push, and draft PR gates after validation and acceptance.
+  commit, push, and change request gates after validation and acceptance.
 
 The runtime handles workflow execution after the adapter returns an invocation.
 

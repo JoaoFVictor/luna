@@ -1,31 +1,22 @@
 import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { writePlannedArtifacts } from "./artifact-write-plan.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
 import {
   builtInStepRegistry as defaultBuiltInStepRegistry,
-  runBuiltInStep as defaultRunBuiltInStep,
   type BuiltInStepDependencies,
   type BuiltInStepMetadata,
   type RunBuiltInStepOptions
 } from "./built-ins/index.js";
 import {
-  loadAgentDefinition,
-  type AgentDefinition
-} from "./agent-definition.js";
-import {
   loadOptionalYamlFile,
   loadYamlFile,
   resolveConfigRoot
 } from "./config-loader.js";
-import {
-  resolveModelProfiles,
-  toFlueModelOptions,
-  type ResolvedModelProfiles
-} from "./model-config.js";
-import type { McpConfig } from "./mcp-config.js";
-import type { FinalReportJson } from "./report-builder.js";
+import { resolveModelProfiles } from "./model-config.js";
+import { assertJsonValue, type JsonValue } from "./json-value.js";
 import { routeInvocation as defaultRouteInvocation } from "./router.js";
 import {
   RunLockManager,
@@ -35,9 +26,13 @@ import { createJsonlEventSink } from "./observability/jsonl-sink.js";
 import { createObservabilitySinks } from "./observability/exporter-config.js";
 import {
   createLunaObservability,
+  customEvent,
+  runCompletedEvent,
+  runStartedEvent,
   type LunaObservability,
   type LunaObservabilitySink
 } from "./observability/luna-observability.js";
+import { sanitizeJsonObject } from "./observability/sanitize.js";
 import {
   createObservabilitySummary,
   writeSummaryBestEffort,
@@ -45,32 +40,46 @@ import {
 } from "./observability/summary.js";
 import {
   runWorkflowSchedule,
-  splitDeferredFinalReportNodes,
   type SchedulerLockManager
 } from "./workflow-scheduler.js";
+import { splitDeferredFinalReportNodesByPolicy } from "./workflow-execution-policy.js";
 import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
 } from "./run-identity.js";
-import { assertSafeSegment, safeJoin } from "./path-security.js";
-import { shouldPreserveWriteWorkspace } from "./workspace-lifecycle.js";
+import {
+  lifecycleEvidenceFromSchedulerState
+} from "./implementation-lifecycle.js";
+import { assertSafeSegment } from "./path-security.js";
 import {
   defaultWorkflowObservabilityConfig,
   loadWorkflowDefinition,
   type WorkflowObservabilityConfig,
   type WorkflowNode
 } from "./workflow-definition.js";
-import type { WorkflowSubagentPolicy } from "./subagent-policy.js";
-import {
-  resolveWorkflowInput,
-  type SchedulerWorkflowState,
-  type WorkflowState
-} from "./workflow-state.js";
+import type { SchedulerWorkflowState } from "./workflow-state.js";
 import { resolveRepository as defaultResolveRepository } from "./workspace-resolver.js";
+import {
+  cleanupMayRemoveWorktree,
+  finalizeFailureWorkspace,
+  finalizeSuccessWorkspace,
+  withRepositoryCleanupLock
+} from "./configured-workflow-finalization.js";
+import {
+  configuredWorkflowError,
+  errorArtifact,
+  errorCode,
+  errorMessage
+} from "./configured-workflow-errors.js";
+import {
+  runWorkflowNode,
+  type RunAgentLoopStepOptions,
+  type RunAgentStepOptions,
+  type WorkflowNodeRuntimeContext
+} from "./configured-workflow-node-runner.js";
 import {
   AppConfigSchema,
   ImplementationConfigSchema,
-  JiraConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RoutingConfigSchema,
@@ -84,68 +93,15 @@ import {
   type RuntimeConfigState,
   type RoutingConfig,
   type RunIdentity,
-  type ValidationCommand,
-  ValidationCommandSchema,
   type WorkspaceRecord
 } from "./types.js";
+
+export type { RunAgentLoopStepOptions, RunAgentStepOptions };
 
 type MaybePromise<T> = T | Promise<T>;
 
 type BuiltInMetadataRegistry = {
   require(name: string): { metadata?: BuiltInStepMetadata };
-};
-
-export type RunAgentStepOptions = {
-  agent: AgentDefinition;
-  node: Extract<WorkflowNode, { type: "agent" }>;
-  model: ReturnType<typeof toFlueModelOptions>;
-  agentsRoot: string;
-  modelProfiles: ResolvedModelProfiles;
-  workflowSubagentPolicy: WorkflowSubagentPolicy;
-  input: Record<string, unknown>;
-  state: WorkflowState;
-  mcpConfig?: McpConfig;
-  observability?: LunaObservability;
-  summary?: ObservabilitySummary;
-  artifactStore?: ArtifactStore;
-};
-
-type AgentLoopWorkflowNode = Extract<WorkflowNode, { type: "agent_loop" }>;
-
-type ResolvedAgentLoopNode = Omit<
-  AgentLoopWorkflowNode,
-  "sandbox" | "validation" | "repair"
-> & {
-  sandbox: {
-    type: "trusted_host_local";
-    cwd: string;
-    env_allowlist: string[];
-  };
-  validation: {
-    commands: ValidationCommand[];
-    max_output_bytes: number;
-  };
-  repair: {
-    attempts: number;
-  };
-};
-
-export type RunAgentLoopStepOptions = {
-  agent: AgentDefinition;
-  node: ResolvedAgentLoopNode;
-  model: ReturnType<typeof toFlueModelOptions>;
-  agentsRoot: string;
-  modelProfiles: ResolvedModelProfiles;
-  workflowSubagentPolicy: WorkflowSubagentPolicy;
-  input: Record<string, unknown>;
-  sandbox: ResolvedAgentLoopNode["sandbox"];
-  validation: ResolvedAgentLoopNode["validation"];
-  repair: ResolvedAgentLoopNode["repair"];
-  state: WorkflowState;
-  mcpConfig?: McpConfig;
-  observability?: LunaObservability;
-  summary?: ObservabilitySummary;
-  artifactStore?: ArtifactStore;
 };
 
 export type ConfiguredWorkflowRunnerDependencies = {
@@ -185,22 +141,12 @@ export type RunConfiguredWorkflowOptions = {
   throwOnError?: boolean;
 };
 
-type WorkflowNodeRuntimeContext = {
-  dependencies: ConfiguredWorkflowRunnerDependencies;
-  agentsRoot: string;
-  modelProfiles: ResolvedModelProfiles;
-  workflowSubagentPolicy: WorkflowSubagentPolicy;
-  observability?: LunaObservability;
-  summary?: ObservabilitySummary;
-  artifactStore?: ArtifactStore;
-};
-
 export type ConfiguredWorkflowSuccessResult = {
   status: "success";
   run: RunIdentity;
   workflow_id: string;
   steps: Record<string, unknown>;
-  report?: FinalReportJson;
+  report?: JsonValue;
   workspace?: WorkspaceRecord;
 };
 
@@ -215,41 +161,6 @@ export type ConfiguredWorkflowFailureResult = {
 export type ConfiguredWorkflowResult =
   | ConfiguredWorkflowSuccessResult
   | ConfiguredWorkflowFailureResult;
-
-function configuredWorkflowError(
-  message: string,
-  code: string,
-  cause?: unknown
-): Error & { code: string } {
-  const error = new Error(message, { cause }) as Error & { code: string };
-  error.code = code;
-
-  return error;
-}
-
-function errorCode(error: unknown): string {
-  const code = (error as { code?: unknown })?.code;
-  return typeof code === "string" && code !== "" ? code : "unknown_error";
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message !== "") {
-    return error.message;
-  }
-
-  return String(error);
-}
-
-function errorArtifact(runId: string, error: unknown): ErrorArtifact {
-  const details = (error as { details?: ErrorArtifact["details"] })?.details;
-
-  return {
-    run_id: runId,
-    code: errorCode(error),
-    message: errorMessage(error),
-    ...(details === undefined ? {} : { details })
-  };
-}
 
 async function loadConfigs(configRoot: string): Promise<{
   app: AppConfig;
@@ -282,15 +193,13 @@ async function loadConfigs(configRoot: string): Promise<{
 async function loadRuntimeConfig(
   configRoot: string
 ): Promise<RuntimeConfigState> {
-  const jiraPath = path.join(configRoot, "jira.yaml");
   const implementationPath = path.join(configRoot, "implementation.yaml");
-  const [jira, implementation] = await Promise.all([
-    loadOptionalYamlFile(jiraPath, JiraConfigSchema),
-    loadOptionalYamlFile(implementationPath, ImplementationConfigSchema)
-  ]);
+  const implementation = await loadOptionalYamlFile(
+    implementationPath,
+    ImplementationConfigSchema
+  );
 
   return {
-    ...(jira === undefined ? {} : { jira }),
     ...(implementation === undefined
       ? {}
       : { implementation: implementation.implementation })
@@ -374,36 +283,6 @@ function topologicalNodes(nodes: WorkflowNode[]): WorkflowNode[] {
   return ordered;
 }
 
-async function writeNodeArtifact(
-  artifactStore: ArtifactStore,
-  node: WorkflowNode,
-  output: unknown
-): Promise<void> {
-  if (typeof node.artifact === "string") {
-    await artifactStore.writeJson(node.artifact, output);
-    return;
-  }
-
-  if (
-    node.artifact !== undefined &&
-    typeof output === "object" &&
-    output !== null &&
-    !Array.isArray(output)
-  ) {
-    const outputRecord = output as Record<string, unknown>;
-
-    for (const [outputKey, artifactName] of Object.entries(node.artifact)) {
-      const value = outputRecord[outputKey];
-
-      if (outputKey === "markdown") {
-        await artifactStore.writeMarkdown(artifactName, String(value ?? ""));
-      } else {
-        await artifactStore.writeJson(artifactName, value);
-      }
-    }
-  }
-}
-
 function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
   if (typeof output !== "object" || output === null || Array.isArray(output)) {
     return false;
@@ -429,32 +308,18 @@ function builtInMetadata(
   return activeRegistry.require(node.uses).metadata ?? {};
 }
 
-function finalReportFrom(output: unknown): FinalReportJson | undefined {
+function finalReportFrom(output: unknown): JsonValue | undefined {
   if (typeof output !== "object" || output === null || Array.isArray(output)) {
     return undefined;
   }
 
-  return (output as { json?: FinalReportJson }).json;
-}
-
-async function markdownArtifactPath({
-  artifactRoot,
-  runId,
-  node
-}: {
-  artifactRoot: string;
-  runId: string;
-  node: WorkflowNode;
-}): Promise<string | undefined> {
-  if (
-    node.artifact === undefined ||
-    typeof node.artifact === "string" ||
-    typeof node.artifact.markdown !== "string"
-  ) {
+  const report = (output as { json?: unknown }).json;
+  if (report === undefined) {
     return undefined;
   }
 
-  return await safeJoin(artifactRoot, [runId, node.artifact.markdown]);
+  assertJsonValue(report, "$.report");
+  return report;
 }
 
 function artifactRootForWorkflow(root: string, workflowId: string): string {
@@ -519,23 +384,6 @@ async function createRunObservability({
   return { observability, summary };
 }
 
-async function emitObservabilityBestEffort(
-  observability: LunaObservability | undefined,
-  level: "info" | "warn" | "error",
-  event: string,
-  attributes?: Record<string, unknown>
-): Promise<void> {
-  if (observability === undefined) {
-    return;
-  }
-
-  try {
-    await observability.emit(level, event, attributes);
-  } catch {
-    return;
-  }
-}
-
 async function ensureFailureArtifactStore({
   artifactStore,
   Store,
@@ -593,645 +441,6 @@ async function ensureFailureArtifactStore({
     run: failureRun,
     workflowId: failureWorkflowId
   };
-}
-
-async function finalizeFailureWorkspace({
-  artifactStore,
-  workspaceRecord,
-  persistedWorkspaceRecord,
-  repository,
-  workspaceConfig,
-  cleanupWorktree
-}: {
-  artifactStore: ArtifactStore;
-  workspaceRecord?: WorkspaceRecord;
-  persistedWorkspaceRecord?: WorkspaceRecord;
-  repository?: RepositoryConfig;
-  workspaceConfig: AppConfig["workspace"];
-  cleanupWorktree: typeof defaultCleanupWorktree;
-}): Promise<WorkspaceRecord | undefined> {
-  if (workspaceRecord === undefined) {
-    return undefined;
-  }
-
-  let finalWorkspace = workspaceRecord;
-
-  if (
-    workspaceRecord.reason === "success_cleanup" ||
-    workspaceRecord.reason === "success_cleanup_failed" ||
-    workspaceRecord.reason === "success_preserved" ||
-    workspaceRecord.reason === "failure_cleanup_failed" ||
-    workspaceRecord.reason === "failure_preserved"
-  ) {
-    finalWorkspace = workspaceRecord;
-  } else if (workspaceConfig.preserve_on_failure) {
-    finalWorkspace = {
-      ...workspaceRecord,
-      preserved: true,
-      reason: "failure_preserved"
-    };
-  } else if (repository !== undefined) {
-    try {
-      finalWorkspace = await cleanupWorktree({
-        repositoryPath: repository.path,
-        workspaceRoot: workspaceConfig.root,
-        workspaceRecord,
-        persistedWorkspaceRecord
-      });
-    } catch {
-      finalWorkspace = {
-        ...workspaceRecord,
-        preserved: true,
-        reason: "failure_cleanup_failed"
-      };
-    }
-  }
-
-  await artifactStore.writeJson("workspace.json", finalWorkspace);
-  return finalWorkspace;
-}
-
-async function finalizeSuccessWorkspace({
-  artifactStore,
-  workspaceRecord,
-  persistedWorkspaceRecord,
-  repository,
-  workspaceConfig,
-  workflowMode,
-  implementationConfig,
-  steps,
-  cleanupWorktree
-}: {
-  artifactStore: ArtifactStore;
-  workspaceRecord?: WorkspaceRecord;
-  persistedWorkspaceRecord?: WorkspaceRecord;
-  repository?: RepositoryConfig;
-  workspaceConfig: AppConfig["workspace"];
-  workflowMode: "git_managed_read_only" | "git_managed_write";
-  implementationConfig?: RuntimeConfigState["implementation"];
-  steps: Record<string, unknown>;
-  cleanupWorktree: typeof defaultCleanupWorktree;
-}): Promise<WorkspaceRecord | undefined> {
-  if (workspaceRecord === undefined) {
-    return undefined;
-  }
-
-  if (workflowMode === "git_managed_write") {
-    return await finalizeWriteSuccessWorkspace({
-      artifactStore,
-      workspaceRecord,
-      persistedWorkspaceRecord,
-      repository,
-      workspaceConfig,
-      implementationConfig,
-      steps,
-      cleanupWorktree
-    });
-  }
-
-  let finalWorkspace: WorkspaceRecord;
-
-  if (!workspaceConfig.preserve_on_success) {
-    if (repository === undefined) {
-      finalWorkspace = workspaceRecord;
-    } else {
-      try {
-        finalWorkspace = await cleanupWorktree({
-          repositoryPath: repository.path,
-          workspaceRoot: workspaceConfig.root,
-          workspaceRecord,
-          persistedWorkspaceRecord
-        });
-      } catch (cause) {
-        const failedWorkspace = {
-          ...workspaceRecord,
-          preserved: true,
-          reason: "success_cleanup_failed"
-        };
-        await artifactStore.writeJson("workspace.json", failedWorkspace);
-        const error = configuredWorkflowError(
-          "Successful review workspace cleanup failed",
-          "success_cleanup_failed",
-          cause
-        );
-        (error as Error & { workspaceRecord?: WorkspaceRecord }).workspaceRecord =
-          failedWorkspace;
-        throw error;
-      }
-    }
-  } else {
-    finalWorkspace = {
-      ...workspaceRecord,
-      preserved: true,
-      reason: "success_preserved"
-    };
-  }
-
-  await artifactStore.writeJson("workspace.json", finalWorkspace);
-  return finalWorkspace;
-}
-
-function cleanupMayRemoveWorktree({
-  workspaceRecord,
-  repository,
-  workspaceConfig,
-  workflowMode,
-  implementationConfig,
-  steps,
-  success
-}: {
-  workspaceRecord?: WorkspaceRecord;
-  repository?: RepositoryConfig;
-  workspaceConfig: AppConfig["workspace"];
-  workflowMode: "git_managed_read_only" | "git_managed_write";
-  implementationConfig?: RuntimeConfigState["implementation"];
-  steps: Record<string, unknown>;
-  success: boolean;
-}): boolean {
-  if (workspaceRecord === undefined || repository === undefined) {
-    return false;
-  }
-
-  if (!success) {
-    return !workspaceConfig.preserve_on_failure;
-  }
-
-  if (workflowMode === "git_managed_read_only") {
-    return !workspaceConfig.preserve_on_success;
-  }
-
-  return !shouldPreserveWriteWorkspace({
-    commitEnabled: implementationConfig?.commit.enabled ?? false,
-    validationPassed: validationPassedFromSteps(steps),
-    acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
-    commitSkippedOrFailed: commitSkippedOrFailed(
-      implementationConfig?.commit.enabled ?? false,
-      steps.commit ?? steps.commit_changes
-    ),
-    pushSkippedOrFailed: pushSkippedOrFailed(
-      implementationConfig?.push.enabled ?? false,
-      steps.push ?? steps.push_branch
-    ),
-    pullRequestSkippedOrFailed: pullRequestSkippedOrFailed(
-      implementationConfig?.pull_request.enabled ?? false,
-      steps.pull_request ?? steps.open_pull_request
-    )
-  }).preserve;
-}
-
-async function withRepositoryCleanupLock<T>({
-  lockManager,
-  repository,
-  locked,
-  run
-}: {
-  lockManager?: SchedulerLockManager;
-  repository?: RepositoryConfig;
-  locked: boolean;
-  run: () => Promise<T>;
-}): Promise<T> {
-  if (!locked || repository === undefined) {
-    return await run();
-  }
-
-  if (lockManager === undefined) {
-    throw configuredWorkflowError(
-      "Lock manager is missing",
-      "lock_manager_missing"
-    );
-  }
-
-  const release = await lockManager.acquire(
-    `repository:${repository.id}`,
-    "exclusive"
-  );
-  let operationError: unknown;
-
-  try {
-    return await run();
-  } catch (error) {
-    operationError = error;
-    throw error;
-  } finally {
-    try {
-      await release();
-    } catch (error) {
-      if (
-        operationError !== undefined &&
-        ((typeof operationError === "object" && operationError !== null) ||
-          typeof operationError === "function")
-      ) {
-        Object.defineProperty(operationError, "releaseErrors", {
-          configurable: true,
-          value: [error]
-        });
-      } else {
-        throw configuredWorkflowError(
-          "Failed to release workflow lock",
-          "lock_release_failed",
-          error
-        );
-      }
-    }
-  }
-}
-
-async function finalizeWriteSuccessWorkspace({
-  artifactStore,
-  workspaceRecord,
-  persistedWorkspaceRecord,
-  repository,
-  workspaceConfig,
-  implementationConfig,
-  steps,
-  cleanupWorktree
-}: {
-  artifactStore: ArtifactStore;
-  workspaceRecord: WorkspaceRecord;
-  persistedWorkspaceRecord?: WorkspaceRecord;
-  repository?: RepositoryConfig;
-  workspaceConfig: AppConfig["workspace"];
-  implementationConfig?: RuntimeConfigState["implementation"];
-  steps: Record<string, unknown>;
-  cleanupWorktree: typeof defaultCleanupWorktree;
-}): Promise<WorkspaceRecord> {
-  const lifecycle = shouldPreserveWriteWorkspace({
-    commitEnabled: implementationConfig?.commit.enabled ?? false,
-    validationPassed: validationPassedFromSteps(steps),
-    acceptanceAccepted: acceptanceAcceptedFromSteps(steps),
-    commitSkippedOrFailed: commitSkippedOrFailed(
-      implementationConfig?.commit.enabled ?? false,
-      steps.commit ?? steps.commit_changes
-    ),
-    pushSkippedOrFailed: pushSkippedOrFailed(
-      implementationConfig?.push.enabled ?? false,
-      steps.push ?? steps.push_branch
-    ),
-    pullRequestSkippedOrFailed: pullRequestSkippedOrFailed(
-      implementationConfig?.pull_request.enabled ?? false,
-      steps.pull_request ?? steps.open_pull_request
-    )
-  });
-
-  if (lifecycle.preserve) {
-    const finalWorkspace = {
-      ...workspaceRecord,
-      preserved: true,
-      reason: lifecycle.reason
-    };
-    await artifactStore.writeJson("workspace.json", finalWorkspace);
-    return finalWorkspace;
-  }
-
-  if (repository === undefined) {
-    await artifactStore.writeJson("workspace.json", workspaceRecord);
-    return workspaceRecord;
-  }
-
-  try {
-    const finalWorkspace = await cleanupWorktree({
-      repositoryPath: repository.path,
-      workspaceRoot: workspaceConfig.root,
-      workspaceRecord,
-      persistedWorkspaceRecord
-    });
-    await artifactStore.writeJson("workspace.json", finalWorkspace);
-    return finalWorkspace;
-  } catch (cause) {
-    const failedWorkspace = {
-      ...workspaceRecord,
-      preserved: true,
-      reason: "success_cleanup_failed"
-    };
-    await artifactStore.writeJson("workspace.json", failedWorkspace);
-    const error = configuredWorkflowError(
-      "Successful implementation workspace cleanup failed",
-      "success_cleanup_failed",
-      cause
-    );
-    (error as Error & { workspaceRecord?: WorkspaceRecord }).workspaceRecord =
-      failedWorkspace;
-    throw error;
-  }
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function booleanAt(
-  value: unknown,
-  pathSegments: readonly string[]
-): boolean | undefined {
-  let current = value;
-
-  for (const segment of pathSegments) {
-    const record = recordValue(current);
-    if (record === undefined) {
-      return undefined;
-    }
-
-    current = record[segment];
-  }
-
-  return typeof current === "boolean" ? current : undefined;
-}
-
-function validationPassedFromSteps(steps: Record<string, unknown>): boolean {
-  for (const value of Object.values(steps)) {
-    const passed =
-      booleanAt(value, ["final_validation", "passed"]) ??
-      booleanAt(value, ["validation", "passed"]) ??
-      booleanAt(value, ["passed"]);
-
-    if (passed !== undefined) {
-      return passed;
-    }
-  }
-
-  return false;
-}
-
-function acceptanceAcceptedFromSteps(steps: Record<string, unknown>): boolean {
-  const acceptance = recordValue(
-    steps.acceptance ?? steps.implementation_acceptance
-  );
-
-  if (acceptance === undefined) {
-    return false;
-  }
-
-  return acceptance.status === "accepted" || acceptance.decision === "approve";
-}
-
-function gateSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
-  if (!gateEnabled) {
-    return false;
-  }
-
-  const record = recordValue(value);
-  if (record === undefined) {
-    return true;
-  }
-
-  return record.skipped === true || record.status === "failed";
-}
-
-function nonEmptyString(value: unknown): boolean {
-  return typeof value === "string" && value !== "";
-}
-
-function positiveInteger(value: unknown): boolean {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
-
-function gateSkippedOrFailedWithoutEvidence(
-  gateEnabled: boolean,
-  value: unknown,
-  hasSuccessEvidence: (record: Record<string, unknown>) => boolean
-): boolean {
-  if (!gateEnabled) {
-    return false;
-  }
-
-  if (gateSkippedOrFailed(gateEnabled, value)) {
-    return true;
-  }
-
-  const record = recordValue(value);
-  return record === undefined || !hasSuccessEvidence(record);
-}
-
-function commitSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
-  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) =>
-    nonEmptyString(record.commit_sha)
-  );
-}
-
-function pushSkippedOrFailed(gateEnabled: boolean, value: unknown): boolean {
-  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) => {
-    if (record.pushed === true) {
-      return true;
-    }
-
-    return (
-      nonEmptyString(record.remote) &&
-      (nonEmptyString(record.branch) || nonEmptyString(record.ref))
-    );
-  });
-}
-
-function pullRequestSkippedOrFailed(
-  gateEnabled: boolean,
-  value: unknown
-): boolean {
-  return gateSkippedOrFailedWithoutEvidence(gateEnabled, value, (record) =>
-    nonEmptyString(record.url) || positiveInteger(record.number)
-  );
-}
-
-function resolveAgentModel(
-  agent: AgentDefinition,
-  modelProfiles: ResolvedModelProfiles
-): ReturnType<typeof toFlueModelOptions> {
-  const profile = modelProfiles[agent.model_profile];
-
-  if (profile === undefined) {
-    throw configuredWorkflowError(
-      `Model profile not found for agent ${agent.id}: ${agent.model_profile}`,
-      "model_profile_missing"
-    );
-  }
-
-  return toFlueModelOptions(profile);
-}
-
-function validateAgentLoopCommands(value: unknown): ValidationCommand[] {
-  const parsed = ValidationCommandSchema.array().safeParse(value);
-
-  if (!parsed.success) {
-    throw configuredWorkflowError(
-      "Agent loop validation.commands must resolve to structured validation commands",
-      "agent_loop_validation_commands_invalid",
-      parsed.error
-    );
-  }
-
-  return parsed.data;
-}
-
-function validatePositiveInteger(
-  value: unknown,
-  message: string,
-  code: string
-): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value <= 0
-  ) {
-    throw configuredWorkflowError(message, code);
-  }
-
-  return value;
-}
-
-function validateNonnegativeInteger(
-  value: unknown,
-  message: string,
-  code: string
-): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 0
-  ) {
-    throw configuredWorkflowError(message, code);
-  }
-
-  return value;
-}
-
-function resolveAgentLoopNode(
-  node: AgentLoopWorkflowNode,
-  state: WorkflowState
-): ResolvedAgentLoopNode {
-  const sandbox = resolveWorkflowInput(node.sandbox, state);
-  const validation = resolveWorkflowInput(node.validation, state);
-  const repair = resolveWorkflowInput(node.repair, state);
-  const cwd = sandbox.cwd;
-
-  if (typeof cwd !== "string" || cwd === "") {
-    throw configuredWorkflowError(
-      "Agent loop sandbox.cwd must resolve to a path",
-      "agent_loop_sandbox_cwd_invalid"
-    );
-  }
-
-  return {
-    ...node,
-    sandbox: {
-      type: "trusted_host_local",
-      cwd,
-      env_allowlist: node.sandbox.env_allowlist
-    },
-    validation: {
-      commands: validateAgentLoopCommands(validation.commands),
-      max_output_bytes: validatePositiveInteger(
-        validation.max_output_bytes,
-        "Agent loop validation.max_output_bytes must resolve to a number",
-        "agent_loop_validation_max_output_bytes_invalid"
-      )
-    },
-    repair: {
-      attempts: validateNonnegativeInteger(
-        repair.attempts,
-        "Agent loop repair.attempts must resolve to a number",
-        "agent_loop_repair_attempts_invalid"
-      )
-    }
-  };
-}
-
-async function runWorkflowNode(
-  node: WorkflowNode,
-  state: WorkflowState,
-  context: WorkflowNodeRuntimeContext
-): Promise<unknown> {
-  if (node.type === "built_in") {
-    const runBuiltInStep =
-      context.dependencies.runBuiltInStep ?? defaultRunBuiltInStep;
-
-    return await runBuiltInStep({
-      uses: node.uses,
-      state,
-      input:
-        node.input === undefined
-          ? undefined
-          : resolveWorkflowInput(node.input, state),
-      dependencies: context.dependencies.builtInStepDependencies
-    });
-  }
-
-  if (node.type === "agent_loop") {
-    if (context.dependencies.runAgentLoopStep === undefined) {
-      throw configuredWorkflowError(
-        `No agent loop runner configured for node: ${node.id}`,
-        "agent_loop_runner_missing"
-      );
-    }
-
-    const agent = await loadAgentDefinition(context.agentsRoot, node.agent);
-    const resolvedNode = resolveAgentLoopNode(node, state);
-
-    return await context.dependencies.runAgentLoopStep({
-      agent,
-      node: resolvedNode,
-      model: resolveAgentModel(agent, context.modelProfiles),
-      agentsRoot: context.agentsRoot,
-      modelProfiles: context.modelProfiles,
-      workflowSubagentPolicy: context.workflowSubagentPolicy,
-      input: resolveWorkflowInput(node.input, state),
-      sandbox: resolvedNode.sandbox,
-      validation: resolvedNode.validation,
-      repair: resolvedNode.repair,
-      state,
-      observability: context.observability,
-      summary: context.summary,
-      artifactStore: context.artifactStore
-    });
-  }
-
-  if (context.dependencies.runAgentStep === undefined) {
-    throw configuredWorkflowError(
-      `No agent step runner configured for node: ${node.id}`,
-      "agent_step_runner_missing"
-    );
-  }
-
-  const agent = await loadAgentDefinition(context.agentsRoot, node.agent);
-
-  return await context.dependencies.runAgentStep({
-    agent,
-    node,
-    model: resolveAgentModel(agent, context.modelProfiles),
-    agentsRoot: context.agentsRoot,
-    modelProfiles: context.modelProfiles,
-    workflowSubagentPolicy: context.workflowSubagentPolicy,
-    input: resolveWorkflowInput(node.input, state),
-    state,
-    observability: context.observability,
-    summary: context.summary,
-    artifactStore: context.artifactStore
-  });
-}
-
-function firstSchedulerFailure(
-  steps: Record<string, unknown>
-): { code: string; details?: ErrorArtifact["details"] } | undefined {
-  for (const value of Object.values(steps)) {
-    const record = recordValue(value);
-    if (record?.status !== "failed") {
-      continue;
-    }
-
-    const code = record.code;
-    if (typeof code !== "string" || code === "") {
-      continue;
-    }
-
-    const details = recordValue(record.details);
-    return {
-      code,
-      ...(details === undefined ? {} : { details })
-    };
-  }
-
-  return undefined;
 }
 
 export async function runConfiguredWorkflow({
@@ -1318,12 +527,14 @@ export async function runConfiguredWorkflow({
       observabilityConfig: workflowObservabilityConfig,
       sinks: observabilitySinks
     }));
-    await observability.emit("info", "luna.workflow.started", {
-      status: "started"
-    });
-    await observability.emit("info", "luna.workflow.routed", {
-      status: "completed"
-    });
+    await observability.emit(runStartedEvent(observability.eventContext("info")));
+    await observability.emit(
+      customEvent({
+        ...observability.eventContext("info"),
+        type: "luna.run.routed",
+        outcome: { status: "succeeded" }
+      })
+    );
 
     repository = resolveRepository(
       invocation,
@@ -1363,10 +574,11 @@ export async function runConfiguredWorkflow({
     };
     const orderedNodes = topologicalNodes(workflow.graph.nodes);
     const { mainNodes, deferredNodes: deferredFinalReportNodes } =
-      splitDeferredFinalReportNodes(
-        orderedNodes,
-        (node) => builtInMetadata(node, activeBuiltInStepRegistry)
-    );
+      splitDeferredFinalReportNodesByPolicy({
+        nodes: orderedNodes,
+        builtInMetadata: (node) =>
+          builtInMetadata(node, activeBuiltInStepRegistry)
+      });
     const activeArtifactStore = artifactStore;
     const nodeRuntimeContext: WorkflowNodeRuntimeContext = {
       dependencies,
@@ -1386,13 +598,18 @@ export async function runConfiguredWorkflow({
       summary,
       runNode: async ({ node, state }) =>
         await runWorkflowNode(node, state, nodeRuntimeContext),
-      writeNodeArtifact: async (node, output) =>
-        await writeNodeArtifact(activeArtifactStore, node, output),
+      writePlannedArtifacts: async (node, output, state) =>
+        await writePlannedArtifacts({
+          artifactStore: activeArtifactStore,
+          node,
+          output,
+          state
+        }),
       builtInMetadata: (node) => builtInMetadata(node, activeBuiltInStepRegistry),
       lockManager
     });
 
-    Object.assign(state.steps, scheduleResult.steps);
+    state.lifecycleEvidence = scheduleResult.lifecycleEvidence;
     workspaceRecord = scheduleResult.workspace;
     if (scheduleResult.workspace !== undefined) {
       persistedWorkspaceRecord = scheduleResult.workspace;
@@ -1400,7 +617,7 @@ export async function runConfiguredWorkflow({
     }
 
     if (scheduleResult.status === "failed") {
-      const primaryFailure = firstSchedulerFailure(scheduleResult.steps);
+      const primaryFailure = scheduleResult.primaryFailure;
       const error = configuredWorkflowError(
         "Workflow scheduler failed",
         primaryFailure?.code ?? "scheduler_step_failed"
@@ -1421,7 +638,7 @@ export async function runConfiguredWorkflow({
         workspaceConfig: configs.app.workspace,
         workflowMode: workflow.mode,
         implementationConfig: configs.runtimeConfig.implementation,
-        steps: state.steps,
+        lifecycleEvidence: lifecycleEvidenceFromSchedulerState(state),
         success: true
       }),
       run: async () =>
@@ -1433,7 +650,7 @@ export async function runConfiguredWorkflow({
           workspaceConfig: configs.app.workspace,
           workflowMode: workflow.mode,
           implementationConfig: configs.runtimeConfig.implementation,
-          steps: state.steps,
+          lifecycleEvidence: lifecycleEvidenceFromSchedulerState(state),
           cleanupWorktree
         })
     });
@@ -1442,30 +659,29 @@ export async function runConfiguredWorkflow({
       state.workspace = finalWorkspace;
     }
 
-    let report: FinalReportJson | undefined;
+    let report: JsonValue | undefined;
     for (const node of deferredFinalReportNodes) {
-      const reportPath = await markdownArtifactPath({
-        artifactRoot: artifactStore.artifactRoot,
-        runId: run.run_id,
-        node
-      });
-      if (reportPath !== undefined) {
-        state.reportPath = reportPath;
-      }
-
       const output = await runWorkflowNode(node, state, {
         ...nodeRuntimeContext,
         artifactStore
       });
 
+      await writePlannedArtifacts({
+        artifactStore,
+        node,
+        output,
+        state
+      });
       state.steps[node.id] = output;
-      await writeNodeArtifact(artifactStore, node, output);
       report = finalReportFrom(output) ?? report;
     }
 
-    await observability.emit("info", "luna.workflow.finished", {
-      status: "completed"
-    });
+    await observability.emit(
+      runCompletedEvent({
+        ...observability.eventContext("info"),
+        status: "succeeded"
+      })
+    );
     await writeSummaryBestEffort(artifactStore, summary);
 
     return {
@@ -1514,17 +730,24 @@ export async function runConfiguredWorkflow({
       }
     }
     const failureArtifactStore = artifactStore;
-    await emitObservabilityBestEffort(
-      observability,
-      "error",
-      "luna.workflow.failed",
-      {
-        status: "failed",
-        step_id: (error as { details?: ErrorArtifact["details"] })?.details
-          ?.step_id,
-        error
+    if (observability !== undefined) {
+      try {
+        await observability.emit(
+          runCompletedEvent({
+            ...observability.eventContext("error"),
+            status: "failed",
+            code: errorCode(error),
+            data: sanitizeJsonObject({
+              step_id: (error as { details?: ErrorArtifact["details"] })
+                ?.details?.step_id,
+              error
+            })
+          })
+        );
+      } catch {
+        // Failure artifacts remain the source of truth if observability fails here.
       }
-    );
+    }
     const artifact = errorArtifact(run.run_id, error);
     const artifactWriteError = await writeJsonBestEffort(
       artifactStore,
@@ -1544,7 +767,7 @@ export async function runConfiguredWorkflow({
             workspaceConfig: configs.app.workspace,
             workflowMode: workflowMode ?? "git_managed_read_only",
             implementationConfig: configs.runtimeConfig.implementation,
-            steps: {},
+            lifecycleEvidence: lifecycleEvidenceFromSchedulerState({}),
             success: false
           }),
           run: async () =>

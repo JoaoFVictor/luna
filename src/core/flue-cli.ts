@@ -101,9 +101,10 @@ export function parseCliArgs(args: string[]): CliArgs {
   const [command, ...rest] = args;
 
   if (command === "run") {
-    const workflowFlagIndex = rest.indexOf("--workflow");
-    const workflow =
-      workflowFlagIndex >= 0 ? rest[workflowFlagIndex + 1] : undefined;
+    const allowedFlags = new Set(["--target", "--input", "--from"]);
+    const unsupportedFlag = rest.find(
+      (argument) => argument.startsWith("--") && !allowedFlags.has(argument)
+    );
     const targetFlagIndex = rest.indexOf("--target");
     const targetValue =
       targetFlagIndex >= 0 ? rest[targetFlagIndex + 1] : undefined;
@@ -113,15 +114,8 @@ export function parseCliArgs(args: string[]): CliArgs {
     const from = fromFlagIndex >= 0 ? rest[fromFlagIndex + 1] : undefined;
     const value = fromFlagIndex >= 0 ? rest[fromFlagIndex + 2] : undefined;
 
-    if (workflowFlagIndex >= 0 && targetFlagIndex >= 0) {
-      throw cliError(
-        "ambiguous_target",
-        "Use either --workflow or --target, not both"
-      );
-    }
-
-    if (workflowFlagIndex >= 0 && !workflow) {
-      throw cliError("missing_workflow", "Missing required --workflow <id>");
+    if (unsupportedFlag !== undefined) {
+      throw cliError("unsupported_flag", `Unsupported run flag: ${unsupportedFlag}`);
     }
 
     if (targetFlagIndex >= 0 && !targetValue) {
@@ -129,11 +123,7 @@ export function parseCliArgs(args: string[]): CliArgs {
     }
 
     const target =
-      workflow !== undefined
-        ? RouteTargetSchema.parse({ type: "workflow", id: workflow })
-        : targetValue === undefined
-          ? undefined
-          : parseWorkflowTarget(targetValue);
+      targetValue === undefined ? undefined : parseWorkflowTarget(targetValue);
 
     if (input && from) {
       throw cliError("ambiguous_input", "Use either --input or --from, not both");

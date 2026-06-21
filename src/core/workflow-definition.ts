@@ -1,6 +1,11 @@
 import path from "node:path";
 import { realpath } from "node:fs/promises";
 import { z } from "zod";
+import {
+  ArtifactWritePlanSchema,
+  assertNoDuplicateArtifactPaths,
+  normalizeArtifactWritePlans
+} from "./artifact-write-plan.js";
 import { isBuiltInStepName } from "./built-ins/catalog.js";
 import { loadYamlFile } from "./config-loader.js";
 import { assertSafeSegment, isInsideRoot } from "./path-security.js";
@@ -70,7 +75,7 @@ const BuiltInNodeSchema = z
     id: NonEmptyStringSchema,
     type: z.literal("built_in"),
     uses: NonEmptyStringSchema,
-    artifact: z.union([NonEmptyStringSchema, z.record(NonEmptyStringSchema)]).optional(),
+    artifacts: z.array(ArtifactWritePlanSchema).optional(),
     input: z.record(z.unknown()).optional(),
     after: z.array(NonEmptyStringSchema).optional()
   })
@@ -82,7 +87,7 @@ const AgentNodeSchema = z
     type: z.literal("agent"),
     agent: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
-    artifact: NonEmptyStringSchema.optional(),
+    artifacts: z.array(ArtifactWritePlanSchema).optional(),
     input: z.record(z.unknown()).optional(),
     after: z.array(NonEmptyStringSchema).optional()
   })
@@ -102,7 +107,7 @@ const AgentLoopNodeSchema = z
     type: z.literal("agent_loop"),
     agent: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
-    artifact: z.record(NonEmptyStringSchema),
+    artifacts: z.array(ArtifactWritePlanSchema).optional(),
     sandbox: z
       .object({
         type: z.literal("trusted_host_local"),
@@ -135,7 +140,7 @@ const AgentLoopNodeSchema = z
   })
   .strict();
 
-const WorkflowGraphSchema = z
+const WorkflowGraphShapeSchema = z
   .object({
     nodes: z
       .array(
@@ -148,6 +153,25 @@ const WorkflowGraphSchema = z
       .min(1)
   })
   .strict();
+
+const WorkflowGraphSchema = {
+  parse(value: unknown): z.infer<typeof WorkflowGraphShapeSchema> {
+    assertNoLegacyArtifactShape(value);
+    const graph = WorkflowGraphShapeSchema.parse(value);
+    const knownStepIds = new Set(graph.nodes.map((node) => node.id));
+    const nodes = graph.nodes.map((node) => ({
+      ...node,
+      artifacts: normalizeArtifactWritePlans(
+        node.id,
+        node.artifacts,
+        knownStepIds
+      )
+    }));
+    assertNoDuplicateArtifactPaths(nodes);
+
+    return { nodes } as z.infer<typeof WorkflowGraphShapeSchema>;
+  }
+};
 
 export type WorkflowMetadata = z.infer<typeof WorkflowMetadataSchema>;
 export type WorkflowExecution = {
@@ -164,7 +188,7 @@ export const defaultWorkflowObservabilityConfig: WorkflowObservabilityConfig = {
     flue_log: { enabled: true, required: false }
   }
 };
-export type WorkflowGraph = z.infer<typeof WorkflowGraphSchema>;
+export type WorkflowGraph = z.infer<typeof WorkflowGraphShapeSchema>;
 export type WorkflowNode = WorkflowGraph["nodes"][number];
 
 export type WorkflowDefinition = Omit<
@@ -182,6 +206,58 @@ function workflowDefinitionError(message: string, code: string): Error & { code:
   const error = new Error(message) as Error & { code: string };
   error.code = code;
   return error;
+}
+
+function assertNoLegacyArtifactShape(value: unknown): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return;
+  }
+
+  const nodes = (value as { nodes?: unknown }).nodes;
+  if (!Array.isArray(nodes)) {
+    return;
+  }
+
+  for (const node of nodes) {
+    if (
+      typeof node === "object" &&
+      node !== null &&
+      Object.prototype.hasOwnProperty.call(node, "artifact")
+    ) {
+      throw workflowDefinitionError(
+        "Workflow node artifact is no longer supported; use artifacts instead",
+        "workflow_legacy_artifact_shape"
+      );
+    }
+
+    if (hasLegacyReportPathInput((node as { input?: unknown }).input)) {
+      throw workflowDefinitionError(
+        "Workflow report path input is no longer supported; use explicit artifacts instead",
+        "workflow_legacy_report_path"
+      );
+    }
+  }
+}
+
+function hasLegacyReportPathInput(value: unknown): boolean {
+  if (typeof value === "string") {
+    return value === "$.state.reportPath";
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => hasLegacyReportPathInput(item));
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const legacyKeys = ["report_path", "reportPath"];
+  if (legacyKeys.some((key) => Object.prototype.hasOwnProperty.call(value, key))) {
+    return true;
+  }
+
+  return Object.values(value).some((nested) => hasLegacyReportPathInput(nested));
 }
 
 async function safeWorkflowPath(

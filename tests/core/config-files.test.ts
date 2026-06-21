@@ -411,7 +411,7 @@ describe("config definition files", () => {
           status: "disabled",
           reason: "disabled"
         },
-        pull_request: {
+        change_request: {
           enabled: false,
           skipped: true,
           status: "disabled",
@@ -541,27 +541,41 @@ describe("config definition files", () => {
 
     expect(graph.nodes.map((node) => node.id)).toEqual([
       "preflight",
-      "workspace",
       "task_context",
+      "workspace",
       "implementation_plan",
       "implementation",
+      "implementation_validation",
       "worktree_diff",
       "implementation_review",
       "acceptance",
+      "acceptance_decision",
       "commit",
       "push",
-      "pull_request",
+      "change_request",
       "final_report"
     ]);
     expect(graph.nodes.find((node) => node.id === "implementation")).toEqual(
       expect.objectContaining({
         type: "agent_loop",
         agent: "code-implementer",
-        artifact: {
-          attempts: "implementation-attempts.json",
-          validation: "validation.json",
-          result: "implementation-result.json"
-        }
+        artifacts: expect.arrayContaining([
+          expect.objectContaining({
+            path: "implementation-attempts.json",
+            source: "$.steps.implementation.attempts",
+            format: "json"
+          }),
+          expect.objectContaining({
+            path: "validation.json",
+            source: "$.steps.implementation.validation",
+            format: "json"
+          }),
+          expect.objectContaining({
+            path: "implementation-result.json",
+            source: "$.steps.implementation.result",
+            format: "json"
+          })
+        ])
       })
     );
 

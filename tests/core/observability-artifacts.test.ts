@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ArtifactStore } from "../../src/core/artifact-store.js";
+import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
+import { customEvent } from "../../src/core/observability/events.js";
 import { createJsonlEventSink } from "../../src/core/observability/jsonl-sink.js";
+import { sanitizeJsonObject } from "../../src/core/observability/sanitize.js";
 import {
   createObservabilitySummary,
   recordFailedStep,
@@ -41,39 +44,40 @@ describe("observability artifacts", () => {
     expect((await stat(touchedPath)).mode & 0o777).toBe(0o600);
   });
 
-  it("JSONL event sink creates events.jsonl on creation and writes one sanitized flat event per line", async () => {
+  it("JSONL event sink creates events.jsonl on creation and writes one normalized event per line", async () => {
     const { runDirectory, store } = await initializedStore();
     const sink = await createJsonlEventSink(store);
     const eventsPath = path.join(runDirectory, "events.jsonl");
 
     await expect(readFile(eventsPath, "utf8")).resolves.toBe("");
 
-    await sink.append({
-      event: "luna.prompt.completed",
-      run_id: "run-1",
-      workflow_id: "code-review",
-      schema_version: 1,
-      event_id: "event-1",
-      sequence: 1,
-      timestamp: "2026-06-20T12:00:00.000Z",
-      level: "info",
-      prompt_id: "prompt-1",
-      attributes: {
-        prompt_text: "raw prompt",
-        count: 1n
-      }
+    const observability = createLunaObservability({
+      run: { id: "run-1" },
+      workflow: { id: "code-review" },
+      sinks: [sink],
+      now: () => new Date("2026-06-20T12:00:00.000Z")
     });
-    await sink.append({
-      event: "luna.warning",
-      run_id: "run-1",
-      workflow_id: "code-review",
-      schema_version: 1,
-      event_id: "event-2",
-      sequence: 2,
-      timestamp: "2026-06-20T12:00:01.000Z",
-      level: "warn",
-      error: new Error("boom")
-    });
+
+    await observability.emit(
+      customEvent({
+        ...observability.eventContext("info"),
+        type: "luna.prompt.completed",
+        data: sanitizeJsonObject({
+          prompt_id: "prompt-1",
+          prompt_text: "raw prompt",
+          count: 1n
+        })
+      })
+    );
+    await observability.emit(
+      customEvent({
+        ...observability.eventContext("warn"),
+        type: "luna.warning",
+        data: sanitizeJsonObject({
+          error: new Error("boom")
+        })
+      })
+    );
 
     const lines = (await readFile(eventsPath, "utf8"))
       .trim()
@@ -82,19 +86,24 @@ describe("observability artifacts", () => {
 
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatchObject({
-      event: "luna.prompt.completed",
-      run_id: "run-1",
-      workflow_id: "code-review",
-      prompt_id: "prompt-1",
-      attributes: {
+      type: "luna.prompt.completed",
+      severity: "info",
+      run: { id: "run-1", attempt: 1 },
+      workflow: { id: "code-review" },
+      data: {
+        prompt_id: "prompt-1",
         prompt_text: "[REDACTED]",
         count: "1"
       }
     });
-    expect(lines[0]).not.toHaveProperty("type");
-    expect(lines[0]).not.toHaveProperty("run");
-    expect(lines[0]).not.toHaveProperty("workflow");
-    expect(lines[1].error).toMatchObject({
+    expect(lines[0]).not.toHaveProperty("event");
+    expect(lines[0]).not.toHaveProperty("run_id");
+    expect(lines[0]).not.toHaveProperty("workflow_id");
+    expect(lines[1]).toMatchObject({
+      type: "luna.warning",
+      severity: "warn"
+    });
+    expect(lines[1].data.error).toMatchObject({
       name: "Error",
       message: "boom"
     });

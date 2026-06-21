@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildFinalReportJson,
   buildFinalReportMarkdown
-} from "../../src/core/report-builder.js";
+} from "../../src/core/providers/github/report-builder.js";
 import type {
   AcceptanceDecision,
   Finding,
@@ -120,7 +120,6 @@ describe("final report builder", () => {
     const json = buildFinalReportJson({
       acceptance,
       findings: [],
-      reportPath: "/tmp/report.md",
       workspace: undefined
     });
 
@@ -140,7 +139,6 @@ describe("final report builder", () => {
     const json = buildFinalReportJson({
       acceptance,
       findings: [],
-      reportPath: "/tmp/report.md",
       workspace
     });
 

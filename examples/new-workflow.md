@@ -28,7 +28,7 @@ input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
 execution:
-  max_concurrency: 1
+  max_concurrency: 2
   lock_timeout_ms: 120000
 ```
 
@@ -59,19 +59,28 @@ nodes:
   - id: preflight
     type: built_in
     uses: preflight
-    artifact: preflight.json
+    artifacts:
+      - path: preflight.json
+        source: $.steps.preflight
+        format: json
 
   - id: workspace
     type: built_in
     uses: prepare_worktree
-    artifact: workspace.json
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
     after:
       - preflight
 
   - id: repo_context
     type: built_in
     uses: collect_repo_context
-    artifact: repo-context.json
+    artifacts:
+      - path: repo-context.json
+        source: $.steps.repo_context
+        format: json
     after:
       - workspace
 
@@ -79,7 +88,10 @@ nodes:
     type: agent
     agent: my-agent
     output_schema: my_output
-    artifact: my-agent-output.json
+    artifacts:
+      - path: my-agent-output.json
+        source: $.steps.my_agent_step
+        format: json
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
@@ -104,10 +116,13 @@ Graph rules:
 - `final_code_review_report`
 - `prepare_implementation_worktree`
 - `collect_task_context`
+- `run_validation_commands`
+- `record_implementation_validation`
 - `collect_worktree_diff`
+- `record_acceptance_decision`
 - `commit_changes`
 - `push_branch`
-- `open_pull_request`
+- `open_change_request`
 - `final_implementation_report`
 
 Some built-ins are workflow-specific. If a workflow needs a new local
@@ -125,10 +140,16 @@ and repair failed validation:
   type: agent_loop
   agent: code-implementer
   output_schema: implementation_result
-  artifact:
-    attempts: implementation-attempts.json
-    validation: validation.json
-    result: implementation-result.json
+  artifacts:
+    - path: implementation-attempts.json
+      source: $.steps.implementation.attempts
+      format: json
+    - path: validation.json
+      source: $.steps.implementation.validation
+      format: json
+    - path: implementation-result.json
+      source: $.steps.implementation.result
+      format: json
   sandbox:
     type: trusted_host_local
     cwd: $.workspace.path
@@ -142,7 +163,9 @@ and repair failed validation:
 
 The referenced agent must declare `mode: trusted_host_local_write` in
 `agent.yaml`. `trusted_host_local` runs on the host and can edit files in the
-worktree. Use it only for agents and repositories you trust.
+worktree. Use it only for agents and repositories you trust. In write workflows,
+use deterministic built-ins after agent or agent-loop nodes to record lifecycle
+gates used by workspace preserve/cleanup decisions.
 
 ## 6. Workflow Input References
 

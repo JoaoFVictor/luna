@@ -26,12 +26,12 @@ safety:
   writes: false
   network: false
   side_effects: false
-  subagent_read_only_allowed: false
 ```
 
-Set `subagent_read_only_allowed: true` only when `writes`, `network`, and
-`side_effects` are all `false`. Luna enforces this invariant when tools are
-registered.
+Read-only agents may use non-writing tools when the agent declares them.
+Subagents do not receive local tools; use a trusted write subagent with an
+explicit `policy.allow_tools` list or a workflow graph node when delegated work
+needs tools.
 
 Current examples live in `src/tools/repository-tools.ts`.
 
@@ -73,8 +73,7 @@ const toolRegistry: Record<string, RegisteredTool> = {
     safety: {
       writes: false,
       network: false,
-      side_effects: false,
-      subagent_read_only_allowed: true
+      side_effects: false
     }
   }
 };
@@ -82,9 +81,7 @@ const toolRegistry: Record<string, RegisteredTool> = {
 
 Use `read_only` only when the tool is safe for read-only agents. Reserve
 `trusted_host_local_write` for tools that are useful only inside a trusted local
-write worktree. `subagent_read_only_allowed` must be explicit; leave it `false`
-unless the tool is deterministic, local, non-writing, non-networked, and safe
-inside a read-only subagent profile.
+write worktree.
 
 ## 4. Attach the tool to an agent
 

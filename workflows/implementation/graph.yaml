@@ -2,27 +2,41 @@ nodes:
   - id: preflight
     type: built_in
     uses: preflight
-    artifact: preflight.json
-
-  - id: workspace
-    type: built_in
-    uses: prepare_implementation_worktree
-    artifact: workspace.json
-    after:
-      - preflight
+    artifacts:
+      - path: preflight.json
+        source: $.steps.preflight
+        format: json
 
   - id: task_context
     type: built_in
     uses: collect_task_context
-    artifact: task-context.json
+    artifacts:
+      - path: task-context.json
+        source: $.steps.task_context
+        format: json
     after:
-      - workspace
+      - preflight
+
+  - id: workspace
+    type: built_in
+    uses: prepare_implementation_worktree
+    input:
+      subject: $.steps.task_context.implementation_subject
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
+    after:
+      - task_context
 
   - id: implementation_plan
     type: agent
     agent: implementation-planner
     output_schema: implementation_plan
-    artifact: implementation-plan.json
+    artifacts:
+      - path: implementation-plan.json
+        source: $.steps.implementation_plan
+        format: json
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
@@ -33,10 +47,16 @@ nodes:
     type: agent_loop
     agent: code-implementer
     output_schema: implementation_result
-    artifact:
-      attempts: implementation-attempts.json
-      validation: validation.json
-      result: implementation-result.json
+    artifacts:
+      - path: implementation-attempts.json
+        source: $.steps.implementation.attempts
+        format: json
+      - path: validation.json
+        source: $.steps.implementation.validation
+        format: json
+      - path: implementation-result.json
+        source: $.steps.implementation.result
+        format: json
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
@@ -54,18 +74,36 @@ nodes:
     after:
       - implementation_plan
 
+  - id: implementation_validation
+    type: built_in
+    uses: record_implementation_validation
+    input:
+      implementation: $.steps.implementation
+    artifacts:
+      - path: implementation-validation.json
+        source: $.steps.implementation_validation
+        format: json
+    after:
+      - implementation
+
   - id: worktree_diff
     type: built_in
     uses: collect_worktree_diff
-    artifact: worktree-diff.json
+    artifacts:
+      - path: worktree-diff.json
+        source: $.steps.worktree_diff
+        format: json
     after:
-      - implementation
+      - implementation_validation
 
   - id: implementation_review
     type: agent
     agent: change-reviewer
     output_schema: implementation_review
-    artifact: implementation-review.json
+    artifacts:
+      - path: implementation-review.json
+        source: $.steps.implementation_review
+        format: json
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
@@ -78,7 +116,10 @@ nodes:
     type: agent
     agent: change-acceptance-reviewer
     output_schema: acceptance_decision
-    artifact: acceptance-review.json
+    artifacts:
+      - path: acceptance-review.json
+        source: $.steps.acceptance
+        format: json
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
@@ -87,32 +128,63 @@ nodes:
     after:
       - implementation_review
 
+  - id: acceptance_decision
+    type: built_in
+    uses: record_acceptance_decision
+    input:
+      acceptance: $.steps.acceptance
+    artifacts:
+      - path: acceptance-decision.json
+        source: $.steps.acceptance_decision
+        format: json
+    after:
+      - acceptance
+
   - id: commit
     type: built_in
     uses: commit_changes
-    artifact: commit.json
+    input:
+      message: $.steps.task_context.implementation_title
+    artifacts:
+      - path: commit.json
+        source: $.steps.commit
+        format: json
     after:
-      - acceptance
+      - acceptance_decision
 
   - id: push
     type: built_in
     uses: push_branch
-    artifact: push.json
+    artifacts:
+      - path: push.json
+        source: $.steps.push
+        format: json
     after:
       - commit
 
-  - id: pull_request
+  - id: change_request
     type: built_in
-    uses: open_pull_request
-    artifact: pull-request.json
+    uses: open_change_request
+    input:
+      push: $.steps.push
+      title: $.steps.task_context.implementation_title
+      body: $.steps.task_context.jira.description
+    artifacts:
+      - path: change-request.json
+        source: $.steps.change_request
+        format: json
     after:
       - push
 
   - id: final_report
     type: built_in
     uses: final_implementation_report
-    artifact:
-      json: final-report.json
-      markdown: final-report.md
+    artifacts:
+      - path: final-report.json
+        source: $.steps.final_report.json
+        format: json
+      - path: final-report.md
+        source: $.steps.final_report.markdown
+        format: markdown
     after:
-      - pull_request
+      - change_request

@@ -1,10 +1,10 @@
-import { githubPullRequestContextFrom } from "./github-pr-context.js";
+import { githubPullRequestContextFrom } from "./pull-request-context.js";
 import type {
   AcceptanceDecision,
   Finding,
   Invocation,
   WorkspaceRecord
-} from "./types.js";
+} from "../../types.js";
 
 const severityRank: Record<Finding["severity"], number> = {
   critical: 0,
@@ -23,12 +23,10 @@ type MarkdownOptions = {
 type JsonOptions = {
   acceptance: AcceptanceDecision;
   findings: readonly Finding[];
-  reportPath: string;
   workspace?: WorkspaceRecord;
 };
 
 export type FinalReportJson = {
-  report_path: string;
   acceptance: AcceptanceDecision;
   findings: Finding[];
   workspace?: WorkspaceRecord;
@@ -127,11 +125,9 @@ export function buildFinalReportMarkdown({
 export function buildFinalReportJson({
   acceptance,
   findings,
-  reportPath,
   workspace
 }: JsonOptions): FinalReportJson {
   return {
-    report_path: reportPath,
     acceptance,
     findings: sortFindings(findings),
     ...(workspace === undefined ? {} : { workspace })

@@ -1,7 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { LunaObservability } from "./observability/luna-observability.js";
+import {
+  customEvent,
+  type LunaObservability
+} from "./observability/luna-observability.js";
+import { sanitizeJsonObject } from "./observability/sanitize.js";
 import { slugify } from "./path-security.js";
 
 export type LockMode = "exclusive";
@@ -426,8 +430,16 @@ export class RunLockManager {
       return;
     }
 
-    void this.observability.emit(level, event, attributes).catch(() => {
+    void this.observability
+      .emit(
+        customEvent({
+          ...this.observability.eventContext(level),
+          type: event,
+          data: sanitizeJsonObject(attributes)
+        })
+      )
+      .catch(() => {
       // Observability is diagnostic here; lock behavior remains authoritative.
-    });
+      });
   }
 }

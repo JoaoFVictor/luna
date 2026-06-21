@@ -4,9 +4,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   jiraAuthForInstance,
-  loadLunaAuth
-} from "../../src/core/jira-auth.js";
-import type { LunaAuthConfig } from "../../src/core/types.js";
+  loadLunaAuth,
+  type LunaAuthConfig
+} from "../../src/core/providers/jira/auth.js";
 
 const lunaAuthFixture: LunaAuthConfig = {
   providers: {

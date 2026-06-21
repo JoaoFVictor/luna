@@ -74,7 +74,7 @@ export type Invocation = NormalizedInvocation;
 export const RepositoryConfigSchema = z
   .object({
     id: NonEmptyStringSchema,
-    provider: z.literal("github"),
+    provider: NonEmptyStringSchema,
     owner: NonEmptyStringSchema,
     name: NonEmptyStringSchema,
     path: NonEmptyStringSchema,
@@ -199,29 +199,6 @@ export const AppConfigSchema = z
   .strict();
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
-const JiraFieldConfigSchema = z
-  .object({
-    field_id: NonEmptyStringSchema,
-    format: NonEmptyStringSchema
-  })
-  .strict();
-
-export const JiraConfigSchema = z
-  .object({
-    instances: z.array(
-      z
-        .object({
-          id: NonEmptyStringSchema,
-          base_url: NonEmptyStringSchema,
-          repository_field: JiraFieldConfigSchema,
-          acceptance_criteria_field: JiraFieldConfigSchema.optional()
-        })
-        .strict()
-    )
-  })
-  .strict();
-export type JiraConfig = z.infer<typeof JiraConfigSchema>;
-
 export const ValidationCommandSchema = z
   .object({
     cmd: NonEmptyStringSchema,
@@ -313,11 +290,11 @@ export const PushBranchArtifactSchema = GitGateArtifactSchema.extend({
 }).strict();
 export type PushBranchArtifact = z.infer<typeof PushBranchArtifactSchema>;
 
-export const PullRequestArtifactSchema = GitGateArtifactSchema.extend({
+export const ChangeRequestArtifactSchema = GitGateArtifactSchema.extend({
   provider: z.literal("github").optional(),
   url: NonEmptyStringSchema.optional()
 }).strict();
-export type PullRequestArtifact = z.infer<typeof PullRequestArtifactSchema>;
+export type ChangeRequestArtifact = z.infer<typeof ChangeRequestArtifactSchema>;
 
 export const ImplementationConfigSchema = z
   .object({
@@ -335,7 +312,7 @@ export const ImplementationConfigSchema = z
             remote: NonEmptyStringSchema
           })
           .strict(),
-        pull_request: z
+        change_request: z
           .object({
             enabled: z.boolean(),
             provider: z.literal("github"),
@@ -370,42 +347,19 @@ export const ImplementationConfigSchema = z
     }
 
     if (
-      config.implementation.pull_request.enabled &&
+      config.implementation.change_request.enabled &&
       !config.implementation.push.enabled
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "pull_request.enabled requires push.enabled",
-        path: ["implementation", "pull_request", "enabled"]
+        message: "change_request.enabled requires push.enabled",
+        path: ["implementation", "change_request", "enabled"]
       });
     }
   });
 export type ImplementationConfig = z.infer<typeof ImplementationConfigSchema>;
 
-export const LunaAuthConfigSchema = z
-  .object({
-    providers: z
-      .object({
-        jira: z
-          .record(
-            z
-              .object({
-                base_url: NonEmptyStringSchema,
-                auth_type: z.literal("basic_api_token"),
-                email: NonEmptyStringSchema,
-                api_token: NonEmptyStringSchema
-              })
-              .strict()
-          )
-          .optional()
-      })
-      .strict()
-  })
-  .strict();
-export type LunaAuthConfig = z.infer<typeof LunaAuthConfigSchema>;
-
 export type RuntimeConfigState = {
-  jira?: JiraConfig;
   implementation?: ImplementationConfig["implementation"];
 };
 

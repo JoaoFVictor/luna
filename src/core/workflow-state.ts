@@ -1,4 +1,7 @@
 import type {
+  ImplementationLifecycleEvidence
+} from "./implementation-lifecycle.js";
+import type {
   AppConfig,
   Invocation,
   RepositoryConfig,
@@ -15,7 +18,6 @@ export type WorkflowState = {
   workflow?: unknown;
   workspace?: unknown;
   workspaceRoot?: string;
-  reportPath?: string;
   steps: Record<string, unknown>;
 };
 
@@ -30,7 +32,7 @@ export type SchedulerWorkflowState = WorkflowState & {
   };
   workspaceRoot: AppConfig["workspace"]["root"];
   workspace?: WorkspaceRecord;
-  reportPath?: string;
+  lifecycleEvidence?: ImplementationLifecycleEvidence;
 };
 
 function workflowStateError(message: string, code: string): Error & { code: string } {

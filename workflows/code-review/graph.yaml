@@ -2,19 +2,28 @@ nodes:
   - id: preflight
     type: built_in
     uses: preflight
-    artifact: preflight.json
+    artifacts:
+      - path: preflight.json
+        source: $.steps.preflight
+        format: json
 
   - id: workspace
     type: built_in
     uses: prepare_worktree
-    artifact: workspace.json
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
     after:
       - preflight
 
   - id: repo_context
     type: built_in
     uses: collect_repo_context
-    artifact: repo-context.json
+    artifacts:
+      - path: repo-context.json
+        source: $.steps.repo_context
+        format: json
     after:
       - workspace
 
@@ -22,7 +31,10 @@ nodes:
     type: agent
     agent: review-planner
     output_schema: review_plan
-    artifact: review-plan.json
+    artifacts:
+      - path: review-plan.json
+        source: $.steps.review_plan
+        format: json
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
@@ -33,7 +45,10 @@ nodes:
     type: agent
     agent: change-reviewer
     output_schema: code_review_findings
-    artifact: code-review-findings.json
+    artifacts:
+      - path: raw-code-review-findings.json
+        source: $.steps.code_review
+        format: json
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
@@ -44,7 +59,10 @@ nodes:
   - id: validate_findings
     type: built_in
     uses: validate_code_review_findings
-    artifact: code-review-findings.json
+    artifacts:
+      - path: code-review-findings.json
+        source: $.steps.validate_findings
+        format: json
     input:
       repo_context: $.steps.repo_context
       findings: $.steps.code_review
@@ -55,7 +73,10 @@ nodes:
     type: agent
     agent: change-acceptance-reviewer
     output_schema: acceptance_decision
-    artifact: acceptance-review.json
+    artifacts:
+      - path: acceptance-review.json
+        source: $.steps.acceptance
+        format: json
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
@@ -67,9 +88,13 @@ nodes:
   - id: final_report
     type: built_in
     uses: final_code_review_report
-    artifact:
-      json: final-report.json
-      markdown: final-report.md
+    artifacts:
+      - path: final-report.json
+        source: $.steps.final_report.json
+        format: json
+      - path: final-report.md
+        source: $.steps.final_report.markdown
+        format: markdown
     input:
       invocation: $.invocation
       findings: $.steps.validate_findings

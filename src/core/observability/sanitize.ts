@@ -1,4 +1,6 @@
 import { redactValue } from "../redactor.js";
+import type { JsonObject } from "./events.js";
+import type { JsonValue } from "../json-value.js";
 
 const OBSERVABILITY_SENSITIVE_KEYS = [
   "prompt",
@@ -75,4 +77,49 @@ export function sanitizeAttributes(
     string,
     unknown
   >;
+}
+
+function jsonValueFromSanitized(value: unknown): JsonValue | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => jsonValueFromSanitized(item) ?? null);
+  }
+
+  if (typeof value === "object") {
+    const object: JsonObject = {};
+
+    for (const [key, nestedValue] of Object.entries(value)) {
+      const jsonValue = jsonValueFromSanitized(nestedValue);
+
+      if (jsonValue !== undefined) {
+        object[key] = jsonValue;
+      }
+    }
+
+    return object;
+  }
+
+  return String(value);
+}
+
+export function sanitizeJsonObject(
+  attributes: Record<string, unknown> | undefined
+): JsonObject {
+  const value = jsonValueFromSanitized(sanitizeAttributes(attributes));
+
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
 }

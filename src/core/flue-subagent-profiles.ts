@@ -11,7 +11,11 @@ import {
   toFlueModelOptions,
   type ResolvedModelProfiles
 } from "./model-config.js";
-import type { LunaObservability } from "./observability/luna-observability.js";
+import {
+  customEvent,
+  type LunaObservability
+} from "./observability/luna-observability.js";
+import { sanitizeJsonObject } from "./observability/sanitize.js";
 import {
   recordRejectedCapability,
   type ObservabilitySummary
@@ -67,13 +71,21 @@ async function emitRejectedCapability({
     reason: rejection.reason
   });
 
-  await observability?.emit("warn", "luna.subagent.capability.rejected", {
-    agent_id: agentId,
-    status: "rejected",
-    capability: rejection.capability,
-    id: rejection.id,
-    reason: rejection.reason
-  });
+  if (observability !== undefined) {
+    await observability.emit(
+      customEvent({
+        ...observability.eventContext("warn"),
+        type: "luna.subagent.capability.rejected",
+        outcome: { status: "failed" },
+        data: sanitizeJsonObject({
+          agent_id: agentId,
+          capability: rejection.capability,
+          id: rejection.id,
+          reason: rejection.reason
+        })
+      })
+    );
+  }
 }
 
 async function rejectSubagentCapability({
@@ -115,6 +127,31 @@ function firstDeclaredCapability(
   };
 }
 
+async function rejectSubagentWithNamedError({
+  observability,
+  summary,
+  agentId,
+  rejection,
+  message,
+  code
+}: {
+  observability?: LunaObservability;
+  summary?: ObservabilitySummary;
+  agentId: string;
+  rejection: RejectedSubagentCapability;
+  message: string;
+  code: string;
+}): Promise<never> {
+  await emitRejectedCapability({
+    observability,
+    summary,
+    agentId,
+    rejection
+  });
+
+  throw subagentError(message, code);
+}
+
 function rejectedToolId(cause: unknown, fallback: string): string {
   if (!(cause instanceof Error)) {
     return fallback;
@@ -133,6 +170,12 @@ function rejectedToolId(cause: unknown, fallback: string): string {
   }
 
   return fallback;
+}
+
+function subagentErrorCode(cause: unknown): string | undefined {
+  const code = (cause as { code?: unknown } | undefined)?.code;
+
+  return typeof code === "string" ? code : undefined;
 }
 
 export async function resolveFlueSubagentProfiles({
@@ -176,7 +219,7 @@ export async function resolveFlueSubagentProfiles({
         reference.policy
       );
     } catch (cause) {
-      await rejectSubagentCapability({
+      await emitRejectedCapability({
         observability,
         summary: resolvedSummary,
         agentId: id,
@@ -189,7 +232,15 @@ export async function resolveFlueSubagentProfiles({
               : "Subagent policy could not be resolved"
         }
       });
-      throw cause;
+
+      if (cause instanceof Error) {
+        throw cause;
+      }
+
+      throw subagentError(
+        "Subagent policy could not be resolved",
+        "subagent_capabilities_unsupported"
+      );
     }
 
     if (agent.mode !== resolvedPolicy.mode) {
@@ -205,19 +256,35 @@ export async function resolveFlueSubagentProfiles({
       });
     }
 
-    const unsupportedCapability =
-      firstDeclaredCapability("mcp_servers", agent.mcp_servers) ??
-      firstDeclaredCapability(
-        "subagents",
-        (agent.subagents ?? []).map((subagent) => subagent.id)
-      );
+    const unsupportedMcp = firstDeclaredCapability(
+      "mcp_servers",
+      agent.mcp_servers
+    );
 
-    if (unsupportedCapability !== undefined) {
-      await rejectSubagentCapability({
+    if (unsupportedMcp !== undefined) {
+      await rejectSubagentWithNamedError({
         observability,
         summary: resolvedSummary,
         agentId: id,
-        rejection: unsupportedCapability
+        rejection: unsupportedMcp,
+        message: `Subagent ${id} declares MCP capability that is not allowed: ${unsupportedMcp.capability}:${unsupportedMcp.id}`,
+        code: "subagent_mcp_not_allowed"
+      });
+    }
+
+    const unsupportedNestedSubagent = firstDeclaredCapability(
+      "subagents",
+      (agent.subagents ?? []).map((subagent) => subagent.id)
+    );
+
+    if (unsupportedNestedSubagent !== undefined) {
+      await rejectSubagentWithNamedError({
+        observability,
+        summary: resolvedSummary,
+        agentId: id,
+        rejection: unsupportedNestedSubagent,
+        message: `Subagent ${id} declares nested subagent capability that is not allowed: ${unsupportedNestedSubagent.capability}:${unsupportedNestedSubagent.id}`,
+        code: "subagent_nested_not_allowed"
       });
     }
 
@@ -240,6 +307,21 @@ export async function resolveFlueSubagentProfiles({
     try {
       const toolIds = agent.tools ?? [];
       const allowedTools = new Set(resolvedPolicy.allow_tools);
+
+      if (resolvedPolicy.mode === "read_only" && toolIds.length > 0) {
+        await rejectSubagentWithNamedError({
+          observability,
+          summary: resolvedSummary,
+          agentId: id,
+          rejection: {
+            capability: "tools",
+            id: toolIds[0] ?? "unknown",
+            reason: "Read-only subagents cannot receive local tools"
+          },
+          message: `Subagent ${id} declares read-only local tool capability that is not allowed: tools:${toolIds[0] ?? "unknown"}`,
+          code: "subagent_read_only_allow_tools_invalid"
+        });
+      }
 
       if (toolIds.length > 0 && cwd === undefined) {
         throw subagentError(
@@ -269,12 +351,15 @@ export async function resolveFlueSubagentProfiles({
           ...resolveFlueTools({
             ids: [toolId],
             agentMode: agent.mode,
-            cwd: cwd ?? "",
-            forSubagent: resolvedPolicy.mode === "read_only"
+            cwd: cwd ?? ""
           })
         );
       }
     } catch (cause) {
+      if (subagentErrorCode(cause)?.startsWith("subagent_") === true) {
+        throw cause;
+      }
+
       const toolId = rejectedToolId(cause, agent.tools?.[0] ?? "unknown");
       await rejectSubagentCapability({
         observability,

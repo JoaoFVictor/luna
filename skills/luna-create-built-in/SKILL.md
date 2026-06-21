@@ -23,7 +23,7 @@ individually as `<camelName>BuiltIn`.
 Most built-ins need no metadata.
 
 - `capturesWorkspace`: step returns a `WorkspaceRecord` for `state.workspace`.
-- `deferUntilAfterWorkspaceLifecycle`: final report step runs after workspace
+- `deferredLifecycle: "final_report"`: final report step runs after workspace
   preserve/cleanup decision.
 
 Do not add name checks to `configured-workflow-runner.ts`; runner behavior comes

@@ -11,10 +11,10 @@ import {
 } from "../../src/core/config-loader.js";
 import { McpConfigSchema } from "../../src/core/mcp-config.js";
 import { resolveModelProfiles } from "../../src/core/model-config.js";
+import { JiraConfigSchema } from "../../src/core/providers/jira/config.js";
 import {
   AppConfigSchema,
   ImplementationConfigSchema,
-  JiraConfigSchema,
   ModelsConfigSchema,
   RepositoriesConfigSchema,
   RoutingConfigSchema

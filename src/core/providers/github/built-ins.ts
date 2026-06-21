@@ -1,44 +1,64 @@
-import { validateFindingEvidence as defaultValidateFindingEvidence } from "../evidence-validator.js";
-import { prepare as defaultPrepareWorktree } from "../git-worktree-manager.js";
-import { collectRepoContext as defaultCollectRepoContext } from "../repo-context-collector.js";
+import { validateFindingEvidence as defaultValidateFindingEvidence } from "../../evidence-validator.js";
+import { prepare as defaultPrepareWorktree } from "./worktree-manager.js";
+import { collectRepoContext as defaultCollectRepoContext } from "../../repo-context-collector.js";
 import {
   buildFinalReportJson as defaultBuildFinalReportJson,
   buildFinalReportMarkdown as defaultBuildFinalReportMarkdown
-} from "../report-builder.js";
-import { runPreflight as defaultRunPreflight } from "../preflight.js";
+} from "./report-builder.js";
+import { runPreflight as defaultRunPreflight } from "../../preflight.js";
 import type {
   AcceptanceDecision,
   CodeReviewFindings,
   Invocation,
   RepoContext,
   WorkspaceRecord
-} from "../types.js";
-import { defineBuiltInStep } from "./registry.js";
+} from "../../types.js";
+import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
   findingsFrom,
-  githubPullRequestInvocationFrom,
   repositoryFrom,
-  reportPathFrom,
   requiredInput,
   requiredState,
   resolvedInput,
   runIdFrom,
+  stepValue,
   workspaceFrom,
   workspaceRootFrom,
   workflowFrom,
   implementationFrom
-} from "./state.js";
+} from "../../built-ins/state.js";
+import { builtInError } from "../../built-ins/errors.js";
+import { githubPullRequestContextFrom } from "./pull-request-context.js";
+
+function githubPullRequestInvocationFrom(state: { invocation?: unknown }): Invocation {
+  const invocation = requiredState(
+    state.invocation as Invocation | undefined,
+    "invocation"
+  );
+
+  try {
+    githubPullRequestContextFrom(invocation);
+  } catch {
+    throw builtInError(
+      "Built-in step requires GitHub pull request invocation",
+      "built_in_unsupported"
+    );
+  }
+
+  return invocation;
+}
 
 export const preflightBuiltIn = defineBuiltInStep({
   name: "preflight",
   async run({ state, dependencies = {} }) {
     const runPreflight = dependencies.runPreflight ?? defaultRunPreflight;
+    const invocation = requiredState(
+      state.invocation as Invocation | undefined,
+      "invocation"
+    );
 
     return await runPreflight({
-      invocation: requiredState(
-        state.invocation as Invocation | undefined,
-        "invocation"
-      ),
+      invocation,
       repository: repositoryFrom(state),
       workflow: workflowFrom(state),
       implementation: implementationFrom(state)
@@ -70,13 +90,16 @@ export const collectRepoContextBuiltIn = defineBuiltInStep({
     const collectRepoContext =
       dependencies.collectRepoContext ?? defaultCollectRepoContext;
     const workspace = workspaceFrom(state);
+    const invocation = githubPullRequestInvocationFrom(state);
+    const pullRequest = githubPullRequestContextFrom(invocation);
 
     return await collectRepoContext({
-      invocation: githubPullRequestInvocationFrom(state),
       repository: {
         ...repositoryFrom(state),
         path: workspace.path
-      }
+      },
+      baseSha: pullRequest.references.base_sha,
+      headSha: pullRequest.references.head_sha
     });
   }
 });
@@ -108,7 +131,7 @@ export const validateCodeReviewFindingsBuiltIn = defineBuiltInStep({
 
 export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
   name: "final_code_review_report",
-  metadata: { deferUntilAfterWorkspaceLifecycle: true },
+  metadata: { deferredLifecycle: "final_report" },
   async run({ state, input, dependencies = {} }) {
     const buildFinalReportJson =
       dependencies.buildFinalReportJson ?? defaultBuildFinalReportJson;
@@ -120,17 +143,16 @@ export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
       resolved.acceptance as AcceptanceDecision | undefined,
       "acceptance"
     );
-    const reportPath = reportPathFrom(state);
+    const invocation = githubPullRequestInvocationFrom(state);
 
     return {
       json: buildFinalReportJson({
         acceptance,
         findings,
-        reportPath,
         workspace: state.workspace as WorkspaceRecord | undefined
       }),
       markdown: buildFinalReportMarkdown({
-        invocation: githubPullRequestInvocationFrom(state),
+        invocation,
         findings,
         acceptance
       })

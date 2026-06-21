@@ -40,9 +40,10 @@ Keep orchestration in `workflows/<id>/graph.yaml`, not in agent instructions.
 - `mcp_servers`: IDs from `config/mcp.yaml`.
 - `subagents`: referenced Luna agent IDs.
 
-Subagents are lightweight internal delegation. Do not give a referenced
-subagent its own tools, skills, MCP servers, or nested subagents; use a workflow
-graph node when the delegated work needs artifacts, gates, tools, or MCP.
+Subagents are lightweight internal delegation. A referenced subagent may use
+skills as instructions, but must not declare local tools, MCP servers, or nested
+subagents; use a workflow graph node when the delegated work needs artifacts,
+gates, tools, MCP, or another delegation tree.
 
 ## Testing
 

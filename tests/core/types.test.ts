@@ -299,7 +299,7 @@ describe("core zod schemas", () => {
           branch_pattern: "feature/{slug}",
           commit: { enabled: false },
           push: { enabled: false, remote: "origin" },
-          pull_request: {
+          change_request: {
             enabled: false,
             provider: "github",
             draft: true,
