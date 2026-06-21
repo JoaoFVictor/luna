@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow-runner.js";
+import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow/runner.js";
 import { gitInvocation } from "../fixtures/git-repo.js";
 import { cleanupFlueMocks, importWorkflowWithRunnerMock, resetEnv } from "./flue-test-helpers.js";
 

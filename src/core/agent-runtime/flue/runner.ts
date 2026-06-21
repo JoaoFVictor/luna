@@ -15,7 +15,7 @@ import {
 import type {
   RunAgentLoopStepOptions,
   RunAgentStepOptions
-} from "../../configured-workflow-runner.js";
+} from "../../configured-workflow/runner.js";
 import {
   resolveFlueAgentCapabilities,
   type ResolvedFlueAgentCapabilities

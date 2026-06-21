@@ -153,7 +153,7 @@ export function lifecycleStepMapViolations(
       }
     }
 
-    if (relativePath === "src/core/configured-workflow-runner.ts") {
+    if (relativePath === "src/core/configured-workflow/runner.ts") {
       if (
         ts.isFunctionDeclaration(node) &&
         ["nodeLifecycleOutcome", "workflowNodeStepResultFrom"].includes(
@@ -190,7 +190,7 @@ export function lifecycleStepMapViolations(
       [
         "src/core/write-mode/lifecycle.ts",
         "src/core/write-mode/workspace-lifecycle.ts",
-        "src/core/configured-workflow-runner.ts",
+        "src/core/configured-workflow/runner.ts",
         "src/core/workflow-scheduler.ts"
       ].includes(relativePath)
     ) {

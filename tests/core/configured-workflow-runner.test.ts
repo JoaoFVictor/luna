@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
+import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
+import type {
+  FailureArtifactWriter,
+  ObservabilityPort,
+  RunLockPort
+} from "../../src/core/configured-workflow/contracts.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
 import type { RunIdentityOptions } from "../../src/core/run-identity.js";
 import type {
@@ -66,8 +71,87 @@ async function writeConfigInputWorkflow(root: string): Promise<void> {
   );
 }
 
+async function writeParallelProbeWorkflow(root: string): Promise<void> {
+  await mkdir(path.join(root, "workflows", "parallel-probe"), {
+    recursive: true
+  });
+  await writeFile(
+    path.join(root, "routing.yaml"),
+    [
+      "routes:",
+      "  - name: explicit-target",
+      "    when:",
+      "      has_target: true",
+      "    use_target_from_input: true",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "parallel-probe", "workflow.yaml"),
+    [
+      "id: parallel-probe",
+      "type: workflow",
+      "mode: git_managed_read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      "execution:",
+      "  max_concurrency: 2",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "parallel-probe", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: node-a",
+      "    type: built_in",
+      "    uses: preflight",
+      "  - id: node-b",
+      "    type: built_in",
+      "    uses: collect_repo_context",
+      ""
+    ].join("\n")
+  );
+}
+
 
 describe("configured workflow runner", () => {
+  it("defines runtime-neutral configured workflow ports", async () => {
+    const lockPort: RunLockPort = {
+      acquire: async ({ runtimeRunId }) => ({
+        runtimeRunId,
+        release: async () => undefined
+      }),
+      heartbeat: async ({ runtimeRunId }) => runtimeRunId
+    };
+    const observabilityPort: ObservabilityPort = {
+      emit: async ({ runtimeRunId }) => runtimeRunId
+    };
+    const failureArtifactWriter: FailureArtifactWriter = {
+      writeFailure: async ({ runtimeRunId }) => ({ runtimeRunId })
+    };
+
+    expect(await lockPort.heartbeat({ runtimeRunId: "run-123" })).toBe(
+      "run-123"
+    );
+    await expect(
+      lockPort.acquire({ runtimeRunId: "run-123", resource: "repository:repo" })
+    ).resolves.toMatchObject({ runtimeRunId: "run-123" });
+    await expect(
+      observabilityPort.emit({
+        runtimeRunId: "run-123",
+        event: { type: "luna.test" }
+      })
+    ).resolves.toBe("run-123");
+    await expect(
+      failureArtifactWriter.writeFailure({
+        runtimeRunId: "run-123",
+        error: new Error("boom")
+      })
+    ).resolves.toEqual({ runtimeRunId: "run-123" });
+  });
+
   it("routes and uses routed workflow options when creating the final run identity", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
@@ -589,6 +673,67 @@ describe("configured workflow runner", () => {
             commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }]
           }
         })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("runs configured independent nodes concurrently when max_concurrency is greater than one", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "parallel-probe", "real");
+      await writeParallelProbeWorkflow(root);
+
+      const startedNodeIds: string[] = [];
+      const completedNodeIds: string[] = [];
+      let activeNodes = 0;
+      let maxObservedConcurrentNodes = 0;
+      const releaseNodes = deferred<void>();
+
+      const resultPromise = runConfiguredWorkflow({
+        invocation: {
+          ...invocation,
+          target: { type: "workflow", id: "parallel-probe" }
+        },
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: staticRunIdentity({
+            ...githubRun,
+            run_id: "run-parallel",
+            workflow_id: "parallel-probe"
+          }),
+          runBuiltInStep: vi.fn(async ({ uses }) => {
+            const nodeId = uses === "preflight" ? "node-a" : "node-b";
+            startedNodeIds.push(nodeId);
+            activeNodes += 1;
+            maxObservedConcurrentNodes = Math.max(
+              maxObservedConcurrentNodes,
+              activeNodes
+            );
+            if (startedNodeIds.length === 2) {
+              releaseNodes.resolve();
+            }
+            await releaseNodes.promise;
+            activeNodes -= 1;
+            completedNodeIds.push(nodeId);
+            return { node_id: nodeId };
+          })
+        }
+      });
+
+      const result = await withTimeout(
+        resultPromise,
+        1000,
+        "configured independent nodes did not overlap"
+      );
+
+      expect(result.status).toBe("success");
+      expect(maxObservedConcurrentNodes).toBeGreaterThan(1);
+      expect(startedNodeIds).toEqual(expect.arrayContaining(["node-a", "node-b"]));
+      expect(completedNodeIds).toEqual(
+        expect.arrayContaining(["node-a", "node-b"])
       );
     } finally {
       await rm(root, { recursive: true, force: true });

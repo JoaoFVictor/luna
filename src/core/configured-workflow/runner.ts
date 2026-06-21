@@ -1,102 +1,82 @@
-import { randomBytes } from "node:crypto";
-import { access } from "node:fs/promises";
 import path from "node:path";
-import { writePlannedArtifacts } from "./artifact-write-plan.js";
-import { ArtifactStore } from "./artifact-store.js";
-import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
+import { writePlannedArtifacts } from "../artifact-write-plan.js";
+import { ArtifactStore } from "../artifact-store.js";
+import { cleanup as defaultCleanupWorktree } from "../git-worktree-manager.js";
 import {
   builtInStepRegistry as defaultBuiltInStepRegistry
-} from "./built-ins/index.js";
+} from "../built-ins/index.js";
 import type {
   BuiltInStepDependencies,
   BuiltInStepMetadata,
   RunBuiltInStepOptions
-} from "./built-ins/types.js";
-import {
-  loadOptionalYamlFile,
-  loadYamlFile,
-  resolveConfigRoot
-} from "./config-loader.js";
-import { resolveModelProfiles } from "./model-config.js";
-import { assertJsonValue, type JsonValue } from "./json-value.js";
-import { routeInvocation as defaultRouteInvocation } from "./router.js";
+} from "../built-ins/types.js";
+import { resolveConfigRoot } from "../config-loader.js";
+import { assertJsonValue, type JsonValue } from "../json-value.js";
+import { routeInvocation as defaultRouteInvocation } from "../router.js";
 import {
   RunLockManager,
   type RunLockManagerOptions
-} from "./run-lock-manager.js";
-import { createJsonlEventSink } from "./observability/jsonl-sink.js";
-import { createObservabilitySinks } from "./observability/exporter-config.js";
+} from "../run-lock-manager.js";
 import {
-  createLunaObservability,
   customEvent,
   runCompletedEvent,
   runStartedEvent,
   type LunaObservability,
   type LunaObservabilitySink
-} from "./observability/luna-observability.js";
-import { sanitizeJsonObject } from "./observability/sanitize.js";
+} from "../observability/luna-observability.js";
+import { sanitizeJsonObject } from "../observability/sanitize.js";
 import {
-  createObservabilitySummary,
   writeSummaryBestEffort,
   type ObservabilitySummary
-} from "./observability/summary.js";
+} from "../observability/summary.js";
 import {
   runWorkflowSchedule,
   type SchedulerLockManager
-} from "./workflow-scheduler.js";
-import { splitDeferredFinalReportNodesByPolicy } from "./workflow-execution-policy.js";
+} from "../workflow-scheduler.js";
+import { splitDeferredFinalReportNodesByPolicy } from "../workflow-execution-policy.js";
 import {
   createRunIdentity as defaultCreateRunIdentity,
   type RunIdentityOptions
-} from "./run-identity.js";
-import {
-  lifecycleEvidenceFromSchedulerState
-} from "./write-mode/lifecycle.js";
-import { assertSafeSegment } from "./path-security.js";
+} from "../run-identity.js";
+import { lifecycleEvidenceFromSchedulerState } from "../write-mode/lifecycle.js";
 import {
   defaultWorkflowObservabilityConfig,
-  loadWorkflowDefinition,
-  type WorkflowObservabilityConfig,
   type WorkflowNode
-} from "./workflow-definition.js";
-import type { SchedulerWorkflowState } from "./workflow-state.js";
-import { resolveRepository as defaultResolveRepository } from "./workspace-resolver.js";
+} from "../workflow-definition.js";
+import type { SchedulerWorkflowState } from "../workflow-state.js";
+import { resolveRepository as defaultResolveRepository } from "../workspace-resolver.js";
 import {
   cleanupMayRemoveWorktree,
   finalizeFailureWorkspace,
   finalizeSuccessWorkspace,
   withRepositoryCleanupLock
-} from "./configured-workflow-finalization.js";
+} from "./finalization.js";
 import {
   configuredWorkflowError,
   errorArtifact,
   errorCode,
   errorMessage
-} from "./configured-workflow-errors.js";
+} from "../configured-workflow-errors.js";
 import {
   runWorkflowNode,
   type RunAgentLoopStepOptions,
   type RunAgentStepOptions,
   type WorkflowNodeRuntimeContext
-} from "./configured-workflow-node-runner.js";
+} from "./node-runner.js";
 import {
-  AppConfigSchema,
-  ModelsConfigSchema,
-  RepositoriesConfigSchema,
-  RoutingConfigSchema,
-  type AppConfig,
+  bootstrapConfiguredWorkflowRun,
+  createRunObservability,
+  createRunNonce,
+  ensureFailureArtifactStore,
+  loadConfigs
+} from "./bootstrap.js";
+import {
   type ErrorArtifact,
   type Invocation,
-  type ModelsConfig,
-  type RepositoriesConfig,
   type RepositoryConfig,
-  type RouteTarget,
-  type RuntimeConfigState,
-  type RoutingConfig,
   type RunIdentity,
   type WorkspaceRecord
-} from "./types.js";
-import { ImplementationConfigSchema } from "./write-mode/types.js";
+} from "../types.js";
 
 export type { RunAgentLoopStepOptions, RunAgentStepOptions };
 
@@ -164,102 +144,6 @@ export type ConfiguredWorkflowResult =
   | ConfiguredWorkflowSuccessResult
   | ConfiguredWorkflowFailureResult;
 
-async function loadConfigs(configRoot: string): Promise<{
-  app: AppConfig;
-  repositories: RepositoriesConfig;
-  routing: RoutingConfig;
-  models: ModelsConfig;
-  runtimeConfig: RuntimeConfigState;
-}> {
-  const app = await loadYamlFile(
-    path.join(configRoot, "app.yaml"),
-    AppConfigSchema
-  );
-  const repositories = await loadYamlFile(
-    path.join(configRoot, "repositories.yaml"),
-    RepositoriesConfigSchema
-  );
-  const routing = await loadYamlFile(
-    path.join(configRoot, "routing.yaml"),
-    RoutingConfigSchema
-  );
-  const models = await loadYamlFile(
-    path.join(configRoot, "models.yaml"),
-    ModelsConfigSchema
-  );
-  const runtimeConfig = await loadRuntimeConfig(configRoot);
-
-  return { app, repositories, routing, models, runtimeConfig };
-}
-
-async function loadRuntimeConfig(
-  configRoot: string
-): Promise<RuntimeConfigState> {
-  const implementationPath = path.join(configRoot, "implementation.yaml");
-  const implementation = await loadOptionalYamlFile(
-    implementationPath,
-    ImplementationConfigSchema
-  );
-
-  return {
-    ...(implementation === undefined
-      ? {}
-      : { implementation: implementation.implementation })
-  };
-}
-
-function workflowIdFromRoute(
-  invocation: Invocation,
-  routing: RoutingConfig,
-  dependencies: ConfiguredWorkflowRunnerDependencies
-): string {
-  const routeInvocation = dependencies.routeInvocation ?? defaultRouteInvocation;
-  const target: RouteTarget = routeInvocation(invocation, routing);
-
-  return target.id;
-}
-
-async function loadConfiguredWorkflow(
-  workflowsRoot: string,
-  workflowId: string
-) {
-  try {
-    return await loadWorkflowDefinition(workflowsRoot, workflowId);
-  } catch (cause) {
-    throw configuredWorkflowError(
-      `Failed to load workflow configuration: ${workflowId}`,
-      "workflow_config_read_failed",
-      cause
-    );
-  }
-}
-
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function resolveConfiguredDirectoryRoot(
-  configRoot: string,
-  configuredRoot: string | undefined,
-  directoryName: "agents" | "workflows"
-): Promise<string> {
-  if (configuredRoot !== undefined) {
-    return configuredRoot;
-  }
-
-  const configRelativeRoot = path.join(configRoot, directoryName);
-  if (await pathExists(configRelativeRoot)) {
-    return configRelativeRoot;
-  }
-
-  return directoryName;
-}
-
 function topologicalNodes(nodes: WorkflowNode[]): WorkflowNode[] {
   const remaining = new Map(nodes.map((node) => [node.id, node]));
   const completed = new Set<string>();
@@ -324,15 +208,6 @@ function finalReportFrom(output: unknown): JsonValue | undefined {
   return report;
 }
 
-function artifactRootForWorkflow(root: string, workflowId: string): string {
-  assertSafeSegment(workflowId);
-  return path.join(root, workflowId);
-}
-
-function createRunNonce(): string {
-  return randomBytes(4).toString("hex");
-}
-
 async function writeJsonBestEffort(
   artifactStore: ArtifactStore,
   name: string,
@@ -344,105 +219,6 @@ async function writeJsonBestEffort(
   } catch (error) {
     return error;
   }
-}
-
-async function createRunObservability({
-  artifactStore,
-  run,
-  workflowId,
-  observabilityConfig,
-  sinks
-}: {
-  artifactStore: ArtifactStore;
-  run: RunIdentity;
-  workflowId: string;
-  observabilityConfig: WorkflowObservabilityConfig;
-  sinks: LunaObservabilitySink[];
-}): Promise<{
-  observability: LunaObservability;
-  summary: ObservabilitySummary;
-}> {
-  const jsonlSink = await createJsonlEventSink(artifactStore);
-  const summary = createObservabilitySummary({
-    runId: run.run_id,
-    workflowId
-  });
-  const observability = createLunaObservability({
-    run: {
-      id: run.run_id,
-      flueRunId: run.flue_run_id,
-      attempt: run.attempt
-    },
-    workflow: { id: workflowId },
-    sinks: createObservabilitySinks({
-      config: observabilityConfig,
-      jsonlSink,
-      flueLogSinks: sinks
-    })
-  });
-
-  await writeSummaryBestEffort(artifactStore, summary);
-
-  return { observability, summary };
-}
-
-async function ensureFailureArtifactStore({
-  artifactStore,
-  Store,
-  configs,
-  run,
-  makeRunIdentity,
-  invocation,
-  workflowId,
-  attempt,
-  date,
-  flueRunId,
-  nonce
-}: {
-  artifactStore?: ArtifactStore;
-  Store: typeof ArtifactStore;
-  configs: { app: AppConfig };
-  run?: RunIdentity;
-  makeRunIdentity: (
-    invocation: Invocation,
-    options: RunIdentityOptions
-  ) => RunIdentity;
-  invocation: Invocation;
-  workflowId?: string;
-  attempt: number;
-  date: Date;
-  flueRunId?: string;
-  nonce: string;
-}): Promise<{
-  artifactStore: ArtifactStore;
-  run: RunIdentity;
-  workflowId: string;
-}> {
-  if (artifactStore !== undefined && run !== undefined) {
-    return { artifactStore, run, workflowId: run.workflow_id };
-  }
-
-  const failureWorkflowId = workflowId ?? "_failed";
-  const failureRun = makeRunIdentity(invocation, {
-    workflowId: failureWorkflowId,
-    attempt,
-    date,
-    flueRunId,
-    nonce
-  });
-  const failureArtifactStore = new Store(
-    artifactRootForWorkflow(configs.app.artifacts.root, failureWorkflowId),
-    failureRun.run_id
-  );
-  await failureArtifactStore.initializeRunDirectory();
-  await failureArtifactStore.writeJson("invocation.json", invocation);
-  await failureArtifactStore.writeJson("run.json", failureRun);
-
-  return {
-    artifactStore: failureArtifactStore,
-    run: failureRun,
-    workflowId: failureWorkflowId
-  };
 }
 
 export async function runConfiguredWorkflow({
@@ -464,17 +240,6 @@ export async function runConfiguredWorkflow({
   const Store = dependencies.ArtifactStore ?? ArtifactStore;
   const date = dependencies.now?.() ?? new Date();
   const nonce = (nonceFactory ?? createRunNonce)();
-  const modelProfiles = resolveModelProfiles(configs.models);
-  const resolvedAgentsRoot = await resolveConfiguredDirectoryRoot(
-    configRoot,
-    agentsRoot,
-    "agents"
-  );
-  const resolvedWorkflowsRoot = await resolveConfiguredDirectoryRoot(
-    configRoot,
-    workflowsRoot,
-    "workflows"
-  );
   const resolveRepository =
     dependencies.resolveRepository ?? defaultResolveRepository;
   const cleanupWorktree =
@@ -497,38 +262,31 @@ export async function runConfiguredWorkflow({
   let workflowObservabilityConfig = defaultWorkflowObservabilityConfig;
 
   try {
-    workflowId = workflowIdFromRoute(
+    const bootstrap = await bootstrapConfiguredWorkflowRun({
       invocation,
-      configs.routing,
-      dependencies
-    );
-    const workflow = await loadConfiguredWorkflow(
-      resolvedWorkflowsRoot,
-      workflowId
-    );
-    workflowObservabilityConfig = workflow.observability;
-    workflowMode = workflow.mode;
-    run = makeRunIdentity(invocation, {
-      workflowId,
+      configRoot,
+      workflowsRoot,
+      agentsRoot,
+      flueRunId,
+      observabilitySinks,
+      dependencies: {
+        createRunIdentity: makeRunIdentity,
+        routeInvocation: dependencies.routeInvocation,
+        ArtifactStore: Store
+      },
       attempt,
       date,
-      flueRunId,
-      nonce
+      nonce,
+      configs
     });
-    artifactStore = new Store(
-      artifactRootForWorkflow(configs.app.artifacts.root, workflowId),
-      run.run_id
-    );
-    await artifactStore.initializeRunDirectory();
-    await artifactStore.writeJson("invocation.json", invocation);
-    await artifactStore.writeJson("run.json", run);
-    ({ observability, summary } = await createRunObservability({
-      artifactStore,
-      run,
-      workflowId,
-      observabilityConfig: workflowObservabilityConfig,
-      sinks: observabilitySinks
-    }));
+    const { workflow, modelProfiles, resolvedAgentsRoot } = bootstrap;
+    workflowId = bootstrap.workflowId;
+    workflowObservabilityConfig = bootstrap.workflowObservabilityConfig;
+    workflowMode = workflow.mode;
+    run = bootstrap.run;
+    artifactStore = bootstrap.artifactStore;
+    observability = bootstrap.observability;
+    summary = bootstrap.summary;
     await observability.emit(runStartedEvent(observability.eventContext("info")));
     await observability.emit(
       customEvent({
@@ -538,10 +296,7 @@ export async function runConfiguredWorkflow({
       })
     );
 
-    repository = resolveRepository(
-      invocation,
-      configs.repositories.repositories
-    );
+    repository = resolveRepository(invocation, configs.repositories.repositories);
     const configuredLockRoot = configs.app.locks?.root ?? ".luna/locks";
     const runtimeRoot = projectRoot ?? process.cwd();
     const lockRoot = path.isAbsolute(configuredLockRoot)
@@ -695,6 +450,7 @@ export async function runConfiguredWorkflow({
       ...(isWorkspaceRecord(state.workspace) ? { workspace: state.workspace } : {})
     };
   } catch (error) {
+    workflowId = workflowId ?? (error as { workflowId?: string }).workflowId;
     const failedWorkspace = (error as { workspaceRecord?: unknown })
       .workspaceRecord;
     if (isWorkspaceRecord(failedWorkspace)) {

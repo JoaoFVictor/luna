@@ -6,7 +6,7 @@ import type { CreatedAgent } from "@flue/runtime";
 import type {
   ConfiguredWorkflowRunnerDependencies,
   RunConfiguredWorkflowOptions
-} from "../../src/core/configured-workflow-runner.js";
+} from "../../src/core/configured-workflow/runner.js";
 import { gitInvocation } from "../fixtures/git-repo.js";
 import {
   cleanupFlueMocks,

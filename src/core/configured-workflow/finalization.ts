@@ -1,15 +1,15 @@
-import { cleanup as defaultCleanupWorktree } from "./git-worktree-manager.js";
-import { lifecycleEvidenceFromSchedulerState } from "./write-mode/lifecycle.js";
-import { workspaceLifecycleDecision } from "./write-mode/workspace-lifecycle.js";
-import type { ArtifactStore } from "./artifact-store.js";
-import type { SchedulerLockManager } from "./workflow-scheduler.js";
+import { cleanup as defaultCleanupWorktree } from "../git-worktree-manager.js";
+import { lifecycleEvidenceFromSchedulerState } from "../write-mode/lifecycle.js";
+import { workspaceLifecycleDecision } from "../write-mode/workspace-lifecycle.js";
+import type { ArtifactStore } from "../artifact-store.js";
+import type { SchedulerLockManager } from "../workflow-scheduler.js";
 import type {
   AppConfig,
   RepositoryConfig,
   RuntimeConfigState,
   WorkspaceRecord
-} from "./types.js";
-import { configuredWorkflowError } from "./configured-workflow-errors.js";
+} from "../types.js";
+import { configuredWorkflowError } from "../configured-workflow-errors.js";
 
 export async function finalizeFailureWorkspace({
   artifactStore,

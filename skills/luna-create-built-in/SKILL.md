@@ -27,8 +27,8 @@ Most built-ins need no metadata.
 - `deferredLifecycle: "final_report"`: final report step runs after workspace
   preserve/cleanup decision.
 
-Do not add name checks to `configured-workflow-runner.ts`; runner behavior comes
-from metadata.
+Do not add name checks to `src/core/configured-workflow/runner.ts`; runner
+behavior comes from metadata.
 
 ## Registration
 

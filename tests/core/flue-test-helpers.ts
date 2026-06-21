@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { vi } from "vitest";
 import type { CreatedAgent } from "@flue/runtime";
-import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow-runner.js";
+import type { RunConfiguredWorkflowOptions } from "../../src/core/configured-workflow/runner.js";
 import type { RunIdentity } from "../../src/core/types.js";
 
 export type PromptCall = {
@@ -72,8 +72,8 @@ export async function importWorkflowWithRunnerMock(
   registerConfiguredPiOAuthProviders: () => Promise<void> = async () => {}
 ): Promise<{ run: (ctx: never) => Promise<unknown> }> {
   vi.resetModules();
-  vi.doMock("../../src/core/configured-workflow-runner.js", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../src/core/configured-workflow-runner.js")>()),
+  vi.doMock("../../src/core/configured-workflow/runner.js", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../../src/core/configured-workflow/runner.js")>()),
     runConfiguredWorkflow
   }));
   vi.doMock("../../src/core/agent-runtime/flue/pi-auth.js", async (importOriginal) => ({
@@ -87,7 +87,7 @@ export async function importWorkflowWithRunnerMock(
 }
 
 export function cleanupFlueMocks(): void {
-  vi.doUnmock("../../src/core/configured-workflow-runner.js");
+  vi.doUnmock("../../src/core/configured-workflow/runner.js");
   vi.doUnmock("../../src/core/agent-runtime/flue/capabilities.js");
   vi.doUnmock("../../src/core/agents/loop-runner.js");
   vi.doUnmock("../../src/core/agent-runtime/flue/pi-auth.js");

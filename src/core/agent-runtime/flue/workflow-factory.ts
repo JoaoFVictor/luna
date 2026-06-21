@@ -2,7 +2,7 @@ import type { FlueContext } from "@flue/runtime";
 import {
   runConfiguredWorkflow,
   type ConfiguredWorkflowResult
-} from "../../configured-workflow-runner.js";
+} from "../../configured-workflow/runner.js";
 import { loadMcpConfig } from "../../mcp-config.js";
 import type { Invocation } from "../../types.js";
 import { createFlueAgentRunner } from "./runner.js";

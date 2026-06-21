@@ -84,8 +84,8 @@ export const finalSomethingReportBuiltIn = defineBuiltInStep({
 });
 ```
 
-Do not add name checks to `configured-workflow-runner.ts`. Runner behavior must
-come from metadata.
+Do not add name checks to `src/core/configured-workflow/runner.ts`. Runner
+behavior must come from metadata.
 
 ## 4. Register it in the catalog
 

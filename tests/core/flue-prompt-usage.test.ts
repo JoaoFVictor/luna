@@ -9,7 +9,7 @@ import {
   createObservabilitySummary,
   type ObservabilitySummary
 } from "../../src/core/observability/summary.js";
-import type { RunAgentStepOptions } from "../../src/core/configured-workflow-runner.js";
+import type { RunAgentStepOptions } from "../../src/core/configured-workflow/runner.js";
 import type { LunaEvent } from "../../src/core/observability/events.js";
 import { runFlueAgentStep } from "../../src/core/agent-runtime/flue/runner.js";
 

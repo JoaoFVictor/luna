@@ -653,65 +653,65 @@ describe("refactor guardrails", () => {
     }> = [
       {
         name: "scheduleResult.steps in lifecycle helper",
-        relativePath: "src/core/configured-workflow-runner.ts",
+        relativePath: "src/core/configured-workflow/runner.ts",
         content: [
           "function inferWorkspaceDecision(scheduleResult: { steps: Record<string, unknown> }) {",
           "  return scheduleResult.steps;",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow-runner.ts:2 reads scheduler step output maps"
+          "src/core/configured-workflow/runner.ts:2 reads scheduler step output maps"
       },
       {
         name: "state.steps lifecycle id",
-        relativePath: "src/core/configured-workflow-runner.ts",
+        relativePath: "src/core/configured-workflow/runner.ts",
         content: [
           "function lifecycleProbe(state: { steps: Record<string, unknown> }) {",
           "  return state.steps.acceptance;",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow-runner.ts:2 indexes lifecycle step output maps"
+          "src/core/configured-workflow/runner.ts:2 indexes lifecycle step output maps"
       },
       {
         name: "steps lifecycle id",
-        relativePath: "src/core/configured-workflow-runner.ts",
+        relativePath: "src/core/configured-workflow/runner.ts",
         content: [
           "function lifecycleProbe(steps: Record<string, unknown>) {",
           "  return steps[\"commit\"];",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow-runner.ts:2 indexes lifecycle step output maps"
+          "src/core/configured-workflow/runner.ts:2 indexes lifecycle step output maps"
       },
       {
         name: "raw output bracket status",
-        relativePath: "src/core/configured-workflow-runner.ts",
+        relativePath: "src/core/configured-workflow/runner.ts",
         content: [
           "function lifecycleProbe(output: Record<string, unknown>) {",
           "  return output[\"status\"];",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow-runner.ts:2 reads raw node output for lifecycle"
+          "src/core/configured-workflow/runner.ts:2 reads raw node output for lifecycle"
       },
       {
         name: "raw output property validation",
-        relativePath: "src/core/configured-workflow-runner.ts",
+        relativePath: "src/core/configured-workflow/runner.ts",
         content: [
           "function lifecycleProbe(output: Record<string, unknown>) {",
           "  return output.final_validation;",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow-runner.ts:2 reads raw node output for lifecycle"
+          "src/core/configured-workflow/runner.ts:2 reads raw node output for lifecycle"
       },
       {
         name: "implementation_lifecycle marker",
-        relativePath: "src/core/configured-workflow-runner.ts",
+        relativePath: "src/core/configured-workflow/runner.ts",
         content: "const marker = \"implementation_lifecycle\";",
         expectedViolation:
-          "src/core/configured-workflow-runner.ts:1 reintroduces agent/loop lifecycle metadata"
+          "src/core/configured-workflow/runner.ts:1 reintroduces agent/loop lifecycle metadata"
       },
       {
         name: "raw result output",
@@ -824,7 +824,7 @@ describe("refactor guardrails", () => {
     const checkedFiles = [
       "src/core/workflow-definition.ts",
       "src/core/workflow-scheduler.ts",
-      "src/core/configured-workflow-runner.ts"
+      "src/core/configured-workflow/runner.ts"
     ];
 
     for (const relativePath of checkedFiles) {

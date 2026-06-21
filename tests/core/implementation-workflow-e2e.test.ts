@@ -2,7 +2,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { runConfiguredWorkflow } from "../../src/core/configured-workflow-runner.js";
+import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import {
   prepareImplementationWorktree,
   type ImplementationWorktreeRecord
