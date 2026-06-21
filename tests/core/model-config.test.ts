@@ -108,7 +108,7 @@ describe("model config", () => {
     );
   });
 
-  it("throws model_spec_invalid when a model fallback default lacks a provider", () => {
+  it("throws model_spec_invalid when a model fallback reference lacks a provider", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
         default: {
