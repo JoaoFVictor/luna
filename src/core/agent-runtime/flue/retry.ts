@@ -48,6 +48,16 @@ export function classifyFluePromptError(error: unknown): RetryErrorCode {
   return "unknown_failure";
 }
 
+export function fluePromptFailureHint(error: unknown): string | undefined {
+  const message = errorMessage(error);
+
+  if (message.includes("WebSocket closed 1006")) {
+    return "WebSocket transport closed abnormally. For Codex/Pi model profiles, configure transport: sse to avoid replaying long prompts over an unstable WebSocket connection.";
+  }
+
+  return undefined;
+}
+
 export function readOnlyFluePromptRetryPolicy(
   config: RetryPolicyConfig | undefined
 ): RetryPolicy {

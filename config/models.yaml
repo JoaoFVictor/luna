@@ -2,12 +2,16 @@ model_profiles:
   default:
     model: ${DEFAULT_MODEL:-openai-codex/gpt-5.4-mini}
     reasoning_effort: medium
+    transport: sse
   deep:
     model: ${DEEP_MODEL:-openai-codex/gpt-5.4}
     reasoning_effort: high
+    transport: sse
   fast:
     model: ${FAST_MODEL:-openai-codex/gpt-5.3-codex-spark}
     reasoning_effort: low
+    transport: sse
   balanced:
     model: ${BALANCED_MODEL:-openai-codex/gpt-5.4-mini}
     reasoning_effort: medium
+    transport: sse

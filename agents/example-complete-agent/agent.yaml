@@ -1,0 +1,20 @@
+id: example-complete-agent
+description: Example agent that demonstrates every currently runnable Luna agent configuration field.
+model_profile: balanced
+mode: trusted_host_local_write
+instructions_file: instructions.md
+output_schema: output.schema.json
+context:
+  files:
+    - context.md
+skills:
+  - ../../skills/luna-project-map/SKILL.md
+  - ../../skills/luna-review-change/SKILL.md
+tools:
+  - repository.status
+  - repository.diff-summary
+subagents:
+  - change-reviewer
+  - id: change-acceptance-reviewer
+    policy:
+      mode: read_only

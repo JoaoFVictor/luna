@@ -6,12 +6,16 @@ import {
   isBuiltInStepName,
   runBuiltInStep
 } from "../../src/core/providers/built-ins.js";
-import { builtInStepNames as metadataBuiltInStepNames } from "../../src/core/built-ins/catalog.js";
+import {
+  builtInStepNames as metadataBuiltInStepNames,
+  createBuiltInStepCatalog
+} from "../../src/core/built-ins/catalog.js";
 import {
   defineBuiltInRegistry,
   defineBuiltInStep
 } from "../../src/core/built-ins/registry.js";
 import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";
+import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
 describe("built-in step registry", () => {
   it("resolves registered built-ins by name", async () => {
@@ -50,6 +54,28 @@ describe("built-in step registry", () => {
     expect(() => defineBuiltInRegistry([first, second])).toThrowError(
       expect.objectContaining({ code: "built_in_duplicate" })
     );
+  });
+
+  it("passes observability summary through the built-in catalog", async () => {
+    const summary = createObservabilitySummary({
+      runId: "run-1",
+      workflowId: "code-review"
+    });
+    const sampleBuiltIn = defineBuiltInStep({
+      name: "sample_step",
+      run: async ({ observabilitySummary: receivedSummary }) => ({
+        same_summary: receivedSummary === summary
+      })
+    });
+    const catalog = createBuiltInStepCatalog([sampleBuiltIn]);
+
+    await expect(
+      catalog.runBuiltInStep({
+        uses: "sample_step",
+        state: { invocation: {}, steps: {} },
+        observabilitySummary: summary
+      })
+    ).resolves.toEqual({ same_summary: true });
   });
 
   it("exports default built-in names from the catalog", () => {

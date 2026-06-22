@@ -132,7 +132,7 @@ export const validateCodeReviewFindingsBuiltIn = defineBuiltInStep({
 export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
   name: "final_code_review_report",
   metadata: finalReportMetadata,
-  async run({ state, input, dependencies = {} }) {
+  async run({ state, input, dependencies = {}, observabilitySummary }) {
     const buildFinalReportJson =
       dependencies.buildFinalReportJson ?? defaultBuildFinalReportJson;
     const buildFinalReportMarkdown =
@@ -149,12 +149,18 @@ export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
       json: buildFinalReportJson({
         acceptance,
         findings,
-        workspace: state.workspace as WorkspaceRecord | undefined
+        workspace: state.workspace as WorkspaceRecord | undefined,
+        ...(observabilitySummary === undefined
+          ? {}
+          : { summary: observabilitySummary })
       }),
       markdown: buildFinalReportMarkdown({
         invocation,
         findings,
-        acceptance
+        acceptance,
+        ...(observabilitySummary === undefined
+          ? {}
+          : { summary: observabilitySummary })
       })
     };
   }

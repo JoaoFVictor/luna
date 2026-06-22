@@ -261,7 +261,21 @@ Core config lives in `config/`:
   `implementation` workflow.
 
 `config/models.yaml` uses generic model profiles such as `default`, `deep`,
-`fast`, and `balanced`. Agents reference these profiles by name.
+`fast`, and `balanced`. Agents reference these profiles by name. A model
+profile may also set a runtime transport:
+
+```yaml
+model_profiles:
+  deep:
+    model: ${DEEP_MODEL:-openai-codex/gpt-5.4}
+    reasoning_effort: high
+    transport: sse
+```
+
+`transport` is optional and currently projected by the Flue/Pi adapter. Use
+`sse` for `openai-codex/...` profiles when WebSocket connections close
+abnormally during long prompts. Supported values are `auto`, `sse`, and
+`websocket`.
 
 `config/app.yaml` sets the shared artifact root.
 
@@ -331,7 +345,10 @@ retry:
 Read-only agents retry transient transport, timeout, rate-limit, and provider
 availability failures by default. Trusted write-mode agent loops reject
 `max_attempts > 1`, because a dropped connection may happen after local file
-writes. Let the agent loop inspect the workspace, validation, and diff instead.
+writes. If Luna reports `WebSocket closed 1006` for a Codex model, prefer
+setting that model profile to `transport: sse`; retry can replay a read-only
+prompt, but it does not repair an unstable transport. Let the agent loop inspect
+the workspace, validation, and diff instead.
 
 `config/app.yaml` may tune local lock storage and stale-lock recovery:
 
@@ -405,10 +422,12 @@ Input adapters:
 Workflows:
 
 - `code-review`
+- `example-complete-agent`
 - `implementation`
 
 Agents:
 
+- `example-complete-agent`
 - `review-planner`
 - `change-reviewer`
 - `change-acceptance-reviewer`

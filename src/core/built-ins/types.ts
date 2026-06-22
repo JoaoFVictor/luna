@@ -16,6 +16,7 @@ import type {
 } from "../change-request/contracts.js";
 import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
 import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
+import type { ObservabilitySummary } from "../observability/summary.js";
 import type { WorkflowState } from "../workflow/state.js";
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -54,6 +55,7 @@ export type BuiltInStepRunOptions = {
   readonly state: WorkflowState;
   readonly input?: Record<string, unknown>;
   readonly dependencies?: BuiltInStepDependencies;
+  readonly observabilitySummary?: ObservabilitySummary;
 };
 
 export type BuiltInStep<Name extends string = string> = {
@@ -97,11 +99,13 @@ export type BuiltInStepDependencies = {
     acceptance: AcceptanceDecision;
     findings: readonly Finding[];
     workspace?: WorkspaceRecord;
+    summary?: ObservabilitySummary;
   }) => unknown;
   buildFinalReportMarkdown?: (input: {
     invocation: Invocation;
     findings: readonly Finding[];
     acceptance: AcceptanceDecision;
+    summary?: ObservabilitySummary;
   }) => string;
   prepareImplementationWorktree?: (input: {
     subject: {
@@ -162,6 +166,7 @@ export type BuiltInStepDependencies = {
     push: PushBranchArtifact;
     changeRequest: ChangeRequestArtifact;
     trustedHostLocal: boolean;
+    summary?: ObservabilitySummary;
   }) => unknown;
   buildImplementationReportMarkdown?: (input: {
     invocation: Invocation;
@@ -177,5 +182,6 @@ export type BuiltInStepDependencies = {
     push: PushBranchArtifact;
     changeRequest: ChangeRequestArtifact;
     trustedHostLocal: boolean;
+    summary?: ObservabilitySummary;
   }) => string;
 };

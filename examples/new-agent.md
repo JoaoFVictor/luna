@@ -18,6 +18,9 @@ agents/my-agent/
 
 ## 2. Add `agent.yaml`
 
+For a runnable reference that shows every currently configured field together,
+see `agents/example-complete-agent/`.
+
 ```yaml
 id: my-agent
 description: Explains what this agent is responsible for.
@@ -42,6 +45,8 @@ Rules:
 
 Use capability-based model profiles such as `default`, `deep`, `fast`, and
 `balanced`. Avoid role-based profile names like `planner` or `reviewer`.
+Runtime transport, when needed, belongs in `config/models.yaml` on the selected
+model profile, not in `agent.yaml`.
 
 ## 3. Add `instructions.md`
 

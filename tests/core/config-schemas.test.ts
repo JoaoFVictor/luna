@@ -60,6 +60,34 @@ describe("config zod schemas", () => {
     expect(ModelsConfigSchema.parse(validModelsConfig)).toEqual(validModelsConfig);
   });
 
+  it("accepts an optional model transport strategy", () => {
+    const config = {
+      model_profiles: {
+        deep: {
+          model: "openai-codex/gpt-5.4",
+          reasoning_effort: "high",
+          transport: "sse"
+        }
+      }
+    };
+
+    expect(ModelsConfigSchema.parse(config)).toEqual(config);
+  });
+
+  it("rejects unsupported model transport strategies", () => {
+    expect(() =>
+      ModelsConfigSchema.parse({
+        model_profiles: {
+          deep: {
+            model: "openai-codex/gpt-5.4",
+            reasoning_effort: "high",
+            transport: "http2"
+          }
+        }
+      })
+    ).toThrow();
+  });
+
   it("accepts the planned repositories config shape", () => {
     expect(RepositoriesConfigSchema.parse(plannedRepositoriesConfig)).toEqual(
       plannedRepositoriesConfig

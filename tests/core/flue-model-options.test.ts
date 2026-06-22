@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { toFlueModelOptions } from "../../src/core/agent-runtime/flue/model-options.js";
+import {
+  toFlueModelOptions,
+  toFluePromptOptions
+} from "../../src/core/agent-runtime/flue/model-options.js";
 
 describe("Flue model options", () => {
   it.each([
@@ -17,4 +20,31 @@ describe("Flue model options", () => {
       ).toEqual({ model, thinkingLevel: reasoningEffort });
     }
   );
+
+  it("does not pass transport to Flue runtime model options", () => {
+    expect(
+      toFlueModelOptions({
+        model: "openai-codex/gpt-5.4",
+        reasoning_effort: "high",
+        transport: "sse"
+      })
+    ).toEqual({
+      model: "openai-codex/gpt-5.4",
+      thinkingLevel: "high"
+    });
+  });
+
+  it("passes configured transport through to prompt options", () => {
+    expect(
+      toFluePromptOptions({
+        model: "openai-codex/gpt-5.4",
+        reasoning_effort: "high",
+        transport: "sse"
+      })
+    ).toEqual({
+      model: "openai-codex/gpt-5.4",
+      thinkingLevel: "high",
+      transport: "sse"
+    });
+  });
 });

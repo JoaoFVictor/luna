@@ -130,7 +130,11 @@ describe("read-only Flue agent runner", () => {
             input: {},
             artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
-          model: { model: "openai/planner-test", reasoning_effort: "medium" },
+          model: {
+            model: "openai/planner-test",
+            reasoning_effort: "medium",
+            transport: "sse"
+          },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -232,6 +236,7 @@ describe("read-only Flue agent runner", () => {
             ? initialized.model
             : JSON.stringify(initialized.model));
         initializedConfigs.set(configKey, initialized);
+        expect(initialized).not.toHaveProperty("transport");
 
         return {
           session: vi.fn(async () => ({
@@ -280,7 +285,8 @@ describe("read-only Flue agent runner", () => {
     expect(promptCalls.map((call) => call.options)).toEqual([
       expect.objectContaining({
         model: "openai/planner-test",
-        thinkingLevel: "medium"
+        thinkingLevel: "medium",
+        transport: "sse"
       }),
       expect.objectContaining({
         model: "openai/reviewer-test",
@@ -784,6 +790,16 @@ describe("read-only Flue agent runner", () => {
     const retryEvents = events.filter(
       (event) => event.type === "luna.agent_step.retrying"
     );
+    const failedEvents = events.filter(
+      (event) => event.type === "luna.prompt.failed"
+    );
+    expect(failedEvents[0]).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          hint: "WebSocket transport closed abnormally. For Codex/Pi model profiles, configure transport: sse to avoid replaying long prompts over an unstable WebSocket connection."
+        })
+      })
+    );
     expect(retryEvents).toHaveLength(2);
     expect(retryEvents[0]).toEqual(
       expect.objectContaining({
@@ -795,7 +811,8 @@ describe("read-only Flue agent runner", () => {
           next_attempt: 2,
           max_attempts: 3,
           retry_delay_ms: expect.any(Number),
-          error_code: "transient_transport_failure"
+          error_code: "transient_transport_failure",
+          hint: "WebSocket transport closed abnormally. For Codex/Pi model profiles, configure transport: sse to avoid replaying long prompts over an unstable WebSocket connection."
         })
       })
     );

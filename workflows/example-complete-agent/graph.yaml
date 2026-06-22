@@ -1,0 +1,118 @@
+nodes:
+  - id: preflight
+    type: built_in
+    uses: preflight
+    artifacts:
+      - path: preflight.json
+        source: $.steps.preflight
+        format: json
+
+  - id: workspace
+    type: built_in
+    uses: prepare_worktree
+    artifacts:
+      - path: workspace.json
+        source: $.steps.workspace
+        format: json
+    after:
+      - preflight
+
+  - id: context
+    type: built_in
+    uses: collect_context
+    artifacts:
+      - path: context-intake.json
+        source: $.steps.context
+        format: json
+    input:
+      agents:
+        - example-complete-agent
+        - change-reviewer
+        - change-acceptance-reviewer
+    after:
+      - workspace
+
+  - id: example_run
+    type: agent_loop
+    agent: example-complete-agent
+    output_schema: example_complete_agent_result
+    artifacts:
+      - path: example-attempts.json
+        source: $.steps.example_run.attempts
+        format: json
+      - path: validation.json
+        source: $.steps.example_run.validation
+        format: json
+      - path: example-result.json
+        source: $.steps.example_run.result
+        format: json
+      - path: example-summary.md
+        source: $.steps.example_run.result.summary
+        format: markdown
+    input:
+      invocation: $.invocation
+      repository: $.repository
+      run: $.run
+      implementation_config: $.config.implementation
+      context: $.steps.context
+      workspace: $.workspace
+      goal: Demonstrate a trusted local write agent loop using the configured repository context and read-only reviewer subagents. Keep any edits minimal and explain what was exercised.
+    sandbox:
+      type: trusted_host_local
+      cwd: $.workspace.path
+      env_allowlist: []
+    validation:
+      commands:
+        - cmd: git
+          args:
+            - status
+            - --short
+      max_output_bytes: 200000
+    repair:
+      attempts: 0
+    after:
+      - context
+
+  - id: worktree_diff
+    type: built_in
+    uses: collect_worktree_diff
+    artifacts:
+      - path: worktree-diff.json
+        source: $.steps.worktree_diff
+        format: json
+    after:
+      - example_run
+
+  - id: example_acceptance
+    type: agent
+    agent: change-acceptance-reviewer
+    output_schema: acceptance_decision
+    retry:
+      enabled: true
+      max_attempts: 2
+      initial_delay_ms: 1000
+      max_delay_ms: 10000
+      backoff_multiplier: 2
+      jitter: full
+      retryable_error_codes:
+        - transient_transport_failure
+        - timeout
+        - provider_unavailable
+        - rate_limited
+    artifacts:
+      - path: example-acceptance.json
+        source: $.steps.example_acceptance
+        format: json
+      - path: example-acceptance-summary.md
+        source: $.steps.example_acceptance.summary
+        format: markdown
+        required: false
+    input:
+      invocation: $.invocation
+      repository: $.repository
+      run: $.run
+      context: $.steps.context
+      example_result: $.steps.example_run
+      worktree_diff: $.steps.worktree_diff
+    after:
+      - worktree_diff

@@ -156,7 +156,11 @@ describe("trusted_host_local Flue agent loop runner", () => {
             },
             repair: { attempts: 0 }
           },
-          model: { model: "openai/implementer-test", reasoning_effort: "high" },
+          model: {
+            model: "openai/implementer-test",
+            reasoning_effort: "high",
+            transport: "sse"
+          },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -205,6 +209,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
           model: "openai/implementer-test",
           sandbox: { __flueLocalSandbox: true }
         });
+        expect(initialized).not.toHaveProperty("transport");
         const initializedInstructions = initialized.instructions;
         expect(initializedInstructions).toEqual(expect.any(String));
         if (initializedInstructions === undefined) {
@@ -274,7 +279,8 @@ describe("trusted_host_local Flue agent loop runner", () => {
     expect(promptCalls[0].options).toEqual(
       expect.objectContaining({
         model: "openai/implementer-test",
-        thinkingLevel: "high"
+        thinkingLevel: "high",
+        transport: "sse"
       })
     );
     expect(promptCalls[0].text).toContain("Fix checkout validation");
