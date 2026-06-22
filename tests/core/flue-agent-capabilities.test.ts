@@ -7,6 +7,7 @@ import type { AgentDefinition } from "../../src/core/agents/definition.js";
 import { resolveFlueMcpTools } from "../../src/core/agent-runtime/flue/mcp-capabilities.js";
 import { resolveFlueAgentCapabilities } from "../../src/core/agent-runtime/flue/capabilities.js";
 import type { McpConfig } from "../../src/core/config/mcp.js";
+import type { ContextIntake } from "../../src/core/context/intake.js";
 import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
@@ -198,6 +199,63 @@ describe("flue agent capabilities", () => {
       expect(String(capabilities.subagents[0]?.instructions)).toContain(
         "Review the diff."
       );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("threads collected context into declared subagent instructions", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const collectedContext: ContextIntake = {
+      kind: "luna.collect_context.v1",
+      repository: {
+        root: "/repo",
+        configured: ["README.md"],
+        read: [
+          {
+            path: "README.md",
+            bytes: 29,
+            content: "Repository context sentinel.\n"
+          }
+        ],
+        missing: [],
+        skipped: []
+      },
+      agents: [
+        {
+          id: "change-reviewer",
+          root: "/repo/agents/change-reviewer",
+          configured: ["context.md"],
+          read: [
+            {
+              path: "context.md",
+              bytes: 26,
+              content: "Subagent context sentinel.\n"
+            }
+          ],
+          missing: [],
+          skipped: []
+        }
+      ]
+    };
+
+    try {
+      await writeImplementationReviewerFixture(root);
+
+      const capabilities = await resolveFlueAgentCapabilities({
+        agent: { ...agent, subagents: [{ id: "change-reviewer" }] },
+        cwd: "/repo/worktree",
+        agentsRoot: path.join(root, "agents"),
+        modelProfiles: {
+          deep: { model: "test/deep", reasoning_effort: "high" }
+        },
+        context: collectedContext
+      });
+
+      const instructions = String(capabilities.subagents[0]?.instructions);
+      expect(instructions).toContain("Review the diff.");
+      expect(instructions).toContain("Subagent context sentinel.");
+      expect(instructions).toContain("Repository context sentinel.");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

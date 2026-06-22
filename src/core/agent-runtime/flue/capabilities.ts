@@ -13,6 +13,7 @@ import {
 import { sanitizeJsonObject } from "../../observability/sanitize.js";
 import type { ObservabilitySummary } from "../../observability/summary.js";
 import type { WorkflowSubagentPolicy } from "../../agents/subagent-policy.js";
+import type { ContextIntake } from "../../context/intake.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];
@@ -112,7 +113,8 @@ export async function resolveFlueAgentCapabilities({
   observability,
   summary,
   observabilitySummary,
-  workflowSubagentPolicy
+  workflowSubagentPolicy,
+  context
 }: {
   agent: AgentDefinition;
   cwd: string;
@@ -124,6 +126,7 @@ export async function resolveFlueAgentCapabilities({
   summary?: ObservabilitySummary;
   observabilitySummary?: ObservabilitySummary;
   workflowSubagentPolicy?: WorkflowSubagentPolicy;
+  context?: ContextIntake;
 }): Promise<ResolvedFlueAgentCapabilities> {
   try {
     const skills = await Promise.all(
@@ -155,7 +158,8 @@ export async function resolveFlueAgentCapabilities({
         cwd,
         observability,
         summary,
-        observabilitySummary
+        observabilitySummary,
+        context
       });
     }
     const mcp = await resolveFlueMcpTools({

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { resolveFlueSubagentProfiles } from "../../src/core/agent-runtime/flue/subagent-profiles.js";
+import type { ContextIntake } from "../../src/core/context/intake.js";
 import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
@@ -71,6 +72,80 @@ function fakeObservability(): LunaObservability {
 }
 
 describe("flue subagent profiles", () => {
+  it("builds subagent instructions with subagent and repository context", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
+    const context: ContextIntake = {
+      kind: "luna.collect_context.v1",
+      repository: {
+        root: "/repo",
+        configured: ["README.md"],
+        read: [
+          {
+            path: "README.md",
+            bytes: 29,
+            content: "Repository context sentinel.\n"
+          }
+        ],
+        missing: [],
+        skipped: []
+      },
+      agents: [
+        {
+          id: "change-reviewer",
+          root: "/repo/agents/change-reviewer",
+          configured: ["context.md"],
+          read: [
+            {
+              path: "context.md",
+              bytes: 26,
+              content: "Subagent context sentinel.\n"
+            }
+          ],
+          missing: [],
+          skipped: []
+        },
+        {
+          id: "other-agent",
+          root: "/repo/agents/other-agent",
+          configured: ["context.md"],
+          read: [
+            {
+              path: "context.md",
+              bytes: 21,
+              content: "Other agent sentinel.\n"
+            }
+          ],
+          missing: [],
+          skipped: []
+        }
+      ]
+    };
+
+    try {
+      await writeSubagentFixture({ root });
+
+      const profiles = await resolveFlueSubagentProfiles({
+        agentsRoot: root,
+        subagents: [{ id: "change-reviewer" }],
+        modelProfiles: {
+          deep: { model: "test/deep", reasoning_effort: "high" }
+        },
+        context
+      });
+
+      const instructions = String(profiles[0]?.instructions);
+      expect(instructions).toContain("Review the diff.");
+      expect(instructions).toContain("Subagent context sentinel.");
+      expect(instructions).toContain("Repository context sentinel.");
+      expect(instructions.indexOf("# Agent Context")).toBeLessThan(
+        instructions.indexOf("# Repository Context")
+      );
+      expect(instructions).not.toContain("Other agent sentinel.");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("resolves existing Luna agents into Flue subagent profiles", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-subagents-"));
 

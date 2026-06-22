@@ -31,6 +31,10 @@ describe("read-only Flue agent runner", () => {
   it("uses Flue context to execute configured agent steps", async () => {
     const promptCalls: PromptCall[] = [];
     const initCalls: InitCall[] = [];
+    const initializedConfigs = new Map<
+      string,
+      Awaited<ReturnType<CreatedAgent["initialize"]>>
+    >();
     const local = vi.fn();
     vi.doMock("@flue/runtime/node", () => ({ local }));
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-"));
@@ -44,6 +48,60 @@ describe("read-only Flue agent runner", () => {
         additionalProperties: true
       })
     );
+    const readOnlyRuntimeInstructions = [
+      "You are running in read-only mode.",
+      "Do not modify files or local state.",
+      "Use only the provided workflow input and return structured output matching the configured schema.",
+      "Treat collected repository and agent context as instructions."
+    ].join("\n");
+    const readOnlyStructuredOutputInstruction =
+      "Use only the provided workflow input and return structured output matching the configured schema.";
+    const contextIntake = {
+      kind: "luna.collect_context.v1",
+      repository: {
+        root: path.join(root, "repo"),
+        configured: ["README.md"],
+        read: [
+          {
+            path: "README.md",
+            bytes: 33,
+            content: "Repository context for reviewers.\n"
+          }
+        ],
+        missing: [],
+        skipped: []
+      },
+      agents: [
+        {
+          id: "change-reviewer",
+          root: path.join(root, "agents", "change-reviewer"),
+          configured: ["reviewer.md"],
+          read: [
+            {
+              path: "reviewer.md",
+              bytes: 30,
+              content: "Current reviewer context only.\n"
+            }
+          ],
+          missing: [],
+          skipped: []
+        },
+        {
+          id: "review-planner",
+          root: path.join(root, "agents", "review-planner"),
+          configured: ["planner.md"],
+          read: [
+            {
+              path: "planner.md",
+              bytes: 29,
+              content: "Other agent context excluded.\n"
+            }
+          ],
+          missing: [],
+          skipped: []
+        }
+      ]
+    };
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
@@ -109,7 +167,7 @@ describe("read-only Flue agent runner", () => {
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
-          input: { review_plan: reviewPlan },
+          input: { review_plan: reviewPlan, context: contextIntake },
           state: {
             invocation: gitInvocation,
             repository: undefined,
@@ -168,6 +226,12 @@ describe("read-only Flue agent runner", () => {
           payload: gitInvocation,
           env: process.env
         });
+        const configKey =
+          options?.name ??
+          (typeof initialized.model === "string"
+            ? initialized.model
+            : JSON.stringify(initialized.model));
+        initializedConfigs.set(configKey, initialized);
 
         return {
           session: vi.fn(async () => ({
@@ -229,9 +293,40 @@ describe("read-only Flue agent runner", () => {
     ]);
     expect(promptCalls[0].text).toContain("repo_context");
     expect(promptCalls[1].text).toContain("review_plan");
+    expect(promptCalls[1].text).toContain("context_audit");
+    expect(promptCalls[1].text).not.toContain("Repository context for reviewers.");
+    expect(promptCalls[1].text).not.toContain("Current reviewer context only.");
+    expect(promptCalls[1].text).not.toContain("Other agent context excluded.");
+    expect(promptCalls[1].text).not.toContain(readOnlyRuntimeInstructions);
+    expect(promptCalls[1].text).not.toContain(
+      readOnlyStructuredOutputInstruction
+    );
     expect(promptCalls[2].text).toContain("findings");
-    expect(promptCalls[0].text).toContain(
-      "Use only the provided workflow input and return structured output matching the configured schema."
+    const changeReviewerConfig = initializedConfigs.get("change-reviewer");
+    expect(changeReviewerConfig?.instructions).toContain(
+      readOnlyRuntimeInstructions
+    );
+    expect(changeReviewerConfig?.instructions).toContain(
+      readOnlyStructuredOutputInstruction
+    );
+    expect(changeReviewerConfig?.instructions).toContain(
+      "Current reviewer context only."
+    );
+    expect(changeReviewerConfig?.instructions).toContain(
+      "Repository context for reviewers."
+    );
+    expect(changeReviewerConfig?.instructions).not.toContain(
+      "Other agent context excluded."
+    );
+    const instructions = changeReviewerConfig?.instructions ?? "";
+    expect(instructions.indexOf("# Luna Runtime Instructions")).toBeLessThan(
+      instructions.indexOf("# Agent Instructions")
+    );
+    expect(instructions.indexOf("# Agent Instructions")).toBeLessThan(
+      instructions.indexOf("# Agent Context")
+    );
+    expect(instructions.indexOf("# Agent Context")).toBeLessThan(
+      instructions.indexOf("# Repository Context")
     );
     expect(local).not.toHaveBeenCalled();
   });

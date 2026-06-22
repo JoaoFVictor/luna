@@ -57,7 +57,9 @@ repositories:
 
 `provider`, `owner`, and `name` must match the PR URL exactly.
 `context.files` is optional; configured files are audited in
-`context-intake.json` and passed to review agents.
+`context-intake.json` and injected into review agent instructions. They are not
+kept as raw file contents in the agent task payload; the payload contains
+`context_audit` metadata.
 
 For this PR:
 
@@ -96,6 +98,7 @@ Important files:
 
 - `final-report.md`: human-readable review report.
 - `final-report.json`: structured final report.
+- `context-intake.json`: configured repository and agent context audit.
 - `repo-context.json`: changed files and diff context.
 - `review-plan.json`: planner agent output.
 - `code-review-findings.json`: validated review findings.

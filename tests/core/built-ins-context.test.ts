@@ -79,6 +79,7 @@ describe("collect_context built-in", () => {
           input: { agents: ["change-reviewer"] }
         })
       ).resolves.toEqual({
+        kind: "luna.collect_context.v1",
         repository: {
           root: workspace,
           configured: ["AGENTS.md", "README.md", "../outside.md"],

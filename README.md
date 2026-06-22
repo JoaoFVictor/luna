@@ -95,6 +95,14 @@ Each run also writes `context-intake.json` when workflow context is collected.
 It records which configured repository and agent context files were read,
 missing, or skipped.
 
+When a workflow passes `context: $.steps.context` to an agent, Luna promotes
+those configured files into runtime instructions instead of leaving the raw file
+contents in the task JSON. The order is Luna runtime instructions, the agent's
+`instructions.md`, matching `agent.yaml context.files`, repository
+`context.files`, then the normal workflow input. The task payload keeps a
+`context_audit` summary so runs stay inspectable without duplicating the raw
+guidance text.
+
 For complete walkthroughs, see:
 
 - [Run a GitHub PR review](examples/review-pr.md)
@@ -161,6 +169,12 @@ IDs resolved through Luna's TypeScript catalog and materialized for the current
 agent runtime. Workflows do not declare tools directly; the workflow chooses
 agents, and each agent brings its own capabilities.
 
+Agents may also declare `context.files` in `agent.yaml`. These files are
+agent-owned instruction context, not workflow data. A workflow must run
+`collect_context` and pass `context: $.steps.context` to the agent or
+`agent_loop`; Luna then injects only the current agent's configured context
+before repository context and sends `context_audit` in the task input.
+
 ## MCP Capabilities
 
 Agents can opt into configured MCP servers:
@@ -202,6 +216,11 @@ The referenced ID must resolve to a valid Luna agent directory under
 `instructions_file` and `output_schema`, and a configured `model_profile`.
 Flue subagents run inside the parent agent session. They are not workflow graph
 nodes and do not create separate Luna artifacts automatically.
+
+Subagent profiles use the same instruction hierarchy as top-level agents. When
+the parent workflow passes collected context, Luna filters agent context by the
+subagent id, appends repository context after it, and does not pass raw context
+file contents as subagent task data.
 
 Subagents are read-only Flue profiles by default. Luna uses the referenced
 agent's description, instructions, model profile, and skills. Read-only

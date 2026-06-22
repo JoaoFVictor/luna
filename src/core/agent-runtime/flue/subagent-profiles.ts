@@ -18,6 +18,8 @@ import {
   recordRejectedCapability,
   type ObservabilitySummary
 } from "../../observability/summary.js";
+import { prepareAgentInstructionEnvelope } from "../../agents/instruction-stack.js";
+import type { ContextIntake } from "../../context/intake.js";
 import {
   type AgentSubagentReference,
   resolveSubagentPolicy,
@@ -183,6 +185,7 @@ export async function resolveFlueSubagentProfiles({
   modelProfiles,
   workflowSubagentPolicy,
   cwd,
+  context,
   observability,
   summary,
   observabilitySummary
@@ -193,6 +196,7 @@ export async function resolveFlueSubagentProfiles({
   modelProfiles: ResolvedModelProfiles;
   workflowSubagentPolicy?: WorkflowSubagentPolicy;
   cwd?: string;
+  context?: ContextIntake;
   observability?: LunaObservability;
   summary?: ObservabilitySummary;
   observabilitySummary?: ObservabilitySummary;
@@ -373,11 +377,21 @@ export async function resolveFlueSubagentProfiles({
     }
 
     try {
+      const instructions = await readFile(agent.instructionsPath, "utf8");
+      const envelope = prepareAgentInstructionEnvelope({
+        agent: {
+          id: agent.id,
+          mode: agent.mode,
+          instructions
+        },
+        taskInput: context === undefined ? {} : { context }
+      });
+
       profiles.push(
         defineAgentProfile({
           name: agent.id,
           description: agent.description,
-          instructions: await readFile(agent.instructionsPath, "utf8"),
+          instructions: envelope.instructions,
           skills,
           tools,
           ...toFlueModelOptions(modelProfile)

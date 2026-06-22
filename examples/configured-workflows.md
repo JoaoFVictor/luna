@@ -73,6 +73,12 @@ come from the invocation `target` or `config/routing.yaml`. The
 `jira-task-url` adapter builds a normalized Jira issue invocation by reading
 Jira issue fields and matching the referenced GitHub repository.
 
+Configured context is explicit in the workflow graph. A workflow runs
+`collect_context`, lists the agents that should receive agent-owned context,
+and passes `context: $.steps.context` to those agent or agent-loop nodes. Luna
+then renders matching agent `context.files` before repository `context.files`
+inside runtime instructions and leaves only `context_audit` in task input.
+
 ## Current Inventory
 
 Input adapters:
@@ -679,7 +685,9 @@ repositories:
 
 When workflows include `collect_context`, Luna reads configured repository
 context files from the prepared workspace and writes `context-intake.json` with
-read, missing, and skipped files.
+read, missing, and skipped files. Agent and agent-loop nodes that receive
+`context: $.steps.context` get those files as runtime instructions, with raw
+contents removed from task JSON.
 
 The Jira adapter uses `config/jira.yaml` to map a Jira instance and repository
 field:
