@@ -34,6 +34,16 @@ import { usageFromFlueResponse } from "./observability.js";
 import type { Invocation } from "../../invocation/types.js";
 import { runValidationCommands } from "../../validation/runner.js";
 import { collectWorktreeDiff } from "../../git/diff/worktree-diff.js";
+import {
+  type RetryErrorCode,
+  retryDecision,
+  type RetryPolicy
+} from "../../retry/policy.js";
+import {
+  classifyFluePromptError,
+  readOnlyFluePromptRetryPolicy,
+  writeModeFluePromptRetryPolicy
+} from "./retry.js";
 
 type FlueAgentRunnerOptions = {
   ctx: FlueContext<Invocation>;
@@ -109,7 +119,7 @@ async function emitPromptEvent(
   level: "info" | "warn" | "error",
   event: string,
   data: Record<string, unknown>,
-  outcome?: { status: "started" | "succeeded" | "failed" }
+  outcome?: { status: "started" | "succeeded" | "failed" | "skipped"; code?: string }
 ): Promise<void> {
   if (options.observability === undefined) {
     return;
@@ -216,6 +226,51 @@ function capabilityCwdFor(options: RunAgentStepOptions): string {
     `Agent ${options.agent.id} declares local tools but no repository or workspace path is available`,
     "agent_tool_cwd_missing"
   );
+}
+
+function readOnlyRetryPolicy(options: RunAgentStepOptions): RetryPolicy {
+  return readOnlyFluePromptRetryPolicy(options.node.retry);
+}
+
+function writeModeRetryPolicy(options: RunAgentLoopStepOptions): RetryPolicy {
+  return writeModeFluePromptRetryPolicy(options.node.retry);
+}
+
+async function emitPromptRetryEvent(
+  options: RunAgentStepOptions | RunAgentLoopStepOptions,
+  error: unknown,
+  attempt: number,
+  retryPolicy: RetryPolicy,
+  errorCode: RetryErrorCode,
+  retryDelayMs: number
+): Promise<void> {
+  await emitPromptEvent(
+    options,
+    "warn",
+    "luna.agent_step.retrying",
+    {
+      attempt,
+      next_attempt: attempt + 1,
+      max_attempts: retryPolicy.maxAttempts,
+      retry_delay_ms: retryDelayMs,
+      error_code: errorCode,
+      error: promptErrorAttributes(error)
+    },
+    { status: "skipped", code: errorCode }
+  );
+}
+
+function agentSandboxFor(options: RunAgentStepOptions):
+  | {
+      cwd: string;
+      sandbox: ReturnType<typeof local>;
+    }
+  | {} {
+  const cwd =
+    workspacePath(options.state.workspace) ??
+    repositoryPath(options.state.repository);
+
+  return cwd === undefined ? {} : { cwd, sandbox: local({ cwd, env: {} }) };
 }
 
 type JsonSchema = {
@@ -357,6 +412,80 @@ async function resultSchema(outputSchemaPath: string): Promise<GenericSchema> {
   return schemaFromJson(JSON.parse(await readFile(outputSchemaPath, "utf8")));
 }
 
+type PromptSession = {
+  prompt(
+    text: string,
+    options: Record<string, unknown>
+  ): Promise<PromptResponseWithUsage & { data?: unknown }>;
+};
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runPromptWithRetry({
+  options,
+  session,
+  promptId,
+  text,
+  promptOptions,
+  retryPolicy,
+  promptData = {}
+}: {
+  options: RunAgentStepOptions | RunAgentLoopStepOptions;
+  session: PromptSession;
+  promptId: string;
+  text: string;
+  promptOptions: Record<string, unknown>;
+  retryPolicy: RetryPolicy;
+  promptData?: Record<string, unknown>;
+}): Promise<PromptResponseWithUsage & { data?: unknown }> {
+  for (let attempt = 1; attempt <= retryPolicy.maxAttempts; attempt += 1) {
+    const startedAtMs = Date.now();
+    await emitPromptEvent(
+      options,
+      "info",
+      "luna.prompt.started",
+      {
+        prompt_id: promptId,
+        retry_attempt: attempt,
+        ...promptData
+      },
+      { status: "started" }
+    );
+
+    try {
+      const response = await session.prompt(text, promptOptions);
+      await recordPromptCompletion(options, promptId, startedAtMs, response);
+      return response;
+    } catch (error) {
+      await recordPromptFailure(options, promptId, startedAtMs, error);
+      const errorCode = classifyFluePromptError(error);
+      const decision = retryDecision({
+        policy: retryPolicy,
+        attempt,
+        errorCode
+      });
+
+      if (!decision.shouldRetry) {
+        throw error;
+      }
+
+      await emitPromptRetryEvent(
+        options,
+        error,
+        attempt,
+        retryPolicy,
+        errorCode,
+        decision.delayMs
+      );
+      await sleep(decision.delayMs);
+    }
+  }
+
+  throw codedError("Flue prompt retry exhausted", "flue_prompt_retry_exhausted");
+}
+
 export async function runFlueAgentStep(
   ctx: FlueContext<Invocation>,
   options: RunAgentStepOptions,
@@ -382,40 +511,29 @@ export async function runFlueAgentStep(
       skills: capabilities.skills,
       tools: capabilities.tools,
       subagents: capabilities.subagents,
+      ...agentSandboxFor(options),
       ...toFlueModelOptions(options.model)
     }));
     const harness = await ctx.init(agent, { name: options.agent.id });
     const session = await harness.session();
     const promptId = `agent:${options.node.id}`;
-    const startedAtMs = Date.now();
-    await emitPromptEvent(
+    const response = await runPromptWithRetry({
       options,
-      "info",
-      "luna.prompt.started",
-      {
-        prompt_id: promptId
-      },
-      { status: "started" }
-    );
-    let response: PromptResponseWithUsage & { data?: unknown };
-    try {
-      response = await session.prompt(
+      session,
+      promptId,
+      text:
         [
           options.agent.description,
           "Use only the provided workflow input and return structured output matching the configured schema.",
           promptBody(options.input)
         ].join("\n\n"),
-        {
-          result: await resultSchema(options.agent.outputSchemaPath),
-          ...toFlueModelOptions(options.model)
-        }
-      );
-    } catch (error) {
-      await recordPromptFailure(options, promptId, startedAtMs, error);
-      throw error;
-    }
+      promptOptions: {
+        result: await resultSchema(options.agent.outputSchemaPath),
+        ...toFlueModelOptions(options.model)
+      },
+      retryPolicy: readOnlyRetryPolicy(options)
+    });
 
-    await recordPromptCompletion(options, promptId, startedAtMs, response);
     return response.data;
   } finally {
     await capabilities.close();
@@ -446,6 +564,7 @@ async function runWritableAgent(
   input: RunWritableAgentInput,
   capabilities: ResolvedFlueAgentCapabilities
 ): Promise<unknown> {
+  const retryPolicy = writeModeRetryPolicy(options);
   const agent = createAgent(async () => ({
     description: options.agent.description,
     instructions: await readFile(options.agent.instructionsPath, "utf8"),
@@ -462,30 +581,22 @@ async function runWritableAgent(
   const harness = await ctx.init(agent, { name: options.agent.id });
   const session = await harness.session();
   const promptId = `agent_loop:${options.node.id}:${input.phase}:${input.attempt}`;
-  const startedAtMs = Date.now();
-  await emitPromptEvent(
+  const response = await runPromptWithRetry({
     options,
-    "info",
-    "luna.prompt.started",
-    {
-      prompt_id: promptId,
+    session,
+    promptId,
+    text: writableAgentPrompt(options, input),
+    retryPolicy,
+    promptData: {
       phase: input.phase,
       attempt: input.attempt
     },
-    { status: "started" }
-  );
-  let response: PromptResponseWithUsage & { data?: unknown };
-  try {
-    response = await session.prompt(writableAgentPrompt(options, input), {
+    promptOptions: {
       result: await resultSchema(options.agent.outputSchemaPath),
       ...toFlueModelOptions(options.model)
-    });
-  } catch (error) {
-    await recordPromptFailure(options, promptId, startedAtMs, error);
-    throw error;
-  }
+    }
+  });
 
-  await recordPromptCompletion(options, promptId, startedAtMs, response);
   return response.data;
 }
 

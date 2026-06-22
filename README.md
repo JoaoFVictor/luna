@@ -290,6 +290,22 @@ execution:
   lock_timeout_ms: 120000
 ```
 
+Agent nodes may tune retry for transient runtime failures:
+
+```yaml
+retry:
+  max_attempts: 3
+  initial_delay_ms: 1000
+  max_delay_ms: 10000
+  backoff_multiplier: 2
+  jitter: full
+```
+
+Read-only agents retry transient transport, timeout, rate-limit, and provider
+availability failures by default. Trusted write-mode agent loops reject
+`max_attempts > 1`, because a dropped connection may happen after local file
+writes. Let the agent loop inspect the workspace, validation, and diff instead.
+
 `config/app.yaml` may tune local lock storage and stale-lock recovery:
 
 ```yaml

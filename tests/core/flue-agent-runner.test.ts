@@ -238,7 +238,8 @@ describe("read-only Flue agent runner", () => {
 
   it("injects configured skills and tools into read-only Flue agent steps", async () => {
     const initCalls: InitCall[] = [];
-    const local = vi.fn();
+    const sandbox = { kind: "local-sandbox" };
+    const local = vi.fn(() => sandbox);
     const runGit = vi.fn(async () => " M src/index.ts\n");
     vi.doMock("@flue/runtime/node", () => ({ local }));
     vi.doMock("../../src/core/git/client.js", () => ({ runGit }));
@@ -346,7 +347,14 @@ describe("read-only Flue agent runner", () => {
     expect(config.tools).toHaveLength(1);
     await config.tools?.[0]?.execute({});
     expect(runGit).toHaveBeenCalledWith(repositoryPath, ["status", "--short"]);
-    expect(local).not.toHaveBeenCalled();
+    expect(local).toHaveBeenCalledWith({
+      cwd: repositoryPath,
+      env: {}
+    });
+    expect(config).toMatchObject({
+      cwd: repositoryPath,
+      sandbox
+    });
   });
 
   it("injects resolved subagents into read-only Flue agent steps", async () => {
@@ -564,6 +572,150 @@ describe("read-only Flue agent runner", () => {
       mcpConfig: { mcp_servers: [] },
       env: process.env
     });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries transient read-only Flue prompt failures with a bounded backoff policy", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const close = vi.fn(async () => {});
+    const firstTransientFailure = new Error("prompt failed: WebSocket closed 1006");
+    const secondTransientFailure = new Error("prompt failed: ETIMEDOUT");
+    const events: Array<{ type: string; data?: unknown }> = [];
+    const resolveFlueAgentCapabilities = vi.fn(async () => ({
+      skills: [],
+      tools: [],
+      subagents: [],
+      close
+    }));
+    vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
+      resolveFlueAgentCapabilities
+    }));
+
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-retry-"));
+    const instructionsPath = path.join(root, "instructions.md");
+    const outputSchemaPath = path.join(root, "output.schema.json");
+    await writeFile(instructionsPath, "Plan the review.\n");
+    await writeFile(
+      outputSchemaPath,
+      JSON.stringify({
+        type: "object",
+        additionalProperties: true
+      })
+    );
+
+    const runConfiguredWorkflow = vi.fn(
+      async (options: RunConfiguredWorkflowOptions) => {
+        const runAgentStep =
+          options.dependencies?.runAgentStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runAgentStep"]
+          >;
+
+        return await runAgentStep({
+          agent: {
+            id: "review-planner",
+            description: "Plan the review",
+            model_profile: "default",
+            mode: "read_only",
+            instructions_file: "instructions.md",
+            output_schema: "output.schema.json",
+            directory: root,
+            instructionsPath,
+            outputSchemaPath
+          },
+          node: {
+            id: "review_plan",
+            type: "agent",
+            agent: "review-planner",
+            output_schema: "review_plan",
+            input: {},
+            artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
+          },
+          model: { model: "openai/planner-test", reasoning_effort: "medium" },
+          agentsRoot: path.join(root, "agents"),
+          modelProfiles,
+          workflowSubagentPolicy: { allow_write: false },
+          input: { repo_context: { files: [] } },
+          state: {
+            invocation: gitInvocation,
+            repository: undefined,
+            run: githubRun,
+            steps: {}
+          },
+          observability: {
+            eventContext: (severity) => ({
+              severity,
+              run: { id: "run-1", attempt: 1 },
+              workflow: { id: "code-review" },
+              timestamp: "2026-06-20T00:00:00.000Z"
+            }),
+            emit: async (event) => {
+              events.push(event);
+            },
+            close: async () => {},
+            isHardFailed: () => false,
+            hardFailure: () => undefined
+          }
+        });
+      }
+    );
+    const workflow = await importWorkflowWithRunnerMock(
+      "../../src/workflows/luna.js",
+      runConfiguredWorkflow
+    );
+    const prompt = vi
+      .fn()
+      .mockRejectedValueOnce(firstTransientFailure)
+      .mockRejectedValueOnce(secondTransientFailure)
+      .mockResolvedValueOnce({
+        data: {
+          summary: "Review auth changes.",
+          focus_areas: ["auth"],
+          files_to_review: ["src/auth.ts"]
+        }
+      });
+
+    await expect(
+      workflow.run({
+        payload: gitInvocation,
+        init: vi.fn(async () => ({
+          session: vi.fn(async () => ({ prompt }))
+        }))
+      } as never)
+    ).resolves.toMatchObject({
+      summary: "Review auth changes."
+    });
+
+    expect(prompt).toHaveBeenCalledTimes(3);
+    const retryEvents = events.filter(
+      (event) => event.type === "luna.agent_step.retrying"
+    );
+    expect(retryEvents).toHaveLength(2);
+    expect(retryEvents[0]).toEqual(
+      expect.objectContaining({
+        type: "luna.agent_step.retrying",
+        step: { id: "review_plan", type: "agent" },
+        outcome: { status: "skipped", code: "transient_transport_failure" },
+        data: expect.objectContaining({
+          attempt: 1,
+          next_attempt: 2,
+          max_attempts: 3,
+          retry_delay_ms: expect.any(Number),
+          error_code: "transient_transport_failure"
+        })
+      })
+    );
+    expect(retryEvents[1]).toEqual(
+      expect.objectContaining({
+        outcome: { status: "skipped", code: "timeout" },
+        data: expect.objectContaining({
+          attempt: 2,
+          next_attempt: 3,
+          max_attempts: 3,
+          retry_delay_ms: expect.any(Number),
+          error_code: "timeout"
+        })
+      })
+    );
     expect(close).toHaveBeenCalledTimes(1);
   });
 

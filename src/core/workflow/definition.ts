@@ -77,6 +77,30 @@ const BuiltInNodeSchema = z
   })
   .strict();
 
+const RetryPolicySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    max_attempts: z.number().int().positive().optional(),
+    initial_delay_ms: z.number().int().nonnegative().optional(),
+    max_delay_ms: z.number().int().positive().optional(),
+    backoff_multiplier: z.number().gte(1).optional(),
+    jitter: z.enum(["none", "full"]).optional(),
+    retryable_error_codes: z
+      .array(
+        z.enum([
+          "transient_transport_failure",
+          "timeout",
+          "provider_unavailable",
+          "rate_limited",
+          "permanent_failure",
+          "unknown_failure"
+        ])
+      )
+      .optional()
+  })
+  .strict()
+  .optional();
+
 const AgentNodeSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -84,6 +108,7 @@ const AgentNodeSchema = z
     agent: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
     artifacts: z.array(ArtifactWritePlanSchema).optional(),
+    retry: RetryPolicySchema,
     input: z.record(z.unknown()).optional(),
     after: z.array(NonEmptyStringSchema).optional()
   })
@@ -96,6 +121,7 @@ const AgentLoopNodeSchema = z
     agent: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
     artifacts: z.array(ArtifactWritePlanSchema).optional(),
+    retry: RetryPolicySchema,
     sandbox: z
       .object({
         type: z.literal("trusted_host_local"),

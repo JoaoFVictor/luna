@@ -333,6 +333,22 @@ execution:
 nodes in parallel according to graph dependencies, while run artifacts and
 observability events stay scoped to the same run.
 
+Agent and agent-loop nodes can set a retry policy for transient runtime
+failures:
+
+```yaml
+retry:
+  max_attempts: 3
+  initial_delay_ms: 1000
+  max_delay_ms: 10000
+  backoff_multiplier: 2
+  jitter: full
+```
+
+The default read-only policy retries transient transport, timeout, rate-limit,
+and provider-availability failures. Trusted write-mode agent loops reject
+`max_attempts > 1` to avoid replaying side effects after a dropped connection.
+
 `app.yaml` can set local lock storage defaults:
 
 ```yaml

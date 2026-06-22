@@ -92,6 +92,12 @@ nodes:
     type: agent
     agent: my-agent
     output_schema: my_output
+    retry:
+      max_attempts: 3
+      initial_delay_ms: 1000
+      max_delay_ms: 10000
+      backoff_multiplier: 2
+      jitter: full
     artifacts:
       - path: my-agent-output.json
         source: $.steps.my_agent_step
@@ -110,6 +116,9 @@ Graph rules:
 - Cycles are rejected.
 - `type: built_in` uses a supported Luna built-in.
 - `type: agent` references an agent under `agents/`.
+- Read-only `agent` nodes retry transient runtime failures by default.
+- `agent_loop` write-mode nodes reject `max_attempts > 1` to avoid replaying
+  local writes after a dropped connection.
 
 ## 4. Supported Built-Ins
 

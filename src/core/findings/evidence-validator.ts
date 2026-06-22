@@ -1,7 +1,7 @@
 import type { RepoContext } from "../git/diff/types.js";
 import type { Finding } from "./types.js";
 
-function hasValidEvidence(
+function hasValidLineEvidence(
   filesByPath: Map<string, RepoContext["files"][number]>,
   evidence: Finding["evidence"][number]
 ): boolean {
@@ -18,19 +18,39 @@ function hasValidEvidence(
     return false;
   }
 
+  return true;
+}
+
+function evidenceWithoutUnmatchedQuote(
+  filesByPath: Map<string, RepoContext["files"][number]>,
+  evidence: Finding["evidence"][number]
+): Finding["evidence"][number] {
+  const changedFile = filesByPath.get(evidence.path);
+
   if (
-    evidence.quote !== undefined &&
-    !excerptLineRangeContent(
-      changedFile.excerpt.content,
-      changedFile.excerpt.start_line,
-      evidence.line_start,
-      evidence.line_end
-    ).includes(evidence.quote)
+    changedFile?.excerpt === undefined ||
+    changedFile.excerpt === null ||
+    evidence.quote === undefined
   ) {
-    return false;
+    return evidence;
   }
 
-  return true;
+  const lineContent = excerptLineRangeContent(
+    changedFile.excerpt.content,
+    changedFile.excerpt.start_line,
+    evidence.line_start,
+    evidence.line_end
+  );
+
+  if (lineContent.includes(evidence.quote)) {
+    return evidence;
+  }
+
+  return {
+    path: evidence.path,
+    line_start: evidence.line_start,
+    line_end: evidence.line_end
+  };
 }
 
 function excerptLineRangeContent(
@@ -55,9 +75,9 @@ export function validateFindingEvidence(
   );
 
   return findings.map((finding) => {
-    const evidence = finding.evidence.filter((entry) =>
-      hasValidEvidence(filesByPath, entry)
-    );
+    const evidence = finding.evidence
+      .filter((entry) => hasValidLineEvidence(filesByPath, entry))
+      .map((entry) => evidenceWithoutUnmatchedQuote(filesByPath, entry));
     const shouldDowngrade =
       evidence.length === 0 &&
       (finding.confidence === "high" || finding.confidence === "medium");

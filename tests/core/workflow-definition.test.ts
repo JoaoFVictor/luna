@@ -118,6 +118,53 @@ describe("workflow definition loader", () => {
     }
   });
 
+  it("loads agent retry policy from workflow graph nodes", async () => {
+    const root = await tempWorkflowRoot();
+
+    try {
+      await writeWorkflowGraph(root, [
+        "nodes:",
+        "  - id: review_plan",
+        "    type: agent",
+        "    agent: review-planner",
+        "    output_schema: review_plan",
+        "    retry:",
+        "      max_attempts: 3",
+        "      initial_delay_ms: 1000",
+        "      max_delay_ms: 10000",
+        "      backoff_multiplier: 2",
+        "      jitter: full",
+        "      retryable_error_codes:",
+        "        - transient_transport_failure",
+        "        - timeout",
+        ""
+      ]);
+
+      await expect(loadWorkflowDefinition(root, "code-review")).resolves.toMatchObject({
+        graph: {
+          nodes: [
+            {
+              id: "review_plan",
+              retry: {
+                max_attempts: 3,
+                initial_delay_ms: 1000,
+                max_delay_ms: 10000,
+                backoff_multiplier: 2,
+                jitter: "full",
+                retryable_error_codes: [
+                  "transient_transport_failure",
+                  "timeout"
+                ]
+              }
+            }
+          ]
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("loads git-managed write workflows with agent_loop nodes", async () => {
     const root = await tempWorkflowRoot();
     const workflowDir = path.join(root, "implementation");
@@ -844,6 +891,26 @@ describe("workflow definition loader", () => {
         ])
       }
     });
+  });
+
+  it("loads every committed workflow and rejects unsafe write-mode retry config", async () => {
+    const workflowIds = ["code-review", "implementation"];
+
+    for (const workflowId of workflowIds) {
+      const definition = await loadWorkflowDefinition("workflows", workflowId);
+      expect(definition.id).toBe(workflowId);
+
+      for (const node of definition.graph.nodes) {
+        if (node.type !== "agent_loop") {
+          continue;
+        }
+
+        expect(
+          node.retry?.max_attempts ?? 1,
+          `${workflowId}.${node.id} must not blindly retry write-mode prompts`
+        ).toBe(1);
+      }
+    }
   });
 
   it("rejects workflow ids that escape the workflows root", async () => {
