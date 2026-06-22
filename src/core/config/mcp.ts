@@ -19,7 +19,7 @@ const McpServerConfigSchema = z
     headers: z.record(McpHeaderConfigSchema).default({}),
     allowed_tools: z.array(NonEmptyStringSchema).nonempty(),
     allowed_agent_modes: z
-      .array(z.enum(["read_only", "trusted_host_local_write"]))
+      .array(z.enum(["read_only", "trusted_local_write"]))
       .nonempty(),
     timeout_ms: z.number().int().positive().default(30_000)
   })

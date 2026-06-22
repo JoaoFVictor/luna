@@ -9,7 +9,7 @@ Input adapter modules live under `src/adapters/<id>/` and are registered in
 The CLI shape should stay generic:
 
 ```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from my-adapter value
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from my-adapter value
 ```
 
 Do not add workflow-specific commands such as:
@@ -148,10 +148,10 @@ Add CLI tests proving `--from <adapter>` dispatches to the adapter.
 Useful test targets:
 
 ```bash
-rtk npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```
 
 For a new adapter, add a dedicated `tests/adapters/<adapter-id>-adapter.test.ts`

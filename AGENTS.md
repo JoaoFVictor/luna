@@ -5,7 +5,7 @@ repository.
 
 ## Project Shape
 
-Luna is a local-first multi-agent orchestration repo with Flue as the current
+Luna is a multi-agent workflow orchestration repo with Flue as the current
 agent runtime adapter. It has one generic workflow entrypoint in
 `src/workflows/luna.ts`; do not add a TypeScript workflow file per workflow.
 
@@ -46,7 +46,9 @@ Before changing an area, read the matching project skill:
 - Put context files in repository or agent config; collect them through
   `collect_context` and pass `context: $.steps.context` explicitly so Luna can
   render them as runtime instructions with `context_audit` task metadata.
-- Register built-ins through `src/core/built-ins/catalog.ts`.
+- Register provider-facing built-ins through `src/core/providers/built-ins.ts`;
+  keep runtime-neutral built-ins and shared catalog helpers under
+  `src/core/built-ins/`.
 - Register local tools through `src/core/tools/catalog.ts`; Flue
   materialization lives in `src/core/agent-runtime/flue/tool-registry.ts`.
 - Update README/examples when adding public extension points.

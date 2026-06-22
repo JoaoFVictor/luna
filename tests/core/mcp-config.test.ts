@@ -23,7 +23,7 @@ describe("MCP config", () => {
         "      - issues.list",
         "    allowed_agent_modes:",
         "      - read_only",
-        "      - trusted_host_local_write",
+        "      - trusted_local_write",
         "    timeout_ms: 15000"
       ].join("\n"),
       "utf8"
@@ -42,7 +42,7 @@ describe("MCP config", () => {
             }
           },
           allowed_tools: ["issues.list"],
-          allowed_agent_modes: ["read_only", "trusted_host_local_write"],
+          allowed_agent_modes: ["read_only", "trusted_local_write"],
           timeout_ms: 15000
         }
       ]
@@ -74,7 +74,7 @@ describe("MCP config", () => {
         "    allowed_tools:",
         "      - issues.get",
         "    allowed_agent_modes:",
-        "      - trusted_host_local_write"
+        "      - trusted_local_write"
       ].join("\n"),
       "utf8"
     );

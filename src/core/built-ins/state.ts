@@ -41,12 +41,12 @@ export function repositoryFrom(state: WorkflowState): RepositoryConfig {
 
 export function workflowFrom(
   state: WorkflowState
-): { mode: "git_managed_read_only" | "git_managed_write" } | undefined {
+): { mode: "read_only" | "trusted_local_write" } | undefined {
   const workflow = state.workflow as { mode?: unknown } | undefined;
 
   if (
-    workflow?.mode === "git_managed_read_only" ||
-    workflow?.mode === "git_managed_write"
+    workflow?.mode === "read_only" ||
+    workflow?.mode === "trusted_local_write"
   ) {
     return { mode: workflow.mode };
   }

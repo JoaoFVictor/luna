@@ -105,7 +105,7 @@ describe("flue mcp capabilities", () => {
     await expect(
       resolveFlueMcpTools({
         ids: ["github"],
-        agentMode: "trusted_host_local_write",
+        agentMode: "trusted_local_write",
         config,
         env: {
           LUNA_MCP_GITHUB_URL: "https://mcp.example.test",

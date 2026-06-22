@@ -233,8 +233,8 @@ describe("agent instruction stack", () => {
     });
   });
 
-  it("uses write-mode runtime instructions for trusted_host_local_write", () => {
-    const envelope = prepare({ context: collectContext }, "trusted_host_local_write");
+  it("uses write-mode runtime instructions for trusted_local_write", () => {
+    const envelope = prepare({ context: collectContext }, "trusted_local_write");
 
     expect(envelope.instructions).toContain("trusted host-local write mode");
     expect(envelope.instructions).toContain(

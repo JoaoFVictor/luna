@@ -46,7 +46,7 @@ async function writeToyWorkflow(root: string): Promise<void> {
     [
       "id: toy-review",
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",

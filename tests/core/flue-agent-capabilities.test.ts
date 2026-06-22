@@ -74,7 +74,7 @@ async function writeCodeImplementerFixture(): Promise<{
       id: "code-implementer",
       description: "Implements code",
       model_profile: "deep",
-      mode: "trusted_host_local_write",
+      mode: "trusted_local_write",
       instructions_file: "instructions.md",
       output_schema: "output.schema.json",
       skills: ["../../skills/implementation-safe-git/SKILL.md"],

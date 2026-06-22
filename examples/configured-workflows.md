@@ -57,13 +57,13 @@ The workflow id comes from one of these places:
 The common command shape is:
 
 ```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --from <adapter> <value>
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --from <adapter> <value>
 ```
 
 The lower-level JSON path is useful for tests and automation:
 
 ```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --input path/to/invocation.json
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<workflow-id> --input path/to/invocation.json
 ```
 
 The committed workflows consume Luna's normalized invocation shape. See
@@ -187,7 +187,7 @@ Agents that write to a trusted local implementation worktree must explicitly
 declare:
 
 ```yaml
-mode: trusted_host_local_write
+mode: trusted_local_write
 ```
 
 This pairs with an `agent_loop` node whose sandbox is `trusted_host_local`.
@@ -307,7 +307,7 @@ Minimal `workflow.yaml`:
 ```yaml
 id: my-workflow
 type: workflow
-mode: git_managed_read_only
+mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
@@ -387,7 +387,7 @@ locks:
 The write-mode implementation workflow uses:
 
 ```yaml
-mode: git_managed_write
+mode: trusted_local_write
 ```
 
 Minimal `graph.yaml`:
@@ -546,13 +546,13 @@ Adapters exist so callers do not need to hand-write invocation JSON.
 The current adapter command is:
 
 ```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 The Jira implementation adapter command is:
 
 ```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 To add a new adapter:
@@ -623,10 +623,12 @@ Use TypeScript for:
 - New artifact behavior.
 - JSON Schema features outside Luna's supported subset.
 
-Built-ins are registered in `src/core/built-ins/catalog.ts`. The catalog is the
-source of truth for both YAML validation and runtime execution; do not add a
-second handwritten list of built-in names. Local tools are registered in
-`src/core/tools/catalog.ts` and materialized for Flue under
+Provider-facing built-ins are registered in `src/core/providers/built-ins.ts`.
+Runtime-neutral built-ins and shared catalog helpers stay under
+`src/core/built-ins/`. YAML validation and runtime execution must use the same
+active built-in registry; do not add a second handwritten list of built-in
+names. Local tools are registered in `src/core/tools/catalog.ts` and
+materialized for Flue under
 `src/core/agent-runtime/flue/`.
 
 ## Testing Checklist
@@ -634,35 +636,35 @@ second handwritten list of built-in names. Local tools are registered in
 For a new agent:
 
 ```bash
-rtk npm test -- tests/core/agent-definition.test.ts
+npm test -- tests/core/agent-definition.test.ts
 ```
 
 For a new workflow:
 
 ```bash
-rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
 ```
 
 For a new adapter:
 
 ```bash
-rtk npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
+npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
 ```
 
 Before finishing a branch:
 
 ```bash
-rtk npm test
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
-rtk npm run build
-rtk npm run flue:build
+npm test
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
+npm run build
+npm run flue:build
 ```
 
 ## Write-Mode Configuration
 
-The `implementation` workflow is a `git_managed_write` workflow. It creates a
+The `implementation` workflow is a `trusted_local_write` workflow. It creates a
 writable worktree, runs `code-implementer` through `trusted_host_local`, validates
 the result, reviews it, and then optionally commits, pushes, and opens a change
 request. The first supported change request provider is GitHub, which opens a
@@ -674,8 +676,8 @@ draft PR.
 - `validation.commands` for structured process entries such as
   `cmd: "npm", args: ["test"]` and
   `cmd: "npm", args: ["run", "typecheck"]`. Luna passes `cmd` and `args`
-  directly to the validation runner without a shell; keep `rtk` for commands
-  humans run in this repository, not for validation config entries.
+  directly to the validation runner without a shell; do not add local CLI
+  wrappers to validation config entries.
 - `validation.repair_attempts` for agent repair loops after failed validation.
 - `commit.enabled`, `push.enabled`, and `change_request.enabled` for publishing.
 
@@ -684,7 +686,7 @@ requires push. If commit is disabled, validation fails, acceptance rejects the
 change, or a publishing gate is skipped or fails, Luna preserves the write
 worktree for inspection.
 
-Write-mode repository entries should include `expected_remote_urls`:
+Write-mode repository entries must include `expected_remote_urls`:
 
 ```yaml
 repositories:
@@ -742,16 +744,16 @@ id:
 
 1. Authenticate Pi:
    ```bash
-   rtk npx @earendil-works/pi-ai login openai-codex
+   npx @earendil-works/pi-ai login openai-codex
    ```
 2. Authenticate GitHub:
    ```bash
-   rtk gh auth status
+   gh auth status
    ```
 3. Clone the target repo locally.
 4. Add the repo to `config/repositories.yaml`.
 5. Run:
    ```bash
-   rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
+   LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
    ```
 6. Open `.runs/code-review/<run-id>/final-report.md`.

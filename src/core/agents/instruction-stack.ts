@@ -5,7 +5,7 @@ import type {
 import { contextIntakeFrom } from "../context/intake.js";
 export { contextIntakeFrom } from "../context/intake.js";
 
-export type AgentInstructionMode = "read_only" | "trusted_host_local_write";
+export type AgentInstructionMode = "read_only" | "trusted_local_write";
 
 export type AgentInstructionInput = {
   readonly agent: {
@@ -73,7 +73,7 @@ function agentAuditCollection(
 }
 
 function runtimeInstructions(mode: AgentInstructionMode): string {
-  if (mode === "trusted_host_local_write") {
+  if (mode === "trusted_local_write") {
     return [
       "You are running in trusted host-local write mode.",
       "Make changes only in the configured worktree.",

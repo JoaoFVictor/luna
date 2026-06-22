@@ -25,7 +25,7 @@ agents/<agent-id>/
 - `id` must match the directory name.
 - `model_profile` must exist in `config/models.yaml`.
 - Use capability profile names like `default`, `deep`, `fast`, `balanced`.
-- `mode` is `read_only` or `trusted_host_local_write`.
+- `mode` is `read_only` or `trusted_local_write`.
 - `instructions_file` and `output_schema` must stay inside the agent directory.
 - Optional `context.files` lists agent-owned reference files relative to
   `agents/<agent-id>/`. Workflows must run `collect_context` and pass
@@ -57,21 +57,23 @@ runtime instructions, the current agent's `instructions.md`, matching
 agent-owned context, repository context, then normal workflow input. Raw context
 file contents must not remain in task JSON; use `context_audit` for metadata.
 
-Subagents are lightweight internal delegation. A referenced subagent may use
-skills as instructions, but must not declare local tools, MCP servers, or nested
-subagents; use a workflow graph node when the delegated work needs artifacts,
-gates, tools, MCP, or another delegation tree.
+Subagents are lightweight internal delegation. A referenced read-only subagent
+may use skills as instructions, but must not declare local tools, MCP servers,
+or nested subagents. Trusted write subagents may use local tools only when the
+parent workflow allows write subagents and the subagent reference includes an
+explicit `policy.allow_tools` allowlist. Use a workflow graph node when the
+delegated work needs artifacts, gates, MCP, or another delegation tree.
 
 ## Testing
 
 Run:
 
 ```sh
-rtk npm test -- tests/core/agent-definition.test.ts
-rtk npm test -- tests/core/flue-agent-capabilities.test.ts tests/core/flue-subagent-profiles.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/agent-definition.test.ts
+npm test -- tests/core/flue-agent-capabilities.test.ts tests/core/flue-subagent-profiles.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```
 
 If the agent is wired into a workflow, also run

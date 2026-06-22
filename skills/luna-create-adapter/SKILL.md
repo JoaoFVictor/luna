@@ -49,10 +49,10 @@ failures, auth/config failures, and normalized invocation shape.
 Run:
 
 ```sh
-rtk npm test -- tests/core/cli.test.ts tests/adapters/<adapter-id>-adapter.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/cli.test.ts tests/adapters/<adapter-id>-adapter.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```
 
 Update README and `examples/configured-workflows.md` if the adapter is public.

@@ -9,6 +9,10 @@ TypeScript workflow entrypoint at `src/workflows/luna.ts`.
 For a runnable write-mode reference that uses the full example agent, see
 `workflows/example-complete-agent/`.
 
+```sh
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:example-complete-agent --from github-pr-url https://github.com/org/repo/pull/123
+```
+
 This recipe starts with a read-only workflow that operates on a GitHub PR and
 local git repository context. Luna also includes a write-mode implementation
 workflow for Jira tasks. A workflow for a different domain may need a new input
@@ -29,7 +33,7 @@ workflows/my-workflow/
 ```yaml
 id: my-workflow
 type: workflow
-mode: git_managed_read_only
+mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
@@ -41,7 +45,7 @@ execution:
 Rules:
 
 - The directory name and `id` must match.
-- `mode` supports `git_managed_read_only` and `git_managed_write`.
+- `mode` supports `read_only` and `trusted_local_write`.
 - Schema and graph paths must stay inside the workflow directory.
 
 Artifact directories are always resolved as:
@@ -56,7 +60,7 @@ locks. Agent and agent-loop nodes must not depend on shared mutable local state;
 use workflow dependencies, artifacts, and repository locks to make parallel runs
 safe.
 
-Use `git_managed_write` only for workflows that intentionally create a writable
+Use `trusted_local_write` only for workflows that intentionally create a writable
 worktree and run trusted local write agents.
 
 ## 3. Add `graph.yaml`
@@ -202,7 +206,7 @@ and repair failed validation:
     attempts: $.config.implementation.validation.repair_attempts
 ```
 
-The referenced agent must declare `mode: trusted_host_local_write` in
+The referenced agent must declare `mode: trusted_local_write` in
 `agent.yaml`. `trusted_host_local` runs on the host and can edit files in the
 worktree. Use it only for agents and repositories you trust. In write workflows,
 use deterministic built-ins after agent or agent-loop nodes to record lifecycle
@@ -247,7 +251,7 @@ For agent structured output, each agent still owns its own
 From an adapter:
 
 ```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from github-pr-url https://github.com/org/repo/pull/123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
 This works only if `my-workflow` accepts the normalized GitHub PR invocation
@@ -256,20 +260,20 @@ produced by `github-pr-url`.
 From a normalized invocation file:
 
 ```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --input path/to/invocation.json
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --input path/to/invocation.json
 ```
 
 For the bundled Jira implementation workflow, the adapter command is:
 
 ```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
 ```
 
 ## 9. Test
 
 ```bash
-rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```

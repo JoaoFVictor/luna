@@ -36,7 +36,7 @@ context:
 Rules:
 
 - The directory name and `id` must match.
-- `mode` supports `read_only` and `trusted_host_local_write`.
+- `mode` supports `read_only` and `trusted_local_write`.
 - `model_profile` must exist in `config/models.yaml`.
 - `instructions_file` and `output_schema` must stay inside the agent directory.
 - `context.files` is optional. Use it for reusable guidance files that Luna
@@ -168,7 +168,7 @@ subagent, use object form with an explicit tool allowlist:
 subagents:
   - id: implementer-helper
     policy:
-      mode: trusted_host_local_write
+      mode: trusted_local_write
       allow_tools:
         - repository.status
 ```
@@ -215,19 +215,19 @@ Add an agent node to a workflow `graph.yaml`:
 ## 6. Test
 
 ```bash
-rtk npm test -- tests/core/agent-definition.test.ts
+npm test -- tests/core/agent-definition.test.ts
 ```
 
 If the agent is part of a real workflow, also run the workflow runner tests:
 
 ```bash
-rtk npm test -- tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/configured-workflow-runner.test.ts
 ```
 
 Before opening a PR, also run:
 
 ```bash
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```

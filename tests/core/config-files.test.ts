@@ -23,7 +23,16 @@ type WorkflowGraph = {
 
 const yamlRoots = ["agents", "workflows", "config"];
 const jsonSchemaRoots = ["agents", "workflows"];
-const legacyReferenceScanRoots = ["src", "tests", "workflows", "examples", "README.md"];
+const legacyReferenceScanRoots = [
+  "src",
+  "tests",
+  "agents",
+  "workflows",
+  "examples",
+  "skills",
+  "README.md",
+  "AGENTS.md"
+];
 const intentionalLegacyReferenceFiles = new Set([
   "tests/core/invocation-helpers.test.ts",
   "tests/core/cli.test.ts"
@@ -209,7 +218,10 @@ describe("config definition files", () => {
       "Github" + "PrInvocation",
       "Jira" + "TaskInvocation",
       "Github" + "PrInvocationSchema",
-      "Jira" + "TaskInvocationSchema"
+      "Jira" + "TaskInvocationSchema",
+      "git" + "_managed_read_only",
+      "git" + "_managed_write",
+      "trusted" + "_host_local_write"
     );
 
     const files = await listTextFiles(legacyReferenceScanRoots);

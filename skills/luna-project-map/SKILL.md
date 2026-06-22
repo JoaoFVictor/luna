@@ -1,11 +1,11 @@
 ---
 name: luna-project-map
-description: Use when first working in Luna, orienting to its architecture, deciding where a change belongs, or explaining adapters, workflows, agents, built-ins, tools, MCP, subagents, artifacts, and local-first runtime flow.
+description: Use when first working in Luna, orienting to its architecture, deciding where a change belongs, or explaining adapters, workflows, agents, built-ins, tools, MCP, subagents, artifacts, and runtime flow.
 ---
 
 # Luna Project Map
 
-Luna is a local-first multi-agent orchestration repo with Flue as the current
+Luna is a multi-agent workflow orchestration repo with Flue as the current
 agent runtime adapter. Start by reading `README.md` and
 `examples/configured-workflows.md`.
 
@@ -49,7 +49,8 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 
 - Do not add `src/workflows/<workflow>.ts`; use the generic `luna` entrypoint.
 - Do not add one-off CLI commands like `review-pr <url>`.
-- Do not duplicate built-in names outside `src/core/built-ins/catalog.ts`.
+- Do not create handwritten built-in name lists outside the active built-in
+  registry and metadata map.
 - Do not register local tools outside `src/core/tools/catalog.ts`.
 - Do not keep compatibility wrappers or deadcode.
 - Do not put Flue-specific implementation files back under `src/core/flue-*` or
@@ -58,6 +59,6 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 
 ## Verification
 
-Run focused tests for the changed area, `rtk npm run typecheck`,
-`rtk npm run typecheck:unused-src`, and `rtk npm run lint:unused`. Before
-finishing a broad change, run `rtk npm test` and `rtk npm run build`.
+Run focused tests for the changed area, `npm run typecheck`,
+`npm run typecheck:unused-src`, and `npm run lint:unused`. Before
+finishing a broad change, run `npm test` and `npm run build`.

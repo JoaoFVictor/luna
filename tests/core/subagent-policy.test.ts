@@ -14,12 +14,12 @@ describe("subagent policy", () => {
       resolveSubagentPolicy(
         { allow_write: true },
         {
-          mode: "trusted_host_local_write",
+          mode: "trusted_local_write",
           allow_tools: ["repository.status"]
         }
       )
     ).toEqual({
-      mode: "trusted_host_local_write",
+      mode: "trusted_local_write",
       allow_tools: ["repository.status"]
     });
   });
@@ -29,7 +29,7 @@ describe("subagent policy", () => {
       resolveSubagentPolicy(
         { allow_write: false },
         {
-          mode: "trusted_host_local_write",
+          mode: "trusted_local_write",
           allow_tools: ["repository.status"]
         }
       )
@@ -38,7 +38,7 @@ describe("subagent policy", () => {
       resolveSubagentPolicy(
         { allow_write: false },
         {
-          mode: "trusted_host_local_write",
+          mode: "trusted_local_write",
           allow_tools: ["repository.status"]
         }
       )
@@ -51,13 +51,13 @@ describe("subagent policy", () => {
     expect(() =>
       resolveSubagentPolicy(
         { allow_write: true },
-        { mode: "trusted_host_local_write" }
+        { mode: "trusted_local_write" }
       )
     ).toThrow("Trusted write subagents require an explicit allow_tools list");
     expect(() =>
       resolveSubagentPolicy(
         { allow_write: true },
-        { mode: "trusted_host_local_write" }
+        { mode: "trusted_local_write" }
       )
     ).toThrow(
       expect.objectContaining({ code: "subagent_write_allow_tools_required" })

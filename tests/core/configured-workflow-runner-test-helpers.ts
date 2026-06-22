@@ -214,7 +214,7 @@ export async function writeWorkflow(
     [
       "id: code-review",
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -271,7 +271,7 @@ export async function writePreflightWorkflow(
     [
       `id: ${workflowId}`,
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -354,7 +354,7 @@ export async function writeImplementationWorkflow(root: string): Promise<void> {
     [
       "id: implementation",
       "type: workflow",
-      "mode: git_managed_write",
+      "mode: trusted_local_write",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -462,7 +462,7 @@ export async function writeFullCodeReviewWorkflow(root: string): Promise<void> {
     [
       "id: code-review",
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",

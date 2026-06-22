@@ -1,7 +1,6 @@
 # Create a new built-in step
 
-Built-ins are deterministic local capabilities under `src/core/built-ins/` that
-workflow YAML can call with:
+Built-ins are deterministic local capabilities that workflow YAML can call with:
 
 ```yaml
 - id: my_step
@@ -16,13 +15,15 @@ the work only converts external input into a Luna invocation.
 
 ## 1. Choose the domain file
 
-Built-ins live under `src/core/built-ins/`.
+Runtime-neutral built-ins live under `src/core/built-ins/`. Provider-specific
+built-ins live under `src/core/providers/<provider>/built-ins.ts`.
 
 Current domain files:
 
-- `code-review.ts` for GitHub PR review steps.
-- `implementation.ts` for Jira implementation built-in steps; supporting
-  write-mode services live under `src/core/write-mode/`.
+- `src/core/providers/github/built-ins.ts` for GitHub PR review steps.
+- `src/core/providers/jira/built-ins.ts` for Jira task context and reports.
+- `src/core/built-ins/implementation.ts` for write-mode implementation steps;
+  supporting write-mode services live under `src/core/write-mode/`.
 
 Create a new domain file only when the capability does not belong to an
 existing domain. If you create a new domain file, create a matching focused
@@ -88,12 +89,12 @@ export const finalSomethingReportBuiltIn = defineBuiltInStep({
 Do not add name checks to `src/core/configured-workflow/runner.ts`. Runner
 behavior must come from metadata.
 
-## 4. Register it in the catalog
+## 4. Register it in the provider registry
 
-Add the exported step to `src/core/built-ins/catalog.ts`:
+Add provider-facing steps to `src/core/providers/built-ins.ts`:
 
 ```ts
-import { myNewStepBuiltIn } from "./my-domain.js";
+import { myNewStepBuiltIn } from "./my-provider/built-ins.js";
 
 export const defaultBuiltInSteps = Object.freeze([
   // existing steps...
@@ -101,15 +102,16 @@ export const defaultBuiltInSteps = Object.freeze([
 ] as const);
 ```
 
-This is the source of truth for supported built-in names.
-`src/core/workflow/definition.ts` validates YAML through this catalog, and
-runtime execution resolves the same name through the registry.
+Runtime-neutral built-ins and shared catalog helpers stay under
+`src/core/built-ins/`. The Flue workflow factory injects the provider built-in
+registry, so YAML validation and runtime execution must see the same active
+registry.
 
 ## 5. Import direct owners
 
 Do not add new barrel exports for built-in domain files. Runtime registration
-comes from `catalog.ts`; tests and other internal consumers should import the
-domain file that owns the step directly.
+comes from the active provider registry; tests and other internal consumers
+should import the domain file that owns the step directly.
 
 ## 6. Use it from workflow YAML
 
@@ -165,19 +167,19 @@ If the built-in becomes part of Luna's public inventory, update `README.md` and
 Run the focused tests:
 
 ```sh
-rtk npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-code-review.test.ts tests/core/built-ins-implementation.test.ts
-rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-code-review.test.ts tests/core/built-ins-implementation.test.ts
+npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```
 
 Run the full suite before committing:
 
 ```sh
-rtk npm test
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
-rtk npm run build
+npm test
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
+npm run build
 ```

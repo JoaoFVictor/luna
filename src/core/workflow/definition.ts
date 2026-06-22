@@ -56,7 +56,7 @@ export const WorkflowMetadataSchema = z
   .object({
     id: NonEmptyStringSchema,
     type: z.literal("workflow"),
-    mode: z.enum(["git_managed_read_only", "git_managed_write"]),
+    mode: z.enum(["read_only", "trusted_local_write"]),
     input_schema: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
     graph: NonEmptyStringSchema,
@@ -331,12 +331,38 @@ function assertAcyclic(nodes: WorkflowNode[]): void {
 
 function validateWorkflowGraph(
   graph: WorkflowGraph,
-  builtInStepRegistry: BuiltInStepRegistryView
+  builtInStepRegistry: BuiltInStepRegistryView,
+  workflowMode: WorkflowMetadata["mode"]
 ): void {
   assertBuiltInNamesRegistered(graph.nodes, builtInStepRegistry);
   assertNoDuplicateNodeIds(graph.nodes);
   assertDependenciesExist(graph.nodes);
   assertAcyclic(graph.nodes);
+
+  if (workflowMode !== "read_only") {
+    return;
+  }
+
+  for (const node of graph.nodes) {
+    if (node.type === "agent_loop") {
+      throw workflowDefinitionError(
+        `Workflow ${workflowMode} cannot declare agent_loop node: ${node.id}`,
+        "workflow_read_only_write_node"
+      );
+    }
+
+    if (node.type !== "built_in") {
+      continue;
+    }
+
+    const metadata = builtInStepRegistry.require(node.uses).metadata;
+    if (metadata?.implementationLifecycle !== undefined) {
+      throw workflowDefinitionError(
+        `Workflow ${workflowMode} cannot declare write lifecycle built-in: ${node.uses}`,
+        "workflow_read_only_write_node"
+      );
+    }
+  }
 }
 
 function normalizeObservabilityConfig(
@@ -408,7 +434,7 @@ export async function loadWorkflowDefinitionFromMetadata({
     graphPath,
     WorkflowGraphSchema
   );
-  validateWorkflowGraph(graph, builtInStepRegistry);
+  validateWorkflowGraph(graph, builtInStepRegistry, metadata.mode);
 
   return {
     ...metadata,

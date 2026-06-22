@@ -7,7 +7,7 @@ import type { ImplementationConfig } from "../write-mode/types.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Stat = (path: string) => Promise<{ isDirectory(): boolean }>;
-type WorkflowMode = "git_managed_read_only" | "git_managed_write";
+type WorkflowMode = "read_only" | "trusted_local_write";
 
 type PreflightErrorCode =
   | "invalid_invocation"
@@ -173,10 +173,10 @@ export async function runPreflight({
   runGit?: RunGit;
   stat?: Stat;
 }): Promise<PreflightResult> {
-  const mode = workflow?.mode ?? "git_managed_read_only";
+  const mode = workflow?.mode ?? "read_only";
   let expected: PreflightResult["expected"] = {};
 
-  if (mode === "git_managed_write") {
+  if (mode === "trusted_local_write") {
     validateWriteInvocation(invocation);
     assertWriteGateConsistency(implementation);
   } else {
@@ -190,7 +190,7 @@ export async function runPreflight({
     await runGit(repository.path, ["remote", "get-url", repository.remote])
   ).trim();
 
-  if (mode === "git_managed_write") {
+  if (mode === "trusted_local_write") {
     assertExpectedRemoteUrl(repository, remoteUrl);
   }
 

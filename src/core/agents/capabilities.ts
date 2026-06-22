@@ -12,7 +12,7 @@ export const SkillPathSchema = z.string().min(1).refine(
 
 const SubagentPolicyOverrideSchema = z
   .object({
-    mode: z.enum(["read_only", "trusted_host_local_write"]).optional(),
+    mode: z.enum(["read_only", "trusted_local_write"]).optional(),
     allow_tools: z.array(CapabilityIdSchema).optional()
   })
   .strict();

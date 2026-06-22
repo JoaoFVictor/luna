@@ -334,7 +334,7 @@ export async function resolveFlueSubagentProfiles({
 
       for (const toolId of toolIds) {
         if (
-          resolvedPolicy.mode === "trusted_host_local_write" &&
+          resolvedPolicy.mode === "trusted_local_write" &&
           !allowedTools.has(toolId)
         ) {
           await rejectSubagentCapability({

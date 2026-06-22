@@ -37,7 +37,7 @@ async function writeInvalidDeferredDependencyWorkflow(
     [
       `id: ${workflowId}`,
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -80,7 +80,7 @@ async function writeTrustedWriteAgent(root: string, id: string): Promise<void> {
       `id: ${id}`,
       `description: ${id}`,
       "model_profile: default",
-      "mode: trusted_host_local_write",
+      "mode: trusted_local_write",
       "instructions_file: instructions.md",
       "output_schema: output.schema.json",
       ""
@@ -200,7 +200,7 @@ async function writeAgentLoopWorkflow(
     [
       "id: implementation",
       "type: workflow",
-      "mode: git_managed_write",
+      "mode: trusted_local_write",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -365,7 +365,7 @@ describe("configured workflow runner", () => {
         expect.objectContaining({
           agent: expect.objectContaining({
             id: "code-implementer",
-            mode: "trusted_host_local_write"
+            mode: "trusted_local_write"
           }),
           agentsRoot: path.join(root, "agents"),
           modelProfiles: {

@@ -1,4 +1,4 @@
-export type SubagentMode = "read_only" | "trusted_host_local_write";
+export type SubagentMode = "read_only" | "trusted_local_write";
 
 export type WorkflowSubagentPolicy = {
   allow_write: boolean;
@@ -53,14 +53,14 @@ export function resolveSubagentPolicy(
     );
   }
 
-  if (mode === "trusted_host_local_write" && !base.allow_write) {
+  if (mode === "trusted_local_write" && !base.allow_write) {
     throw subagentPolicyError(
       "Subagent write mode is not allowed by workflow policy",
       "subagent_write_not_allowed"
     );
   }
 
-  if (mode === "trusted_host_local_write" && allowTools.length === 0) {
+  if (mode === "trusted_local_write" && allowTools.length === 0) {
     throw subagentPolicyError(
       "Trusted write subagents require an explicit allow_tools list",
       "subagent_write_allow_tools_required"

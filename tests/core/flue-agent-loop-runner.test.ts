@@ -121,7 +121,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             id: "code-implementer",
             description: "Implement Jira tasks",
             model_profile: "deep",
-            mode: "trusted_host_local_write",
+            mode: "trusted_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
             skills: ["../../skills/implementation-safe-git/SKILL.md"],
@@ -389,7 +389,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             id: "code-implementer",
             description: "Implement Jira tasks",
             model_profile: "deep",
-            mode: "trusted_host_local_write",
+            mode: "trusted_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
             subagents: [{ id: "change-reviewer" }],
@@ -584,7 +584,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             id: "code-implementer",
             description: "Implement Jira tasks",
             model_profile: "deep",
-            mode: "trusted_host_local_write",
+            mode: "trusted_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
             skills: ["../../skills/implementation-safe-git/SKILL.md"],
@@ -766,7 +766,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             id: "code-implementer",
             description: "Implement Jira tasks",
             model_profile: "deep",
-            mode: "trusted_host_local_write",
+            mode: "trusted_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
             directory: agentDir,
@@ -829,7 +829,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects trusted_host_local agent_loop when the agent is not trusted_host_local_write", async () => {
+  it("rejects trusted_host_local agent_loop when the agent is not trusted_local_write", async () => {
     const local = vi.fn();
     vi.doMock("@flue/runtime/node", () => ({ local }));
 
@@ -933,7 +933,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             id: "code-implementer",
             description: "Implement Jira tasks",
             model_profile: "deep",
-            mode: "trusted_host_local_write",
+            mode: "trusted_local_write",
             instructions_file: "instructions.md",
             output_schema: "output.schema.json",
             directory: root,

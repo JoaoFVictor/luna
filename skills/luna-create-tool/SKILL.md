@@ -51,11 +51,11 @@ unknown tool ids, and agent mode restrictions.
 Run:
 
 ```sh
-rtk npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
-rtk npm test -- tests/core/flue-modules.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
+npm test -- tests/core/flue-modules.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```
 
 Update README/examples when adding reusable public tools.

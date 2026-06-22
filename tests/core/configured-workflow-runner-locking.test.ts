@@ -37,7 +37,7 @@ async function writeLockingWorkflow(
     [
       `id: ${workflowId}`,
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -112,7 +112,7 @@ async function writePolicyLockWorkflow(root: string): Promise<void> {
     [
       "id: policy-locks",
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: trusted_local_write",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",

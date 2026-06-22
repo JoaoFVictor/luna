@@ -643,9 +643,9 @@ export async function runFlueAgentLoopStep(
     );
   }
 
-  if (options.agent.mode !== "trusted_host_local_write") {
+  if (options.agent.mode !== "trusted_local_write") {
     throw codedError(
-      `Agent ${options.agent.id} must declare trusted_host_local_write for trusted_host_local execution`,
+      `Agent ${options.agent.id} must declare trusted_local_write for trusted_host_local execution`,
       "trusted_host_local_agent_mode_required"
     );
   }
@@ -654,7 +654,7 @@ export async function runFlueAgentLoopStep(
   const envelope = prepareAgentInstructionEnvelope({
     agent: {
       id: options.agent.id,
-      mode: "trusted_host_local_write",
+      mode: "trusted_local_write",
       instructions
     },
     taskInput: options.input

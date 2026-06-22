@@ -21,24 +21,35 @@ workflows/<workflow-id>/
 Rules:
 
 - Directory name and `workflow.yaml` `id` must match.
-- `mode` is `git_managed_read_only` or `git_managed_write`.
+- `mode` is `read_only` or `trusted_local_write`.
 - Paths must stay inside the workflow directory.
 - Artifact directories always resolve to
   `<app.artifacts.root>/<workflow-id>/<run-id>/`; workflow YAML must not define
   a separate artifact namespace.
 - Optional `execution.max_concurrency` controls safe ready-node parallelism.
-  Repository-sensitive built-ins remain serialized by local locks, and
-  `agent`/`agent_loop` nodes must use explicit workflow dependencies and
-  artifacts instead of shared mutable local state.
+  Optional `execution.lock_timeout_ms` tunes local lock acquisition. Repository-
+  sensitive built-ins remain serialized by local locks, and `agent`/`agent_loop`
+  nodes must use explicit workflow dependencies and artifacts instead of shared
+  mutable local state.
+- Optional `observability.exporters.runtime_log` controls the runtime log sink.
+  Do not configure `observability.exporters.jsonl`; `events.jsonl` is mandatory
+  and always written.
+- Optional `subagent_policy.allow_write` controls whether trusted write
+  subagents may be materialized for this workflow.
 
 ## Node Types
 
-- `built_in`: deterministic runtime capability from `src/core/built-ins/catalog.ts`.
+- `built_in`: deterministic runtime capability from the active built-in
+  registry.
 - `agent`: reusable model worker from `agents/<id>/`.
 - `agent_loop`: trusted local write agent with validation/repair.
 
 Use `after` dependencies for ordering. Duplicate ids, unknown dependencies, and
 cycles are invalid.
+
+Agent and agent-loop nodes may declare `retry`. Read-only agent nodes can retry
+transient runtime failures. Trusted write agent loops reject retries that would
+replay local file writes.
 
 Use `collect_context` when a workflow should pass configured repository or
 agent context files to model nodes. Write `context-intake.json` as an artifact,
@@ -47,7 +58,7 @@ list every agent/agent_loop that consumes context in `input.agents`, and pass
 context into runtime instructions, ordered as agent-owned context before
 repository context, and keeps only `context_audit` metadata in task input.
 
-For `git_managed_write` workflows, keep lifecycle decisions in deterministic
+For `trusted_local_write` workflows, keep lifecycle decisions in deterministic
 built-ins. If an agent or agent-loop output participates in workspace
 preserve/cleanup decisions, add a built-in node after it to record the typed
 lifecycle gate. Built-ins expose lifecycle metadata through their TypeScript
@@ -97,8 +108,8 @@ Use `$.steps.context` for the output of `collect_context`.
 Run:
 
 ```sh
-rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```

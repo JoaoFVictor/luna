@@ -20,7 +20,7 @@ async function writeMinimalWorkflow(
     [
       `id: ${workflowId}`,
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -45,7 +45,8 @@ async function writeMinimalWorkflow(
 async function writeWorkflowGraph(
   root: string,
   graphLines: string[],
-  workflowId = "code-review"
+  workflowId = "code-review",
+  mode: "read_only" | "trusted_local_write" = "read_only"
 ): Promise<void> {
   const workflowDir = path.join(root, workflowId);
   await mkdir(workflowDir, { recursive: true });
@@ -54,7 +55,7 @@ async function writeWorkflowGraph(
     [
       `id: ${workflowId}`,
       "type: workflow",
-      "mode: git_managed_read_only",
+      `mode: ${mode}`,
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -77,7 +78,7 @@ describe("workflow definition loader", () => {
         [
           "id: code-review",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -105,7 +106,7 @@ describe("workflow definition loader", () => {
 
       await expect(loadWorkflowDefinition(root, "code-review")).resolves.toMatchObject({
         id: "code-review",
-        mode: "git_managed_read_only",
+        mode: "read_only",
         graph: {
           nodes: [
             { id: "repo_context", type: "built_in", uses: "collect_repo_context" },
@@ -165,7 +166,7 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("loads git-managed write workflows with agent_loop nodes", async () => {
+  it("loads trusted local write workflows with agent_loop nodes", async () => {
     const root = await tempWorkflowRoot();
     const workflowDir = path.join(root, "implementation");
 
@@ -176,7 +177,7 @@ describe("workflow definition loader", () => {
         [
           "id: implementation",
           "type: workflow",
-          "mode: git_managed_write",
+          "mode: trusted_local_write",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -221,7 +222,7 @@ describe("workflow definition loader", () => {
 
       await expect(loadWorkflowDefinition(root, "implementation")).resolves.toMatchObject({
         id: "implementation",
-        mode: "git_managed_write",
+        mode: "trusted_local_write",
         graph: {
           nodes: [
             {
@@ -254,29 +255,34 @@ describe("workflow definition loader", () => {
     const root = await tempWorkflowRoot();
 
     try {
-      await writeWorkflowGraph(root, [
-        "nodes:",
-        "  - id: implementation",
-        "    type: agent_loop",
-        "    agent: code-implementer",
-        "    output_schema: implementation_result",
-        "    sandbox:",
-        "      type: trusted_host_local",
-        "      cwd: $.workspace.path",
-        "      env_allowlist: []",
-        "    validation:",
-        "      commands:",
-        "        - cmd: npm",
-        "          args:",
-        "            - test",
-        "          timeout_ms: 120000",
-        "      max_output_bytes: 200000",
-        "    repair:",
-        "      attempts: 1",
-        ""
-      ]);
+      await writeWorkflowGraph(
+        root,
+        [
+          "nodes:",
+          "  - id: implementation",
+          "    type: agent_loop",
+          "    agent: code-implementer",
+          "    output_schema: implementation_result",
+          "    sandbox:",
+          "      type: trusted_host_local",
+          "      cwd: $.workspace.path",
+          "      env_allowlist: []",
+          "    validation:",
+          "      commands:",
+          "        - cmd: npm",
+          "          args:",
+          "            - test",
+          "          timeout_ms: 120000",
+          "      max_output_bytes: 200000",
+          "    repair:",
+          "      attempts: 1",
+          ""
+        ],
+        "implementation",
+        "trusted_local_write"
+      );
 
-      await expect(loadWorkflowDefinition(root, "code-review")).resolves.toMatchObject({
+      await expect(loadWorkflowDefinition(root, "implementation")).resolves.toMatchObject({
         graph: {
           nodes: [
             {
@@ -308,7 +314,7 @@ describe("workflow definition loader", () => {
         [
           "id: implementation",
           "type: workflow",
-          "mode: git_managed_write",
+          "mode: trusted_local_write",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -385,7 +391,7 @@ describe("workflow definition loader", () => {
         [
           "id: code-review",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -427,7 +433,7 @@ describe("workflow definition loader", () => {
         [
           "id: code-review",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -469,7 +475,7 @@ describe("workflow definition loader", () => {
         [
           "id: code-review",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -515,7 +521,7 @@ describe("workflow definition loader", () => {
         [
           "id: code-review",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -555,7 +561,7 @@ describe("workflow definition loader", () => {
         [
           "id: legacy",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -836,7 +842,7 @@ describe("workflow definition loader", () => {
         [
           "id: explicit",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",
@@ -930,7 +936,7 @@ describe("workflow definition loader", () => {
         [
           "id: code-review",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: ../graph.yaml",
@@ -959,7 +965,7 @@ describe("workflow definition loader", () => {
         [
           "id: code-review",
           "type: workflow",
-          "mode: git_managed_read_only",
+          "mode: read_only",
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "graph: graph.yaml",

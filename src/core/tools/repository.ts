@@ -8,7 +8,7 @@ import type {
 const emptyParameters = v.object({});
 type EmptyInput = v.InferOutput<typeof emptyParameters>;
 type RepositoryToolDefinition = LunaToolDefinition<EmptyInput, string>;
-const allAgentModes = ["read_only", "trusted_host_local_write"] as const;
+const allAgentModes = ["read_only", "trusted_local_write"] as const;
 
 function repositoryHandler(
   dependencies: LunaToolDependencies,

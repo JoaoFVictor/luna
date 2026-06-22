@@ -82,14 +82,14 @@ describe("agent definition loader", () => {
         id: "code-implementer",
         description: "Implements Jira tasks in a trusted local worktree.",
         model_profile: "deep",
-        mode: "trusted_host_local_write"
+        mode: "trusted_local_write"
       });
       await writeFile(path.join(agentDir, "instructions.md"), "# Implementer\n", "utf8");
       await writeFile(path.join(agentDir, "output.schema.json"), "{}", "utf8");
 
       await expect(loadAgentDefinition(root, "code-implementer")).resolves.toMatchObject({
         id: "code-implementer",
-        mode: "trusted_host_local_write"
+        mode: "trusted_local_write"
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -130,7 +130,7 @@ describe("agent definition loader", () => {
           "id: code-implementer",
           "description: Implements code",
           "model_profile: deep",
-          "mode: trusted_host_local_write",
+          "mode: trusted_local_write",
           "instructions_file: instructions.md",
           "output_schema: output.schema.json",
           "skills:",
@@ -202,7 +202,7 @@ describe("agent definition loader", () => {
           "id: code-implementer",
           "description: Implements code",
           "model_profile: deep",
-          "mode: trusted_host_local_write",
+          "mode: trusted_local_write",
           "instructions_file: instructions.md",
           "output_schema: output.schema.json",
           "subagents:",
@@ -235,13 +235,13 @@ describe("agent definition loader", () => {
           "id: code-implementer",
           "description: Implements code",
           "model_profile: deep",
-          "mode: trusted_host_local_write",
+          "mode: trusted_local_write",
           "instructions_file: instructions.md",
           "output_schema: output.schema.json",
           "subagents:",
           "  - id: implementer-helper",
           "    policy:",
-          "      mode: trusted_host_local_write",
+          "      mode: trusted_local_write",
           "      allow_tools:",
           "        - repository.status",
           ""
@@ -256,7 +256,7 @@ describe("agent definition loader", () => {
           {
             id: "implementer-helper",
             policy: {
-              mode: "trusted_host_local_write",
+              mode: "trusted_local_write",
               allow_tools: ["repository.status"]
             }
           }
@@ -279,7 +279,7 @@ describe("agent definition loader", () => {
           "id: code-implementer",
           "description: Implements code",
           "model_profile: deep",
-          "mode: trusted_host_local_write",
+          "mode: trusted_local_write",
           "instructions_file: instructions.md",
           "output_schema: output.schema.json",
           "subagents:",
@@ -314,7 +314,7 @@ describe("agent definition loader", () => {
           "id: code-implementer",
           "description: Implements code",
           "model_profile: deep",
-          "mode: trusted_host_local_write",
+          "mode: trusted_local_write",
           "instructions_file: instructions.md",
           "output_schema: output.schema.json",
           "subagents:",

@@ -118,7 +118,7 @@ function stepOptions({
         event: "pull_request",
         started_at: "2026-06-20T00:00:00.000Z"
       },
-      workflow: { id: "code-review", mode: "git_managed_read_only" },
+      workflow: { id: "code-review", mode: "read_only" },
       workspaceRoot: ".workspaces",
       steps: {}
     },

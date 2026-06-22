@@ -1,6 +1,6 @@
 id: implementation
 type: workflow
-mode: git_managed_write
+mode: trusted_local_write
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml

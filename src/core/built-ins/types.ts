@@ -77,7 +77,7 @@ export type BuiltInStepDependencies = {
   runPreflight?: (input: {
     invocation: Invocation;
     repository: RepositoryConfig;
-    workflow?: { mode: "git_managed_read_only" | "git_managed_write" };
+    workflow?: { mode: "read_only" | "trusted_local_write" };
     implementation?: ImplementationConfig["implementation"];
   }) => MaybePromise<unknown>;
   prepareWorktree?: (input: {

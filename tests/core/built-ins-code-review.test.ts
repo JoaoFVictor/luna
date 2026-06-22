@@ -179,7 +179,7 @@ describe("code review built-ins", () => {
     await expect(
       preflightBuiltIn.run({
         state: workflowState({
-          workflow: { mode: "git_managed_read_only" },
+          workflow: { mode: "read_only" },
           config: { implementation: implementationConfig }
         }),
         dependencies: { runPreflight }
@@ -190,7 +190,7 @@ describe("code review built-ins", () => {
     expect(runPreflight).toHaveBeenCalledWith({
       invocation,
       repository,
-      workflow: { mode: "git_managed_read_only" },
+      workflow: { mode: "read_only" },
       implementation: implementationConfig
     });
   });

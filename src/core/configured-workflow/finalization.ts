@@ -20,7 +20,7 @@ export type ConfiguredWorkflowFailureFinalizationOptions = {
 
 export type ConfiguredWorkflowSuccessFinalizationOptions =
   ConfiguredWorkflowFailureFinalizationOptions & {
-    workflowMode: "git_managed_read_only" | "git_managed_write";
+    workflowMode: "read_only" | "trusted_local_write";
     implementationConfig?: RuntimeConfigState["implementation"];
     lifecycleEvidence: ReturnType<typeof lifecycleEvidenceFromSchedulerState>;
   };
@@ -93,7 +93,7 @@ export async function finalizeSuccessWorkspace({
     return undefined;
   }
 
-  if (workflowMode === "git_managed_write") {
+  if (workflowMode === "trusted_local_write") {
     return await finalizeWriteSuccessWorkspace({
       artifactStore,
       workspaceRecord,
@@ -165,7 +165,7 @@ export function cleanupMayRemoveWorktree({
   workspaceRecord?: WorkspaceRecord;
   repository?: RepositoryConfig;
   workspaceConfig: AppConfig["workspace"];
-  workflowMode: "git_managed_read_only" | "git_managed_write";
+  workflowMode: "read_only" | "trusted_local_write";
   implementationConfig?: RuntimeConfigState["implementation"];
   lifecycleEvidence: ReturnType<typeof lifecycleEvidenceFromSchedulerState>;
   success: boolean;
@@ -178,7 +178,7 @@ export function cleanupMayRemoveWorktree({
     return !workspaceConfig.preserve_on_failure;
   }
 
-  if (workflowMode === "git_managed_read_only") {
+  if (workflowMode === "read_only") {
     return !workspaceConfig.preserve_on_success;
   }
 

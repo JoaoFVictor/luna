@@ -64,7 +64,7 @@ export const repositoryLastCommitTool: LunaToolDefinition<
     network: false,
     externalSideEffects: false
   },
-  modes: ["read_only", "trusted_host_local_write"],
+  modes: ["read_only", "trusted_local_write"],
   createHandler: ({ cwd }) =>
     async () => await runGit(cwd, ["log", "-1", "--oneline"])
 };
@@ -87,7 +87,7 @@ export const lunaToolCatalog = {
 ```
 
 Use `read_only` only when the tool is safe for read-only agents. Reserve
-`trusted_host_local_write` for tools that are useful only inside a trusted local
+`trusted_local_write` for tools that are useful only inside a trusted local
 write worktree. Do not import `@flue/runtime` or call `defineTool` from
 `src/core/tools/**`; `src/core/agent-runtime/flue/tool-registry.ts` owns that
 adapter boundary.
@@ -113,7 +113,7 @@ Update `tests/core/flue-tool-registry.test.ts`:
 ```ts
 const tools = resolveFlueTools({
   ids: ["repository.last-commit"],
-  agentMode: "trusted_host_local_write",
+  agentMode: "trusted_local_write",
   cwd: "/repo/worktree"
 });
 
@@ -128,11 +128,11 @@ restrictions if the tool is not allowed in every agent mode.
 Useful commands:
 
 ```sh
-rtk npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
-rtk npm test -- tests/core/flue-modules.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
+npm test -- tests/core/flue-modules.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```
 
 ## 6. Document public tools

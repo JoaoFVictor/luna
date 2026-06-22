@@ -33,7 +33,7 @@ async function writeSubagentFixture({
 }: {
   root: string;
   id?: string;
-  mode?: "read_only" | "trusted_host_local_write";
+  mode?: "read_only" | "trusted_local_write";
   extraYaml?: string[];
 }): Promise<void> {
   const reviewerDir = path.join(root, id);
@@ -359,7 +359,7 @@ describe("flue subagent profiles", () => {
       await writeSubagentFixture({
         root,
         id: "implementer-helper",
-        mode: "trusted_host_local_write",
+        mode: "trusted_local_write",
         extraYaml: ["tools:", "  - repository.status"]
       });
 
@@ -371,7 +371,7 @@ describe("flue subagent profiles", () => {
             {
               id: "implementer-helper",
               policy: {
-                mode: "trusted_host_local_write",
+                mode: "trusted_local_write",
                 allow_tools: ["repository.status"]
               }
             }
@@ -400,7 +400,7 @@ describe("flue subagent profiles", () => {
       await writeSubagentFixture({
         root,
         id: "implementer-helper",
-        mode: "trusted_host_local_write",
+        mode: "trusted_local_write",
         extraYaml: ["tools:", "  - repository.status"]
       });
 
@@ -411,7 +411,7 @@ describe("flue subagent profiles", () => {
           {
             id: "implementer-helper",
             policy: {
-              mode: "trusted_host_local_write",
+              mode: "trusted_local_write",
               allow_tools: ["repository.status"]
             }
           }
@@ -439,7 +439,7 @@ describe("flue subagent profiles", () => {
       await writeSubagentFixture({
         root,
         id: "implementer-helper",
-        mode: "trusted_host_local_write",
+        mode: "trusted_local_write",
         extraYaml: [
           "tools:",
           "  - repository.status",
@@ -455,7 +455,7 @@ describe("flue subagent profiles", () => {
             {
               id: "implementer-helper",
               policy: {
-                mode: "trusted_host_local_write",
+                mode: "trusted_local_write",
                 allow_tools: ["repository.status"]
               }
             }

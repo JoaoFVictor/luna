@@ -1,6 +1,6 @@
 ---
 name: luna-create-built-in
-description: Use when creating or modifying Luna built-in workflow steps under src/core/built-ins/, including defineBuiltInStep, catalog registration, metadata, workflow YAML uses values, state helpers, reports, worktree capture, deferral, and built-in tests.
+description: Use when creating or modifying Luna built-in workflow steps, including provider-facing built-ins, runtime-neutral built-ins under src/core/built-ins/, defineBuiltInStep, catalog registration, metadata, workflow YAML uses values, state helpers, reports, worktree capture, deferral, and built-in tests.
 ---
 
 # Luna Create Built-In
@@ -10,9 +10,14 @@ capabilities called by workflow YAML.
 
 ## Files
 
-- `src/core/built-ins/<domain>.ts`: exported step objects.
+- `src/core/built-ins/<domain>.ts`: runtime-neutral exported step objects.
+- `src/core/providers/<provider>/built-ins.ts`: provider-specific exported step
+  objects.
 - `src/core/built-ins/state.ts`: shared state/input parsing helpers only.
-- `src/core/built-ins/catalog.ts`: single source of supported built-in names.
+- `src/core/built-ins/catalog.ts`: shared catalog helpers and runtime-neutral
+  built-in exports.
+- `src/core/providers/built-ins.ts`: active provider-facing built-in registry
+  used by the Flue workflow factory.
 - `src/core/write-mode/`: owned services and contracts for write-mode git
   branches, worktrees, gates, lifecycle, and transaction journals.
 
@@ -32,8 +37,10 @@ behavior comes from metadata.
 
 ## Registration
 
-Add new built-ins to `defaultBuiltInSteps` in `catalog.ts`. Do not create a
-second built-in name list in workflow validation or runner code.
+Add provider-facing built-ins to `defaultBuiltInSteps` in
+`src/core/providers/built-ins.ts`. Keep runtime-neutral built-ins and shared
+catalog helpers under `src/core/built-ins/`. Do not create another handwritten
+built-in name list in workflow validation or runner code.
 Do not add barrel exports for new domain files; import owning modules directly.
 Do not create compatibility wrappers for old built-in module paths.
 
@@ -45,11 +52,11 @@ Create focused domain tests under `tests/core/`, and update
 Run:
 
 ```sh
-rtk npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-*.test.ts
-rtk npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
+npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-*.test.ts
+npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
 ```
 
 Update README/examples when adding public built-ins.

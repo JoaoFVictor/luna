@@ -125,7 +125,7 @@ implementation:
 ```
 
 `trusted_host_local` is trusted-operator mode and can edit the local worktree.
-The implementer agent declares `trusted_host_local_write`.
+The implementer agent declares `trusted_local_write`.
 
 Commit, push, and change request creation are optional and disabled by default.
 Enabling push requires commit, and enabling a change request requires push. If

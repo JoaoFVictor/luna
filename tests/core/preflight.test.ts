@@ -193,14 +193,14 @@ describe("preflight", () => {
     });
   });
 
-  it("supports Jira issue preflight for git_managed_write when the remote URL is expected", async () => {
+  it("supports Jira issue preflight for trusted_local_write when the remote URL is expected", async () => {
     const result = await runPreflight({
       invocation: jiraInvocation,
       repository: {
         ...gitRepository,
         expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
       },
-      workflow: { mode: "git_managed_write" },
+      workflow: { mode: "trusted_local_write" },
       implementation: implementationConfig,
       runGit: async (_cwd, args) => {
         if (args[0] === "remote") {
@@ -219,7 +219,7 @@ describe("preflight", () => {
     });
   });
 
-  it("supports git_managed_write when Jira acceptance criteria is empty", async () => {
+  it("supports trusted_local_write when Jira acceptance criteria is empty", async () => {
     const result = await runPreflight({
       invocation: {
         ...jiraInvocation,
@@ -234,7 +234,7 @@ describe("preflight", () => {
         ...gitRepository,
         expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
       },
-      workflow: { mode: "git_managed_write" },
+      workflow: { mode: "trusted_local_write" },
       implementation: implementationConfig,
       runGit: async (_cwd, args) => {
         if (args[0] === "remote") {
@@ -251,14 +251,14 @@ describe("preflight", () => {
     );
   });
 
-  it("matches git_managed_write SSH actual remote against HTTPS expected remote", async () => {
+  it("matches trusted_local_write SSH actual remote against HTTPS expected remote", async () => {
     const result = await runPreflight({
       invocation: jiraInvocation,
       repository: {
         ...gitRepository,
         expected_remote_urls: ["https://github.com/octo-org/hello-world.git"]
       },
-      workflow: { mode: "git_managed_write" },
+      workflow: { mode: "trusted_local_write" },
       implementation: implementationConfig,
       runGit: async (_cwd, args) => {
         if (args[0] === "remote") {
@@ -275,7 +275,7 @@ describe("preflight", () => {
     );
   });
 
-  it("rejects unsafe git_managed_write actual remotes with userinfo, query, or hash", async () => {
+  it("rejects unsafe trusted_local_write actual remotes with userinfo, query, or hash", async () => {
     await expect(
       runPreflight({
         invocation: jiraInvocation,
@@ -283,7 +283,7 @@ describe("preflight", () => {
           ...gitRepository,
           expected_remote_urls: ["https://github.com/octo-org/hello-world.git"]
         },
-        workflow: { mode: "git_managed_write" },
+        workflow: { mode: "trusted_local_write" },
         implementation: implementationConfig,
         runGit: async (_cwd, args) =>
           args[0] === "remote"
@@ -294,12 +294,12 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "remote_url_mismatch" });
   });
 
-  it("throws expected_remote_urls_missing for git_managed_write without expected remote URLs", async () => {
+  it("throws expected_remote_urls_missing for trusted_local_write without expected remote URLs", async () => {
     await expect(
       runPreflight({
         invocation: jiraInvocation,
         repository: gitRepository,
-        workflow: { mode: "git_managed_write" },
+        workflow: { mode: "trusted_local_write" },
         implementation: implementationConfig,
         runGit: async (_cwd, args) =>
           args[0] === "remote"
@@ -310,7 +310,7 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "expected_remote_urls_missing" });
   });
 
-  it("throws implementation_config_missing for git_managed_write without implementation config", async () => {
+  it("throws implementation_config_missing for trusted_local_write without implementation config", async () => {
     await expect(
       runPreflight({
         invocation: jiraInvocation,
@@ -318,7 +318,7 @@ describe("preflight", () => {
           ...gitRepository,
           expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
         },
-        workflow: { mode: "git_managed_write" },
+        workflow: { mode: "trusted_local_write" },
         runGit: async (_cwd, args) =>
           args[0] === "remote"
             ? "git@github.com:octo-org/hello-world.git\n"
@@ -328,7 +328,7 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "implementation_config_missing" });
   });
 
-  it("throws remote_url_mismatch when git_managed_write remote URL is not expected", async () => {
+  it("throws remote_url_mismatch when trusted_local_write remote URL is not expected", async () => {
     await expect(
       runPreflight({
         invocation: jiraInvocation,
@@ -336,7 +336,7 @@ describe("preflight", () => {
           ...gitRepository,
           expected_remote_urls: ["git@github.com:octo-org/other.git"]
         },
-        workflow: { mode: "git_managed_write" },
+        workflow: { mode: "trusted_local_write" },
         implementation: implementationConfig,
         runGit: async (_cwd, args) =>
           args[0] === "remote"
@@ -355,7 +355,7 @@ describe("preflight", () => {
           ...gitRepository,
           expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
         },
-        workflow: { mode: "git_managed_write" },
+        workflow: { mode: "trusted_local_write" },
         implementation: {
           ...implementationConfig,
           commit: { enabled: false },
@@ -379,7 +379,7 @@ describe("preflight", () => {
           ...gitRepository,
           expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
         },
-        workflow: { mode: "git_managed_write" },
+        workflow: { mode: "trusted_local_write" },
         implementation: {
           ...implementationConfig,
           commit: { enabled: true },

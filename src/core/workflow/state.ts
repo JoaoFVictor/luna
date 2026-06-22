@@ -25,7 +25,7 @@ export type SchedulerWorkflowState = WorkflowState & {
   run: RunIdentity;
   workflow: {
     id: string;
-    mode: "git_managed_read_only" | "git_managed_write";
+    mode: "read_only" | "trusted_local_write";
   };
   workspaceRoot: AppConfig["workspace"]["root"];
   agentsRoot: string;

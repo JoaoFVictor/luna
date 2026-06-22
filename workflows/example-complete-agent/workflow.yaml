@@ -1,6 +1,6 @@
 id: example-complete-agent
 type: workflow
-mode: git_managed_write
+mode: trusted_local_write
 input_schema: input.schema.json
 output_schema: output.schema.json
 graph: graph.yaml
@@ -9,9 +9,6 @@ execution:
   lock_timeout_ms: 120000
 observability:
   exporters:
-    jsonl:
-      enabled: true
-      required: false
     runtime_log:
       enabled: true
       required: false

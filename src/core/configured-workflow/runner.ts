@@ -256,8 +256,8 @@ export async function runConfiguredWorkflow({
     dependencies.observabilityPortFactory ?? createObservabilityPort;
   let workflowId: string | undefined;
   let workflowMode:
-    | "git_managed_read_only"
-    | "git_managed_write"
+    | "read_only"
+    | "trusted_local_write"
     | undefined;
   let run: RunIdentity | undefined;
   let artifactStore: ArtifactStore | undefined;
@@ -540,7 +540,7 @@ export async function runConfiguredWorkflow({
             workspaceRecord,
             repository,
             workspaceConfig: configs.app.workspace,
-            workflowMode: workflowMode ?? "git_managed_read_only",
+            workflowMode: workflowMode ?? "read_only",
             implementationConfig: configs.runtimeConfig.implementation,
             lifecycleEvidence: lifecycleEvidenceFromSchedulerState({}),
             success: false

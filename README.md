@@ -1,391 +1,93 @@
 # Luna
 
-Local-first multi-agent workflow orchestration with a Flue runtime adapter.
+Luna is a base for building multi-agent workflows.
 
-Luna is a base repository for running configurable agent workflows locally. It
-keeps routing, input adapters, repository access, workspaces, model profiles,
-artifacts, and workflow configuration under Luna-owned modules. Flue is the
-current runtime adapter for launching agents and the generic workflow entrypoint.
+It gives you a deterministic way to turn external inputs into workflow runs,
+route them through YAML graphs, reuse agents, call deterministic capabilities,
+and inspect the result through artifacts. The bundled PR review and Jira
+implementation flows are examples of what can be built on top of Luna; they are
+not the boundary of the project.
 
-The bundled workflows cover GitHub PR code review and Jira-driven
-implementation. Luna is not meant to be only a code review tool; code review
-was the first concrete workflow used to prove the architecture.
+Use Luna when you want repeatable agent workflows for code review, planning,
+implementation, triage, research, migrations, repository automation, or any
+other process that benefits from explicit orchestration instead of an ad hoc
+chat transcript.
 
-## What You Can Do Today
+```text
+adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loops -> artifacts
+```
 
-- Run the bundled `code-review` workflow against a GitHub PR URL.
-- Run the bundled `implementation` workflow against a Jira task URL.
-- Review private repositories through `gh` plus a local git clone.
-- Implement Jira tasks in a managed write worktree through a trusted local
-  agent mode.
-- Configure model profiles once and reuse them across agents.
-- Add new agents with YAML, Markdown instructions, JSON Schema, and explicit
-  read/write modes.
-- Add new workflows with YAML graphs when they can reuse Luna's current
-  git built-ins.
-- Add new input sources by implementing CLI adapters selected with `--from`.
-- Add deterministic workflow built-ins under `src/core/built-ins/`.
-- Add Luna-native local tools for agents under `src/core/tools/`.
-- Inspect every run through local artifacts under `.runs/`.
-- Inspect runtime events and prompt usage through local observability artifacts.
+Luna currently uses Flue as the agent runtime adapter. The workflow entrypoint
+stays generic: new workflows are YAML graphs, not new TypeScript workflow
+entrypoints.
 
-## Quick Start
+## Why Luna
+
+Most agent workflows get hard to maintain when the orchestration, prompts,
+tools, context, validation, and reporting all live in one place. Luna separates
+those concerns:
+
+- adapters normalize external inputs;
+- routing chooses a workflow deterministically;
+- workflow graphs define the orchestration;
+- agents provide reusable model judgment;
+- built-ins provide deterministic workflow steps;
+- local tools expose deterministic functions to agents;
+- artifacts make each run inspectable.
+
+That structure is the point. You should be able to add a new workflow without
+copying a runtime, rewriting an agent, or hiding important behavior inside a
+prompt.
+
+## Building Blocks
+
+`workflows/<id>/` contains YAML workflow definitions. A workflow decides what
+runs, in what order, and which outputs feed later steps.
+
+`agents/<id>/` contains reusable agent definitions. Agents own their
+instructions, model profile, output schema, skills, tools, MCP access, and
+optional subagents. Reuse an agent when its role and output contract still fit;
+create a new one when the responsibility changes.
+
+`src/adapters/<id>/` contains input adapters. An adapter turns an external
+input, such as a GitHub PR URL or Jira task URL, into a normalized invocation.
+
+`src/core/built-ins/` contains deterministic workflow behavior and shared
+catalog helpers. Provider-facing built-ins are registered through
+`src/core/providers/built-ins.ts`.
+
+`src/core/tools/` contains Luna-native local tool contracts and the tool
+catalog. Flue tool materialization lives under `src/core/agent-runtime/flue/`.
+
+`skills/` contains reusable guidance for LLMs and runtime agents.
+
+## Try A Starter Workflow
 
 Install dependencies:
 
 ```bash
-rtk npm install
+npm install
 ```
 
-Authenticate Pi's OpenAI Codex provider with your ChatGPT Plus or Pro
-subscription:
+Authenticate Pi's OpenAI Codex provider:
 
 ```bash
-rtk npx @earendil-works/pi-ai login openai-codex
+npx @earendil-works/pi-ai login openai-codex
 ```
 
 Authenticate GitHub CLI:
 
 ```bash
-rtk gh auth status
+gh auth status
 ```
 
-Clone the repository you want Luna to inspect:
+Clone the repository Luna should inspect:
 
 ```bash
 git clone git@github.com:org/repo.git /path/to/local/repo
 ```
 
-Configure the repository you want Luna to inspect in `config/repositories.yaml`:
-
-```yaml
-repositories:
-  - id: repo
-    provider: github
-    owner: org
-    name: repo
-    path: /path/to/local/repo
-    remote: origin
-    context:
-      files:
-        - AGENTS.md
-        - README.md
-```
-
-Run a PR review:
-
-```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
-```
-
-Run a Jira implementation task:
-
-```bash
-rtk env LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
-```
-
-Open the generated report:
-
-```text
-.runs/code-review/<run-id>/final-report.md
-.runs/implementation/<run-id>/final-report.md
-```
-
-Each run also writes `context-intake.json` when workflow context is collected.
-It records which configured repository and agent context files were read,
-missing, or skipped.
-
-When a workflow passes `context: $.steps.context` to an agent, Luna promotes
-those configured files into runtime instructions instead of leaving the raw file
-contents in the task JSON. The order is Luna runtime instructions, the agent's
-`instructions.md`, matching `agent.yaml context.files`, repository
-`context.files`, then the normal workflow input. The task payload keeps a
-`context_audit` summary so runs stay inspectable without duplicating the raw
-guidance text.
-
-For complete walkthroughs, see:
-
-- [Run a GitHub PR review](examples/review-pr.md)
-- [Implement a Jira task](examples/implementation-jira-task.md)
-
-## Core Concepts
-
-- **Input adapter**: converts an external input, such as a GitHub PR URL, into
-  Luna's normalized invocation format. Public adapters live under
-  `src/adapters/<adapter-id>/`.
-- **Invocation**: the normalized request Luna routes and passes into a workflow.
-- **Router**: chooses the workflow from `--target workflow:<id>`, the
-  invocation `target`, or `config/routing.yaml`.
-- **Workflow**: a YAML graph of ordered nodes under `workflows/<workflow-id>/`.
-- **Agent**: a configured Luna agent under `agents/<agent-id>/`, with YAML
-  metadata, Markdown instructions, and a JSON Schema output contract.
-- **Built-in step**: deterministic TypeScript runtime capability under
-  `src/core/built-ins/`, such as preparing a git worktree or collecting
-  repository context, that a YAML workflow can call.
-- **Local tool**: Luna-native deterministic function under `src/core/tools/`
-  that an agent may call when its `agent.yaml` declares the tool ID.
-- **Trusted local write mode**: `trusted_host_local` workflow sandbox plus a
-  `trusted_host_local_write` agent. This is trusted-operator mode for local
-  writes, not a sandbox security boundary.
-- **Artifact**: a JSON, Markdown, or JSONL file written for a run under
-  `.runs/`.
-
-## How Luna Works
-
-```text
-input adapter -> normalized invocation -> router -> workflow graph -> built-ins/agents/agent loops -> artifacts
-```
-
-There is one generic workflow entrypoint: `luna`.
-
-Workflow selection happens through `--target workflow:<id>`, an invocation
-`target`, or `config/routing.yaml`. URL adapters omit `target` unless the CLI
-override is used. You do not create a new TypeScript file under
-`src/workflows/` for every workflow.
-
-Current public extension paths:
-
-- `agents/<id>/` for reusable Luna agent definitions.
-- `workflows/<id>/` for YAML workflow graphs.
-- `src/adapters/<id>/` for input adapters.
-- `src/core/built-ins/` for deterministic YAML built-ins.
-- `src/core/tools/` for Luna-native local tools.
-- `src/core/agent-runtime/flue/` for the current Flue runtime adapter.
-
-## Agent Capabilities
-
-Agents can declare runtime skills and Luna-native local tools in `agent.yaml`:
-
-```yaml
-skills:
-  - ../../skills/implementation-safe-git/SKILL.md
-tools:
-  - repository.status
-  - repository.diff-summary
-```
-
-Skills are paths to `SKILL.md` files relative to the agent directory. Tools are
-IDs resolved through Luna's TypeScript catalog and materialized for the current
-agent runtime. Workflows do not declare tools directly; the workflow chooses
-agents, and each agent brings its own capabilities.
-
-Agents may also declare `context.files` in `agent.yaml`. These files are
-agent-owned instruction context, not workflow data. A workflow must run
-`collect_context` and pass `context: $.steps.context` to the agent or
-`agent_loop`; Luna then injects only the current agent's configured context
-before repository context and sends `context_audit` in the task input.
-
-## MCP Capabilities
-
-Agents can opt into configured MCP servers:
-
-```yaml
-mcp_servers:
-  - github
-```
-
-MCP server policy lives in `config/mcp.yaml`. Secrets stay in environment
-variables. `allowed_tools` uses original MCP tool names, such as
-`get_pull_request`; Flue exposes them to the model as adapted names like
-`mcp__github__get_pull_request`. Luna filters exposed MCP tools through that
-allowlist and rejects servers that are not allowed for the agent mode.
-
-## Flue Subagents
-
-Agents can declare other Luna agents as Flue subagents:
-
-```yaml
-subagents:
-  - change-reviewer
-```
-
-String entries use the default read-only policy. Trusted write subagents must be
-declared explicitly and only work when the workflow allows write subagents:
-
-```yaml
-subagents:
-  - id: implementer-helper
-    policy:
-      mode: trusted_host_local_write
-      allow_tools:
-        - repository.status
-```
-
-The referenced ID must resolve to a valid Luna agent directory under
-`agents/<id>/`, including `agent.yaml`, the files referenced by
-`instructions_file` and `output_schema`, and a configured `model_profile`.
-Flue subagents run inside the parent agent session. They are not workflow graph
-nodes and do not create separate Luna artifacts automatically.
-
-Subagent profiles use the same instruction hierarchy as top-level agents. When
-the parent workflow passes collected context, Luna filters agent context by the
-subagent id, appends repository context after it, and does not pass raw context
-file contents as subagent task data.
-
-Subagents are read-only Flue profiles by default. Luna uses the referenced
-agent's description, instructions, model profile, and skills. Read-only
-subagents cannot declare local tools, MCP servers, or nested subagents. Trusted
-write subagents require both workflow-level
-`subagent_policy.allow_write: true` and a per-subagent `policy.allow_tools`
-allowlist. Use a workflow graph node when delegated work needs MCP access,
-another delegation tree, its own artifact, schema, or workflow gate.
-
-## Project Structure
-
-```text
-agents/                 reusable Luna agent definitions
-config/                 runtime configuration
-examples/               usage examples and authoring guide
-src/adapters/           input adapters and registry
-src/core/agent-runtime/flue/
-                        current Flue runtime adapter
-src/core/built-ins/     deterministic YAML built-ins
-src/core/tools/         Luna-native local tools for agents
-src/workflows/luna.ts   single generic workflow entrypoint
-workflows/              YAML workflow graphs
-```
-
-## Configuration
-
-Core config lives in `config/`:
-
-- `app.yaml`: workspace and artifact locations.
-- `repositories.yaml`: local repositories Luna is allowed to inspect.
-- `routing.yaml`: deterministic routing rules.
-- `models.yaml`: reusable model profiles.
-- `mcp.yaml`: MCP server definitions, tool allowlists, and allowed agent modes.
-- `jira.yaml`: Jira instances, repository field mapping, and optional
-  acceptance criteria field mapping for the `jira-task-url` adapter.
-- `implementation.yaml`: branch naming, validation commands, trusted local
-  sandbox settings, and optional commit, push, and draft PR gates for the
-  `implementation` workflow.
-
-`config/models.yaml` uses generic model profiles such as `default`, `deep`,
-`fast`, and `balanced`. Agents reference these profiles by name. A model
-profile may also set a runtime transport:
-
-```yaml
-model_profiles:
-  deep:
-    model: ${DEEP_MODEL:-openai-codex/gpt-5.4}
-    reasoning_effort: high
-    transport: sse
-```
-
-`transport` is optional and currently projected by the Flue/Pi adapter. Use
-`sse` for `openai-codex/...` profiles when WebSocket connections close
-abnormally during long prompts. Supported values are `auto`, `sse`, and
-`websocket`.
-
-`config/app.yaml` sets the shared artifact root.
-
-Artifact directories are always resolved as:
-`<app.artifacts.root>/<workflow-id>/<run-id>/`
-
-Workflow YAML does not define a separate artifact namespace. The routed
-`workflow_id` is the only namespace.
-
-Workflow nodes write explicit artifact plans:
-
-```yaml
-artifacts:
-  - path: output.json
-    source: $.steps.node_id
-    format: json
-    required: true
-```
-
-Each run also writes Luna-owned observability artifacts:
-
-- `run.json`: strict run identity.
-- `events.jsonl`: append-only runtime events with stable run/workflow/step ids.
-- `observability-summary.json`: derived prompt, token, cost, failure, and
-  rejected-capability counters, including prompt usage gaps.
-
-`events.jsonl` is always written and cannot be disabled. Flue receives these
-events through an optional log sink when Luna runs inside Flue, but Luna's local
-artifacts are the runtime contract. OpenTelemetry, Braintrust, and Sentry are
-future exporter targets, not accepted config keys today.
-
-Workflow YAML may configure optional observability exporters and subagent write
-policy:
-
-```yaml
-observability:
-  exporters:
-    runtime_log:
-      enabled: true
-      required: false
-
-subagent_policy:
-  allow_write: false
-```
-
-`runtime_log` is the only accepted runtime log exporter key.
-
-Workflow YAML may tune scheduler execution:
-
-```yaml
-execution:
-  max_concurrency: 2
-  lock_timeout_ms: 120000
-```
-
-Agent nodes may tune retry for transient runtime failures:
-
-```yaml
-retry:
-  max_attempts: 3
-  initial_delay_ms: 1000
-  max_delay_ms: 10000
-  backoff_multiplier: 2
-  jitter: full
-```
-
-Read-only agents retry transient transport, timeout, rate-limit, and provider
-availability failures by default. Trusted write-mode agent loops reject
-`max_attempts > 1`, because a dropped connection may happen after local file
-writes. If Luna reports `WebSocket closed 1006` for a Codex model, prefer
-setting that model profile to `transport: sse`; retry can replay a read-only
-prompt, but it does not repair an unstable transport. Let the agent loop inspect
-the workspace, validation, and diff instead.
-
-`config/app.yaml` may tune local lock storage and stale-lock recovery:
-
-```yaml
-locks:
-  root: .luna/locks
-  timeout_ms: 120000
-  stale_after_ms: 600000
-```
-
-By default, Luna uses Pi's `openai-codex/...` provider. Running
-`rtk npx @earendil-works/pi-ai login openai-codex` writes `auth.json` in the project
-directory. Luna reads that file at runtime and registers the provider with Flue.
-Do not commit `auth.json`.
-
-Jira credentials live in `luna.auth.json` at the project root. Do not commit
-this file. The Jira provider entries are keyed by `config/jira.yaml` instance
-id:
-
-```json
-{
-  "providers": {
-    "jira": {
-      "company": {
-        "base_url": "https://company.atlassian.net",
-        "auth_type": "basic_api_token",
-        "email": "user@company.com",
-        "api_token": "secret-token"
-      }
-    }
-  }
-}
-```
-
-Write-mode repositories should also declare `expected_remote_urls` in
-`config/repositories.yaml`. Luna checks the configured git remote against this
-allowlist before creating an implementation worktree:
+Configure it in `config/repositories.yaml`:
 
 ```yaml
 repositories:
@@ -404,15 +106,116 @@ repositories:
         - README.md
 ```
 
-`config/implementation.yaml` keeps commit, push, and change request creation
-disabled by default. Enabling push requires commit to be enabled, and enabling a
-change request requires both commit and push to be enabled. The first supported
-change request provider is GitHub, which opens a draft PR. When commit is
-disabled, validation fails, acceptance rejects the work, or a git publishing
-gate fails, Luna preserves the write worktree so you can inspect or continue the
-changes.
+Run a GitHub PR review:
 
-## Current Inventory
+```bash
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --from github-pr-url https://github.com/org/repo/pull/123
+```
+
+Read the report:
+
+```text
+.runs/code-review/<run-id>/final-report.md
+```
+
+For the starter write-mode Jira implementation workflow, configure Jira
+credentials, repository remote allowlists, validation commands, and optional
+publishing gates first. See [Implement a Jira task](examples/implementation-jira-task.md).
+
+## Build Your Own Workflow
+
+Start from the complete workflow and agent pair:
+
+- `workflows/example-complete-agent/`
+- `agents/example-complete-agent/`
+
+Then create:
+
+- `workflows/<id>/workflow.yaml`
+- `workflows/<id>/graph.yaml`
+- `workflows/<id>/input.schema.json`
+- `workflows/<id>/output.schema.json`
+
+Put orchestration in `graph.yaml`. Use:
+
+- `built_in` nodes for deterministic TypeScript behavior;
+- `agent` nodes for model judgment with structured output;
+- `agent_loop` nodes for trusted local write work with validation and repair.
+
+Link agents by id from the workflow graph. Prefer reusing an existing agent when
+the role, input, tools, MCP access, and output schema match what the workflow
+needs. Create a new agent when the workflow needs a different contract.
+
+Authoring guides:
+
+- [Create a new workflow](examples/new-workflow.md)
+- [Create a new agent](examples/new-agent.md)
+- [Configured workflows reference](examples/configured-workflows.md)
+
+## How Luna Runs
+
+An adapter converts an external value into an invocation. The router chooses a
+workflow from `--target workflow:<id>`, the invocation `target`, or
+`config/routing.yaml`.
+
+There is one generic TypeScript workflow entrypoint:
+`src/workflows/luna.ts`. Do not add one TypeScript workflow file per workflow.
+
+The selected workflow graph runs built-ins, agents, and agent loops. Each node
+reads explicit inputs from earlier steps and writes inspectable outputs into the
+run artifact directory.
+
+## Context, Artifacts, And Trust
+
+Luna does not ask agents or Flue to discover repository guidance implicitly.
+Workflows that need guidance files run `collect_context` and pass
+`context: $.steps.context` explicitly to model nodes.
+
+Context files may come from:
+
+- repository config in `config/repositories.yaml`;
+- agent config in `agents/<id>/agent.yaml`.
+
+Luna renders collected context as runtime instructions, then sends a compact
+`context_audit` summary in the task input. Each run writes
+`context-intake.json`, so missing, skipped, and read context files remain
+inspectable.
+
+Every run writes artifacts under:
+
+```text
+<app.artifacts.root>/<workflow-id>/<run-id>/
+```
+
+Common artifacts include `run.json`, `events.jsonl`,
+`observability-summary.json`, intermediate node outputs, and final reports.
+
+Write-mode repositories must declare `expected_remote_urls`; Luna checks the
+configured git remote before creating an implementation worktree.
+
+## Configuration
+
+Core config lives in `config/`:
+
+- `app.yaml`: workspace and artifact locations.
+- `repositories.yaml`: repositories Luna may inspect or edit.
+- `routing.yaml`: deterministic routing rules.
+- `models.yaml`: reusable model profiles.
+- `mcp.yaml`: MCP server policy and allowlists.
+- `jira.yaml`: Jira instance and issue field mapping.
+- `implementation.yaml`: write-mode branch, validation, commit, push, and draft
+  PR gates.
+
+Secrets are not committed:
+
+- `auth.json` is created by `npx @earendil-works/pi-ai login openai-codex`.
+- `luna.auth.json` stores Jira credentials keyed by `config/jira.yaml`
+  instance id.
+
+## Bundled Base
+
+These are the adapters, workflows, agents, built-ins, tools, and skills that
+ship with the repo. Treat them as starter parts and authoring examples.
 
 Input adapters:
 
@@ -469,57 +272,32 @@ Project skills:
 - `luna-review-change`
 - `implementation-safe-git`
 
-Agent configs reference skills by relative paths to `SKILL.md`, for example
-`../../skills/luna-create-agent/SKILL.md`.
-
-## Guides And Examples
+## Guides
 
 - [Run a GitHub PR review](examples/review-pr.md)
 - [Implement a Jira task](examples/implementation-jira-task.md)
-- [Create a new agent](examples/new-agent.md)
+- [Configured workflows reference](examples/configured-workflows.md)
 - [Create a new workflow](examples/new-workflow.md)
+- [Create a new agent](examples/new-agent.md)
 - [Create a new input adapter](examples/new-adapter.md)
 - [Create a new built-in step](examples/new-built-in.md)
 - [Create a new local tool](examples/new-tool.md)
-- [Configured workflows reference](examples/configured-workflows.md)
-
-Use YAML/config for new agents under `agents/<id>/`, new workflow graphs under
-`workflows/<id>/`, new model profiles, local repository entries, and routing
-rules.
-
-Use TypeScript for new input adapters under `src/adapters/<id>/`, new
-deterministic workflow built-ins under `src/core/built-ins/`, new Luna-native
-local tools under `src/core/tools/`, workspace/repository behavior, artifact
-behavior, or JSON Schema features outside Luna's current supported subset.
-Built-ins are registered through `src/core/built-ins/catalog.ts`; workflow YAML
-can only use names exported by that catalog. Local tools are registered through
-`src/core/tools/catalog.ts` and materialized for Flue under
-`src/core/agent-runtime/flue/`.
 
 ## Troubleshooting
 
 `Repository is not configured: github/org/repo`
 
-The PR URL owner/name does not match `config/repositories.yaml`. Add a matching
-entry with `provider: github`, the exact `owner`, the exact `name`, and a valid
-local `path`.
+The PR URL owner/name does not match `config/repositories.yaml`, or the
+repository entry is missing.
 
 `gh` cannot read the PR
 
-Run `rtk gh auth status`. For private repositories, the authenticated GitHub account
-needs access to the repo. If git fetch also fails, check SSH or HTTPS git auth
-for the local clone.
+Run `gh auth status` and confirm the authenticated account has access to the
+repository.
 
 `auth.json` is missing
 
-Run:
-
-```bash
-rtk npx @earendil-works/pi-ai login openai-codex
-```
-
-Run it from the Luna project directory so `auth.json` is created where Luna
-expects it.
+Run `npx @earendil-works/pi-ai login openai-codex` from the Luna project root.
 
 `luna.auth.json` is missing
 
@@ -529,8 +307,7 @@ instance id used in `config/jira.yaml`.
 `expected_remote_urls_missing`
 
 The `implementation` workflow is a write-mode workflow. Add
-`expected_remote_urls` to the matching repository entry in
-`config/repositories.yaml`.
+`expected_remote_urls` to the matching repository entry.
 
 `Unknown input adapter`
 
@@ -539,20 +316,19 @@ The value passed to `--from` is not registered in `src/adapters/registry.ts`.
 ## Development
 
 ```bash
-rtk npm test
-rtk npm run typecheck
-rtk npm run typecheck:unused-src
-rtk npm run lint:unused
-rtk npm run build
-rtk npm run flue:build
+npm test
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
+npm run build
+npm run flue:build
 ```
 
-## Design Principles
+## Principles
 
-- Local-first by default.
-- Configuration over workflow-specific code.
-- Input adapters are generic and explicit.
-- Routing is deterministic where possible.
-- Agents own judgment inside their assigned role.
-- Artifacts are part of the runtime contract.
-- Vendor cloud services are optional, not required infrastructure.
+- Workflow graphs over workflow-specific code.
+- Deterministic routing.
+- Reusable agents; orchestration in workflow graphs.
+- Explicit context intake.
+- Artifacts as part of the runtime contract.
+- Runtime adapters at the boundary, not spread through core modules.

@@ -43,7 +43,7 @@ async function writeConfigInputWorkflow(root: string): Promise<void> {
     [
       "id: config-input-review",
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",
@@ -88,7 +88,7 @@ async function writeParallelProbeWorkflow(root: string): Promise<void> {
     [
       "id: parallel-probe",
       "type: workflow",
-      "mode: git_managed_read_only",
+      "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
       "graph: graph.yaml",

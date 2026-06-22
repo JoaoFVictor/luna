@@ -40,7 +40,7 @@ describe("flue tool registry", () => {
     const { resolveFlueTools } = await importRegistryWithGitMock();
     const tools = resolveFlueTools({
       ids: ["repository.status", "repository.diff-summary"],
-      agentMode: "trusted_host_local_write",
+      agentMode: "trusted_local_write",
       cwd: "/repo/worktree"
     });
 
@@ -62,7 +62,7 @@ describe("flue tool registry", () => {
 
     const [statusTool, diffSummaryTool] = resolveFlueTools({
       ids: ["repository.status", "repository.diff-summary"],
-      agentMode: "trusted_host_local_write",
+      agentMode: "trusted_local_write",
       cwd: "/repo/worktree"
     });
 
@@ -87,7 +87,7 @@ describe("flue tool registry", () => {
     try {
       resolveFlueTools({
         ids: ["repository.delete-everything"],
-        agentMode: "trusted_host_local_write",
+        agentMode: "trusted_local_write",
         cwd: "/repo/worktree"
       });
     } catch (error: unknown) {
