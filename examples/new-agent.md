@@ -18,6 +18,9 @@ agents/my-agent/
 
 ## 2. Add `agent.yaml`
 
+For a runnable reference that shows every currently configured field together,
+see `agents/example-complete-agent/`.
+
 ```yaml
 id: my-agent
 description: Explains what this agent is responsible for.

@@ -1,9 +1,15 @@
 import { jiraIssueContextFrom } from "./task-context.js";
+import {
+  executionSummaryJson,
+  executionSummaryMarkdownLines,
+  type ExecutionSummaryJson
+} from "../../reports/execution-summary.js";
 import type { ChangeRequestArtifact } from "../../change-request/contracts.js";
 import type {
   Invocation,
   InvocationRepository
 } from "../../invocation/types.js";
+import type { ObservabilitySummary } from "../../observability/summary.js";
 import type { ValidationResult } from "../../validation/runner.js";
 import type {
   CommitChangesArtifact,
@@ -26,6 +32,7 @@ type ReportInput = {
   push: PushBranchArtifact;
   changeRequest: ChangeRequestArtifact;
   trustedHostLocal: boolean;
+  summary?: ObservabilitySummary;
 };
 
 type ActionJson = {
@@ -54,6 +61,7 @@ export type ImplementationReportJson = {
   push: ActionJson & Pick<PushBranchArtifact, "remote" | "branch">;
   change_request: ActionJson & Pick<ChangeRequestArtifact, "provider" | "url">;
   warnings: string[];
+  execution?: ExecutionSummaryJson;
 };
 
 const trustedHostLocalWarning =
@@ -101,9 +109,11 @@ export function buildImplementationReportJson({
   commit,
   push,
   changeRequest,
-  trustedHostLocal
+  trustedHostLocal,
+  summary
 }: ReportInput): ImplementationReportJson {
   const task = jiraIssueContextFrom(invocation);
+  const execution = executionSummaryJson(summary);
 
   return {
     jira: {
@@ -135,7 +145,8 @@ export function buildImplementationReportJson({
       provider: changeRequest.provider,
       url: changeRequest.url
     },
-    warnings: trustedHostLocal ? [trustedHostLocalWarning] : []
+    warnings: trustedHostLocal ? [trustedHostLocalWarning] : [],
+    ...(execution === undefined ? {} : { execution })
   };
 }
 
@@ -175,6 +186,8 @@ export function buildImplementationReportMarkdown(input: ReportInput): string {
   if (report.warnings.length > 0) {
     lines.push("", "## Warnings", "", ...report.warnings.map((warning) => `- ${warning}`));
   }
+
+  lines.push(...executionSummaryMarkdownLines(input.summary));
 
   return `${lines.join("\n")}\n`;
 }

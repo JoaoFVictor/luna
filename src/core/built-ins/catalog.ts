@@ -58,11 +58,17 @@ export function createBuiltInStepCatalog<
       uses,
       state,
       input,
-      dependencies = {}
+      dependencies = {},
+      observabilitySummary
     }: RunBuiltInStepOptions): Promise<unknown> {
       const builtIn = registry.require(uses);
 
-      return await builtIn.run({ state, input, dependencies });
+      return await builtIn.run({
+        state,
+        input,
+        dependencies,
+        observabilitySummary
+      });
     }
   });
 }

@@ -1,8 +1,14 @@
 import { githubPullRequestContextFrom } from "./pull-request-context.js";
+import {
+  executionSummaryJson,
+  executionSummaryMarkdownLines,
+  type ExecutionSummaryJson
+} from "../../reports/execution-summary.js";
 import type { Invocation } from "../../invocation/types.js";
 import type { WorkspaceRecord } from "../../write-mode/types.js";
 import type { Finding } from "../../findings/types.js";
 import type { AcceptanceDecision } from "../../decisions/types.js";
+import type { ObservabilitySummary } from "../../observability/summary.js";
 
 const severityRank: Record<Finding["severity"], number> = {
   critical: 0,
@@ -16,18 +22,21 @@ type MarkdownOptions = {
   invocation: Invocation;
   findings: readonly Finding[];
   acceptance: AcceptanceDecision;
+  summary?: ObservabilitySummary;
 };
 
 type JsonOptions = {
   acceptance: AcceptanceDecision;
   findings: readonly Finding[];
   workspace?: WorkspaceRecord;
+  summary?: ObservabilitySummary;
 };
 
 export type FinalReportJson = {
   acceptance: AcceptanceDecision;
   findings: Finding[];
   workspace?: WorkspaceRecord;
+  execution?: ExecutionSummaryJson;
 };
 
 function sortFindings(findings: readonly Finding[]): Finding[] {
@@ -73,7 +82,8 @@ function prActionFromAcceptance(acceptance: AcceptanceDecision): string {
 export function buildFinalReportMarkdown({
   invocation,
   findings,
-  acceptance
+  acceptance,
+  summary
 }: MarkdownOptions): string {
   const pullRequest = githubPullRequestContextFrom(invocation);
   const lines = [
@@ -117,17 +127,23 @@ export function buildFinalReportMarkdown({
     lines.push("", `Recommendation: ${normalizeMarkdownText(finding.recommendation)}`);
   }
 
+  lines.push(...executionSummaryMarkdownLines(summary));
+
   return `${lines.join("\n")}\n`;
 }
 
 export function buildFinalReportJson({
   acceptance,
   findings,
-  workspace
+  workspace,
+  summary
 }: JsonOptions): FinalReportJson {
+  const execution = executionSummaryJson(summary);
+
   return {
     acceptance,
     findings: sortFindings(findings),
-    ...(workspace === undefined ? {} : { workspace })
+    ...(workspace === undefined ? {} : { workspace }),
+    ...(execution === undefined ? {} : { execution })
   };
 }

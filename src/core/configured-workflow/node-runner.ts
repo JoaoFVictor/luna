@@ -217,7 +217,8 @@ export async function runWorkflowNode(
         node.input === undefined
           ? undefined
           : resolveWorkflowInput(node.input, state),
-      dependencies: context.dependencies.builtInStepDependencies
+      dependencies: context.dependencies.builtInStepDependencies,
+      observabilitySummary: context.summary
     });
   }
 

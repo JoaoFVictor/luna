@@ -10,6 +10,7 @@ import type {
   PushBranchArtifact
 } from "../../src/core/write-mode/types.js";
 import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
+import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
 const invocation: Invocation = {
   version: "2026-06",
@@ -164,5 +165,42 @@ describe("implementation report builder", () => {
       "trusted_host_local execution can access host filesystem, credentials, network, and local CLIs."
     );
     expect(markdown.endsWith("\n")).toBe(true);
+  });
+
+  it("includes execution metrics when an observability summary is provided", () => {
+    const summary = createObservabilitySummary({
+      runId: "run-1",
+      workflowId: "implementation"
+    });
+    summary.prompt_operations = 4;
+    summary.prompt_duration_ms = 2500;
+    summary.tokens.input = 200;
+    summary.tokens.output = 30;
+    summary.tokens.cache_read = 500;
+    summary.tokens.total = 730;
+    summary.cost.total = 1.25;
+
+    const input = {
+      ...reportInput,
+      summary
+    };
+    const json = buildImplementationReportJson(input);
+    const markdown = buildImplementationReportMarkdown(input);
+
+    expect(json.execution).toMatchObject({
+      prompt_operations: 4,
+      prompt_duration_ms: 2500,
+      usage_missing_count: 0,
+      tokens: {
+        input: 200,
+        output: 30,
+        cache_read: 500,
+        cache_write: 0,
+        total: 730
+      }
+    });
+    expect(markdown).toContain("## Execution Summary");
+    expect(markdown).toContain("Prompt operations: 4");
+    expect(markdown).toContain("Cost: 1.25 provider_cost_unit");
   });
 });

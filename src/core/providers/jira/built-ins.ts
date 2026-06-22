@@ -88,7 +88,7 @@ export const collectTaskContextBuiltIn = defineBuiltInStep({
 export const finalImplementationReportBuiltIn = defineBuiltInStep({
   name: "final_implementation_report",
   metadata: finalReportMetadata,
-  run({ state, input, dependencies = {} }) {
+  run({ state, input, dependencies = {}, observabilitySummary }) {
     const buildImplementationReportJson =
       dependencies.buildImplementationReportJson ??
       defaultBuildImplementationReportJson;
@@ -130,7 +130,10 @@ export const finalImplementationReportBuiltIn = defineBuiltInStep({
       push,
       changeRequest,
       trustedHostLocal:
-        requiredImplementationFrom(state).sandbox.type === "trusted_host_local"
+        requiredImplementationFrom(state).sandbox.type === "trusted_host_local",
+      ...(observabilitySummary === undefined
+        ? {}
+        : { summary: observabilitySummary })
     };
 
     return {

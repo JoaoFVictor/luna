@@ -422,10 +422,12 @@ Input adapters:
 Workflows:
 
 - `code-review`
+- `example-complete-agent`
 - `implementation`
 
 Agents:
 
+- `example-complete-agent`
 - `review-planner`
 - `change-reviewer`
 - `change-acceptance-reviewer`

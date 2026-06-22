@@ -7,6 +7,7 @@ import type { Invocation } from "../../src/core/invocation/types.js";
 import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
 import type { Finding } from "../../src/core/findings/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
+import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
 const invocation: Invocation = {
   version: "2026-06",
@@ -142,6 +143,72 @@ describe("final report builder", () => {
 
     expect(json.workspace).toEqual(workspace);
     expect(json.workspace?.preserved).toBe(true);
+  });
+
+  it("includes execution metrics when an observability summary is provided", () => {
+    const summary = createObservabilitySummary({
+      runId: "run-1",
+      workflowId: "code-review"
+    });
+    summary.prompt_operations = 3;
+    summary.prompt_duration_ms = 1234;
+    summary.usage_missing_count = 1;
+    summary.tokens.input = 100;
+    summary.tokens.output = 20;
+    summary.tokens.cache_read = 300;
+    summary.tokens.cache_write = 0;
+    summary.tokens.total = 420;
+    summary.cost.total = 0.42;
+    summary.rejected_capabilities.push({
+      capability: "tool",
+      id: "repository.status",
+      reason: "not allowed"
+    });
+
+    const markdown = buildFinalReportMarkdown({
+      invocation,
+      findings: [],
+      acceptance,
+      summary
+    });
+    const json = buildFinalReportJson({
+      acceptance,
+      findings: [],
+      summary
+    });
+
+    expect(markdown).toContain("## Execution Summary");
+    expect(markdown).toContain("Prompt operations: 3");
+    expect(markdown).toContain("Tokens: 420 total");
+    expect(markdown).toContain("Rejected capabilities: 1");
+    expect(json.execution).toEqual({
+      prompt_operations: 3,
+      prompt_duration_ms: 1234,
+      usage_missing_count: 1,
+      tokens: {
+        input: 100,
+        output: 20,
+        cache_read: 300,
+        cache_write: 0,
+        total: 420
+      },
+      cost: {
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_write: 0,
+        total: 0.42,
+        unit: "provider_cost_unit"
+      },
+      failed_steps: [],
+      rejected_capabilities: [
+        {
+          capability: "tool",
+          id: "repository.status",
+          reason: "not allowed"
+        }
+      ]
+    });
   });
 
   it("normalizes model-controlled Markdown so fields cannot create fake structure", () => {

@@ -239,12 +239,15 @@ describe("config definition files", () => {
         "agents/change-acceptance-reviewer/agent.yaml",
         "agents/change-reviewer/agent.yaml",
         "agents/code-implementer/agent.yaml",
+        "agents/example-complete-agent/agent.yaml",
         "agents/implementation-planner/agent.yaml",
         "agents/review-planner/agent.yaml",
         "config/implementation.yaml",
         "config/jira.yaml",
         "workflows/code-review/graph.yaml",
         "workflows/code-review/workflow.yaml",
+        "workflows/example-complete-agent/graph.yaml",
+        "workflows/example-complete-agent/workflow.yaml",
         "workflows/implementation/graph.yaml",
         "workflows/implementation/workflow.yaml"
       ])
@@ -264,10 +267,13 @@ describe("config definition files", () => {
         "agents/change-acceptance-reviewer/output.schema.json",
         "agents/change-reviewer/output.schema.json",
         "agents/code-implementer/output.schema.json",
+        "agents/example-complete-agent/output.schema.json",
         "agents/implementation-planner/output.schema.json",
         "agents/review-planner/output.schema.json",
         "workflows/code-review/input.schema.json",
         "workflows/code-review/output.schema.json",
+        "workflows/example-complete-agent/input.schema.json",
+        "workflows/example-complete-agent/output.schema.json",
         "workflows/implementation/input.schema.json",
         "workflows/implementation/output.schema.json"
       ])
@@ -293,6 +299,7 @@ describe("config definition files", () => {
       "agents/change-acceptance-reviewer/agent.yaml",
       "agents/change-reviewer/agent.yaml",
       "agents/code-implementer/agent.yaml",
+      "agents/example-complete-agent/agent.yaml",
       "agents/implementation-planner/agent.yaml",
       "agents/review-planner/agent.yaml"
     ]);

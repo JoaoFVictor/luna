@@ -6,6 +6,9 @@ agents, no new TypeScript workflow entrypoint is required.
 Workflow definitions live under `workflows/<id>/`. Luna keeps one generic
 TypeScript workflow entrypoint at `src/workflows/luna.ts`.
 
+For a runnable write-mode reference that uses the full example agent, see
+`workflows/example-complete-agent/`.
+
 This recipe starts with a read-only workflow that operates on a GitHub PR and
 local git repository context. Luna also includes a write-mode implementation
 workflow for Jira tasks. A workflow for a different domain may need a new input

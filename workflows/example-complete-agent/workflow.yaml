@@ -1,0 +1,19 @@
+id: example-complete-agent
+type: workflow
+mode: git_managed_write
+input_schema: input.schema.json
+output_schema: output.schema.json
+graph: graph.yaml
+execution:
+  max_concurrency: 2
+  lock_timeout_ms: 120000
+observability:
+  exporters:
+    jsonl:
+      enabled: true
+      required: false
+    runtime_log:
+      enabled: true
+      required: false
+subagent_policy:
+  allow_write: false
