@@ -130,7 +130,11 @@ describe("read-only Flue agent runner", () => {
             input: {},
             artifacts: [{ path: "review-plan.json", source: "$.steps.review_plan", format: "json", required: true }]
           },
-          model: { model: "openai/planner-test", reasoning_effort: "medium" },
+          model: {
+            model: "openai/planner-test",
+            reasoning_effort: "medium",
+            transport: "sse"
+          },
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
@@ -232,6 +236,7 @@ describe("read-only Flue agent runner", () => {
             ? initialized.model
             : JSON.stringify(initialized.model));
         initializedConfigs.set(configKey, initialized);
+        expect(initialized).not.toHaveProperty("transport");
 
         return {
           session: vi.fn(async () => ({
@@ -280,7 +285,8 @@ describe("read-only Flue agent runner", () => {
     expect(promptCalls.map((call) => call.options)).toEqual([
       expect.objectContaining({
         model: "openai/planner-test",
-        thinkingLevel: "medium"
+        thinkingLevel: "medium",
+        transport: "sse"
       }),
       expect.objectContaining({
         model: "openai/reviewer-test",

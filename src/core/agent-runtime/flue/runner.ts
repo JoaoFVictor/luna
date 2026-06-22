@@ -24,7 +24,10 @@ import {
   resolveFlueAgentCapabilities,
   type ResolvedFlueAgentCapabilities
 } from "./capabilities.js";
-import { toFlueModelOptions } from "./model-options.js";
+import {
+  toFlueModelOptions,
+  toFluePromptOptions
+} from "./model-options.js";
 import type { McpConfig } from "../../config/mcp.js";
 import { customEvent } from "../../observability/luna-observability.js";
 import { sanitizeJsonObject } from "../../observability/sanitize.js";
@@ -550,7 +553,7 @@ export async function runFlueAgentStep(
       ),
       promptOptions: {
         result: await resultSchema(options.agent.outputSchemaPath),
-        ...toFlueModelOptions(options.model)
+        ...toFluePromptOptions(options.model)
       },
       retryPolicy: readOnlyRetryPolicy(options)
     });
@@ -621,7 +624,7 @@ async function runWritableAgent(
     },
     promptOptions: {
       result: await resultSchema(options.agent.outputSchemaPath),
-      ...toFlueModelOptions(options.model)
+      ...toFluePromptOptions(options.model)
     }
   });
 
