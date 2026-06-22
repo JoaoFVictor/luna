@@ -343,6 +343,7 @@ export async function runConfiguredWorkflow({
         mode: workflow.mode
       },
       workspaceRoot: configs.app.workspace.root,
+      agentsRoot: resolvedAgentsRoot,
       steps: {}
     };
     const orderedNodes = topologicalNodes(workflow.graph.nodes);

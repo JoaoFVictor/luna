@@ -27,6 +27,9 @@ agents/<agent-id>/
 - Use capability profile names like `default`, `deep`, `fast`, `balanced`.
 - `mode` is `read_only` or `trusted_host_local_write`.
 - `instructions_file` and `output_schema` must stay inside the agent directory.
+- Optional `context.files` lists agent-owned reference files relative to
+  `agents/<agent-id>/`. Workflows must run `collect_context` and pass
+  `context: $.steps.context` for agents to receive them.
 
 ## Reuse First
 
@@ -42,6 +45,7 @@ Keep orchestration in `workflows/<id>/graph.yaml`, not in agent instructions.
 - `tools`: IDs from `src/core/tools/catalog.ts`.
 - `mcp_servers`: IDs from `config/mcp.yaml`.
 - `subagents`: referenced Luna agent IDs.
+- `context.files`: audited reference files passed through workflow input.
 
 Flue materializes skills, tools, MCP servers, and subagent profiles through
 `src/core/agent-runtime/flue/capabilities.ts`; do not import Flue runtime APIs

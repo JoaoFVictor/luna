@@ -81,6 +81,10 @@ repositories:
     expected_remote_urls:
       - git@github.com:org/repo.git
       - https://github.com/org/repo.git
+    context:
+      files:
+        - AGENTS.md
+        - README.md
 ```
 
 `expected_remote_urls` is required for write-mode workflows. Luna checks the

@@ -6,6 +6,7 @@ import {
   assertNoDuplicateCapabilities
 } from "./capabilities.js";
 import { loadYamlFile } from "../config/loader.js";
+import { ContextConfigSchema } from "../config/schemas.js";
 import { assertSafeSegment, isInsideRoot } from "../security/path.js";
 
 const NonEmptyStringSchema = z.string().min(1);
@@ -17,7 +18,8 @@ const AgentMetadataSchema = z
     model_profile: NonEmptyStringSchema,
     mode: z.enum(["read_only", "trusted_host_local_write"]),
     instructions_file: NonEmptyStringSchema,
-    output_schema: NonEmptyStringSchema
+    output_schema: NonEmptyStringSchema,
+    context: ContextConfigSchema.optional()
   })
   .extend(AgentCapabilityFieldsSchema.shape)
   .strict();

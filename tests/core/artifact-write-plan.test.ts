@@ -28,6 +28,7 @@ function workflowState(steps: Record<string, unknown> = {}): SchedulerWorkflowSt
       mode: "git_managed_read_only"
     },
     workspaceRoot: "/tmp/luna-workspaces",
+    agentsRoot: "/tmp/luna-agents",
     steps
   };
 }

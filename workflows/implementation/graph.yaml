@@ -29,6 +29,22 @@ nodes:
     after:
       - task_context
 
+  - id: context
+    type: built_in
+    uses: collect_context
+    artifacts:
+      - path: context-intake.json
+        source: $.steps.context
+        format: json
+    input:
+      agents:
+        - implementation-planner
+        - code-implementer
+        - change-reviewer
+        - change-acceptance-reviewer
+    after:
+      - workspace
+
   - id: implementation_plan
     type: agent
     agent: implementation-planner
@@ -40,8 +56,10 @@ nodes:
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
+      context: $.steps.context
     after:
       - task_context
+      - context
 
   - id: implementation
     type: agent_loop
@@ -60,6 +78,7 @@ nodes:
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
+      context: $.steps.context
       implementation_plan: $.steps.implementation_plan
       workspace: $.workspace
     sandbox:
@@ -107,6 +126,7 @@ nodes:
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
+      context: $.steps.context
       implementation_result: $.steps.implementation
       worktree_diff: $.steps.worktree_diff
     after:
@@ -123,6 +143,7 @@ nodes:
     input:
       invocation: $.invocation
       task_context: $.steps.task_context
+      context: $.steps.context
       implementation_result: $.steps.implementation
       review: $.steps.implementation_review
     after:

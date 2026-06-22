@@ -32,6 +32,7 @@ function baseState(): SchedulerWorkflowState {
     },
     workflow: { id: "code-review", mode: "git_managed_read_only" },
     workspaceRoot: ".workspaces",
+    agentsRoot: "agents",
     steps: {}
   };
 }

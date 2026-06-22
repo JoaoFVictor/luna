@@ -97,6 +97,7 @@ Built-in steps:
 
 - `preflight`
 - `prepare_worktree`
+- `collect_context`
 - `collect_repo_context`
 - `validate_code_review_findings`
 - `final_code_review_report`
@@ -670,7 +671,15 @@ repositories:
     remote: origin
     expected_remote_urls:
       - git@github.com:org/repo.git
+    context:
+      files:
+        - AGENTS.md
+        - README.md
 ```
+
+When workflows include `collect_context`, Luna reads configured repository
+context files from the prepared workspace and writes `context-intake.json` with
+read, missing, and skipped files.
 
 The Jira adapter uses `config/jira.yaml` to map a Jira instance and repository
 field:

@@ -88,6 +88,19 @@ nodes:
     after:
       - workspace
 
+  - id: context
+    type: built_in
+    uses: collect_context
+    artifacts:
+      - path: context-intake.json
+        source: $.steps.context
+        format: json
+    input:
+      agents:
+        - my-agent
+    after:
+      - workspace
+
   - id: my_agent_step
     type: agent
     agent: my-agent
@@ -105,8 +118,10 @@ nodes:
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
+      context: $.steps.context
     after:
       - repo_context
+      - context
 ```
 
 Graph rules:
@@ -124,6 +139,7 @@ Graph rules:
 
 - `preflight`
 - `prepare_worktree`
+- `collect_context`
 - `collect_repo_context`
 - `validate_code_review_findings`
 - `final_code_review_report`
@@ -197,6 +213,7 @@ Example:
 ```yaml
 input:
   invocation: $.invocation
+  context: $.steps.context
   plan: $.steps.review_plan
   findings: $.steps.validate_findings
 ```

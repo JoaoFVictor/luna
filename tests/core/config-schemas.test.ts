@@ -27,6 +27,22 @@ const plannedRepositoriesConfig = {
   ]
 };
 
+const repositoryConfigWithContext = {
+  repositories: [
+    {
+      id: "example",
+      provider: "github",
+      owner: "org",
+      name: "repo",
+      path: "/tmp/luna-example-repo",
+      remote: "origin",
+      context: {
+        files: ["AGENTS.md", "README.md"]
+      }
+    }
+  ]
+};
+
 const plannedAppConfig = {
   workspace: {
     strategy: "git_worktree",
@@ -47,6 +63,12 @@ describe("config zod schemas", () => {
   it("accepts the planned repositories config shape", () => {
     expect(RepositoriesConfigSchema.parse(plannedRepositoriesConfig)).toEqual(
       plannedRepositoriesConfig
+    );
+  });
+
+  it("accepts repository context files", () => {
+    expect(RepositoriesConfigSchema.parse(repositoryConfigWithContext)).toEqual(
+      repositoryConfigWithContext
     );
   });
 

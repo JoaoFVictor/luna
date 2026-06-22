@@ -40,6 +40,11 @@ Rules:
 Use `after` dependencies for ordering. Duplicate ids, unknown dependencies, and
 cycles are invalid.
 
+Use `collect_context` when a workflow should pass configured repository or
+agent context files to model nodes. Write `context-intake.json` as an artifact,
+list every agent/agent_loop that consumes context in `input.agents`, and pass
+`context: $.steps.context` explicitly to those nodes.
+
 For `git_managed_write` workflows, keep lifecycle decisions in deterministic
 built-ins. If an agent or agent-loop output participates in workspace
 preserve/cleanup decisions, add a built-in node after it to record the typed
@@ -73,12 +78,16 @@ Node `input` can reference:
 - `$.config.implementation`
 - `$.steps.<node-id>`
 
+Use `$.steps.context` for the output of `collect_context`.
+
 ## Design Rules
 
 - Keep routing deterministic through CLI target, invocation target, or config.
 - Put orchestration in graph YAML, not in prompts.
 - Create or reuse agents for model judgment.
 - Create built-ins for deterministic workflow capabilities.
+- Keep context intake explicit in the graph; do not make agents or Flue discover
+  repository guidance implicitly.
 - Create adapters for new external input sources.
 
 ## Testing

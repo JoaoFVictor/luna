@@ -66,6 +66,10 @@ repositories:
     name: repo
     path: /path/to/local/repo
     remote: origin
+    context:
+      files:
+        - AGENTS.md
+        - README.md
 ```
 
 Run a PR review:
@@ -86,6 +90,10 @@ Open the generated report:
 .runs/code-review/<run-id>/final-report.md
 .runs/implementation/<run-id>/final-report.md
 ```
+
+Each run also writes `context-intake.json` when workflow context is collected.
+It records which configured repository and agent context files were read,
+missing, or skipped.
 
 For complete walkthroughs, see:
 
@@ -354,6 +362,10 @@ repositories:
     expected_remote_urls:
       - git@github.com:org/repo.git
       - https://github.com/org/repo.git
+    context:
+      files:
+        - AGENTS.md
+        - README.md
 ```
 
 `config/implementation.yaml` keeps commit, push, and change request creation
@@ -388,6 +400,7 @@ Built-in steps:
 
 - `preflight`
 - `prepare_worktree`
+- `collect_context`
 - `collect_repo_context`
 - `validate_code_review_findings`
 - `final_code_review_report`

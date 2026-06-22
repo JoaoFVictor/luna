@@ -14,6 +14,7 @@ export type WorkflowState = {
   workflow?: unknown;
   workspace?: unknown;
   workspaceRoot?: string;
+  agentsRoot?: string;
   steps: Record<string, unknown>;
 };
 
@@ -27,6 +28,7 @@ export type SchedulerWorkflowState = WorkflowState & {
     mode: "git_managed_read_only" | "git_managed_write";
   };
   workspaceRoot: AppConfig["workspace"]["root"];
+  agentsRoot: string;
   workspace?: WorkspaceRecord;
   lifecycleEvidence?: ImplementationLifecycleEvidence;
 };

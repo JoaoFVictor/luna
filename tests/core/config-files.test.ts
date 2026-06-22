@@ -14,8 +14,10 @@ type WorkflowGraph = {
   nodes: Array<{
     id: string;
     type: "agent" | "built_in" | "agent_loop";
+    uses?: string;
     agent?: string;
     after?: string[];
+    input?: Record<string, unknown>;
   }>;
 };
 
@@ -125,6 +127,25 @@ async function parseYamlFile(path: string): Promise<unknown> {
 
 async function parseJsonFile(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
+}
+
+function agentsWithContextInput(graph: WorkflowGraph): string[] {
+  return graph.nodes
+    .filter((node) => node.type === "agent" || node.type === "agent_loop")
+    .filter((node) => node.input?.context === "$.steps.context")
+    .map((node) => node.agent)
+    .filter((agent): agent is string => agent !== undefined);
+}
+
+function collectContextAgents(graph: WorkflowGraph): string[] {
+  const contextNode = graph.nodes.find(
+    (node) => node.type === "built_in" && node.uses === "collect_context"
+  );
+  const agents = contextNode?.input?.agents;
+
+  return Array.isArray(agents) ? agents.filter((agent): agent is string =>
+    typeof agent === "string"
+  ) : [];
 }
 
 function formatAjvErrors(errors: ErrorObject[] | null | undefined): string {
@@ -516,6 +537,7 @@ describe("config definition files", () => {
       "preflight",
       "workspace",
       "repo_context",
+      "context",
       "review_plan",
       "code_review",
       "validate_findings",
@@ -525,6 +547,12 @@ describe("config definition files", () => {
     expect(graph.nodes.find((node) => node.id === "code_review")?.after).toEqual([
       "review_plan"
     ]);
+    for (const id of ["review_plan", "code_review", "acceptance"]) {
+      expect(graph.nodes.find((node) => node.id === id)?.input).toMatchObject({
+        context: "$.steps.context"
+      });
+    }
+    expect(collectContextAgents(graph)).toEqual(agentsWithContextInput(graph));
 
     for (const node of graph.nodes.filter((node) => node.type === "agent")) {
       expect(node.agent, node.id).toBeDefined();
@@ -543,6 +571,7 @@ describe("config definition files", () => {
       "preflight",
       "task_context",
       "workspace",
+      "context",
       "implementation_plan",
       "implementation",
       "implementation_validation",
@@ -578,6 +607,17 @@ describe("config definition files", () => {
         ])
       })
     );
+    for (const id of [
+      "implementation_plan",
+      "implementation",
+      "implementation_review",
+      "acceptance"
+    ]) {
+      expect(graph.nodes.find((node) => node.id === id)?.input).toMatchObject({
+        context: "$.steps.context"
+      });
+    }
+    expect(collectContextAgents(graph)).toEqual(agentsWithContextInput(graph));
 
     for (const node of graph.nodes.filter(
       (candidate) => candidate.type === "agent" || candidate.type === "agent_loop"

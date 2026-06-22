@@ -17,6 +17,7 @@ async function writeAgentYaml(
     mode: string;
     instructions_file: string;
     output_schema: string;
+    context_files: readonly string[];
   }> = {}
 ): Promise<void> {
   const metadata = {
@@ -26,6 +27,7 @@ async function writeAgentYaml(
     mode: "read_only",
     instructions_file: "instructions.md",
     output_schema: "output.schema.json",
+    context_files: [],
     ...overrides
   };
 
@@ -38,6 +40,9 @@ async function writeAgentYaml(
       `mode: ${metadata.mode}`,
       `instructions_file: ${metadata.instructions_file}`,
       `output_schema: ${metadata.output_schema}`,
+      ...(metadata.context_files.length > 0
+        ? ["context:", "  files:", ...metadata.context_files.map((file) => `    - ${file}`)]
+        : []),
       ""
     ].join("\n"),
     "utf8"
@@ -85,6 +90,28 @@ describe("agent definition loader", () => {
       await expect(loadAgentDefinition(root, "code-implementer")).resolves.toMatchObject({
         id: "code-implementer",
         mode: "trusted_host_local_write"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads optional agent context files from agent.yaml", async () => {
+    const root = await tempAgentsRoot();
+    const agentDir = path.join(root, "review-planner");
+
+    try {
+      await mkdir(agentDir, { recursive: true });
+      await writeAgentYaml(agentDir, {
+        context_files: ["review-guidelines.md", "severity-rubric.md"]
+      });
+      await writeFile(path.join(agentDir, "instructions.md"), "# Planner\n", "utf8");
+      await writeFile(path.join(agentDir, "output.schema.json"), "{}", "utf8");
+
+      await expect(loadAgentDefinition(root, "review-planner")).resolves.toMatchObject({
+        context: {
+          files: ["review-guidelines.md", "severity-rubric.md"]
+        }
       });
     } finally {
       await rm(root, { recursive: true, force: true });

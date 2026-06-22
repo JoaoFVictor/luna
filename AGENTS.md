@@ -21,6 +21,7 @@ Primary extension points:
 - `workflows/<id>/`: YAML workflow graphs.
 - `src/adapters/<id>/`: input adapters for external sources.
 - `src/core/built-ins/`: deterministic workflow built-ins.
+- `src/core/context/`: deterministic repository/agent context intake.
 - `src/core/tools/`: Luna-native local tool contracts and catalog.
 - `skills/`: reusable guidance for LLMs and runtime agents.
 
@@ -42,6 +43,8 @@ Before changing an area, read the matching project skill:
 - Do not add workflow-specific CLI commands; use `run --target workflow:<id>`.
 - Do not create compatibility wrappers or deadcode for old architecture.
 - Keep agents reusable; put orchestration in workflow graphs.
+- Put context files in repository or agent config; collect them through
+  `collect_context` and pass `$.steps.context` explicitly.
 - Register built-ins through `src/core/built-ins/catalog.ts`.
 - Register local tools through `src/core/tools/catalog.ts`; Flue
   materialization lives in `src/core/agent-runtime/flue/tool-registry.ts`.

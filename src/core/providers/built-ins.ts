@@ -7,6 +7,7 @@ import {
   recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
 } from "../built-ins/implementation.js";
+import { collectContextBuiltIn } from "../built-ins/context.js";
 import {
   createBuiltInStepCatalog,
   openChangeRequestBuiltIn
@@ -28,6 +29,7 @@ export { openChangeRequestBuiltIn };
 export const defaultBuiltInSteps = Object.freeze([
   preflightBuiltIn,
   prepareWorktreeBuiltIn,
+  collectContextBuiltIn,
   collectRepoContextBuiltIn,
   validateCodeReviewFindingsBuiltIn,
   finalCodeReviewReportBuiltIn,

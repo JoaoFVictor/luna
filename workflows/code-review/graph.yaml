@@ -27,6 +27,21 @@ nodes:
     after:
       - workspace
 
+  - id: context
+    type: built_in
+    uses: collect_context
+    artifacts:
+      - path: context-intake.json
+        source: $.steps.context
+        format: json
+    input:
+      agents:
+        - review-planner
+        - change-reviewer
+        - change-acceptance-reviewer
+    after:
+      - workspace
+
   - id: review_plan
     type: agent
     agent: review-planner
@@ -38,8 +53,10 @@ nodes:
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
+      context: $.steps.context
     after:
       - repo_context
+      - context
 
   - id: code_review
     type: agent
@@ -52,6 +69,7 @@ nodes:
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
+      context: $.steps.context
       review_plan: $.steps.review_plan
     after:
       - review_plan
@@ -80,6 +98,7 @@ nodes:
     input:
       invocation: $.invocation
       repo_context: $.steps.repo_context
+      context: $.steps.context
       review_plan: $.steps.review_plan
       findings: $.steps.validate_findings
     after:

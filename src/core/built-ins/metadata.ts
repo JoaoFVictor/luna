@@ -136,6 +136,7 @@ export const openChangeRequestMetadata = Object.freeze({
 export const builtInStepMetadataByName = Object.freeze({
   preflight: emptyBuiltInMetadata,
   prepare_worktree: prepareWorktreeMetadata,
+  collect_context: emptyBuiltInMetadata,
   collect_repo_context: emptyBuiltInMetadata,
   validate_code_review_findings: emptyBuiltInMetadata,
   final_code_review_report: finalReportMetadata,

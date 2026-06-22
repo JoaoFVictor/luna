@@ -8,6 +8,7 @@ import {
   recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
 } from "./implementation.js";
+import { collectContextBuiltIn } from "./context.js";
 import { defaultChangeRequestRegistry } from "../change-request/default-registry.js";
 import { builtInError } from "./errors.js";
 import { builtInStepMetadataByName } from "./metadata.js";
@@ -23,6 +24,7 @@ export const openChangeRequestBuiltIn = createOpenChangeRequestBuiltIn(
 );
 
 export const defaultBuiltInSteps = Object.freeze([
+  collectContextBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   runValidationCommandsBuiltIn,
   recordImplementationValidationBuiltIn,

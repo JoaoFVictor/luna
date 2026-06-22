@@ -2,6 +2,13 @@ import { z } from "zod";
 
 const NonEmptyStringSchema = z.string().min(1);
 
+export const ContextConfigSchema = z
+  .object({
+    files: z.array(NonEmptyStringSchema)
+  })
+  .strict();
+export type ContextConfig = z.infer<typeof ContextConfigSchema>;
+
 export const RepositoryConfigSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -10,7 +17,8 @@ export const RepositoryConfigSchema = z
     name: NonEmptyStringSchema,
     path: NonEmptyStringSchema,
     remote: NonEmptyStringSchema,
-    expected_remote_urls: z.array(NonEmptyStringSchema).optional()
+    expected_remote_urls: z.array(NonEmptyStringSchema).optional(),
+    context: ContextConfigSchema.optional()
   })
   .strict();
 export type RepositoryConfig = z.infer<typeof RepositoryConfigSchema>;

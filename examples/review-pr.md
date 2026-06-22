@@ -49,9 +49,15 @@ repositories:
     name: repo
     path: /path/to/local/repo
     remote: origin
+    context:
+      files:
+        - AGENTS.md
+        - README.md
 ```
 
 `provider`, `owner`, and `name` must match the PR URL exactly.
+`context.files` is optional; configured files are audited in
+`context-intake.json` and passed to review agents.
 
 For this PR:
 

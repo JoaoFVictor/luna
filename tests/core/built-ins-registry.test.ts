@@ -56,6 +56,7 @@ describe("built-in step registry", () => {
     expect(builtInStepNames).toEqual([
       "preflight",
       "prepare_worktree",
+      "collect_context",
       "collect_repo_context",
       "validate_code_review_findings",
       "final_code_review_report",

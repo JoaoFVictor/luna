@@ -23,6 +23,7 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 | Reusable worker | `agents/<id>/` | `examples/new-agent.md` |
 | Orchestration shape | `workflows/<id>/` | `examples/new-workflow.md` |
 | Deterministic workflow action | `src/core/built-ins/` | `examples/new-built-in.md` |
+| Repository/agent context intake | `src/core/context/` + `collect_context` | `examples/new-agent.md`, `examples/new-workflow.md` |
 | Write-mode git/workspace services | `src/core/write-mode/` | `skills/luna-create-built-in/SKILL.md` |
 | Agent-local callable function | `src/core/tools/` + `src/core/tools/catalog.ts` | `examples/new-tool.md` |
 | Current agent runtime adapter | `src/core/agent-runtime/flue/` | Flue runner, capabilities, CLI launch, model projection, Pi auth, observability bridge |
@@ -34,6 +35,8 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 - Router: choose workflow deterministically from target/routing config.
 - Workflow: order built-ins, agents, and agent loops.
 - Agent: perform model judgment with a schema output.
+- Context intake: read configured repository and agent files deterministically
+  and emit `context-intake.json`.
 - Built-in: deterministic TypeScript node called by YAML.
 - Write mode: deterministic git/worktree lifecycle services used by
   implementation built-ins.

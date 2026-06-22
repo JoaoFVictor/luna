@@ -5,3 +5,7 @@ repositories:
     name: repo
     path: /tmp/luna-example-repo
     remote: origin
+    context:
+      files:
+        - AGENTS.md
+        - README.md
