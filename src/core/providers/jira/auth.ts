@@ -1,10 +1,13 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { z, ZodError } from "zod";
+import {
+  loadLunaAuthFile,
+  lunaAuthError,
+  type LunaAuthError
+} from "../auth.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
-export const LunaAuthConfigSchema = z
+export const JiraLunaAuthConfigSchema = z
   .object({
     providers: z
       .object({
@@ -21,24 +24,28 @@ export const LunaAuthConfigSchema = z
           )
           .optional()
       })
-      .strict()
+      .catchall(z.unknown())
   })
   .strict();
-export type LunaAuthConfig = z.infer<typeof LunaAuthConfigSchema>;
+export type JiraLunaAuthConfig = z.infer<typeof JiraLunaAuthConfigSchema>;
 
-export type JiraAuth = NonNullable<LunaAuthConfig["providers"]["jira"]>[string];
+export type JiraAuth = NonNullable<JiraLunaAuthConfig["providers"]["jira"]>[string];
 
-export type LunaAuthError = Error & {
+export type JiraAuthError = (LunaAuthError | Error) & {
   code: "luna_auth_missing" | "luna_auth_invalid" | "jira_auth_missing";
   cause?: unknown;
 };
 
-function lunaAuthError(
-  code: LunaAuthError["code"],
+function jiraAuthError(
+  code: JiraAuthError["code"],
   message: string,
   cause?: unknown
-): LunaAuthError {
-  const error = new Error(message, { cause }) as LunaAuthError;
+): JiraAuthError {
+  if (code === "luna_auth_missing" || code === "luna_auth_invalid") {
+    return lunaAuthError(code, message, cause) as JiraAuthError;
+  }
+
+  const error = new Error(message, { cause }) as JiraAuthError;
   error.code = code;
   error.cause = cause;
 
@@ -47,38 +54,16 @@ function lunaAuthError(
 
 export async function loadLunaAuth(
   projectRoot = process.cwd()
-): Promise<LunaAuthConfig> {
-  const authPath = path.join(projectRoot, "luna.auth.json");
-  let content: string;
+): Promise<JiraLunaAuthConfig> {
+  const authFile = await loadLunaAuthFile(projectRoot);
 
   try {
-    content = await readFile(authPath, "utf8");
-  } catch (cause) {
-    throw lunaAuthError(
-      "luna_auth_missing",
-      `Luna auth credentials not found at ${authPath}`,
-      cause
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch (cause) {
-    throw lunaAuthError(
-      "luna_auth_invalid",
-      `Invalid Luna auth JSON: ${authPath}`,
-      cause
-    );
-  }
-
-  try {
-    return LunaAuthConfigSchema.parse(parsed);
+    return JiraLunaAuthConfigSchema.parse(authFile);
   } catch (cause) {
     if (cause instanceof ZodError) {
-      throw lunaAuthError(
+      throw jiraAuthError(
         "luna_auth_invalid",
-        `Luna auth failed schema validation: ${authPath}`,
+        "Luna auth Jira provider failed schema validation",
         cause
       );
     }
@@ -88,13 +73,13 @@ export async function loadLunaAuth(
 }
 
 export function jiraAuthForInstance(
-  auth: LunaAuthConfig,
+  auth: JiraLunaAuthConfig,
   instanceId: string
 ): JiraAuth {
   const jiraAuth = auth.providers.jira?.[instanceId];
 
   if (jiraAuth === undefined) {
-    throw lunaAuthError(
+    throw jiraAuthError(
       "jira_auth_missing",
       `Jira auth is not configured for instance: ${instanceId}`
     );

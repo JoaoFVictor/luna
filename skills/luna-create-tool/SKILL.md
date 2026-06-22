@@ -23,6 +23,18 @@ Good tools:
 - are allowed only for suitable agent modes.
 - declare explicit safety metadata.
 
+## Provider Boundaries
+
+Tools under `src/core/tools/` are runtime-neutral by default. Do not put
+provider-specific auth, config, schemas, URLs, or payload parsing into a
+generic tool module. If a tool truly needs provider behavior, keep the
+provider-specific code under `src/core/providers/<provider>/` and expose only a
+neutral tool contract through `src/core/tools/`.
+
+Never reuse another provider's module as a convenience wrapper. Plane behavior
+does not belong in Jira modules, Jira behavior does not belong in Plane
+modules, and the same rule applies to every provider pair.
+
 ## Files
 
 Local tools are owned by `src/core/tools/`. Do not add tool implementations

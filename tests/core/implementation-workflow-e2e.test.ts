@@ -22,8 +22,8 @@ const jiraInvocation: Invocation = {
   target: { type: "workflow", id: "implementation" },
   repository: {
     provider: "github",
-    owner: "swinggo-dev",
-    name: "swg-front-nuxt"
+    owner: "octo-org",
+    name: "hello-world"
   },
   subject: {
     type: "jira_issue",
@@ -38,6 +38,38 @@ const jiraInvocation: Invocation = {
       acceptance_criteria: "Invalid payloads fail validation.",
       status: "To Do",
       issue_type: "Task"
+    }
+  }
+};
+
+const planeInvocation: Invocation = {
+  version: "2026-06",
+  source: "plane",
+  event: "issue",
+  action: "selected",
+  target: { type: "workflow", id: "implementation" },
+  repository: {
+    provider: "github",
+    owner: "octo-org",
+    name: "hello-world"
+  },
+  subject: {
+    type: "plane_issue",
+    id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+    title: "Fix checkout validation",
+    url: "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
+  },
+  payload: {
+    plane: {
+      instance_id: "company",
+      workspace_slug: "company",
+      project_id: "24f9b7",
+      issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+      sequence_id: 42,
+      description: "Reject invalid checkout payloads.",
+      status: "Backlog",
+      priority: "high",
+      labels: ["bug"]
     }
   }
 };
@@ -61,15 +93,15 @@ async function writeTestConfig(root: string): Promise<void> {
     path.join(root, "repositories.yaml"),
     [
       "repositories:",
-      "  - id: swg-front-nuxt",
+      "  - id: hello-world",
       "    provider: github",
-      "    owner: swinggo-dev",
-      "    name: swg-front-nuxt",
+      "    owner: octo-org",
+      "    name: hello-world",
       `    path: ${JSON.stringify(path.join(root, "repo"))}`,
       "    remote: origin",
       "    expected_remote_urls:",
-      "      - git@github.com:swinggo-dev/swg-front-nuxt.git",
-      "      - https://github.com/swinggo-dev/swg-front-nuxt.git",
+      "      - git@github.com:octo-org/hello-world.git",
+      "      - https://github.com/octo-org/hello-world.git",
       ""
     ].join("\n")
   );
@@ -198,6 +230,187 @@ function concurrentBarrier(expected: number, message: string): {
 }
 
 describe("implementation workflow e2e", () => {
+  it("runs the implementation workflow for a Plane issue invocation", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-implementation-e2e-"));
+
+    try {
+      await writeTestConfig(root);
+
+      const workspace: ImplementationWorktreeRecord = {
+        run_id: "run-1",
+        path: path.join(root, "workspaces", "run-1"),
+        preserved: true,
+        reason: "prepared",
+        repository_id: "hello-world",
+        branch: "feature/plane-42-fix-checkout-validation",
+        remote: "origin",
+        base_ref: "main",
+        base_sha: "base-sha"
+      };
+
+      const result = await runConfiguredWorkflow({
+        invocation: planeInvocation,
+        configRoot: root,
+        workflowsRoot: path.join(repoRoot, "workflows"),
+        agentsRoot: path.join(repoRoot, "agents"),
+        dependencies: providerAwareWorkflowDependencies({
+          createRunIdentity: () => ({
+            run_id: "run-1",
+            workflow_id: "implementation",
+            attempt: 1,
+            source: "plane",
+            event: "issue",
+            action: "selected",
+            route_target: { type: "workflow", id: "implementation" },
+            subject: {
+              type: "plane_issue",
+              id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
+            },
+            started_at: "2026-06-20T00:00:00.000Z"
+          }),
+          builtInStepDependencies: {
+            runPreflight: vi.fn(async () => ({ status: "ok" })),
+            prepareImplementationWorktree: vi.fn(async () => {
+              await mkdir(workspace.path, { recursive: true });
+              return workspace;
+            }),
+            collectWorktreeDiff: vi.fn(async () => ({
+              files: [],
+              untracked_files: [],
+              untracked_summaries: [],
+              staged_diff: "",
+              unstaged_diff: "",
+              staged_diff_truncated: false,
+              unstaged_diff_truncated: false,
+              max_diff_bytes: 200000
+            })),
+            commitChanges: vi.fn(async () => ({
+              enabled: false,
+              skipped: true,
+              reason: "disabled"
+            })),
+            pushBranch: vi.fn(async () => ({
+              enabled: false,
+              skipped: true,
+              reason: "disabled"
+            })),
+            changeRequestRegistry: {
+              get: vi.fn(() => ({
+                provider: "github",
+                open: vi.fn(async () => ({
+                  enabled: false,
+                  skipped: true,
+                  reason: "disabled"
+                }))
+              }))
+            }
+          },
+          runAgentStep: vi.fn(async ({ agent, input }) => {
+            if (agent.id === "implementation-planner") {
+              expect(input.task_context).toMatchObject({
+                implementation_title: "Plane #42: Fix checkout validation",
+                change_request_body: "Reject invalid checkout payloads.",
+                plane: {
+                  sequence_id: 42,
+                  status: "Backlog"
+                }
+              });
+
+              return {
+                summary: "Add checkout validation.",
+                steps: ["Update validation", "Run tests"],
+                risks: ["Existing checkout behavior"]
+              };
+            }
+
+            if (agent.id === "change-reviewer") {
+              return { summary: "No findings.", findings: [] };
+            }
+
+            return {
+              status: "accepted",
+              summary: "Implementation accepted.",
+              blocking_reasons: [],
+              recommended_action: "continue"
+            };
+          }),
+          runGatedAgentLoopStep: vi.fn(async () => ({
+            status: "passed",
+            attempts_exhausted: false,
+            attempts: [],
+            validation: { passed: true, commands: [] },
+            final_validation: { passed: true, commands: [] },
+            gates: [
+              { id: "validation", type: "validation_commands", passed: true },
+              { id: "review", type: "agent", passed: true },
+              { id: "acceptance", type: "agent", passed: true }
+            ],
+            result: {
+              status: "passed",
+              diff_summary: {
+                files: [],
+                untracked_files: [],
+                untracked_summaries: [],
+                staged_diff: "",
+                unstaged_diff: "",
+                staged_diff_truncated: false,
+                unstaged_diff_truncated: false,
+                max_diff_bytes: 200000
+              },
+              review: { summary: "No findings.", findings: [] },
+              acceptance: {
+                status: "accepted",
+                summary: "Implementation accepted.",
+                blocking_reasons: [],
+                recommended_action: "continue"
+              }
+            }
+          })),
+          cleanupWorktree: vi.fn(async () => {
+            throw new Error("cleanup should not run when commit is disabled");
+          })
+        })
+      });
+
+      expect(result.status).toBe("success");
+      await expect(readJson(root, "task-context.json")).resolves.toMatchObject({
+        implementation_title: "Plane #42: Fix checkout validation",
+        implementation_subject: {
+          key: "42",
+          title: "Fix checkout validation"
+        },
+        change_request_body: "Reject invalid checkout payloads.",
+        plane: {
+          issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+          sequence_id: 42,
+          status: "Backlog"
+        }
+      });
+      await expect(readJson(root, "final-report.json")).resolves.toMatchObject({
+        task: {
+          provider: "plane",
+          key: "42",
+          id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+          title: "Fix checkout validation",
+          status: "Backlog"
+        },
+        plane: {
+          issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+          sequence_id: 42,
+          workspace_slug: "company",
+          project_id: "24f9b7"
+        },
+        repository: {
+          provider: "github",
+          owner: "octo-org",
+          name: "hello-world"
+        }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps three concurrent same-subject implementation runs in distinct artifacts, branches, and worktrees", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-implementation-e2e-"));
 
@@ -331,14 +544,38 @@ describe("implementation workflow e2e", () => {
                   recommended_action: "approve"
                 };
               }),
-              runAgentLoopStep: vi.fn(async () => ({
+              runGatedAgentLoopStep: vi.fn(async () => ({
+              status: "passed",
+              attempts_exhausted: false,
+              attempts: [],
+              validation: { passed: true },
+              final_validation: { passed: true },
+              gates: [
+                { id: "validation", type: "validation_commands", passed: true },
+                { id: "review", type: "agent", passed: true },
+                { id: "acceptance", type: "agent", passed: true }
+              ],
+              result: {
                 status: "passed",
-                attempts_exhausted: false,
-                attempts: [],
-                validation: { passed: true },
-                final_validation: { passed: true },
-                result: { status: "passed" }
-              })),
+                diff_summary: {
+                  files: [],
+                  untracked_files: [],
+                  untracked_summaries: [],
+                  staged_diff: "",
+                  unstaged_diff: "",
+                  staged_diff_truncated: false,
+                  unstaged_diff_truncated: false,
+                  max_diff_bytes: 200000
+                },
+                review: { summary: "No findings.", findings: [] },
+                acceptance: {
+                  status: "accepted",
+                  summary: "Implementation accepted.",
+                  blocking_reasons: [],
+                  recommended_action: "approve"
+                }
+              }
+            })),
               cleanupWorktree: vi.fn(async () => {
                 throw new Error("cleanup should not run when commit is disabled");
               })
@@ -414,7 +651,7 @@ describe("implementation workflow e2e", () => {
         path: path.join(root, "workspaces", "run-1"),
         preserved: true,
         reason: "prepared",
-        repository_id: "swg-front-nuxt",
+        repository_id: "hello-world",
         branch: "feature/abc-123-fix-checkout-validation",
         remote: "origin",
         base_ref: "main",
@@ -556,16 +793,53 @@ describe("implementation workflow e2e", () => {
               recommended_action: "stop"
             };
           }),
-          runAgentLoopStep: vi.fn(async () => {
-            calls.push("agent_loop");
+          runGatedAgentLoopStep: vi.fn(async () => {
+            calls.push("gated_agent_loop");
             return {
               status: "failed",
               attempts_exhausted: true,
-              attempts: [{ attempt: 1, phase: "initial", validation }],
+              attempts: [
+                {
+                  attempt: 1,
+                  phase: "initial",
+                  validation,
+                  gate_results: [
+                    {
+                      id: "validation",
+                      type: "validation_commands",
+                      passed: false
+                    },
+                    { id: "review", type: "agent", passed: false },
+                    { id: "acceptance", type: "agent", passed: false }
+                  ]
+                }
+              ],
               validation,
               final_validation: validation,
+              gates: [
+                { id: "validation", type: "validation_commands", passed: false },
+                { id: "review", type: "agent", passed: false },
+                { id: "acceptance", type: "agent", passed: false }
+              ],
               result: {
-                status: "failed"
+                status: "failed",
+                diff_summary: worktreeDiff,
+                review: {
+                  summary: "Validation is failing.",
+                  findings: [
+                    {
+                      severity: "high",
+                      title: "Validation failed",
+                      description: "The implementation still fails tests."
+                    }
+                  ]
+                },
+                acceptance: {
+                  status: "rejected",
+                  summary: "Validation failed.",
+                  blocking_reasons: ["Tests failed"],
+                  recommended_action: "stop"
+                }
               }
             };
           }),
@@ -580,10 +854,7 @@ describe("implementation workflow e2e", () => {
         "preflight",
         "prepare_implementation_worktree",
         "implementation-planner",
-        "agent_loop",
-        "collect_worktree_diff",
-        "change-reviewer",
-        "change-acceptance-reviewer",
+        "gated_agent_loop",
         "commit_changes",
         "push_branch",
         "open_change_request",

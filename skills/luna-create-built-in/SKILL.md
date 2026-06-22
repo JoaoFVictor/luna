@@ -24,6 +24,18 @@ capabilities called by workflow YAML.
 Use `defineBuiltInStep({ name, metadata?, run })`. Export each step
 individually as `<camelName>BuiltIn`.
 
+## Provider Boundaries
+
+Keep runtime-neutral built-ins provider-agnostic. Code under
+`src/core/built-ins/` must not mention provider-specific auth, config, schemas,
+URLs, or payload details.
+
+Keep provider-specific built-ins isolated under their own provider directory. A
+Plane built-in must not add Plane behavior to Jira modules, and a Jira built-in
+must not add Jira behavior to Plane modules. Shared helpers are allowed only
+when they are truly provider-agnostic; provider-specific validation belongs
+under `src/core/providers/<provider>/`.
+
 ## Metadata
 
 Most built-ins need no metadata.

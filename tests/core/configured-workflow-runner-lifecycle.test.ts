@@ -34,6 +34,7 @@ describe("configured workflow runner", () => {
     try {
       await writeBaseConfig(root, "implementation");
       await writeImplementationWorkflow(root);
+      await writeAgent(root, "code-implementer");
       await writeAgent(root, "change-acceptance-reviewer");
       await writeImplementationConfig(root, { commitEnabled: true });
 
@@ -65,12 +66,11 @@ describe("configured workflow runner", () => {
             return preparedWorkspace;
           }
 
-          if (uses === "run_validation_commands") {
-            return { passed: true };
-          }
-
-          if (uses === "record_acceptance_decision") {
-            return acceptedDecision;
+          if (uses === "record_implementation_validation") {
+            return {
+              validation: { passed: true },
+              acceptance: acceptedDecision
+            };
           }
 
           if (uses === "commit_changes") {
@@ -105,7 +105,22 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(jiraRun),
           runBuiltInStep,
-          runAgentStep: vi.fn(async () => acceptedDecision),
+          runGatedAgentLoopStep: vi.fn(async () => ({
+            status: "passed",
+            attempts_exhausted: false,
+            attempts: [],
+            validation: { passed: true },
+            final_validation: { passed: true },
+            gates: [
+              { id: "validation", type: "validation_commands", passed: true },
+              { id: "acceptance", type: "agent", passed: true }
+            ],
+            result: {
+              status: "passed",
+              diff_summary: { files: [] },
+              acceptance: acceptedDecision
+            }
+          })),
           cleanupWorktree: vi.fn(async () => cleanedWorkspace)
         }
       });

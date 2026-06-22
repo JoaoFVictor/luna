@@ -1,6 +1,6 @@
 ---
 name: luna-create-workflow
-description: Use when creating or modifying Luna workflow YAML under workflows/, including workflow.yaml, graph.yaml, input and output schemas, built-in nodes, agent nodes, agent_loop nodes, artifacts, state references, and workflow routing.
+description: Use when creating or modifying Luna workflow YAML under workflows/, including workflow.yaml, graph.yaml, input and output schemas, built-in nodes, agent nodes, gated_agent_loop nodes, artifacts, state references, and workflow routing.
 ---
 
 # Luna Create Workflow
@@ -28,7 +28,7 @@ Rules:
   a separate artifact namespace.
 - Optional `execution.max_concurrency` controls safe ready-node parallelism.
   Optional `execution.lock_timeout_ms` tunes local lock acquisition. Repository-
-  sensitive built-ins remain serialized by local locks, and `agent`/`agent_loop`
+  sensitive built-ins remain serialized by local locks, and `agent`/`gated_agent_loop`
   nodes must use explicit workflow dependencies and artifacts instead of shared
   mutable local state.
 - Optional `observability.exporters.runtime_log` controls the runtime log sink.
@@ -42,24 +42,49 @@ Rules:
 - `built_in`: deterministic runtime capability from the active built-in
   registry.
 - `agent`: reusable model worker from `agents/<id>/`.
-- `agent_loop`: trusted local write agent with validation/repair.
+- `gated_agent_loop`: trusted local write agent with validation/repair.
+
+`gated_agent_loop` gates are generic and ordered. Configure them in
+`workflows/<id>/graph.yaml` under the node's `gates:` list. Supported gate
+types:
+
+- `validation_commands`: runs deterministic validation commands and blocks when
+  validation fails.
+- `agent`: runs a read-only gate agent. Configure `block_when` on this workflow
+  gate entry in `graph.yaml` as a JSONata expression; the referenced agent only
+  owns instructions, tools, context, and output schema.
+
+Workflow `agent` gate expressions:
+
+- `block_when.expression`: JSONata evaluated against the gate agent output. It
+  must return a boolean. `true` blocks; `false` passes.
+- `feedback.expression`: optional JSONata evaluated against the gate agent
+  output only when the gate blocks. Its result is serialized as repair
+  feedback.
+
+Do not put `block_when`, `feedback`, or gate policy in
+`agents/<id>/agent.yaml`; agents stay reusable across workflows.
+
+When any gate fails, Luna reruns the trusted write agent in repair mode with
+previous validation, gate feedback, and diff summary. Keep gate policy generic;
+provider-specific behavior belongs in adapters/providers, not in gates.
 
 Use `after` dependencies for ordering. Duplicate ids, unknown dependencies, and
 cycles are invalid.
 
-Agent and agent-loop nodes may declare `retry`. Read-only agent nodes can retry
-transient runtime failures. Trusted write agent loops reject retries that would
+Agent and `gated_agent_loop` nodes may declare `retry`. Read-only agent nodes can retry
+transient runtime failures. Trusted write gated agent loops reject retries that would
 replay local file writes.
 
 Use `collect_context` when a workflow should pass configured repository or
 agent context files to model nodes. Write `context-intake.json` as an artifact,
-list every agent/agent_loop that consumes context in `input.agents`, and pass
+list every agent or `gated_agent_loop` that consumes context in `input.agents`, and pass
 `context: $.steps.context` explicitly to those nodes. Luna promotes collected
 context into runtime instructions, ordered as agent-owned context before
 repository context, and keeps only `context_audit` metadata in task input.
 
 For `trusted_local_write` workflows, keep lifecycle decisions in deterministic
-built-ins. If an agent or agent-loop output participates in workspace
+built-ins. If an agent or `gated_agent_loop` output participates in workspace
 preserve/cleanup decisions, add a built-in node after it to record the typed
 lifecycle gate. Built-ins expose lifecycle metadata through their TypeScript
 registry definitions.

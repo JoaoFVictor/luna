@@ -1,5 +1,5 @@
 id: code-implementer
-description: Implements Jira tasks in a trusted local worktree.
+description: Implements tasks in a trusted local worktree.
 model_profile: deep
 mode: trusted_local_write
 instructions_file: instructions.md

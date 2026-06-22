@@ -490,6 +490,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
                   key: "ABC-123",
                   title: "Fix checkout validation"
                 },
+                change_request_body: "Reject invalid checkout payloads.",
                 jira: {
                   issue_key: "ABC-123",
                   summary: "Fix checkout validation",
@@ -503,7 +504,10 @@ describe("configured code review workflow end-to-end with real Git", () => {
             }
 
             if (uses === "record_implementation_validation") {
-              return { passed: true };
+              return {
+                validation: { passed: true },
+                acceptance: acceptedImplementationDecision
+              };
             }
 
             if (uses === "record_acceptance_decision") {
@@ -535,13 +539,37 @@ describe("configured code review workflow end-to-end with real Git", () => {
             agent.id === "implementation-planner"
               ? { summary: "Plan", steps: ["Edit"], risks: [] }
               : acceptedImplementationDecision,
-          runAgentLoopStep: async () => ({
+          runGatedAgentLoopStep: async () => ({
             status: "passed",
             attempts_exhausted: false,
             attempts: [],
             validation: { passed: true },
             final_validation: { passed: true },
-            result: { status: "passed" }
+            gates: [
+              { id: "validation", type: "validation_commands", passed: true },
+              { id: "review", type: "agent", passed: true },
+              { id: "acceptance", type: "agent", passed: true }
+            ],
+            result: {
+              status: "passed",
+              diff_summary: {
+                files: [],
+                untracked_files: [],
+                untracked_summaries: [],
+                staged_diff: "",
+                unstaged_diff: "",
+                staged_diff_truncated: false,
+                unstaged_diff_truncated: false,
+                max_diff_bytes: 200000
+              },
+              review: { summary: "No findings.", findings: [] },
+              acceptance: {
+                status: "accepted",
+                summary: "Implementation accepted.",
+                blocking_reasons: [],
+                recommended_action: "continue"
+              }
+            }
           })
         })
       })

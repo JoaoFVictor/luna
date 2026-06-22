@@ -23,6 +23,7 @@ export type MaybePromise<T> = T | Promise<T>;
 
 export type ImplementationLifecyclePhase =
   | "workspace"
+  | "implementation"
   | "validation"
   | "diff"
   | "acceptance"
@@ -45,6 +46,7 @@ export type BuiltInStepMetadata = {
     output: unknown
   ) => ImplementationLifecycleOutcome | undefined;
   readonly capturesWorkspace?: boolean;
+  readonly requiresRepository?: boolean;
   readonly locks?: readonly {
     readonly resource: "repository";
     readonly mode: "exclusive";

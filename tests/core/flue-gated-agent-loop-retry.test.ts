@@ -16,7 +16,22 @@ import {
   type LocalCall
 } from "./flue-test-helpers.js";
 
-describe("trusted_host_local Flue agent loop retry policy", () => {
+type ValidationGateCommands = Array<{
+  cmd: string;
+  args?: string[];
+  timeout_ms?: number;
+}>;
+
+function validationGate(commands: ValidationGateCommands, maxOutputBytes: number) {
+  return {
+    id: "validation",
+    type: "validation_commands" as const,
+    commands,
+    max_output_bytes: maxOutputBytes
+  };
+}
+
+describe("trusted_host_local Flue gated agent loop retry policy", () => {
   beforeEach(() => {
     resetEnv();
   });
@@ -34,12 +49,12 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
       subagents: [],
       close
     }));
-    const runAgentLoopStateMachine = vi.fn(
+    const runGatedAgentLoopStateMachine = vi.fn(
       async ({
         dependencies
       }: {
         dependencies: {
-          runWritableAgent(input: {
+          runWorker(input: {
             phase: "attempt";
             attempt: number;
             previousValidation?: unknown;
@@ -48,7 +63,7 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
           }): Promise<unknown>;
         };
       }) =>
-        await dependencies.runWritableAgent({
+        await dependencies.runWorker({
           phase: "attempt",
           attempt: 1,
           previousValidation: undefined,
@@ -67,9 +82,9 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
     vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/agents/loop-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/agents/loop-runner.js")>()),
-      runAgentLoopStateMachine
+    vi.doMock("../../src/core/agents/gated-loop-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/agents/gated-loop-runner.js")>()),
+      runGatedAgentLoopStateMachine
     }));
 
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-write-no-retry-"));
@@ -86,15 +101,15 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
-        const runAgentLoopStep =
-          options.dependencies?.runAgentLoopStep as NonNullable<
-            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+        const runGatedAgentLoopStep =
+          options.dependencies?.runGatedAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runGatedAgentLoopStep"]
           >;
 
-        return await runAgentLoopStep({
+        return await runGatedAgentLoopStep({
           agent: {
             id: "code-implementer",
-            description: "Implement Jira tasks",
+            description: "Implement tasks",
             model_profile: "deep",
             mode: "trusted_local_write",
             instructions_file: "instructions.md",
@@ -103,9 +118,10 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
             instructionsPath,
             outputSchemaPath
           },
+          gateAgents: {},
           node: {
             id: "implementation",
-            type: "agent_loop",
+            type: "gated_agent_loop",
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
@@ -120,10 +136,7 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
               cwd: worktreePath,
               env_allowlist: []
             },
-            validation: {
-              commands: [],
-              max_output_bytes: 200000
-            },
+            gates: [validationGate([], 200000)],
             repair: { attempts: 0 }
           },
           model: { model: "openai/implementer-test", reasoning_effort: "high" },
@@ -136,10 +149,7 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
             cwd: worktreePath,
             env_allowlist: []
           },
-          validation: {
-            commands: [],
-            max_output_bytes: 200000
-          },
+          gates: [validationGate([], 200000)],
           repair: { attempts: 0 },
           state: {
             invocation: gitInvocation,
@@ -176,12 +186,12 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
       subagents: [],
       close
     }));
-    const runAgentLoopStateMachine = vi.fn(
+    const runGatedAgentLoopStateMachine = vi.fn(
       async ({
         dependencies
       }: {
         dependencies: {
-          runWritableAgent(input: {
+          runWorker(input: {
             phase: "attempt";
             attempt: number;
             previousValidation?: unknown;
@@ -190,7 +200,7 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
           }): Promise<unknown>;
         };
       }) =>
-        await dependencies.runWritableAgent({
+        await dependencies.runWorker({
           phase: "attempt",
           attempt: 1,
           previousValidation: undefined,
@@ -208,9 +218,9 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
     vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/agents/loop-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/agents/loop-runner.js")>()),
-      runAgentLoopStateMachine
+    vi.doMock("../../src/core/agents/gated-loop-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/agents/gated-loop-runner.js")>()),
+      runGatedAgentLoopStateMachine
     }));
 
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-write-unsafe-"));
@@ -227,15 +237,15 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
-        const runAgentLoopStep =
-          options.dependencies?.runAgentLoopStep as NonNullable<
-            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+        const runGatedAgentLoopStep =
+          options.dependencies?.runGatedAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runGatedAgentLoopStep"]
           >;
 
-        return await runAgentLoopStep({
+        return await runGatedAgentLoopStep({
           agent: {
             id: "code-implementer",
-            description: "Implement Jira tasks",
+            description: "Implement tasks",
             model_profile: "deep",
             mode: "trusted_local_write",
             instructions_file: "instructions.md",
@@ -244,9 +254,10 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
             instructionsPath,
             outputSchemaPath
           },
+          gateAgents: {},
           node: {
             id: "implementation",
-            type: "agent_loop",
+            type: "gated_agent_loop",
             agent: "code-implementer",
             output_schema: "implementation_result",
             retry: { max_attempts: 2 },
@@ -262,10 +273,7 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
               cwd: worktreePath,
               env_allowlist: []
             },
-            validation: {
-              commands: [],
-              max_output_bytes: 200000
-            },
+            gates: [validationGate([], 200000)],
             repair: { attempts: 0 }
           },
           model: { model: "openai/implementer-test", reasoning_effort: "high" },
@@ -278,10 +286,7 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
             cwd: worktreePath,
             env_allowlist: []
           },
-          validation: {
-            commands: [],
-            max_output_bytes: 200000
-          },
+          gates: [validationGate([], 200000)],
           repair: { attempts: 0 },
           state: {
             invocation: gitInvocation,
@@ -297,7 +302,14 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
       runConfiguredWorkflow
     );
 
-    const run = workflow.run({ payload: gitInvocation } as never);
+    const run = workflow.run({
+      payload: gitInvocation,
+      init: vi.fn(async () => ({
+        session: vi.fn(async () => ({
+          prompt: vi.fn()
+        }))
+      }))
+    } as never);
 
     await expect(run).rejects.toMatchObject({
       code: "trusted_host_local_retry_unsafe",
@@ -309,7 +321,7 @@ describe("trusted_host_local Flue agent loop retry policy", () => {
       "Inspect the workspace diff/status before rerunning"
     );
 
-    expect(runAgentLoopStateMachine).toHaveBeenCalledTimes(1);
+    expect(runGatedAgentLoopStateMachine).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
   });
 });

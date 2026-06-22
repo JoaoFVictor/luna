@@ -6,6 +6,7 @@ import {
   PushBranchArtifactSchema
 } from "../write-mode/types.js";
 import type { BuiltInStepMetadata } from "./types.js";
+import { z } from "zod";
 
 function lifecycleContractError(message: string): Error {
   const error = new Error(message) as Error & { code: string };
@@ -20,8 +21,13 @@ function repositoryLock(): { resource: "repository"; mode: "exclusive" } {
 
 export const emptyBuiltInMetadata = Object.freeze({});
 
+export const repositoryRequiredMetadata = Object.freeze({
+  requiresRepository: true
+} satisfies BuiltInStepMetadata);
+
 export const prepareWorktreeMetadata = Object.freeze({
   capturesWorkspace: true,
+  requiresRepository: true,
   locks: Object.freeze([repositoryLock()])
 } satisfies BuiltInStepMetadata);
 
@@ -32,6 +38,7 @@ export const finalReportMetadata = Object.freeze({
 export const prepareImplementationWorktreeMetadata = Object.freeze({
   implementationLifecycle: "workspace",
   capturesWorkspace: true,
+  requiresRepository: true,
   locks: Object.freeze([repositoryLock()])
 } satisfies BuiltInStepMetadata);
 
@@ -49,17 +56,27 @@ export const runValidationCommandsMetadata = Object.freeze({
   }
 } satisfies BuiltInStepMetadata);
 
+const ImplementationValidationRecordSchema = z
+  .object({
+    validation: ValidationResultSchema,
+    acceptance: AcceptanceDecisionSchema
+  })
+  .strict();
+
 export const recordImplementationValidationMetadata = Object.freeze({
-  implementationLifecycle: "validation",
+  implementationLifecycle: "implementation",
   implementationLifecycleOutcome: (output) => {
-    const result = ValidationResultSchema.safeParse(output);
-    if (!result.success) {
-      throw lifecycleContractError(
-        "record_implementation_validation must return ValidationResult"
-      );
+    const record = ImplementationValidationRecordSchema.safeParse(output);
+    if (record.success) {
+      return {
+        validationPassed: record.data.validation.passed,
+        acceptanceAccepted: record.data.acceptance.status === "accepted"
+      };
     }
 
-    return { validationPassed: result.data.passed };
+    throw lifecycleContractError(
+      "record_implementation_validation must return ImplementationValidationRecord"
+    );
   }
 } satisfies BuiltInStepMetadata);
 
@@ -83,6 +100,7 @@ export const recordAcceptanceDecisionMetadata = Object.freeze({
 
 export const commitChangesMetadata = Object.freeze({
   implementationLifecycle: "commit",
+  requiresRepository: true,
   implementationLifecycleOutcome: (output) => {
     const result = CommitChangesArtifactSchema.safeParse(output);
     if (!result.success) {
@@ -99,6 +117,7 @@ export const commitChangesMetadata = Object.freeze({
 
 export const pushBranchMetadata = Object.freeze({
   implementationLifecycle: "push",
+  requiresRepository: true,
   implementationLifecycleOutcome: (output) => {
     const result = PushBranchArtifactSchema.safeParse(output);
     if (!result.success) {
@@ -117,6 +136,7 @@ export const pushBranchMetadata = Object.freeze({
 
 export const openChangeRequestMetadata = Object.freeze({
   implementationLifecycle: "change_request",
+  requiresRepository: true,
   implementationLifecycleOutcome: (output) => {
     const result = ChangeRequestArtifactSchema.safeParse(output);
     if (!result.success) {
@@ -134,10 +154,10 @@ export const openChangeRequestMetadata = Object.freeze({
 } satisfies BuiltInStepMetadata);
 
 export const builtInStepMetadataByName = Object.freeze({
-  preflight: emptyBuiltInMetadata,
+  preflight: repositoryRequiredMetadata,
   prepare_worktree: prepareWorktreeMetadata,
-  collect_context: emptyBuiltInMetadata,
-  collect_repo_context: emptyBuiltInMetadata,
+  collect_context: repositoryRequiredMetadata,
+  collect_repo_context: repositoryRequiredMetadata,
   validate_code_review_findings: emptyBuiltInMetadata,
   final_code_review_report: finalReportMetadata,
   prepare_implementation_worktree: prepareImplementationWorktreeMetadata,

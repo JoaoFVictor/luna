@@ -68,8 +68,8 @@ const jiraInvocation: Invocation = {
   action: "selected",
   repository: {
     provider: "github",
-    owner: "swinggo-dev",
-    name: "swg-front-nuxt"
+    owner: "octo-org",
+    name: "hello-world"
   },
   subject: {
     type: "jira_issue",
@@ -195,7 +195,7 @@ const changeRequestArtifact: ChangeRequestArtifact = {
   enabled: true,
   skipped: false,
   provider: "github",
-  url: "https://github.com/swinggo-dev/swg-front-nuxt/pull/42"
+  url: "https://github.com/octo-org/hello-world/pull/42"
 };
 
 const implementationConfig: ImplementationConfig["implementation"] = {
@@ -273,6 +273,7 @@ describe("implementation built-ins", () => {
     expect(prepareImplementationWorktreeBuiltIn.metadata).toEqual({
       implementationLifecycle: "workspace",
       capturesWorkspace: true,
+      requiresRepository: true,
       locks: [{ resource: "repository", mode: "exclusive" }]
     });
     expect(prepareImplementationWorktree).toHaveBeenCalledWith({
@@ -297,6 +298,7 @@ describe("implementation built-ins", () => {
         key: "ABC-123",
         title: "Fix checkout validation"
       },
+      change_request_body: "Reject invalid checkout payloads.",
       jira: {
         issue_key: "ABC-123",
         summary: "Fix checkout validation",
@@ -305,8 +307,8 @@ describe("implementation built-ins", () => {
       },
       repository: {
         provider: "github",
-        owner: "swinggo-dev",
-        name: "swg-front-nuxt"
+        owner: "octo-org",
+        name: "hello-world"
       }
     });
   });
@@ -325,6 +327,34 @@ describe("implementation built-ins", () => {
       cwd: implementationWorkspace.path,
       commands: [{ cmd: "npm", args: ["test"] }],
       maxOutputBytes: 1000
+    });
+  });
+
+  it("records validation and acceptance from a gated implementation loop", async () => {
+    await expect(
+      runBuiltIn(recordImplementationValidationBuiltIn, {
+        state: implementationState(),
+        input: {
+          implementation: {
+            status: "passed",
+            attempts_exhausted: false,
+            attempts: [],
+            validation,
+            final_validation: validation,
+            gates: [
+              { id: "validation", type: "validation_commands", passed: true },
+              { id: "acceptance", type: "agent", passed: true }
+            ],
+            result: {
+              status: "passed",
+              acceptance: acceptedImplementation
+            }
+          }
+        }
+      })
+    ).resolves.toEqual({
+      validation,
+      acceptance: acceptedImplementation
     });
   });
 

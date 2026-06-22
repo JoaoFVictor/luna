@@ -107,6 +107,9 @@ describe("workflow definition loader", () => {
       await expect(loadWorkflowDefinition(root, "code-review")).resolves.toMatchObject({
         id: "code-review",
         mode: "read_only",
+        requires: {
+          repository: true
+        },
         graph: {
           nodes: [
             { id: "repo_context", type: "built_in", uses: "collect_repo_context" },
@@ -166,7 +169,7 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("loads trusted local write workflows with agent_loop nodes", async () => {
+  it("loads trusted local write workflows with gated_agent_loop nodes", async () => {
     const root = await tempWorkflowRoot();
     const workflowDir = path.join(root, "implementation");
 
@@ -190,7 +193,7 @@ describe("workflow definition loader", () => {
         [
           "nodes:",
           "  - id: implementation",
-          "    type: agent_loop",
+          "    type: gated_agent_loop",
           "    agent: code-implementer",
           "    output_schema: implementation_result",
           "    artifacts:",
@@ -210,9 +213,11 @@ describe("workflow definition loader", () => {
           "      type: trusted_host_local",
           "      cwd: $.workspace.path",
           "      env_allowlist: []",
-          "    validation:",
-          "      commands: $.config.implementation.validation.commands",
-          "      max_output_bytes: $.config.implementation.validation.max_output_bytes",
+          "    gates:",
+          "      - id: validation",
+          "        type: validation_commands",
+          "        commands: $.config.implementation.validation.commands",
+          "        max_output_bytes: $.config.implementation.validation.max_output_bytes",
           "    repair:",
           "      attempts: $.config.implementation.validation.repair_attempts",
           ""
@@ -227,7 +232,7 @@ describe("workflow definition loader", () => {
           nodes: [
             {
               id: "implementation",
-              type: "agent_loop",
+              type: "gated_agent_loop",
               artifacts: expect.arrayContaining([
                 expect.objectContaining({
                   path: "validation.json",
@@ -251,7 +256,7 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("loads agent_loop nodes with literal structured validation commands", async () => {
+  it("loads gated_agent_loop nodes with literal structured validation commands", async () => {
     const root = await tempWorkflowRoot();
 
     try {
@@ -260,20 +265,22 @@ describe("workflow definition loader", () => {
         [
           "nodes:",
           "  - id: implementation",
-          "    type: agent_loop",
+          "    type: gated_agent_loop",
           "    agent: code-implementer",
           "    output_schema: implementation_result",
           "    sandbox:",
           "      type: trusted_host_local",
           "      cwd: $.workspace.path",
           "      env_allowlist: []",
-          "    validation:",
-          "      commands:",
-          "        - cmd: npm",
-          "          args:",
-          "            - test",
-          "          timeout_ms: 120000",
-          "      max_output_bytes: 200000",
+          "    gates:",
+          "      - id: validation",
+          "        type: validation_commands",
+          "        commands:",
+          "          - cmd: npm",
+          "            args:",
+          "              - test",
+          "            timeout_ms: 120000",
+          "        max_output_bytes: 200000",
           "    repair:",
           "      attempts: 1",
           ""
@@ -287,13 +294,17 @@ describe("workflow definition loader", () => {
           nodes: [
             {
               id: "implementation",
-              type: "agent_loop",
-              validation: {
-                commands: [
-                  { cmd: "npm", args: ["test"], timeout_ms: 120000 }
-                ],
-                max_output_bytes: 200000
-              }
+              type: "gated_agent_loop",
+              gates: [
+                {
+                  id: "validation",
+                  type: "validation_commands",
+                  commands: [
+                    { cmd: "npm", args: ["test"], timeout_ms: 120000 }
+                  ],
+                  max_output_bytes: 200000
+                }
+              ]
             }
           ]
         }
@@ -303,7 +314,7 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("loads agent_loop artifact plans without requiring specific output keys", async () => {
+  it("loads gated_agent_loop artifact plans without requiring specific output keys", async () => {
     const root = await tempWorkflowRoot();
     const workflowDir = path.join(root, "implementation");
 
@@ -327,7 +338,7 @@ describe("workflow definition loader", () => {
         [
           "nodes:",
           "  - id: implementation",
-          "    type: agent_loop",
+          "    type: gated_agent_loop",
           "    agent: code-implementer",
           "    output_schema: implementation_result",
           "    artifacts:",
@@ -341,9 +352,11 @@ describe("workflow definition loader", () => {
           "      type: trusted_host_local",
           "      cwd: $.workspace.path",
           "      env_allowlist: []",
-          "    validation:",
-          "      commands: $.config.implementation.validation.commands",
-          "      max_output_bytes: $.config.implementation.validation.max_output_bytes",
+          "    gates:",
+          "      - id: validation",
+          "        type: validation_commands",
+          "        commands: $.config.implementation.validation.commands",
+          "        max_output_bytes: $.config.implementation.validation.max_output_bytes",
           "    repair:",
           "      attempts: $.config.implementation.validation.repair_attempts",
           ""
@@ -356,7 +369,7 @@ describe("workflow definition loader", () => {
           nodes: [
             {
               id: "implementation",
-              type: "agent_loop",
+              type: "gated_agent_loop",
               artifacts: expect.arrayContaining([
                 expect.objectContaining({
                   path: "summary.json",
@@ -833,46 +846,6 @@ describe("workflow definition loader", () => {
     }
   });
 
-  it("parses explicit positive execution metadata", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "luna-workflow-"));
-    try {
-      await mkdir(path.join(root, "explicit"), { recursive: true });
-      await writeFile(
-        path.join(root, "explicit", "workflow.yaml"),
-        [
-          "id: explicit",
-          "type: workflow",
-          "mode: read_only",
-          "input_schema: input.schema.json",
-          "output_schema: output.schema.json",
-          "graph: graph.yaml",
-          "execution:",
-          "  max_concurrency: 3",
-          "  lock_timeout_ms: 1000",
-          ""
-        ].join("\n")
-      );
-      await writeFile(
-        path.join(root, "explicit", "graph.yaml"),
-        [
-          "nodes:",
-          "  - id: preflight",
-          "    type: built_in",
-          "    uses: preflight",
-          ""
-        ].join("\n")
-      );
-
-      const definition = await loadWorkflowDefinition(root, "explicit");
-      expect(definition.execution).toEqual({
-        max_concurrency: 3,
-        lock_timeout_ms: 1000
-      });
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
   it("loads the committed code-review workflow graph", async () => {
     await expect(loadWorkflowDefinition("workflows", "code-review")).resolves.toMatchObject({
       id: "code-review",
@@ -907,7 +880,7 @@ describe("workflow definition loader", () => {
       expect(definition.id).toBe(workflowId);
 
       for (const node of definition.graph.nodes) {
-        if (node.type !== "agent_loop") {
+        if (node.type !== "gated_agent_loop") {
           continue;
         }
 

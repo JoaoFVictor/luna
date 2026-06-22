@@ -4,7 +4,7 @@ Luna is a base for building multi-agent workflows.
 
 It gives you a deterministic way to turn external inputs into workflow runs,
 route them through YAML graphs, reuse agents, call deterministic capabilities,
-and inspect the result through artifacts. The bundled PR review and Jira
+and inspect the result through artifacts. The bundled PR review and
 implementation flows are examples of what can be built on top of Luna; they are
 not the boundary of the project.
 
@@ -14,7 +14,7 @@ other process that benefits from explicit orchestration instead of an ad hoc
 chat transcript.
 
 ```text
-adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loops -> artifacts
+adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated agent loops -> artifacts
 ```
 
 Luna currently uses Flue as the agent runtime adapter. The workflow entrypoint
@@ -50,7 +50,8 @@ optional subagents. Reuse an agent when its role and output contract still fit;
 create a new one when the responsibility changes.
 
 `src/adapters/<id>/` contains input adapters. An adapter turns an external
-input, such as a GitHub PR URL or Jira task URL, into a normalized invocation.
+input, such as a GitHub PR URL, Jira task URL, or Plane task URL, into a
+normalized invocation.
 
 `src/core/built-ins/` contains deterministic workflow behavior and shared
 catalog helpers. Provider-facing built-ins are registered through
@@ -118,9 +119,10 @@ Read the report:
 .runs/code-review/<run-id>/final-report.md
 ```
 
-For the starter write-mode Jira implementation workflow, configure Jira
+For the starter write-mode implementation workflow, configure Jira or Plane
 credentials, repository remote allowlists, validation commands, and optional
-publishing gates first. See [Implement a Jira task](examples/implementation-jira-task.md).
+publishing gates first. See [Implement a Jira task](examples/implementation-jira-task.md)
+or the Plane adapter notes in [Configured workflows](examples/configured-workflows.md).
 
 ## Build Your Own Workflow
 
@@ -140,7 +142,15 @@ Put orchestration in `graph.yaml`. Use:
 
 - `built_in` nodes for deterministic TypeScript behavior;
 - `agent` nodes for model judgment with structured output;
-- `agent_loop` nodes for trusted local write work with validation and repair.
+- `gated_agent_loop` nodes for trusted local write work with validation and repair.
+
+`gated_agent_loop` gates are configured in `workflows/<id>/graph.yaml` under
+the node's `gates:` list. Luna supports `validation_commands` gates and
+read-only workflow `agent` gates. For an `agent` gate, configure `block_when`
+as a JSONata expression on the workflow gate entry, not in the referenced agent
+definition. `block_when.expression` must return a boolean, and optional
+`feedback.expression` selects repair feedback when the gate blocks. Failed gates
+loop back into the trusted write agent for a repair attempt.
 
 Link agents by id from the workflow graph. Prefer reusing an existing agent when
 the role, input, tools, MCP access, and output schema match what the workflow
@@ -161,7 +171,7 @@ workflow from `--target workflow:<id>`, the invocation `target`, or
 There is one generic TypeScript workflow entrypoint:
 `src/workflows/luna.ts`. Do not add one TypeScript workflow file per workflow.
 
-The selected workflow graph runs built-ins, agents, and agent loops. Each node
+The selected workflow graph runs built-ins, agents, and gated agent loops. Each node
 reads explicit inputs from earlier steps and writes inspectable outputs into the
 run artifact directory.
 
@@ -202,7 +212,8 @@ Core config lives in `config/`:
 - `routing.yaml`: deterministic routing rules.
 - `models.yaml`: reusable model profiles.
 - `mcp.yaml`: MCP server policy and allowlists.
-- `jira.yaml`: Jira instance and issue field mapping.
+- `jira.yaml`: Jira instance and repository hint field mapping.
+- `plane.yaml`: Plane instance and repository hint label mapping.
 - `implementation.yaml`: write-mode branch, validation, commit, push, and draft
   PR gates.
 
@@ -210,7 +221,7 @@ Secrets are not committed:
 
 - `auth.json` is created by `npx @earendil-works/pi-ai login openai-codex`.
 - `luna.auth.json` stores Jira credentials keyed by `config/jira.yaml`
-  instance id.
+  instance id and Plane API keys keyed by `config/plane.yaml` instance id.
 
 ## Bundled Base
 
@@ -221,6 +232,7 @@ Input adapters:
 
 - `github-pr-url`
 - `jira-task-url`
+- `plane-task-url`
 
 Workflows:
 
@@ -301,8 +313,8 @@ Run `npx @earendil-works/pi-ai login openai-codex` from the Luna project root.
 
 `luna.auth.json` is missing
 
-Create `luna.auth.json` in the Luna project root with Jira credentials for the
-instance id used in `config/jira.yaml`.
+Create `luna.auth.json` in the Luna project root with credentials for the
+instance id used in `config/jira.yaml` or `config/plane.yaml`.
 
 `expected_remote_urls_missing`
 

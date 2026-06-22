@@ -23,7 +23,7 @@ const jiraIssue = {
       ]
     },
     customfield_67890: "Validation rejects missing documents.",
-    customfield_12345: "swinggo-dev/swg-front-nuxt",
+    customfield_12345: "octo-org/hello-world",
     status: {
       name: "To Do"
     },
@@ -43,7 +43,8 @@ async function writeContextFiles() {
       "instances:",
       "  - id: company",
       "    base_url: https://company.atlassian.net",
-      "    repository_field:",
+      "    repository_hint:",
+      "      source: field",
       "      field_id: customfield_12345",
       "      format: github_full_name",
       "    acceptance_criteria_field:",
@@ -100,7 +101,7 @@ async function context(issue: unknown = jiraIssue): Promise<{
 }
 
 describe("jira-task-url adapter", () => {
-  it("loads a Jira task URL and returns a normalized invocation", async () => {
+  it("loads a Jira task URL and resolves repository from a field hint", async () => {
     const { adapterContext, fetchMock } = await context();
 
     await expect(
@@ -115,8 +116,8 @@ describe("jira-task-url adapter", () => {
       action: "selected",
       repository: {
         provider: "github",
-        owner: "swinggo-dev",
-        name: "swg-front-nuxt"
+        owner: "octo-org",
+        name: "hello-world"
       },
       subject: {
         type: "jira_issue",
@@ -131,7 +132,8 @@ describe("jira-task-url adapter", () => {
             "Checkout should reject orders without a customer document.",
           acceptance_criteria: "Validation rejects missing documents.",
           status: "To Do",
-          issue_type: "Task"
+          issue_type: "Task",
+          repository_hint_source: "field:customfield_12345"
         }
       }
     });
@@ -179,7 +181,7 @@ describe("jira-task-url adapter", () => {
     );
   });
 
-  it("throws jira_repository_field_missing when the repository field is empty", async () => {
+  it("loads a Jira task URL without repository when no field hint is present", async () => {
     const { adapterContext } = await context({
       ...jiraIssue,
       fields: {
@@ -188,22 +190,20 @@ describe("jira-task-url adapter", () => {
       }
     });
 
-    await expect(
-      jiraTaskUrlAdapter.load(
-        { kind: "cli", value: "https://company.atlassian.net/browse/ABC-123" },
-        adapterContext
-      )
-    ).rejects.toThrow(
-      expect.objectContaining({ code: "jira_repository_field_missing" })
+    const result = await jiraTaskUrlAdapter.load(
+      { kind: "cli", value: "https://company.atlassian.net/browse/ABC-123" },
+      adapterContext
     );
+
+    expect(result).not.toHaveProperty("repository");
   });
 
-  it("throws jira_repository_field_invalid when github_full_name is malformed", async () => {
+  it("throws jira_repository_hint_invalid when github_full_name is malformed", async () => {
     const { adapterContext } = await context({
       ...jiraIssue,
       fields: {
         ...jiraIssue.fields,
-        customfield_12345: "swinggo-dev/not valid"
+        customfield_12345: "octo-org/not valid"
       }
     });
 
@@ -213,7 +213,26 @@ describe("jira-task-url adapter", () => {
         adapterContext
       )
     ).rejects.toThrow(
-      expect.objectContaining({ code: "jira_repository_field_invalid" })
+      expect.objectContaining({ code: "jira_repository_hint_invalid" })
+    );
+  });
+
+  it("throws jira_repository_hint_invalid when repository hint uses repo prefix", async () => {
+    const { adapterContext } = await context({
+      ...jiraIssue,
+      fields: {
+        ...jiraIssue.fields,
+        customfield_12345: "repo:octo-org/hello-world"
+      }
+    });
+
+    await expect(
+      jiraTaskUrlAdapter.load(
+        { kind: "cli", value: "https://company.atlassian.net/browse/ABC-123" },
+        adapterContext
+      )
+    ).rejects.toThrow(
+      expect.objectContaining({ code: "jira_repository_hint_invalid" })
     );
   });
 });

@@ -72,7 +72,7 @@ export function writeModeFluePromptRetryPolicy(
       [
         "Automatic retry was blocked for a trusted_host_local write agent.",
         "Write-mode prompts may have already changed files before a transport failure, so replaying the same prompt can duplicate or corrupt local edits.",
-        "Set retry.max_attempts to 1 for this agent_loop.",
+        "Set retry.max_attempts to 1 for this gated_agent_loop.",
         "Inspect the workspace diff/status before rerunning or recovering the workflow."
       ].join("\n"),
       "trusted_host_local_retry_unsafe"

@@ -16,7 +16,8 @@ import type { AcceptanceDecision } from "../../decisions/types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import {
   finalReportMetadata,
-  prepareWorktreeMetadata
+  prepareWorktreeMetadata,
+  repositoryRequiredMetadata
 } from "../../built-ins/metadata.js";
 import {
   findingsFrom,
@@ -53,6 +54,7 @@ function githubPullRequestInvocationFrom(state: { invocation?: unknown }): Invoc
 
 export const preflightBuiltIn = defineBuiltInStep({
   name: "preflight",
+  metadata: repositoryRequiredMetadata,
   async run({ state, dependencies = {} }) {
     const runPreflight = dependencies.runPreflight ?? defaultRunPreflight;
     const invocation = requiredState(
@@ -86,6 +88,7 @@ export const prepareWorktreeBuiltIn = defineBuiltInStep({
 
 export const collectRepoContextBuiltIn = defineBuiltInStep({
   name: "collect_repo_context",
+  metadata: repositoryRequiredMetadata,
   async run({ state, dependencies = {} }) {
     const collectRepoContext =
       dependencies.collectRepoContext ?? defaultCollectRepoContext;

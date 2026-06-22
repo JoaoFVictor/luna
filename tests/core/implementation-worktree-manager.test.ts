@@ -16,11 +16,11 @@ type GitCall = {
 };
 
 const repository: RepositoryConfig = {
-  id: "swg-front-nuxt",
+  id: "hello-world",
   provider: "github",
-  owner: "swinggo-dev",
-  name: "swg-front-nuxt",
-  path: "/repos/swg-front-nuxt",
+  owner: "octo-org",
+  name: "hello-world",
+  path: "/repos/hello-world",
   remote: "origin"
 };
 

@@ -31,26 +31,28 @@ async function writeReadOnlyWorkflowGraph(
 }
 
 describe("workflow definition write policy", () => {
-  it("rejects agent_loop nodes in read-only workflows", async () => {
+  it("rejects gated_agent_loop nodes in read-only workflows", async () => {
     const root = await tempWorkflowRoot();
 
     try {
       await writeReadOnlyWorkflowGraph(root, [
         "nodes:",
         "  - id: implementation",
-        "    type: agent_loop",
+        "    type: gated_agent_loop",
         "    agent: code-implementer",
         "    output_schema: implementation_result",
         "    sandbox:",
         "      type: trusted_host_local",
         "      cwd: $.workspace.path",
         "      env_allowlist: []",
-        "    validation:",
-        "      commands:",
-        "        - cmd: npm",
-        "          args:",
-        "            - test",
-        "      max_output_bytes: 200000",
+        "    gates:",
+        "      - id: validation",
+        "        type: validation_commands",
+        "        commands:",
+        "          - cmd: npm",
+        "            args:",
+        "              - test",
+        "        max_output_bytes: 200000",
         "    repair:",
         "      attempts: 0",
         ""

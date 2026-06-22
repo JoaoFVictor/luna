@@ -51,8 +51,8 @@ const validJiraInvocation: Invocation = {
   action: "selected",
   repository: {
     provider: "github",
-    owner: "swinggo-dev",
-    name: "swg-front-nuxt"
+    owner: "octo-org",
+    name: "hello-world"
   },
   subject: {
     type: "jira_issue",
@@ -67,6 +67,33 @@ const validJiraInvocation: Invocation = {
       acceptance_criteria: "Invalid payloads fail validation.",
       status: "To Do",
       issue_type: "Task"
+    }
+  }
+};
+
+const validPlaneInvocation: Invocation = {
+  version: "2026-06",
+  source: "plane",
+  event: "issue",
+  action: "selected",
+  repository: {
+    provider: "github",
+    owner: "octo-org",
+    name: "hello-world"
+  },
+  subject: {
+    type: "plane_issue",
+    id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+    url: "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+    title: "Fix checkout validation"
+  },
+  payload: {
+    plane: {
+      instance_id: "company",
+      workspace_slug: "company",
+      project_id: "24f9b7",
+      issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+      description: "Reject invalid checkout payloads."
     }
   }
 };
@@ -332,6 +359,48 @@ describe("flue local CLI wrapper", () => {
       adapterContext
     );
     expect(buildCommand).toHaveBeenCalledWith(validJiraInvocation);
+    expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
+  });
+
+  it("loads a Plane task invocation through the selected input adapter before invoking Flue", async () => {
+    const execute = vi.fn(async () => 0);
+    const buildCommand = vi.fn(async () => ({
+      command: process.execPath,
+      args: ["local-flue"]
+    }));
+    const load = vi.fn(async () => validPlaneInvocation);
+    const adapter: InputAdapter = {
+      id: "plane-task-url",
+      description: "Plane task URL",
+      load
+    };
+
+    await expect(
+      main(
+        [
+          "run",
+          "--from",
+          "plane-task-url",
+          "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
+        ],
+        {
+          execute,
+          buildCommand,
+          adapterRegistry: registryWith(adapter),
+          adapterContext
+        }
+      )
+    ).resolves.toBe(0);
+
+    expect(load).toHaveBeenCalledWith(
+      {
+        kind: "cli",
+        value:
+          "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
+      },
+      adapterContext
+    );
+    expect(buildCommand).toHaveBeenCalledWith(validPlaneInvocation);
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
   });
 

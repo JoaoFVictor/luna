@@ -38,7 +38,7 @@ function policyError(message: string, code: string): Error & { code: string } {
 }
 
 function isAgentLike(node: WorkflowNode): boolean {
-  return node.type === "agent" || node.type === "agent_loop";
+  return node.type === "agent" || node.type === "gated_agent_loop";
 }
 
 function artifactPaths(node: WorkflowNode): string[] {

@@ -207,7 +207,8 @@ function isProviderPath(relativePath: string): boolean {
 function isProviderAdapterPath(relativePath: string): boolean {
   return (
     relativePath.startsWith("src/adapters/github-pr-url/") ||
-    relativePath.startsWith("src/adapters/jira-task-url/")
+    relativePath.startsWith("src/adapters/jira-task-url/") ||
+    relativePath.startsWith("src/adapters/plane-task-url/")
   );
 }
 
@@ -481,7 +482,8 @@ describe("refactor guardrails", () => {
     const providerOwnedTargets = [
       "src/core/providers/github/built-ins.ts",
       "src/adapters/github-pr-url/index.ts",
-      "src/adapters/jira-task-url/adapter.ts"
+      "src/adapters/jira-task-url/adapter.ts",
+      "src/adapters/plane-task-url/adapter.ts"
     ];
 
     expect(providerOwnedTargets.filter(isProviderPath)).toEqual(providerOwnedTargets);

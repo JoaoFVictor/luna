@@ -33,7 +33,7 @@ nodes:
       - workspace
 
   - id: example_run
-    type: agent_loop
+    type: gated_agent_loop
     agent: example-complete-agent
     output_schema: example_complete_agent_result
     artifacts:
@@ -56,18 +56,20 @@ nodes:
       implementation_config: $.config.implementation
       context: $.steps.context
       workspace: $.workspace
-      goal: Demonstrate a trusted local write agent loop using the configured repository context and read-only reviewer subagents. Keep any edits minimal and explain what was exercised.
+      goal: Demonstrate a trusted local write gated agent loop using the configured repository context and read-only reviewer subagents. Keep any edits minimal and explain what was exercised.
     sandbox:
       type: trusted_host_local
       cwd: $.workspace.path
       env_allowlist: []
-    validation:
-      commands:
-        - cmd: git
-          args:
-            - status
-            - --short
-      max_output_bytes: 200000
+    gates:
+      - id: validation
+        type: validation_commands
+        commands:
+          - cmd: git
+            args:
+              - status
+              - --short
+        max_output_bytes: 200000
     repair:
       attempts: 0
     after:

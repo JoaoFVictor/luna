@@ -54,10 +54,12 @@ describe("input adapter registry", () => {
   it("exports the default input adapters", () => {
     expect(inputAdapterRegistry.ids()).toEqual([
       "github-pr-url",
-      "jira-task-url"
+      "jira-task-url",
+      "plane-task-url"
     ]);
     expect(inputAdapterRegistry.require("github-pr-url").id).toBe("github-pr-url");
     expect(inputAdapterRegistry.require("jira-task-url").id).toBe("jira-task-url");
+    expect(inputAdapterRegistry.require("plane-task-url").id).toBe("plane-task-url");
   });
 
   it("builds the default adapter context", () => {

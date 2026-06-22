@@ -52,6 +52,13 @@ const SubagentPolicySchema = z
   .strict()
   .optional();
 
+const WorkflowRequirementsSchema = z
+  .object({
+    repository: z.boolean().optional()
+  })
+  .strict()
+  .optional();
+
 export const WorkflowMetadataSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -62,7 +69,8 @@ export const WorkflowMetadataSchema = z
     graph: NonEmptyStringSchema,
     execution: WorkflowExecutionSchema.optional(),
     observability: ObservabilityConfigSchema,
-    subagent_policy: SubagentPolicySchema
+    subagent_policy: SubagentPolicySchema,
+    requires: WorkflowRequirementsSchema
   })
   .strict();
 
@@ -114,10 +122,42 @@ const AgentNodeSchema = z
   })
   .strict();
 
-const AgentLoopNodeSchema = z
+const ValidationGateSchema = z
   .object({
     id: NonEmptyStringSchema,
-    type: z.literal("agent_loop"),
+    type: z.literal("validation_commands"),
+    commands: z.union([
+      NonEmptyStringSchema,
+      z.array(ValidationCommandSchema)
+    ]),
+    max_output_bytes: z.union([
+      NonEmptyStringSchema,
+      z.number().int().positive()
+    ])
+  })
+  .strict();
+
+const GateJsonataExpressionSchema = z
+  .object({
+    expression: NonEmptyStringSchema
+  })
+  .strict();
+
+const AgentGateSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    type: z.literal("agent"),
+    agent: NonEmptyStringSchema,
+    block_when: GateJsonataExpressionSchema,
+    feedback: GateJsonataExpressionSchema.optional(),
+    input: z.record(z.unknown()).optional()
+  })
+  .strict();
+
+const GatedAgentLoopNodeSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    type: z.literal("gated_agent_loop"),
     agent: NonEmptyStringSchema,
     output_schema: NonEmptyStringSchema,
     artifacts: z.array(ArtifactWritePlanSchema).optional(),
@@ -129,18 +169,9 @@ const AgentLoopNodeSchema = z
         env_allowlist: z.array(NonEmptyStringSchema)
       })
       .strict(),
-    validation: z
-      .object({
-        commands: z.union([
-          NonEmptyStringSchema,
-          z.array(ValidationCommandSchema)
-        ]),
-        max_output_bytes: z.union([
-          NonEmptyStringSchema,
-          z.number().int().positive()
-        ])
-      })
-      .strict(),
+    gates: z.array(
+      z.discriminatedUnion("type", [ValidationGateSchema, AgentGateSchema])
+    ),
     repair: z
       .object({
         attempts: z.union([
@@ -161,7 +192,7 @@ const WorkflowGraphShapeSchema = z
         z.discriminatedUnion("type", [
           BuiltInNodeSchema,
           AgentNodeSchema,
-          AgentLoopNodeSchema
+          GatedAgentLoopNodeSchema
         ])
       )
       .min(1)
@@ -191,6 +222,9 @@ export type WorkflowExecution = {
   max_concurrency: number;
   lock_timeout_ms?: number;
 };
+export type WorkflowRequirements = {
+  repository: boolean;
+};
 export type WorkflowObservabilityConfig = {
   exporters: {
     runtime_log: { enabled: boolean; required: boolean };
@@ -211,6 +245,7 @@ export type WorkflowDefinition = Omit<
   directory: string;
   graph: WorkflowGraph;
   execution: WorkflowExecution;
+  requires: WorkflowRequirements;
   observability: WorkflowObservabilityConfig;
   subagent_policy: WorkflowSubagentPolicy;
 };
@@ -344,9 +379,9 @@ function validateWorkflowGraph(
   }
 
   for (const node of graph.nodes) {
-    if (node.type === "agent_loop") {
+    if (node.type === "gated_agent_loop") {
       throw workflowDefinitionError(
-        `Workflow ${workflowMode} cannot declare agent_loop node: ${node.id}`,
+        `Workflow ${workflowMode} cannot declare gated_agent_loop node: ${node.id}`,
         "workflow_read_only_write_node"
       );
     }
@@ -388,6 +423,35 @@ function normalizeSubagentPolicy(
   return {
     ...defaultWorkflowSubagentPolicy,
     ...(policy?.allow_write === undefined ? {} : { allow_write: policy.allow_write })
+  };
+}
+
+function normalizeRequirements(
+  requirements: z.infer<typeof WorkflowRequirementsSchema>,
+  graph: WorkflowGraph,
+  builtInStepRegistry: BuiltInStepRegistryView
+): WorkflowRequirements {
+  const graphRequiresRepository = graph.nodes.some((node) => {
+    if (node.type !== "built_in") {
+      return false;
+    }
+
+    const metadata = builtInStepRegistry.require(node.uses).metadata;
+    return (
+      metadata?.requiresRepository === true ||
+      metadata?.locks?.some((lock) => lock.resource === "repository") === true
+    );
+  });
+
+  if (requirements?.repository === false && graphRequiresRepository) {
+    throw workflowDefinitionError(
+      "Workflow disables repository but graph contains repository-sensitive built-ins",
+      "workflow_repository_requirement_invalid"
+    );
+  }
+
+  return {
+    repository: requirements?.repository ?? graphRequiresRepository
   };
 }
 
@@ -446,6 +510,7 @@ export async function loadWorkflowDefinitionFromMetadata({
         ? {}
         : { lock_timeout_ms: metadata.execution.lock_timeout_ms })
     },
+    requires: normalizeRequirements(metadata.requires, graph, builtInStepRegistry),
     observability: normalizeObservabilityConfig(metadata.observability),
     subagent_policy: normalizeSubagentPolicy(metadata.subagent_policy)
   };

@@ -112,8 +112,113 @@ async function writeParallelProbeWorkflow(root: string): Promise<void> {
   );
 }
 
+async function writeTaskContextWorkflow(root: string): Promise<void> {
+  await mkdir(path.join(root, "workflows", "task-context-only"), {
+    recursive: true
+  });
+  await writeFile(
+    path.join(root, "workflows", "task-context-only", "workflow.yaml"),
+    [
+      "id: task-context-only",
+      "type: workflow",
+      "mode: read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "graph: graph.yaml",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(root, "workflows", "task-context-only", "graph.yaml"),
+    [
+      "nodes:",
+      "  - id: task_context",
+      "    type: built_in",
+      "    uses: collect_task_context",
+      ""
+    ].join("\n")
+  );
+}
+
 
 describe("configured workflow runner", () => {
+  it("runs workflows without repository when the workflow does not require one", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root, "task-context-only");
+      await writeTaskContextWorkflow(root);
+
+      const runBuiltInStep = vi.fn(async () => ({ status: "ok" }));
+      const result = await runConfiguredWorkflow({
+        invocation: {
+          version: "2026-06",
+          source: "plane",
+          event: "issue",
+          action: "selected",
+          subject: { type: "plane_issue", id: "issue-1" },
+          payload: {
+            plane: {
+              instance_id: "company",
+              workspace_slug: "company",
+              project_id: "project-1",
+              issue_id: "issue-1",
+              description: "Research image references.",
+              status: "Todo",
+              priority: "",
+              labels: []
+            }
+          }
+        },
+        configRoot: root,
+        throwOnError: false,
+        dependencies: {
+          runBuiltInStep
+        }
+      });
+
+      expect(result.status).toBe("success");
+      expect(runBuiltInStep).toHaveBeenCalled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails before execution when the workflow requires repository and invocation has none", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+
+      const runBuiltInStep = vi.fn(async () => ({ status: "ok" }));
+      const result = await runConfiguredWorkflow({
+        invocation: {
+          version: "2026-06",
+          source: "plane",
+          event: "issue",
+          action: "selected",
+          subject: { type: "plane_issue", id: "issue-1" }
+        },
+        configRoot: root,
+        throwOnError: false,
+        dependencies: {
+          runBuiltInStep
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") {
+        throw new Error("Expected workflow failure");
+      }
+      expect(result.error.code).toBe("repository_not_configured");
+      expect(result.error.message).toContain("requires repository");
+      expect(runBuiltInStep).not.toHaveBeenCalled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("routes and uses routed workflow options when creating the final run identity", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 

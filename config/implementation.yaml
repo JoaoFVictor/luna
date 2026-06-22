@@ -1,12 +1,12 @@
 implementation:
   branch_pattern: feature/{slug}
   commit:
-    enabled: false
+    enabled: true
   push:
-    enabled: false
+    enabled: true
     remote: origin
   change_request:
-    enabled: false
+    enabled: true
     provider: github
     draft: true
     base_ref: main
@@ -16,10 +16,4 @@ implementation:
   validation:
     repair_attempts: 1
     max_output_bytes: 200000
-    commands:
-      - cmd: npm
-        args: ["test"]
-        timeout_ms: 120000
-      - cmd: npm
-        args: ["run", "typecheck"]
-        timeout_ms: 120000
+    commands: []

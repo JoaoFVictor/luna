@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildImplementationReportJson,
-  buildImplementationReportMarkdown
+  buildImplementationReportJson as buildJiraImplementationReportJson,
+  buildImplementationReportMarkdown as buildJiraImplementationReportMarkdown
 } from "../../src/core/providers/jira/report-builder.js";
+import {
+  buildImplementationReportJson as buildPlaneImplementationReportJson,
+  buildImplementationReportMarkdown as buildPlaneImplementationReportMarkdown
+} from "../../src/core/providers/plane/report-builder.js";
 import type { Invocation } from "../../src/core/invocation/types.js";
 import type { ValidationResult } from "../../src/core/validation/runner.js";
 import type {
@@ -19,8 +23,8 @@ const invocation: Invocation = {
   action: "selected",
   repository: {
     provider: "github",
-    owner: "swinggo-dev",
-    name: "swg-front-nuxt"
+    owner: "octo-org",
+    name: "hello-world"
   },
   subject: {
     type: "jira_issue",
@@ -35,6 +39,37 @@ const invocation: Invocation = {
       acceptance_criteria: "Invalid payloads fail validation.",
       status: "To Do",
       issue_type: "Task"
+    }
+  }
+};
+
+const planeInvocation: Invocation = {
+  version: "2026-06",
+  source: "plane",
+  event: "issue",
+  action: "selected",
+  repository: {
+    provider: "github",
+    owner: "octo-org",
+    name: "hello-world"
+  },
+  subject: {
+    type: "plane_issue",
+    id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+    url: "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+    title: "Fix checkout validation"
+  },
+  payload: {
+    plane: {
+      instance_id: "company",
+      workspace_slug: "company",
+      project_id: "24f9b7",
+      issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+      sequence_id: 42,
+      description: "Reject invalid checkout payloads.",
+      status: "Backlog",
+      priority: "high",
+      labels: ["bug"]
     }
   }
 };
@@ -74,7 +109,7 @@ const changeRequest: ChangeRequestArtifact = {
   enabled: true,
   skipped: false,
   provider: "github",
-  url: "https://github.com/swinggo-dev/swg-front-nuxt/pull/42"
+  url: "https://github.com/octo-org/hello-world/pull/42"
 };
 
 const reportInput = {
@@ -82,7 +117,7 @@ const reportInput = {
   status: "ready_for_change_request",
   branch: "feature/abc-123-fix-checkout-validation",
   worktree: {
-    path: "/tmp/luna/swg-front-nuxt/run-1",
+    path: "/tmp/luna/hello-world/run-1",
     preserved: true,
     reason: "change_request_created"
   },
@@ -93,9 +128,22 @@ const reportInput = {
   trustedHostLocal: true
 } as const;
 
+const planeReportInput = {
+  ...reportInput,
+  invocation: planeInvocation
+} as const;
+
 describe("implementation report builder", () => {
   it("builds structured JSON with Jira, workspace, validation, and release action status", () => {
-    expect(buildImplementationReportJson(reportInput)).toEqual({
+    expect(buildJiraImplementationReportJson(reportInput)).toEqual({
+      task: {
+        provider: "jira",
+        key: "ABC-123",
+        id: "ABC-123",
+        url: "https://company.atlassian.net/browse/ABC-123",
+        title: "Fix checkout validation",
+        status: "To Do"
+      },
       jira: {
         key: "ABC-123",
         url: "https://company.atlassian.net/browse/ABC-123",
@@ -104,13 +152,13 @@ describe("implementation report builder", () => {
       },
       repository: {
         provider: "github",
-        owner: "swinggo-dev",
-        name: "swg-front-nuxt"
+        owner: "octo-org",
+        name: "hello-world"
       },
       status: "ready_for_change_request",
       branch: "feature/abc-123-fix-checkout-validation",
       worktree: {
-        path: "/tmp/luna/swg-front-nuxt/run-1",
+        path: "/tmp/luna/hello-world/run-1",
         preserved: true,
         reason: "change_request_created"
       },
@@ -122,7 +170,6 @@ describe("implementation report builder", () => {
         enabled: true,
         skipped: false,
         status: "created",
-        reason: undefined,
         branch: "feature/abc-123-fix-checkout-validation",
         commit_sha: "2222222222222222222222222222222222222222"
       },
@@ -130,7 +177,6 @@ describe("implementation report builder", () => {
         enabled: true,
         skipped: false,
         status: "pushed",
-        reason: undefined,
         remote: "origin",
         branch: "feature/abc-123-fix-checkout-validation"
       },
@@ -138,9 +184,8 @@ describe("implementation report builder", () => {
         enabled: true,
         skipped: false,
         status: "opened",
-        reason: undefined,
         provider: "github",
-        url: "https://github.com/swinggo-dev/swg-front-nuxt/pull/42"
+        url: "https://github.com/octo-org/hello-world/pull/42"
       },
       warnings: [
         "trusted_host_local execution can access host filesystem, credentials, network, and local CLIs."
@@ -149,13 +194,13 @@ describe("implementation report builder", () => {
   });
 
   it("builds Markdown with Jira key, status, branch, workspace reason, action status, and trusted-host warning", () => {
-    const markdown = buildImplementationReportMarkdown(reportInput);
+    const markdown = buildJiraImplementationReportMarkdown(reportInput);
 
     expect(markdown).toContain("# Luna Implementation Report");
     expect(markdown).toContain("Jira: ABC-123");
     expect(markdown).toContain("Status: ready_for_change_request");
     expect(markdown).toContain("Branch: feature/abc-123-fix-checkout-validation");
-    expect(markdown).toContain("Worktree: /tmp/luna/swg-front-nuxt/run-1");
+    expect(markdown).toContain("Worktree: /tmp/luna/hello-world/run-1");
     expect(markdown).toContain("Worktree state: preserved (change_request_created)");
     expect(markdown).toContain("Validation: passed");
     expect(markdown).toContain("Commit: created");
@@ -184,8 +229,8 @@ describe("implementation report builder", () => {
       ...reportInput,
       summary
     };
-    const json = buildImplementationReportJson(input);
-    const markdown = buildImplementationReportMarkdown(input);
+    const json = buildJiraImplementationReportJson(input);
+    const markdown = buildJiraImplementationReportMarkdown(input);
 
     expect(json.execution).toMatchObject({
       prompt_operations: 4,
@@ -202,5 +247,79 @@ describe("implementation report builder", () => {
     expect(markdown).toContain("## Execution Summary");
     expect(markdown).toContain("Prompt operations: 4");
     expect(markdown).toContain("Cost: 1.25 provider_cost_unit");
+  });
+
+  it("builds structured JSON and Markdown for Plane issues", () => {
+    expect(buildPlaneImplementationReportJson(planeReportInput)).toEqual({
+      task: {
+        provider: "plane",
+        key: "42",
+        id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+        url: "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+        title: "Fix checkout validation",
+        status: "Backlog"
+      },
+      plane: {
+        issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+        sequence_id: 42,
+        workspace_slug: "company",
+        project_id: "24f9b7",
+        priority: "high",
+        labels: ["bug"]
+      },
+      repository: {
+        provider: "github",
+        owner: "octo-org",
+        name: "hello-world"
+      },
+      status: "ready_for_change_request",
+      branch: "feature/abc-123-fix-checkout-validation",
+      worktree: {
+        path: "/tmp/luna/hello-world/run-1",
+        preserved: true,
+        reason: "change_request_created"
+      },
+      validation: {
+        passed: true,
+        command_count: 1
+      },
+      commit: {
+        enabled: true,
+        skipped: false,
+        status: "created",
+        branch: "feature/abc-123-fix-checkout-validation",
+        commit_sha: "2222222222222222222222222222222222222222"
+      },
+      push: {
+        enabled: true,
+        skipped: false,
+        status: "pushed",
+        remote: "origin",
+        branch: "feature/abc-123-fix-checkout-validation"
+      },
+      change_request: {
+        enabled: true,
+        skipped: false,
+        status: "opened",
+        provider: "github",
+        url: "https://github.com/octo-org/hello-world/pull/42"
+      },
+      warnings: [
+        "trusted_host_local execution can access host filesystem, credentials, network, and local CLIs."
+      ]
+    });
+
+    const markdown = buildPlaneImplementationReportMarkdown(planeReportInput);
+
+    expect(markdown).toContain("# Luna Implementation Report");
+    expect(markdown).toContain("Task: Plane #42");
+    expect(markdown).toContain("Status: ready_for_change_request");
+    expect(markdown).toContain("Branch: feature/abc-123-fix-checkout-validation");
+    expect(markdown).toContain("Worktree: /tmp/luna/hello-world/run-1");
+    expect(markdown).toContain("Validation: passed");
+    expect(markdown).toContain("Commit: created");
+    expect(markdown).toContain("Push: pushed");
+    expect(markdown).toContain("Change request: opened");
+    expect(markdown.endsWith("\n")).toBe(true);
   });
 });

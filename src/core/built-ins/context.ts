@@ -2,6 +2,7 @@ import { z } from "zod";
 import { collectContextIntake } from "../context/intake.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
 import { defineBuiltInStep } from "./registry.js";
+import { repositoryRequiredMetadata } from "./metadata.js";
 import { repositoryFrom, requiredState } from "./state.js";
 
 const CollectContextInputSchema = z
@@ -20,6 +21,7 @@ function workspacePathFrom(state: {
 
 export const collectContextBuiltIn = defineBuiltInStep({
   name: "collect_context",
+  metadata: repositoryRequiredMetadata,
   async run({ state, input }) {
     const parsed = CollectContextInputSchema.parse(input ?? {});
     const repository = repositoryFrom(state);

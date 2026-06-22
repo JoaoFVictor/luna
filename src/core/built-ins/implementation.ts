@@ -10,7 +10,7 @@ import {
 } from "../write-mode/git-gates.js";
 import type { ChangeRequestRegistry } from "../change-request/contracts.js";
 import type { AcceptanceDecision } from "../decisions/types.js";
-import { AgentLoopResultSchema } from "../agent-runtime/contracts.js";
+import { GatedAgentLoopResultSchema } from "../agent-runtime/contracts.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact
@@ -26,6 +26,7 @@ import {
   recordImplementationValidationMetadata,
   runValidationCommandsMetadata
 } from "./metadata.js";
+import { AcceptanceDecisionSchema } from "../decisions/types.js";
 import { defineBuiltInStep } from "./registry.js";
 import {
   expectedRemoteUrlsFrom,
@@ -115,11 +116,17 @@ export const recordImplementationValidationBuiltIn = defineBuiltInStep({
   metadata: recordImplementationValidationMetadata,
   run({ state, input }) {
     const resolved = resolvedInput(input, state);
-    const implementation = AgentLoopResultSchema.parse(
+    const implementation = GatedAgentLoopResultSchema.parse(
       requiredInput(resolved.implementation, "implementation")
     );
+    const acceptance = AcceptanceDecisionSchema.parse(
+      requiredInput(implementation.result.acceptance, "implementation.result.acceptance")
+    );
 
-    return implementation.final_validation;
+    return {
+      validation: implementation.final_validation,
+      acceptance
+    };
   }
 });
 

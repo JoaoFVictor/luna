@@ -22,8 +22,8 @@ const remote = "origin";
 const baseSha = "1111111111111111111111111111111111111111";
 const runId = "run-123";
 const expectedRemoteUrls = [
-  "git@github.com:swinggo-dev/swg-front-nuxt.git",
-  "https://github.com/swinggo-dev/swg-front-nuxt.git"
+  "git@github.com:octo-org/hello-world.git",
+  "https://github.com/octo-org/hello-world.git"
 ];
 const commitMessage = "ABC-123: Fix checkout validation";
 
@@ -68,7 +68,7 @@ const emptyDiff: WorktreeDiff = {
 
 function createRunGit({
   currentBranch = branch,
-  remoteUrl = "git@github.com:swinggo-dev/swg-front-nuxt.git",
+  remoteUrl = "git@github.com:octo-org/hello-world.git",
   baseAncestor = true,
   baseAncestorError,
   hasPreExistingStagedChanges = false,
@@ -598,7 +598,7 @@ describe("commitChanges", () => {
         }
 
         if (args[0] === "remote" && args[1] === "get-url") {
-          return "git@github.com:swinggo-dev/swg-front-nuxt.git\n";
+          return "git@github.com:octo-org/hello-world.git\n";
         }
 
         if (args[0] === "rev-parse" && args[1] === "--git-path") {

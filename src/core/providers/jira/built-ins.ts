@@ -3,24 +3,12 @@ import {
   buildImplementationReportMarkdown as defaultBuildImplementationReportMarkdown
 } from "./report-builder.js";
 import { jiraIssueContextFrom } from "./task-context.js";
-import type { ChangeRequestArtifact } from "../../change-request/contracts.js";
 import type { Invocation } from "../../invocation/types.js";
-import type { ValidationResult } from "../../validation/runner.js";
-import type {
-  CommitChangesArtifact,
-  PushBranchArtifact
-} from "../../write-mode/types.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import { finalReportMetadata } from "../../built-ins/metadata.js";
-import {
-  finalValidationFrom,
-  implementationWorkspaceFrom,
-  requiredImplementationFrom,
-  requiredState,
-  resolvedInput,
-  stepValue
-} from "../../built-ins/state.js";
+import { requiredState } from "../../built-ins/state.js";
 import { builtInError } from "../../built-ins/errors.js";
+import { implementationReportInputFrom } from "../../built-ins/implementation-report.js";
 
 function jiraIssueInvocationFrom(state: { invocation?: unknown }): Invocation {
   const invocation = requiredState(
@@ -40,28 +28,6 @@ function jiraIssueInvocationFrom(state: { invocation?: unknown }): Invocation {
   return invocation;
 }
 
-function implementationReportStatus({
-  validation,
-  commit,
-  push,
-  changeRequest
-}: {
-  validation: ValidationResult;
-  commit: CommitChangesArtifact;
-  push: PushBranchArtifact;
-  changeRequest: ChangeRequestArtifact;
-}): string {
-  if (!validation.passed) {
-    return "validation_failed";
-  }
-
-  if (!commit.skipped && !push.skipped && !changeRequest.skipped) {
-    return "ready_for_change_request";
-  }
-
-  return "completed_with_skips";
-}
-
 export const collectTaskContextBuiltIn = defineBuiltInStep({
   name: "collect_task_context",
   run({ state }) {
@@ -74,13 +40,14 @@ export const collectTaskContextBuiltIn = defineBuiltInStep({
         key: task.issueKey,
         title: task.title
       },
+      change_request_body: task.description,
       jira: {
         issue_key: task.issueKey,
         summary: task.title ?? "",
         description: task.description,
         acceptance_criteria: task.acceptanceCriteria
       },
-      repository: task.repository
+      ...(task.repository === undefined ? {} : { repository: task.repository })
     };
   }
 });
@@ -95,46 +62,13 @@ export const finalImplementationReportBuiltIn = defineBuiltInStep({
     const buildImplementationReportMarkdown =
       dependencies.buildImplementationReportMarkdown ??
       defaultBuildImplementationReportMarkdown;
-    const resolved = resolvedInput(input, state);
-    const workspace = implementationWorkspaceFrom(state);
-    const validation = finalValidationFrom(state, resolved);
-    const commit = stepValue<CommitChangesArtifact>(
+    const reportInput = implementationReportInputFrom({
       state,
-      resolved,
-      "commit",
-      "commit"
-    );
-    const push = stepValue<PushBranchArtifact>(state, resolved, "push", "push");
-    const changeRequest = stepValue<ChangeRequestArtifact>(
-      state,
-      resolved,
-      "change_request",
-      "change_request"
-    );
-    const reportInput = {
-      invocation: jiraIssueInvocationFrom(state),
-      status: implementationReportStatus({
-        validation,
-        commit,
-        push,
-        changeRequest
-      }),
-      branch: workspace.branch,
-      worktree: {
-        path: workspace.path,
-        preserved: workspace.preserved,
-        reason: workspace.reason
-      },
-      validation,
-      commit,
-      push,
-      changeRequest,
-      trustedHostLocal:
-        requiredImplementationFrom(state).sandbox.type === "trusted_host_local",
-      ...(observabilitySummary === undefined
-        ? {}
-        : { summary: observabilitySummary })
-    };
+      input,
+      dependencies,
+      observabilitySummary,
+      invocation: jiraIssueInvocationFrom(state)
+    });
 
     return {
       json: buildImplementationReportJson(reportInput),

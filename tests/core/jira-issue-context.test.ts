@@ -48,6 +48,16 @@ describe("Jira issue context parser", () => {
     expect(jiraIssueContextFrom(invocation)).toEqual(expected);
   });
 
+  it("extracts Jira issue context without repository", () => {
+    const context = jiraIssueContextFrom({
+      ...invocation,
+      repository: undefined
+    });
+
+    expect(context.repository).toBeUndefined();
+    expect(context.issueKey).toBe("LUNA-123");
+  });
+
   it("allows empty acceptance criteria when Jira config has no acceptance field", () => {
     expect(
       jiraIssueContextFrom({

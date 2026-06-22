@@ -46,6 +46,19 @@ function builtInNode(id: string, after?: string[]): BuiltInWorkflowNode {
   };
 }
 
+type ValidationGateCommands =
+  | string
+  | Array<{ cmd: string; args?: string[]; timeout_ms?: number }>;
+
+function validationGate(commands: ValidationGateCommands, maxOutputBytes: number) {
+  return {
+    id: "validation",
+    type: "validation_commands" as const,
+    commands,
+    max_output_bytes: maxOutputBytes
+  };
+}
+
 function deferred<T = void>(): {
   promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
@@ -464,7 +477,7 @@ describe("workflow scheduler", () => {
         builtInNode("preflight"),
         {
           id: "agent_b",
-          type: "agent_loop",
+          type: "gated_agent_loop",
           agent: "implementer",
           output_schema: "result",
           artifacts: [
@@ -480,7 +493,7 @@ describe("workflow scheduler", () => {
             cwd: ".",
             env_allowlist: []
           },
-          validation: { commands: "npm test", max_output_bytes: 1024 },
+          gates: [validationGate("npm test", 1024)],
           repair: { attempts: 1 }
         }
       ],

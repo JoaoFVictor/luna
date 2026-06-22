@@ -9,17 +9,19 @@ import { local } from "@flue/runtime/node";
 import * as v from "valibot";
 import type { GenericSchema } from "valibot";
 import {
-  runAgentLoopStateMachine,
-  type RunWritableAgentInput
-} from "../../agents/loop-runner.js";
+  runGatedAgentLoopStateMachine,
+  type GateResult,
+  type RunGatedWorkerInput
+} from "../../agents/gated-loop-runner.js";
 import {
   contextIntakeFrom,
   prepareAgentInstructionEnvelope
 } from "../../agents/instruction-stack.js";
 import type {
-  RunAgentLoopStepOptions,
+  RunGatedAgentLoopStepOptions,
   RunAgentStepOptions
 } from "../../configured-workflow/runner.js";
+import type { ModelProfile } from "../../config/schemas.js";
 import {
   resolveFlueAgentCapabilities,
   type ResolvedFlueAgentCapabilities
@@ -52,6 +54,10 @@ import {
   readOnlyFluePromptRetryPolicy,
   writeModeFluePromptRetryPolicy
 } from "./retry.js";
+import {
+  feedbackFromValidation,
+  gateResultFromAgentOutput
+} from "../../agents/gate-results.js";
 
 type FlueAgentRunnerOptions = {
   ctx: FlueContext<Invocation>;
@@ -64,7 +70,7 @@ type AgentInstructionEnvelope = ReturnType<
 
 export type FlueAgentRunner = {
   runAgentStep(options: RunAgentStepOptions): Promise<unknown>;
-  runAgentLoopStep(options: RunAgentLoopStepOptions): Promise<unknown>;
+  runGatedAgentLoopStep(options: RunGatedAgentLoopStepOptions): Promise<unknown>;
 };
 
 function codedError(message: string, code: string): Error & { code: string } {
@@ -127,7 +133,7 @@ function promptErrorAttributes(error: unknown): unknown {
 }
 
 async function emitPromptEvent(
-  options: RunAgentStepOptions | RunAgentLoopStepOptions,
+  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions,
   level: "info" | "warn" | "error",
   event: string,
   data: Record<string, unknown>,
@@ -152,7 +158,7 @@ async function emitPromptEvent(
 }
 
 async function recordPromptCompletion(
-  options: RunAgentStepOptions | RunAgentLoopStepOptions,
+  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions,
   promptId: string,
   startedAtMs: number,
   response: PromptResponseWithUsage | undefined
@@ -197,7 +203,7 @@ async function recordPromptCompletion(
 }
 
 async function recordPromptFailure(
-  options: RunAgentStepOptions | RunAgentLoopStepOptions,
+  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions,
   promptId: string,
   startedAtMs: number,
   error: unknown
@@ -246,12 +252,12 @@ function readOnlyRetryPolicy(options: RunAgentStepOptions): RetryPolicy {
   return readOnlyFluePromptRetryPolicy(options.node.retry);
 }
 
-function writeModeRetryPolicy(options: RunAgentLoopStepOptions): RetryPolicy {
+function writeModeRetryPolicy(options: RunGatedAgentLoopStepOptions): RetryPolicy {
   return writeModeFluePromptRetryPolicy(options.node.retry);
 }
 
 async function emitPromptRetryEvent(
-  options: RunAgentStepOptions | RunAgentLoopStepOptions,
+  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions,
   error: unknown,
   attempt: number,
   retryPolicy: RetryPolicy,
@@ -449,7 +455,7 @@ async function runPromptWithRetry({
   retryPolicy,
   promptData = {}
 }: {
-  options: RunAgentStepOptions | RunAgentLoopStepOptions;
+  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions;
   session: PromptSession;
   promptId: string;
   text: string;
@@ -565,8 +571,8 @@ export async function runFlueAgentStep(
 }
 
 function writableAgentPrompt(
-  options: RunAgentLoopStepOptions,
-  input: RunWritableAgentInput,
+  options: RunGatedAgentLoopStepOptions,
+  input: RunGatedWorkerInput,
   workflowInput: Record<string, unknown>
 ): string {
   return [
@@ -581,6 +587,9 @@ function writableAgentPrompt(
       ...(input.previousError === undefined
         ? {}
         : { previous_error: input.previousError }),
+      ...(input.previousGates === undefined
+        ? {}
+        : { previous_gates: input.previousGates }),
       ...(input.diffSummary === undefined
         ? {}
         : { diff_summary: input.diffSummary })
@@ -588,14 +597,12 @@ function writableAgentPrompt(
   ].join("\n\n");
 }
 
-async function runWritableAgent(
+async function initializeWritableAgentSession(
   ctx: FlueContext<Invocation>,
-  options: RunAgentLoopStepOptions,
-  input: RunWritableAgentInput,
+  options: RunGatedAgentLoopStepOptions,
   capabilities: ResolvedFlueAgentCapabilities,
   envelope: AgentInstructionEnvelope
-): Promise<unknown> {
-  const retryPolicy = writeModeRetryPolicy(options);
+): Promise<PromptSession> {
   const agent = createAgent(async () => ({
     description: options.agent.description,
     instructions: envelope.instructions,
@@ -610,8 +617,18 @@ async function runWritableAgent(
     ...toFlueModelOptions(options.model)
   }));
   const harness = await ctx.init(agent, { name: options.agent.id });
-  const session = await harness.session();
-  const promptId = `agent_loop:${options.node.id}:${input.phase}:${input.attempt}`;
+
+  return await harness.session();
+}
+
+async function runWritableAgent(
+  options: RunGatedAgentLoopStepOptions,
+  input: RunGatedWorkerInput,
+  envelope: AgentInstructionEnvelope,
+  session: PromptSession
+): Promise<unknown> {
+  const retryPolicy = writeModeRetryPolicy(options);
+  const promptId = `gated_agent_loop:${options.node.id}:${input.phase}:${input.attempt}`;
   const response = await runPromptWithRetry({
     options,
     session,
@@ -631,15 +648,169 @@ async function runWritableAgent(
   return response.data;
 }
 
-export async function runFlueAgentLoopStep(
+type GateAgentSessions = {
+  sessions: Record<string, PromptSession>;
+  close(): Promise<void>;
+};
+
+async function initializeGateAgentSessions(
   ctx: FlueContext<Invocation>,
-  options: RunAgentLoopStepOptions,
+  options: RunGatedAgentLoopStepOptions,
+  mcpConfig: McpConfig | undefined
+): Promise<GateAgentSessions> {
+  const sessions: Record<string, PromptSession> = {};
+  const capabilitiesToClose: ResolvedFlueAgentCapabilities[] = [];
+
+  for (const gate of options.gates) {
+    if (gate.type !== "agent") {
+      continue;
+    }
+
+    const gateAgent = options.gateAgents[gate.id];
+    if (gateAgent === undefined) {
+      throw codedError(
+        `Gated agent loop gate agent is missing: ${gate.id}`,
+        "gated_agent_loop_gate_agent_missing"
+      );
+    }
+
+    const instructions = await readFile(gateAgent.instructionsPath, "utf8");
+    const envelope = prepareAgentInstructionEnvelope({
+      agent: {
+        id: gateAgent.id,
+        mode: gateAgent.mode,
+        instructions
+      },
+      taskInput: {
+        workflow_input: options.input,
+        gate_input: gate.input ?? {}
+      }
+    });
+    const capabilities = await resolveFlueAgentCapabilities({
+      agent: gateAgent,
+      cwd: options.sandbox.cwd,
+      agentsRoot: options.agentsRoot,
+      modelProfiles: options.modelProfiles,
+      workflowSubagentPolicy: options.workflowSubagentPolicy,
+      context: contextIntakeFrom(options.input.context),
+      mcpConfig,
+      observability: options.observability,
+      summary: options.summary,
+      env: process.env
+    });
+    capabilitiesToClose.push(capabilities);
+
+    const agent = createAgent(async () => ({
+      description: gateAgent.description,
+      instructions: envelope.instructions,
+      skills: capabilities.skills,
+      tools: capabilities.tools,
+      subagents: capabilities.subagents,
+      cwd: options.sandbox.cwd,
+      sandbox: local({ cwd: options.sandbox.cwd, env: {} }),
+      ...toFlueModelOptions(resolveGateModel(gateAgent, options))
+    }));
+    const harness = await ctx.init(agent, {
+      name: `${options.node.id}-${gate.id}`
+    });
+    sessions[gate.id] = await harness.session();
+  }
+
+  return {
+    sessions,
+    close: async () => {
+      await Promise.all(
+        capabilitiesToClose.map(async (capabilities) => await capabilities.close())
+      );
+    }
+  };
+}
+
+function resolveGateModel(
+  gateAgent: RunGatedAgentLoopStepOptions["agent"],
+  options: RunGatedAgentLoopStepOptions
+): ModelProfile {
+  const profile = options.modelProfiles[gateAgent.model_profile];
+
+  if (profile === undefined) {
+    throw codedError(
+      `Model profile not found for gate agent ${gateAgent.id}: ${gateAgent.model_profile}`,
+      "model_profile_missing"
+    );
+  }
+
+  return profile;
+}
+
+async function runAgentGate({
+  options,
+  gate,
+  session,
+  workerOutput,
+  validation,
+  diffSummary,
+  gateOutputs,
+  attempt
+}: {
+  options: RunGatedAgentLoopStepOptions;
+  gate: Extract<RunGatedAgentLoopStepOptions["gates"][number], { type: "agent" }>;
+  session: PromptSession;
+  workerOutput: unknown;
+  validation: unknown;
+  diffSummary: unknown;
+  gateOutputs: Record<string, unknown>;
+  attempt: number;
+}): Promise<GateResult> {
+  const gateAgent = options.gateAgents[gate.id];
+  if (gateAgent === undefined) {
+    throw codedError(
+      `Gated agent loop gate agent is missing: ${gate.id}`,
+      "gated_agent_loop_gate_agent_missing"
+    );
+  }
+
+  const promptId = `gated_agent_loop:${options.node.id}:gate:${gate.id}:${attempt}`;
+  const response = await runPromptWithRetry({
+    options,
+    session,
+    promptId,
+    text: [
+      gateAgent.description,
+      promptBody({
+        workflow_input: options.input,
+        gate_input: gate.input ?? {},
+        worker_output: workerOutput,
+        validation,
+        diff_summary: diffSummary,
+        gate_outputs: gateOutputs
+      })
+    ].join("\n\n"),
+    retryPolicy: readOnlyFluePromptRetryPolicy(undefined),
+    promptData: { gate_id: gate.id, attempt },
+    promptOptions: {
+      result: await resultSchema(gateAgent.outputSchemaPath),
+      ...toFluePromptOptions(resolveGateModel(gateAgent, options))
+    }
+  });
+
+  return await gateResultFromAgentOutput({
+    id: gate.id,
+    type: gate.type,
+    blockWhen: gate.block_when,
+    feedback: gate.feedback,
+    output: response.data
+  });
+}
+
+export async function runFlueGatedAgentLoopStep(
+  ctx: FlueContext<Invocation>,
+  options: RunGatedAgentLoopStepOptions,
   mcpConfig?: McpConfig
 ): Promise<unknown> {
   if (options.sandbox.type !== "trusted_host_local") {
     throw codedError(
-      `Unsupported agent_loop sandbox type: ${String(options.sandbox.type)}`,
-      "agent_loop_sandbox_unsupported"
+      `Unsupported gated_agent_loop sandbox type: ${String(options.sandbox.type)}`,
+      "gated_agent_loop_sandbox_unsupported"
     );
   }
 
@@ -673,26 +844,101 @@ export async function runFlueAgentLoopStep(
   });
 
   try {
-    return await runAgentLoopStateMachine({
-      cwd: options.sandbox.cwd,
-      prompt: options.input,
-      repairAttempts: options.repair.attempts,
-      dependencies: {
-        runWritableAgent: async (input) =>
-          await runWritableAgent(ctx, options, input, capabilities, envelope),
-        runValidation: async () =>
-          await runValidationCommands({
-            cwd: options.sandbox.cwd,
-            commands: options.validation.commands,
-            maxOutputBytes: options.validation.max_output_bytes
-          }),
-        collectDiffSummary: async () =>
-          await collectWorktreeDiff({
-            cwd: options.sandbox.cwd,
-            maxDiffBytes: options.validation.max_output_bytes
-          })
-      }
-    });
+    const session = await initializeWritableAgentSession(
+      ctx,
+      options,
+      capabilities,
+      envelope
+    );
+    const gateAgentSessions = await initializeGateAgentSessions(
+      ctx,
+      options,
+      mcpConfig
+    );
+
+    try {
+      return await runGatedAgentLoopStateMachine({
+        cwd: options.sandbox.cwd,
+        prompt: options.input,
+        repairAttempts: options.repair.attempts,
+        dependencies: {
+          runWorker: async (input) =>
+            await runWritableAgent(options, input, envelope, session),
+          runValidation: async () => {
+            const validationGate = options.gates.find(
+              (gate) => gate.type === "validation_commands"
+            );
+
+            if (validationGate === undefined) {
+              return { passed: true, commands: [] };
+            }
+
+            return await runValidationCommands({
+              cwd: options.sandbox.cwd,
+              commands: validationGate.commands,
+              maxOutputBytes: validationGate.max_output_bytes
+            });
+          },
+          collectDiffSummary: async () =>
+            await collectWorktreeDiff({
+              cwd: options.sandbox.cwd,
+              maxDiffBytes:
+                options.gates.find((gate) => gate.type === "validation_commands")
+                  ?.max_output_bytes ?? 200000
+            }),
+          runGates: async ({ workerOutput, validation, diffSummary, attempt }) => {
+            const results: GateResult[] = [];
+            const outputs: Record<string, unknown> = {};
+
+            for (const gate of options.gates) {
+              if (gate.type === "validation_commands") {
+                const result: GateResult = {
+                  id: gate.id,
+                  type: gate.type,
+                  passed: validation.passed,
+                  ...(validation.passed
+                    ? {}
+                    : { feedback: feedbackFromValidation(validation.commands) }),
+                  output: validation
+                };
+                results.push(result);
+                outputs[gate.id] = validation;
+                continue;
+              }
+
+              const sessionForGate = gateAgentSessions.sessions[gate.id];
+              if (sessionForGate === undefined) {
+                throw codedError(
+                  `Gated agent loop gate session is missing: ${gate.id}`,
+                  "gated_agent_loop_gate_session_missing"
+                );
+              }
+
+              const result = await runAgentGate({
+                options,
+                gate,
+                session: sessionForGate,
+                workerOutput,
+                validation,
+                diffSummary,
+                gateOutputs: outputs,
+                attempt
+              });
+              results.push(result);
+              outputs[gate.id] = result.output;
+            }
+
+            return {
+              passed: results.every((result) => result.passed),
+              results,
+              outputs
+            };
+          }
+        }
+      });
+    } finally {
+      await gateAgentSessions.close();
+    }
   } finally {
     await capabilities.close();
   }
@@ -705,7 +951,7 @@ export function createFlueAgentRunner({
   return {
     runAgentStep: async (options) =>
       await runFlueAgentStep(ctx, options, mcpConfig),
-    runAgentLoopStep: async (options) =>
-      await runFlueAgentLoopStep(ctx, options, mcpConfig)
+    runGatedAgentLoopStep: async (options) =>
+      await runFlueGatedAgentLoopStep(ctx, options, mcpConfig)
   };
 }

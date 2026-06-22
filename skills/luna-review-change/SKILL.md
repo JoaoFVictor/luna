@@ -18,6 +18,10 @@ Review Luna changes as architecture, not just code.
 - Provider-facing built-ins are registered through
   `src/core/providers/built-ins.ts`; runtime-neutral built-ins and shared
   catalog helpers stay under `src/core/built-ins/`.
+- Provider responsibilities stay isolated. No provider-specific module,
+  adapter, built-in, tool helper, test, fixture, or docs example should import,
+  validate, store, or mention another provider's auth/config/schema/payload
+  shape. Shared helpers must stay provider-agnostic.
 - Tools are registered only through `src/core/tools/catalog.ts`; Flue
   materialization stays in `src/core/agent-runtime/flue/tool-registry.ts`.
 - Flue-specific runner, capabilities, MCP, subagent profile, Pi auth, model
@@ -49,6 +53,7 @@ rg -n "built-in-steps|src/workflows/.*\\.ts|TODO|TBD" AGENTS.md README.md exampl
 rg -n "from \".*built-in-steps\\.js\"|from \"../../src/core/built-in-steps\\.js\"" src tests
 rg -n "src/core/flue-|src/core/pi-auth|observability/flue-log-sink" src tests examples skills
 rg -n "src/core/types\\.ts|src/tools/repository-tools\\.ts|src/core/implementation-|built-ins/index\\.ts" README.md examples skills src tests
+rg -n "swing(go)|s[w]g" AGENTS.md README.md examples skills src tests
 ```
 
 Do not add `review-pr <url>` except inside docs as an explicit anti-example.

@@ -122,7 +122,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "jira",
+        "task",
         "repository",
         "status",
         "branch",
@@ -134,8 +134,14 @@
         "warnings"
       ],
       "properties": {
+        "task": {
+          "$ref": "#/definitions/task_summary"
+        },
         "jira": {
           "$ref": "#/definitions/jira_summary"
+        },
+        "plane": {
+          "$ref": "#/definitions/plane_summary"
         },
         "repository": {
           "$ref": "#/definitions/repository"
@@ -169,6 +175,83 @@
             "type": "string"
           }
         }
+      },
+      "oneOf": [
+        {
+          "required": ["jira"],
+          "not": {
+            "required": ["plane"],
+            "properties": {
+              "plane": {}
+            }
+          },
+          "properties": {
+            "jira": {
+              "$ref": "#/definitions/jira_summary"
+            },
+            "task": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "const": "jira"
+                }
+              }
+            }
+          }
+        },
+        {
+          "required": ["plane"],
+          "not": {
+            "required": ["jira"],
+            "properties": {
+              "jira": {}
+            }
+          },
+          "properties": {
+            "plane": {
+              "$ref": "#/definitions/plane_summary"
+            },
+            "task": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "const": "plane"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "task_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "key", "id", "url", "title", "status"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["jira", "plane"]
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "jira_summary": {
@@ -191,6 +274,67 @@
         "status": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "plane_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue_id", "workspace_slug", "priority", "labels"],
+      "anyOf": [
+        {
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["project_id"]
+        },
+        {
+          "properties": {
+            "project_identifier": {
+              "type": "string",
+              "minLength": 1
+            },
+            "issue_identifier": {
+              "type": "integer"
+            }
+          },
+          "required": ["project_identifier", "issue_identifier"]
+        }
+      ],
+      "properties": {
+        "issue_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sequence_id": {
+          "type": "integer"
+        },
+        "workspace_slug": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_identifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issue_identifier": {
+          "type": "integer"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

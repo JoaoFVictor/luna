@@ -20,7 +20,22 @@ import {
   resetEnv
 } from "./flue-test-helpers.js";
 
-describe("trusted_host_local Flue agent loop runner", () => {
+type ValidationGateCommands = Array<{
+  cmd: string;
+  args?: string[];
+  timeout_ms?: number;
+}>;
+
+function validationGate(commands: ValidationGateCommands, maxOutputBytes: number) {
+  return {
+    id: "validation",
+    type: "validation_commands" as const,
+    commands,
+    max_output_bytes: maxOutputBytes
+  };
+}
+
+describe("trusted_host_local Flue gated agent loop runner", () => {
   beforeEach(() => {
     resetEnv();
   });
@@ -63,7 +78,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
     ]
   } as const;
 
-  it("runs trusted_host_local agent_loop steps with Flue local cwd and env allowlist", async () => {
+  it("runs trusted_host_local gated_agent_loop steps with Flue local cwd and env allowlist", async () => {
     process.env.LUNA_ALLOWED_TOKEN = "allowed-secret";
     process.env.LUNA_SECOND_ALLOWED_TOKEN = "second-allowed-secret";
     process.env.LUNA_UNLISTED_TOKEN = "unlisted-secret";
@@ -93,7 +108,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
       collectWorktreeDiff
     }));
 
-    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-gated-agent-loop-"));
     const worktreePath = path.join(root, "worktree");
     const agentDir = path.join(root, "agents", "code-implementer");
     await mkdir(agentDir, { recursive: true });
@@ -111,15 +126,15 @@ describe("trusted_host_local Flue agent loop runner", () => {
     );
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
-        const runAgentLoopStep =
-          options.dependencies?.runAgentLoopStep as NonNullable<
-            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+        const runGatedAgentLoopStep =
+          options.dependencies?.runGatedAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runGatedAgentLoopStep"]
           >;
 
-        const output = await runAgentLoopStep({
+        const output = await runGatedAgentLoopStep({
           agent: {
             id: "code-implementer",
-            description: "Implement Jira tasks",
+            description: "Implement tasks",
             model_profile: "deep",
             mode: "trusted_local_write",
             instructions_file: "instructions.md",
@@ -130,9 +145,10 @@ describe("trusted_host_local Flue agent loop runner", () => {
             instructionsPath,
             outputSchemaPath
           },
+          gateAgents: {},
           node: {
             id: "implementation",
-            type: "agent_loop",
+            type: "gated_agent_loop",
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
@@ -150,10 +166,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
                 "LUNA_MISSING_TOKEN"
               ]
             },
-            validation: {
-              commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
-              max_output_bytes: 200000
-            },
+            gates: [validationGate([{ cmd: "npm", args: ["test"], timeout_ms: 120000 }], 200000)],
             repair: { attempts: 0 }
           },
           model: {
@@ -174,10 +187,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
               "LUNA_MISSING_TOKEN"
             ]
           },
-          validation: {
-            commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
-            max_output_bytes: 200000
-          },
+          gates: [validationGate([{ cmd: "npm", args: ["test"], timeout_ms: 120000 }], 200000)],
           repair: { attempts: 0 },
           state: {
             invocation: gitInvocation,
@@ -316,7 +326,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
     ]);
   });
 
-  it("injects resolved subagents into trusted_host_local Flue agent loops", async () => {
+  it("injects resolved subagents into trusted_host_local Flue gated agent loops", async () => {
     const subagents = [
       {
         name: "change-reviewer",
@@ -333,13 +343,13 @@ describe("trusted_host_local Flue agent loop runner", () => {
       subagents,
       close
     }));
-    const runAgentLoopStateMachine = vi.fn(
+    const runGatedAgentLoopStateMachine = vi.fn(
       async ({
         dependencies
       }: {
-        dependencies: { runWritableAgent(input: unknown): Promise<unknown> };
+        dependencies: { runWorker(input: unknown): Promise<unknown> };
       }) => {
-        await dependencies.runWritableAgent({
+        await dependencies.runWorker({
           phase: "attempt",
           attempt: 1,
           previousValidation: undefined,
@@ -360,9 +370,9 @@ describe("trusted_host_local Flue agent loop runner", () => {
     vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/agents/loop-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/agents/loop-runner.js")>()),
-      runAgentLoopStateMachine
+    vi.doMock("../../src/core/agents/gated-loop-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/agents/gated-loop-runner.js")>()),
+      runGatedAgentLoopStateMachine
     }));
 
     const root = await mkdtemp(path.join(tmpdir(), "luna-flue-subagents-"));
@@ -379,15 +389,15 @@ describe("trusted_host_local Flue agent loop runner", () => {
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
-        const runAgentLoopStep =
-          options.dependencies?.runAgentLoopStep as NonNullable<
-            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+        const runGatedAgentLoopStep =
+          options.dependencies?.runGatedAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runGatedAgentLoopStep"]
           >;
 
-        return await runAgentLoopStep({
+        return await runGatedAgentLoopStep({
           agent: {
             id: "code-implementer",
-            description: "Implement Jira tasks",
+            description: "Implement tasks",
             model_profile: "deep",
             mode: "trusted_local_write",
             instructions_file: "instructions.md",
@@ -397,9 +407,10 @@ describe("trusted_host_local Flue agent loop runner", () => {
             instructionsPath,
             outputSchemaPath
           },
+          gateAgents: {},
           node: {
             id: "implementation",
-            type: "agent_loop",
+            type: "gated_agent_loop",
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
@@ -409,10 +420,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
               cwd: worktreePath,
               env_allowlist: []
             },
-            validation: {
-              commands: [],
-              max_output_bytes: 200000
-            },
+            gates: [validationGate([], 200000)],
             repair: { attempts: 0 }
           },
           model: { model: "openai/implementer-test", reasoning_effort: "high" },
@@ -425,10 +433,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             cwd: worktreePath,
             env_allowlist: []
           },
-          validation: {
-            commands: [],
-            max_output_bytes: 200000
-          },
+          gates: [validationGate([], 200000)],
           repair: { attempts: 0 },
           state: {
             invocation: gitInvocation,
@@ -483,7 +488,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it("resolves trusted_host_local agent_loop capabilities once across repair attempts and closes after completion", async () => {
+  it("resolves trusted_host_local gated_agent_loop capabilities once across repair attempts and closes after completion", async () => {
     const initCalls: InitCall[] = [];
     const initializedInstructions: string[] = [];
     const promptCalls: PromptCall[] = [];
@@ -534,7 +539,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
       collectWorktreeDiff
     }));
 
-    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-gated-agent-loop-"));
     const worktreePath = path.join(root, "worktree");
     const agentDir = path.join(root, "agents", "code-implementer");
     await mkdir(agentDir, { recursive: true });
@@ -574,15 +579,15 @@ describe("trusted_host_local Flue agent loop runner", () => {
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
-        const runAgentLoopStep =
-          options.dependencies?.runAgentLoopStep as NonNullable<
-            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+        const runGatedAgentLoopStep =
+          options.dependencies?.runGatedAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runGatedAgentLoopStep"]
           >;
 
-        const output = await runAgentLoopStep({
+        const output = await runGatedAgentLoopStep({
           agent: {
             id: "code-implementer",
-            description: "Implement Jira tasks",
+            description: "Implement tasks",
             model_profile: "deep",
             mode: "trusted_local_write",
             instructions_file: "instructions.md",
@@ -593,9 +598,10 @@ describe("trusted_host_local Flue agent loop runner", () => {
             instructionsPath,
             outputSchemaPath
           },
+          gateAgents: {},
           node: {
             id: "implementation",
-            type: "agent_loop",
+            type: "gated_agent_loop",
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
@@ -605,10 +611,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
               cwd: worktreePath,
               env_allowlist: []
             },
-            validation: {
-              commands: [],
-              max_output_bytes: 200000
-            },
+            gates: [validationGate([], 200000)],
             repair: { attempts: 1 }
           },
           model: { model: "openai/implementer-test", reasoning_effort: "high" },
@@ -621,10 +624,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             cwd: worktreePath,
             env_allowlist: []
           },
-          validation: {
-            commands: [],
-            max_output_bytes: 200000
-          },
+          gates: [validationGate([], 200000)],
           repair: { attempts: 1 },
           state: {
             invocation: gitInvocation,
@@ -685,10 +685,9 @@ describe("trusted_host_local Flue agent loop runner", () => {
         attempts_exhausted: false
       }
     });
-    expect(initCalls).toHaveLength(2);
-    expect(initializedInstructions).toHaveLength(2);
-    expect(initializedInstructions[1]).toBe(initializedInstructions[0]);
-    expect(initializedInstructions[1]).not.toContain(
+    expect(initCalls).toHaveLength(1);
+    expect(initializedInstructions).toHaveLength(1);
+    expect(initializedInstructions[0]).not.toContain(
       "Changed instructions between attempts."
     );
     expect(promptCalls).toHaveLength(2);
@@ -716,7 +715,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it("closes trusted_host_local agent_loop capabilities when the loop rejects", async () => {
+  it("closes trusted_host_local gated_agent_loop capabilities when the loop rejects", async () => {
     const loopFailure = new Error("loop failed");
     const close = vi.fn(async () => {});
     const resolveFlueAgentCapabilities = vi.fn(async () => ({
@@ -725,7 +724,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
       subagents: [],
       close
     }));
-    const runAgentLoopStateMachine = vi.fn(async () => {
+    const runGatedAgentLoopStateMachine = vi.fn(async () => {
       throw loopFailure;
     });
 
@@ -733,12 +732,12 @@ describe("trusted_host_local Flue agent loop runner", () => {
     vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/agents/loop-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/agents/loop-runner.js")>()),
-      runAgentLoopStateMachine
+    vi.doMock("../../src/core/agents/gated-loop-runner.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/core/agents/gated-loop-runner.js")>()),
+      runGatedAgentLoopStateMachine
     }));
 
-    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-gated-agent-loop-"));
     const worktreePath = path.join(root, "worktree");
     const agentDir = path.join(root, "agents", "code-implementer");
     await mkdir(agentDir, { recursive: true });
@@ -756,15 +755,15 @@ describe("trusted_host_local Flue agent loop runner", () => {
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
-        const runAgentLoopStep =
-          options.dependencies?.runAgentLoopStep as NonNullable<
-            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+        const runGatedAgentLoopStep =
+          options.dependencies?.runGatedAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runGatedAgentLoopStep"]
           >;
 
-        return await runAgentLoopStep({
+        return await runGatedAgentLoopStep({
           agent: {
             id: "code-implementer",
-            description: "Implement Jira tasks",
+            description: "Implement tasks",
             model_profile: "deep",
             mode: "trusted_local_write",
             instructions_file: "instructions.md",
@@ -773,9 +772,10 @@ describe("trusted_host_local Flue agent loop runner", () => {
             instructionsPath,
             outputSchemaPath
           },
+          gateAgents: {},
           node: {
             id: "implementation",
-            type: "agent_loop",
+            type: "gated_agent_loop",
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
@@ -785,10 +785,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
               cwd: worktreePath,
               env_allowlist: []
             },
-            validation: {
-              commands: [],
-              max_output_bytes: 200000
-            },
+            gates: [validationGate([], 200000)],
             repair: { attempts: 0 }
           },
           model: { model: "openai/implementer-test", reasoning_effort: "high" },
@@ -801,10 +798,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             cwd: worktreePath,
             env_allowlist: []
           },
-          validation: {
-            commands: [],
-            max_output_bytes: 200000
-          },
+          gates: [validationGate([], 200000)],
           repair: { attempts: 0 },
           state: {
             invocation: gitInvocation,
@@ -819,21 +813,27 @@ describe("trusted_host_local Flue agent loop runner", () => {
       "../../src/workflows/luna.js",
       runConfiguredWorkflow
     );
+    const init = vi.fn(async () => ({
+      session: vi.fn(async () => ({
+        prompt: vi.fn()
+      }))
+    }));
 
-    await expect(workflow.run({ payload: gitInvocation } as never)).rejects.toBe(
+    await expect(workflow.run({ payload: gitInvocation, init } as never)).rejects.toBe(
       loopFailure
     );
 
-    expect(runAgentLoopStateMachine).toHaveBeenCalledTimes(1);
+    expect(init).toHaveBeenCalledTimes(1);
+    expect(runGatedAgentLoopStateMachine).toHaveBeenCalledTimes(1);
     expect(resolveFlueAgentCapabilities).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects trusted_host_local agent_loop when the agent is not trusted_local_write", async () => {
+  it("rejects trusted_host_local gated_agent_loop when the agent is not trusted_local_write", async () => {
     const local = vi.fn();
     vi.doMock("@flue/runtime/node", () => ({ local }));
 
-    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-gated-agent-loop-"));
     const instructionsPath = path.join(root, "instructions.md");
     const outputSchemaPath = path.join(root, "output.schema.json");
     await writeFile(instructionsPath, "Implement the requested change.\n");
@@ -841,12 +841,12 @@ describe("trusted_host_local Flue agent loop runner", () => {
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
-        const runAgentLoopStep =
-          options.dependencies?.runAgentLoopStep as NonNullable<
-            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+        const runGatedAgentLoopStep =
+          options.dependencies?.runGatedAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runGatedAgentLoopStep"]
           >;
 
-        await runAgentLoopStep({
+        await runGatedAgentLoopStep({
           agent: {
             id: "review-planner",
             description: "Plan implementation",
@@ -858,9 +858,10 @@ describe("trusted_host_local Flue agent loop runner", () => {
             instructionsPath,
             outputSchemaPath
           },
+          gateAgents: {},
           node: {
             id: "implementation",
-            type: "agent_loop",
+            type: "gated_agent_loop",
             agent: "review-planner",
             output_schema: "implementation_result",
             input: {},
@@ -870,10 +871,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
               cwd: root,
               env_allowlist: []
             },
-            validation: {
-              commands: [],
-              max_output_bytes: 200000
-            },
+            gates: [validationGate([], 200000)],
             repair: { attempts: 0 }
           },
           model: { model: "openai/planner-test", reasoning_effort: "medium" },
@@ -886,10 +884,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             cwd: root,
             env_allowlist: []
           },
-          validation: {
-            commands: [],
-            max_output_bytes: 200000
-          },
+          gates: [validationGate([], 200000)],
           repair: { attempts: 0 },
           state: {
             invocation: gitInvocation,
@@ -911,11 +906,11 @@ describe("trusted_host_local Flue agent loop runner", () => {
     expect(local).not.toHaveBeenCalled();
   });
 
-  it("rejects unsupported agent_loop sandbox types before Flue execution", async () => {
+  it("rejects unsupported gated_agent_loop sandbox types before Flue execution", async () => {
     const local = vi.fn();
     vi.doMock("@flue/runtime/node", () => ({ local }));
 
-    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-agent-loop-"));
+    const root = await mkdtemp(path.join(tmpdir(), "luna-flue-gated-agent-loop-"));
     const instructionsPath = path.join(root, "instructions.md");
     const outputSchemaPath = path.join(root, "output.schema.json");
     await writeFile(instructionsPath, "Implement the requested change.\n");
@@ -923,15 +918,15 @@ describe("trusted_host_local Flue agent loop runner", () => {
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
-        const runAgentLoopStep =
-          options.dependencies?.runAgentLoopStep as NonNullable<
-            ConfiguredWorkflowRunnerDependencies["runAgentLoopStep"]
+        const runGatedAgentLoopStep =
+          options.dependencies?.runGatedAgentLoopStep as NonNullable<
+            ConfiguredWorkflowRunnerDependencies["runGatedAgentLoopStep"]
           >;
 
-        await runAgentLoopStep({
+        await runGatedAgentLoopStep({
           agent: {
             id: "code-implementer",
-            description: "Implement Jira tasks",
+            description: "Implement tasks",
             model_profile: "deep",
             mode: "trusted_local_write",
             instructions_file: "instructions.md",
@@ -940,9 +935,10 @@ describe("trusted_host_local Flue agent loop runner", () => {
             instructionsPath,
             outputSchemaPath
           },
+          gateAgents: {},
           node: {
             id: "implementation",
-            type: "agent_loop",
+            type: "gated_agent_loop",
             agent: "code-implementer",
             output_schema: "implementation_result",
             input: {},
@@ -952,10 +948,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
               cwd: root,
               env_allowlist: []
             },
-            validation: {
-              commands: [],
-              max_output_bytes: 200000
-            },
+            gates: [validationGate([], 200000)],
             repair: { attempts: 0 }
           } as never,
           model: { model: "openai/implementer-test", reasoning_effort: "high" },
@@ -968,10 +961,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
             cwd: root,
             env_allowlist: []
           } as never,
-          validation: {
-            commands: [],
-            max_output_bytes: 200000
-          },
+          gates: [validationGate([], 200000)],
           repair: { attempts: 0 },
           state: {
             invocation: gitInvocation,
@@ -988,7 +978,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
     );
 
     await expect(workflow.run({ payload: gitInvocation } as never)).rejects.toMatchObject({
-      code: "agent_loop_sandbox_unsupported"
+      code: "gated_agent_loop_sandbox_unsupported"
     });
     expect(local).not.toHaveBeenCalled();
   });

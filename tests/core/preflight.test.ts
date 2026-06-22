@@ -29,8 +29,8 @@ const jiraInvocation: Invocation = {
   action: "selected",
   repository: {
     provider: "github",
-    owner: "swinggo-dev",
-    name: "swg-front-nuxt"
+    owner: "octo-org",
+    name: "hello-world"
   },
   subject: {
     type: "jira_issue",

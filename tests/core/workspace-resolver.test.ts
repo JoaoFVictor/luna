@@ -25,8 +25,8 @@ const jiraInvocation = {
   target: { type: "workflow", id: "implementation" },
   repository: {
     provider: "github",
-    owner: "swinggo-dev",
-    name: "swg-front-nuxt"
+    owner: "acme-inc",
+    name: "web-app"
   },
   subject: { type: "issue", id: "ABC-123" }
 } as const satisfies Invocation;
@@ -64,9 +64,9 @@ describe("workspace resolver", () => {
   it("matches jira repositories by invocation repository owner and name", () => {
     const jiraRepository = {
       ...gitRepository,
-      id: "swg-front-nuxt",
-      owner: "swinggo-dev",
-      name: "swg-front-nuxt"
+      id: "web-app",
+      owner: "acme-inc",
+      name: "web-app"
     };
 
     const repository = resolveRepository(jiraInvocation, [

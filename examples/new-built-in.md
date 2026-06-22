@@ -22,6 +22,7 @@ Current domain files:
 
 - `src/core/providers/github/built-ins.ts` for GitHub PR review steps.
 - `src/core/providers/jira/built-ins.ts` for Jira task context and reports.
+- `src/core/providers/plane/built-ins.ts` for Plane task context and reports.
 - `src/core/built-ins/implementation.ts` for write-mode implementation steps;
   supporting write-mode services live under `src/core/write-mode/`.
 

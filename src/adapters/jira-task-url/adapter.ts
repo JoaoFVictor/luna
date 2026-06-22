@@ -10,6 +10,7 @@ import {
   JiraConfigSchema,
   type JiraConfig
 } from "../../core/providers/jira/config.js";
+import { repositoryHintFromField } from "../../core/providers/repository-hint.js";
 import {
   InvocationSchema,
   type Invocation
@@ -31,8 +32,7 @@ export type JiraAdapterError = Error & {
     | "jira_instance_not_configured"
     | "jira_issue_fetch_failed"
     | "jira_issue_invalid_response"
-    | "jira_repository_field_missing"
-    | "jira_repository_field_invalid";
+    | "jira_repository_hint_invalid";
   cause?: unknown;
 };
 
@@ -150,33 +150,6 @@ function fieldName(value: unknown): string {
   return compactText(value);
 }
 
-function parseGithubFullName(value: unknown): { owner: string; name: string } {
-  const fullName = compactText(value);
-  if (fullName.length === 0) {
-    throw adapterError(
-      "jira_repository_field_missing",
-      "Jira repository field is missing"
-    );
-  }
-
-  const [owner, name, ...extra] = fullName.split("/");
-  const safeSegment = /^[A-Za-z0-9_.-]+$/;
-  if (
-    owner === undefined ||
-    name === undefined ||
-    extra.length > 0 ||
-    !safeSegment.test(owner) ||
-    !safeSegment.test(name)
-  ) {
-    throw adapterError(
-      "jira_repository_field_invalid",
-      "Expected Jira repository field to be github_full_name"
-    );
-  }
-
-  return { owner, name };
-}
-
 async function defaultFetchIssue({
   instance,
   auth,
@@ -236,8 +209,22 @@ async function loadJiraIssueUrlInvocation(
 
   const issue = parsedIssue.data;
   const fields = issue.fields;
-  const repositoryField = fields[instance.repository_field.field_id];
-  const { owner, name } = parseGithubFullName(repositoryField);
+  let repositoryHint;
+  try {
+    repositoryHint =
+      instance.repository_hint === undefined
+        ? undefined
+        : repositoryHintFromField(
+            compactText(fields[instance.repository_hint.field_id]),
+            `field:${instance.repository_hint.field_id}`
+          );
+  } catch (cause) {
+    throw adapterError(
+      "jira_repository_hint_invalid",
+      "Expected Jira repository hint to be github_full_name",
+      cause
+    );
+  }
   const summary = compactText(fields.summary);
 
   return InvocationSchema.parse({
@@ -245,11 +232,9 @@ async function loadJiraIssueUrlInvocation(
     source: "jira",
     event: "issue",
     action: "selected",
-    repository: {
-      provider: "github",
-      owner,
-      name
-    },
+    ...(repositoryHint === undefined
+      ? {}
+      : { repository: repositoryHint.repository }),
     subject: {
       type: "jira_issue",
       id: issue.key,
@@ -266,7 +251,10 @@ async function loadJiraIssueUrlInvocation(
             : fields[instance.acceptance_criteria_field.field_id]
         ),
         status: fieldName(fields.status),
-        issue_type: fieldName(fields.issuetype)
+        issue_type: fieldName(fields.issuetype),
+        ...(repositoryHint === undefined
+          ? {}
+          : { repository_hint_source: repositoryHint.source })
       }
     }
   });

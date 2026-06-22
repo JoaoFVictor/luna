@@ -25,8 +25,9 @@ For step-by-step recipes, see:
 Choose the guide by intent:
 
 - If you only want to use Luna, start with `review-pr.md`.
-- If you want Luna to implement a Jira task in a write worktree, start with
-  `implementation-jira-task.md`.
+- If you want Luna to implement an external task in a write worktree, start
+  with `implementation-jira-task.md` for Jira or the Plane adapter notes below
+  for Plane.
 - If you want a new role in an existing graph, start with `new-agent.md`.
 - If you want a new orchestration shape, start with `new-workflow.md`.
 - If you want Slack, API events, GitHub issues, or another input source, start
@@ -42,7 +43,7 @@ Luna exposes one generic workflow entrypoint named `luna` through the current
 Flue runtime adapter.
 
 ```text
-adapter or JSON input -> invocation -> route -> workflow graph -> built-ins/agents/agent loops -> artifacts
+adapter or JSON input -> invocation -> route -> workflow graph -> built-ins/agents/gated agent loops -> artifacts
 ```
 
 The workflow id comes from one of these places:
@@ -71,13 +72,17 @@ The committed workflows consume Luna's normalized invocation shape. See
 adapters omit `target` unless the CLI override is used; otherwise routing can
 come from the invocation `target` or `config/routing.yaml`. The
 `jira-task-url` adapter builds a normalized Jira issue invocation by reading
-Jira issue fields and matching the referenced GitHub repository.
+Jira issue fields and extracting an optional repository hint.
+The `plane-task-url` adapter builds a normalized Plane issue invocation by
+fetching the issue through Plane's API and extracting an optional repository
+hint from labels.
 
 Configured context is explicit in the workflow graph. A workflow runs
 `collect_context`, lists the agents that should receive agent-owned context,
-and passes `context: $.steps.context` to those agent or agent-loop nodes. Luna
-then renders matching agent `context.files` before repository `context.files`
-inside runtime instructions and leaves only `context_audit` in task input.
+and passes `context: $.steps.context` to those agent or `gated_agent_loop`
+nodes. Luna then renders matching agent `context.files` before repository
+`context.files` inside runtime instructions and leaves only `context_audit` in
+task input.
 
 ## Current Inventory
 
@@ -85,6 +90,7 @@ Input adapters:
 
 - `github-pr-url`
 - `jira-task-url`
+- `plane-task-url`
 
 Workflows:
 
@@ -190,7 +196,7 @@ declare:
 mode: trusted_local_write
 ```
 
-This pairs with an `agent_loop` node whose sandbox is `trusted_host_local`.
+This pairs with a `gated_agent_loop` node whose sandbox is `trusted_host_local`.
 That mode can edit the configured worktree on the host. Treat it as a trusted
 operator setting, not as an isolation boundary.
 
@@ -357,7 +363,7 @@ execution:
 nodes in parallel according to graph dependencies, while run artifacts and
 observability events stay scoped to the same run.
 
-Agent and agent-loop nodes can set a retry policy for transient runtime
+Agent and `gated_agent_loop` nodes can set a retry policy for transient runtime
 failures:
 
 ```yaml
@@ -370,7 +376,7 @@ retry:
 ```
 
 The default read-only policy retries transient transport, timeout, rate-limit,
-and provider-availability failures. Trusted write-mode agent loops reject
+and provider-availability failures. Trusted write-mode gated agent loops reject
 `max_attempts > 1` to avoid replaying side effects after a dropped connection.
 If Codex reports `WebSocket closed 1006`, set the affected model profile to
 `transport: sse` instead of increasing write-mode retry.
@@ -473,11 +479,11 @@ Agent node:
     - repo_context
 ```
 
-Agent loop node:
+Gated agent loop node:
 
 ```yaml
 - id: implementation
-  type: agent_loop
+  type: gated_agent_loop
   agent: code-implementer
   output_schema: implementation_result
   artifacts:
@@ -494,12 +500,53 @@ Agent loop node:
     type: trusted_host_local
     cwd: $.workspace.path
     env_allowlist: []
-  validation:
-    commands: $.config.implementation.validation.commands
-    max_output_bytes: $.config.implementation.validation.max_output_bytes
+  gates:
+    - id: validation
+      type: validation_commands
+      commands: $.config.implementation.validation.commands
+      max_output_bytes: $.config.implementation.validation.max_output_bytes
+    - id: review
+      type: agent
+      agent: change-reviewer
+      block_when:
+        expression: "$count(findings) > 0"
+      feedback:
+        expression: "findings"
+      input:
+        invocation: $.invocation
+        context: $.steps.context
+    - id: acceptance
+      type: agent
+      agent: change-acceptance-reviewer
+      block_when:
+        expression: "status != 'accepted'"
+      feedback:
+        expression: "{ 'status': status, 'blocking_reasons': blocking_reasons }"
+      input:
+        invocation: $.invocation
+        context: $.steps.context
   repair:
     attempts: $.config.implementation.validation.repair_attempts
 ```
+
+Configure gated loop gates in `workflows/<id>/graph.yaml` under the
+`gated_agent_loop` node's `gates:` list. Supported gates:
+
+- `validation_commands`: deterministic commands; blocks when validation fails.
+- workflow `agent`: runs a read-only agent as a gate. Configure `block_when` on
+  the workflow gate entry. The referenced `agents/<id>/agent.yaml` owns the
+  agent instructions and output schema.
+
+Workflow `agent` gate expressions:
+
+- `block_when.expression`: JSONata evaluated against the gate agent output. It
+  must return a boolean. `true` blocks; `false` passes.
+- `feedback.expression`: optional JSONata evaluated against the gate agent
+  output only when the gate blocks. Its result is serialized as repair
+  feedback.
+
+Gate failures loop back into the trusted write agent as a repair attempt with
+previous validation, gate feedback, and diff summary.
 
 `artifacts` maps explicit state sources to files in the run artifact directory:
 
@@ -553,6 +600,12 @@ The Jira implementation adapter command is:
 
 ```bash
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+```
+
+The Plane implementation adapter command is:
+
+```bash
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from plane-task-url https://app.plane.so/company/browse/PROJ-42/
 ```
 
 To add a new adapter:
@@ -610,7 +663,8 @@ Use YAML/config for:
 - New MCP server policy in `config/mcp.yaml`.
 - New local repository entries.
 - New routing rules.
-- Jira instance mappings in `config/jira.yaml`.
+- Jira instance and repository hint mappings in `config/jira.yaml`.
+- Plane instance and repository hint mappings in `config/plane.yaml`.
 - Implementation validation and publishing gates in
   `config/implementation.yaml`.
 
@@ -706,18 +760,19 @@ repositories:
 
 When workflows include `collect_context`, Luna reads configured repository
 context files from the prepared workspace and writes `context-intake.json` with
-read, missing, and skipped files. Agent and agent-loop nodes that receive
+read, missing, and skipped files. Agent and `gated_agent_loop` nodes that receive
 `context: $.steps.context` get those files as runtime instructions, with raw
 contents removed from task JSON.
 
-The Jira adapter uses `config/jira.yaml` to map a Jira instance and repository
-field:
+The Jira adapter uses `config/jira.yaml` to map a Jira instance and the task
+field that may contain a repository hint:
 
 ```yaml
 instances:
   - id: company
     base_url: https://company.atlassian.net
-    repository_field:
+    repository_hint:
+      source: field
       field_id: customfield_12345
       format: github_full_name
 ```
@@ -734,6 +789,41 @@ id:
         "auth_type": "basic_api_token",
         "email": "user@company.com",
         "api_token": "secret-token"
+      }
+    }
+  }
+}
+```
+
+The Plane adapter uses `config/plane.yaml` to map a Plane instance and the task
+label format that may contain a repository hint:
+
+```yaml
+instances:
+  - id: company
+    base_url: https://app.plane.so
+    repository_hint:
+      source: label
+      format: github_full_name
+```
+
+Plane labels must use the explicit repository prefix `github:org/repo`.
+Ordinary labels such as `area/frontend` are ignored.
+
+Plane task URLs may use the UI browse format
+`https://app.plane.so/<workspace>/browse/<PROJECT>-<NUMBER>/`.
+
+Plane secrets live in project-root `luna.auth.json`, keyed by the same instance
+id:
+
+```json
+{
+  "providers": {
+    "plane": {
+      "company": {
+        "base_url": "https://app.plane.so",
+        "auth_type": "api_key",
+        "api_key": "secret-token"
       }
     }
   }

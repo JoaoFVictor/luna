@@ -80,7 +80,7 @@ describe("agent definition loader", () => {
       await mkdir(agentDir, { recursive: true });
       await writeAgentYaml(agentDir, {
         id: "code-implementer",
-        description: "Implements Jira tasks in a trusted local worktree.",
+        description: "Implements tasks in a trusted local worktree.",
         model_profile: "deep",
         mode: "trusted_local_write"
       });

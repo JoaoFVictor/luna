@@ -128,12 +128,11 @@ async function runImplementationLifecycleScenario({
       return preparedWorkspace;
     }
 
-    if (uses === "run_validation_commands") {
-      return { passed: true };
-    }
-
-    if (uses === "record_acceptance_decision") {
-      return acceptedDecision;
+    if (uses === "record_implementation_validation") {
+      return {
+        validation: { passed: true },
+        acceptance: acceptedDecision
+      };
     }
 
     if (uses === "commit_changes") {
@@ -164,7 +163,22 @@ async function runImplementationLifecycleScenario({
     dependencies: {
       createRunIdentity: staticRunIdentity(jiraRun),
       runBuiltInStep,
-      runAgentStep: vi.fn(async () => acceptedDecision),
+      runGatedAgentLoopStep: vi.fn(async () => ({
+        status: "passed",
+        attempts_exhausted: false,
+        attempts: [],
+        validation: { passed: true },
+        final_validation: { passed: true },
+        gates: [
+          { id: "validation", type: "validation_commands", passed: true },
+          { id: "acceptance", type: "agent", passed: true }
+        ],
+        result: {
+          status: "passed",
+          diff_summary: { files: [] },
+          acceptance: acceptedDecision
+        }
+      })),
       cleanupWorktree
     }
   });
@@ -172,7 +186,7 @@ async function runImplementationLifecycleScenario({
   return { result, cleanupWorktree };
 }
 
-async function writeAgentLoopWorkflow(
+async function writeGatedAgentLoopWorkflow(
   root: string,
   options: {
     commands?: string;
@@ -229,7 +243,7 @@ async function writeAgentLoopWorkflow(
       "    after:",
       "      - preflight",
       "  - id: implementation",
-      "    type: agent_loop",
+      "    type: gated_agent_loop",
       "    agent: code-implementer",
       "    output_schema: implementation_result",
       "    artifacts:",
@@ -250,9 +264,11 @@ async function writeAgentLoopWorkflow(
       "      type: trusted_host_local",
       "      cwd: $.workspace.path",
       "      env_allowlist: []",
-      "    validation:",
-      `      commands: ${options.commands ?? "$.config.implementation.validation.commands"}`,
-      `      max_output_bytes: ${options.maxOutputBytes ?? "$.config.implementation.validation.max_output_bytes"}`,
+      "    gates:",
+      "      - id: validation",
+      "        type: validation_commands",
+      `        commands: ${options.commands ?? "$.config.implementation.validation.commands"}`,
+      `        max_output_bytes: ${options.maxOutputBytes ?? "$.config.implementation.validation.max_output_bytes"}`,
       "    repair:",
       `      attempts: ${options.repairAttempts ?? "$.config.implementation.validation.repair_attempts"}`,
       "    after:",
@@ -283,12 +299,12 @@ async function writeAgentLoopWorkflow(
 }
 
 describe("configured workflow runner", () => {
-  it("runs agent_loop with resolved inputs and writes mapped artifacts before later nodes", async () => {
+  it("runs gated_agent_loop with resolved inputs and writes mapped artifacts before later nodes", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
       await writeBaseConfig(root, "implementation");
-      await writeAgentLoopWorkflow(root, {
+      await writeGatedAgentLoopWorkflow(root, {
         extraMetadata: ["subagent_policy:", "  allow_write: true"]
       });
       await writeImplementationConfig(root);
@@ -321,7 +337,10 @@ describe("configured workflow runner", () => {
         }
 
         if (uses === "record_implementation_validation") {
-          return { passed: false };
+          return {
+            validation: { passed: false },
+            acceptance: acceptedDecision
+          };
         }
 
         if (uses === "collect_worktree_diff") {
@@ -330,8 +349,8 @@ describe("configured workflow runner", () => {
 
         return {};
       });
-      const runAgentLoopStep = vi.fn(async () => {
-        calls.push("agent_loop");
+      const runGatedAgentLoopStep = vi.fn(async () => {
+        calls.push("gated_agent_loop");
         return loopOutput;
       });
 
@@ -341,7 +360,7 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(jiraRun),
           runBuiltInStep,
-          runAgentLoopStep,
+          runGatedAgentLoopStep,
           cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
             ...workspaceRecord,
             preserved: false,
@@ -357,11 +376,11 @@ describe("configured workflow runner", () => {
       expect(calls).toEqual([
         "preflight",
         "prepare_implementation_worktree",
-        "agent_loop",
+        "gated_agent_loop",
         "record_implementation_validation",
         "collect_worktree_diff"
       ]);
-      expect(runAgentLoopStep).toHaveBeenCalledWith(
+      expect(runGatedAgentLoopStep).toHaveBeenCalledWith(
         expect.objectContaining({
           agent: expect.objectContaining({
             id: "code-implementer",
@@ -385,10 +404,14 @@ describe("configured workflow runner", () => {
             cwd: preparedWorkspace.path,
             env_allowlist: []
           },
-          validation: {
-            commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
-            max_output_bytes: 200000
-          },
+          gates: [
+            {
+              id: "validation",
+              type: "validation_commands",
+              commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }],
+              max_output_bytes: 200000
+            }
+          ],
           repair: {
             attempts: 1
           }
@@ -443,12 +466,12 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("returns agent_loop_runner_missing when an agent_loop dependency is not configured", async () => {
+  it("returns gated_agent_loop_runner_missing when an gated_agent_loop dependency is not configured", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
       await writeBaseConfig(root, "implementation");
-      await writeAgentLoopWorkflow(root);
+      await writeGatedAgentLoopWorkflow(root);
       await writeImplementationConfig(root);
       await writeTrustedWriteAgent(root, "code-implementer");
 
@@ -479,7 +502,7 @@ describe("configured workflow runner", () => {
         code: "scheduler_step_failed",
         details: {
           step_id: "implementation",
-          cause_code: "agent_loop_runner_missing"
+          cause_code: "gated_agent_loop_runner_missing"
         }
       });
       await expect(
@@ -488,7 +511,7 @@ describe("configured workflow runner", () => {
         code: "scheduler_step_failed",
         details: {
           step_id: "implementation",
-          cause_code: "agent_loop_runner_missing"
+          cause_code: "gated_agent_loop_runner_missing"
         }
       });
     } finally {
@@ -501,32 +524,32 @@ describe("configured workflow runner", () => {
       name: "unstructured commands",
       workflowOptions: { commands: "$.steps.preflight.commands" },
       preflight: { commands: ["npm test"] },
-      code: "agent_loop_validation_commands_invalid"
+      code: "gated_agent_loop_validation_commands_invalid"
     },
     {
       name: "max_output_bytes string",
       workflowOptions: { maxOutputBytes: "$.steps.preflight.max_output_bytes" },
       preflight: { max_output_bytes: "200000" },
-      code: "agent_loop_validation_max_output_bytes_invalid"
+      code: "gated_agent_loop_validation_max_output_bytes_invalid"
     },
     {
       name: "repair attempts string",
       workflowOptions: { repairAttempts: "$.steps.preflight.repair_attempts" },
       preflight: { repair_attempts: "1" },
-      code: "agent_loop_repair_attempts_invalid"
+      code: "gated_agent_loop_repair_attempts_invalid"
     }
   ])(
-    "rejects invalid resolved agent_loop $name",
+    "rejects invalid resolved gated_agent_loop $name",
     async ({ workflowOptions, preflight, code }) => {
       const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
       try {
         await writeBaseConfig(root, "implementation");
-        await writeAgentLoopWorkflow(root, workflowOptions);
+        await writeGatedAgentLoopWorkflow(root, workflowOptions);
         await writeImplementationConfig(root);
         await writeTrustedWriteAgent(root, "code-implementer");
 
-        const runAgentLoopStep = vi.fn();
+        const runGatedAgentLoopStep = vi.fn();
         const result = await runConfiguredWorkflow({
           invocation: jiraInvocation,
           configRoot: root,
@@ -549,7 +572,7 @@ describe("configured workflow runner", () => {
 
               return { status: "ok" };
             }),
-            runAgentLoopStep
+            runGatedAgentLoopStep
           }
         });
 
@@ -561,7 +584,7 @@ describe("configured workflow runner", () => {
           code: "scheduler_step_failed",
           details: { step_id: "implementation", cause_code: code }
         });
-        expect(runAgentLoopStep).not.toHaveBeenCalled();
+        expect(runGatedAgentLoopStep).not.toHaveBeenCalled();
       } finally {
         await rm(root, { recursive: true, force: true });
       }
@@ -625,6 +648,7 @@ describe("configured workflow runner", () => {
       try {
         await writeBaseConfig(root, "implementation");
         await writeImplementationWorkflow(root);
+        await writeAgent(root, "code-implementer");
         await writeAgent(root, "change-acceptance-reviewer");
         await writeImplementationConfig(root, config);
 

@@ -64,15 +64,15 @@ kept as raw file contents in the agent task payload; the payload contains
 For this PR:
 
 ```text
-https://github.com/swinggo-dev/swg-front-nuxt/pull/313
+https://github.com/octo-org/hello-world/pull/313
 ```
 
 Use:
 
 ```yaml
 provider: github
-owner: swinggo-dev
-name: swg-front-nuxt
+owner: octo-org
+name: hello-world
 ```
 
 ## 6. Run The Review

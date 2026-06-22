@@ -12,7 +12,7 @@ agent runtime adapter. It has one generic workflow entrypoint in
 Runtime flow:
 
 ```text
-adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loops -> artifacts
+adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated_agent_loop -> artifacts
 ```
 
 Primary extension points:
@@ -22,6 +22,8 @@ Primary extension points:
 - `src/adapters/<id>/`: input adapters for external sources.
 - `src/core/built-ins/`: deterministic workflow built-ins.
 - `src/core/context/`: deterministic repository/agent context intake.
+- `src/core/providers/<id>/`: provider-specific integrations and adapters to
+  provider APIs, auth, config, reports, built-ins, and change-request services.
 - `src/core/tools/`: Luna-native local tool contracts and catalog.
 - `skills/`: reusable guidance for LLMs and runtime agents.
 
@@ -43,6 +45,26 @@ Before changing an area, read the matching project skill:
 - Do not add workflow-specific CLI commands; use `run --target workflow:<id>`.
 - Do not create compatibility wrappers or deadcode for old architecture.
 - Keep agents reusable; put orchestration in workflow graphs.
+- Use `gated_agent_loop` for trusted local write loops. Gates are configured in
+  `workflows/<id>/graph.yaml` under the node's `gates:` list. Current gate
+  types are `validation_commands` and read-only workflow `agent` gates. For an
+  `agent` gate, configure JSONata `block_when.expression` and optional
+  `feedback.expression` on the workflow gate entry, never in
+  `agents/<id>/agent.yaml`; failed gates loop back to the writer as repair
+  input. Keep gate policy provider-agnostic.
+- Keep module responsibilities isolated. Generic modules must stay agnostic:
+  `src/core/built-ins/`, `src/core/tools/`, `src/core/context/`,
+  `src/core/workflow/`, and shared helpers must not know provider-specific
+  auth, config, schemas, URLs, payload shapes, or workflow details.
+- Keep provider responsibilities isolated. Provider-specific code belongs under
+  `src/core/providers/<provider>/` or the matching provider-owned adapter.
+  A provider module must never import, validate, store, or mention another
+  provider's schema/auth/config. Shared provider helpers may only handle neutral
+  mechanics, such as reading `luna.auth.json` as unknown provider data.
+- Keep composition at composition roots. Cross-provider or generic-plus-provider
+  wiring belongs in explicit registries/factories such as
+  `src/adapters/registry.ts`, `src/core/providers/built-ins.ts`, or runtime
+  factories, not in leaf modules.
 - Put context files in repository or agent config; collect them through
   `collect_context` and pass `context: $.steps.context` explicitly so Luna can
   render them as runtime instructions with `context_audit` task metadata.

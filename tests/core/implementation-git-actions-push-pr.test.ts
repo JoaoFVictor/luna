@@ -21,14 +21,14 @@ const cwd = "/repo/worktree";
 const branch = "feature/abc-123-fix-checkout-validation";
 const remote = "origin";
 const expectedRemoteUrls = [
-  "git@github.com:swinggo-dev/swg-front-nuxt.git",
-  "https://github.com/swinggo-dev/swg-front-nuxt.git"
+  "git@github.com:octo-org/hello-world.git",
+  "https://github.com/octo-org/hello-world.git"
 ];
 const commitMessage = "ABC-123: Fix checkout validation";
 
 function createRunGit({
   currentBranch = branch,
-  remoteUrl = "git@github.com:swinggo-dev/swg-front-nuxt.git"
+  remoteUrl = "git@github.com:octo-org/hello-world.git"
 }: {
   currentBranch?: string;
   remoteUrl?: string;
@@ -196,7 +196,7 @@ describe("openGitHubChangeRequest", () => {
           calls.push({ cwd: callCwd, args });
 
           if (args[0] === "pr" && args[1] === "create") {
-            return "https://github.com/swinggo-dev/swg-front-nuxt/pull/42\n";
+            return "https://github.com/octo-org/hello-world/pull/42\n";
           }
 
           return "";
@@ -315,7 +315,7 @@ describe("openGitHubChangeRequest", () => {
       enabled: true,
       skipped: false,
       provider: "github",
-      url: "https://github.com/swinggo-dev/swg-front-nuxt/pull/42"
+      url: "https://github.com/octo-org/hello-world/pull/42"
     } satisfies ChangeRequestArtifact);
     expect(artifact.provider).toBe("github");
     expect(artifact.url).toMatch(/^https?:\/\//);

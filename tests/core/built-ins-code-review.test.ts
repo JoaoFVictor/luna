@@ -56,8 +56,8 @@ const jiraInvocation: Invocation = {
   action: "selected",
   repository: {
     provider: "github",
-    owner: "swinggo-dev",
-    name: "swg-front-nuxt"
+    owner: "octo-org",
+    name: "hello-world"
   },
   subject: {
     type: "jira_issue",
@@ -208,6 +208,7 @@ describe("code review built-ins", () => {
     expect(prepareWorktreeBuiltIn.name).toBe("prepare_worktree");
     expect(prepareWorktreeBuiltIn.metadata).toEqual({
       capturesWorkspace: true,
+      requiresRepository: true,
       locks: [{ resource: "repository", mode: "exclusive" }]
     });
     expect(prepareWorktree).toHaveBeenCalledWith({

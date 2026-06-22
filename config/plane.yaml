@@ -1,0 +1,6 @@
+instances:
+  - id: company
+    base_url: https://app.plane.so
+    repository_hint:
+      source: label
+      format: github_full_name

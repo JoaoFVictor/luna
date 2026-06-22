@@ -32,7 +32,8 @@ Edit `config/jira.yaml`:
 instances:
   - id: company
     base_url: https://company.atlassian.net
-    repository_field:
+    repository_hint:
+      source: field
       field_id: customfield_12345
       format: github_full_name
     acceptance_criteria_field:

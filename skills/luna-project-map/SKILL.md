@@ -12,7 +12,7 @@ agent runtime adapter. Start by reading `README.md` and
 Runtime flow:
 
 ```text
-adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loops -> artifacts
+adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated_agent_loop -> artifacts
 ```
 
 ## Extension Points
@@ -33,7 +33,7 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 
 - Adapter: normalize external input into an invocation. Never run workflows.
 - Router: choose workflow deterministically from target/routing config.
-- Workflow: order built-ins, agents, and agent loops.
+- Workflow: order built-ins, agents, and gated agent loops.
 - Agent: perform model judgment with a schema output.
 - Context intake: read configured repository and agent files deterministically
   and emit `context-intake.json`.
@@ -44,6 +44,23 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/agent loop
 - Skill: instructions loaded by an LLM or configured runtime agent.
 - Runtime adapter: provider-specific materialization for agents, tools, MCP,
   model options, observability sinks, and workflow launch composition.
+
+## Provider Isolation
+
+Provider-specific code must stay in its own lane. Do not put Plane behavior,
+schemas, auth, config, fixtures, or tests inside Jira modules, and do not put
+Jira behavior inside Plane modules. The same rule applies to every provider
+pair.
+
+Shared provider helpers are allowed only when they are truly provider-agnostic.
+For example, `src/core/providers/auth.ts` may read `luna.auth.json` and expose
+unknown provider data, but it must not validate or mention Jira, Plane, GitHub,
+or any other provider-specific credential shape. Provider-specific validation
+belongs under that provider's directory.
+
+Adapters for external providers are provider-owned boundaries. They may import
+neutral core contracts and their own provider helper modules, but must not
+reach into another provider's directory.
 
 ## Do Not Reintroduce Old Architecture
 

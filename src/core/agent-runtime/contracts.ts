@@ -3,7 +3,18 @@ import { ValidationResultSchema } from "../validation/runner.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
-export const AgentLoopAttemptSchema = z
+export const GateResultSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    type: NonEmptyStringSchema,
+    passed: z.boolean(),
+    feedback: z.string().optional(),
+    output: z.unknown().optional()
+  })
+  .strict();
+export type GateResult = z.infer<typeof GateResultSchema>;
+
+export const GatedAgentLoopAttemptSchema = z
   .object({
     attempt: z.number().int().positive(),
     phase: z.enum(["initial", "repair"]),
@@ -16,20 +27,22 @@ export const AgentLoopAttemptSchema = z
       .strict()
       .optional(),
     validation: ValidationResultSchema.optional(),
+    gate_results: z.array(GateResultSchema).optional(),
     diff_summary: z.unknown().optional(),
     duration_ms: z.number().int().nonnegative().optional(),
     truncated: z.boolean().optional()
   })
   .strict();
-export type AgentLoopAttempt = z.infer<typeof AgentLoopAttemptSchema>;
+export type GatedAgentLoopAttempt = z.infer<typeof GatedAgentLoopAttemptSchema>;
 
-export const AgentLoopResultSchema = z
+export const GatedAgentLoopResultSchema = z
   .object({
     status: z.enum(["passed", "failed"]),
     attempts_exhausted: z.boolean(),
-    attempts: z.array(AgentLoopAttemptSchema),
+    attempts: z.array(GatedAgentLoopAttemptSchema),
     validation: ValidationResultSchema,
     final_validation: ValidationResultSchema,
+    gates: z.array(GateResultSchema),
     result: z
       .object({
         status: NonEmptyStringSchema
@@ -37,4 +50,4 @@ export const AgentLoopResultSchema = z
       .passthrough()
   })
   .strict();
-export type AgentLoopResult = z.infer<typeof AgentLoopResultSchema>;
+export type GatedAgentLoopResult = z.infer<typeof GatedAgentLoopResultSchema>;

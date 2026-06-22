@@ -153,4 +153,25 @@ describe("workspace lifecycle", () => {
     });
   });
 
+  it("records implementation checkpoint evidence atomically", () => {
+    const afterImplementation = recordWorkflowNodeLifecycle(
+      initialImplementationLifecycleEvidence(),
+      { implementationLifecycle: "implementation" },
+      {
+        status: "succeeded",
+        outcome: {
+          validationPassed: true,
+          acceptanceAccepted: true
+        }
+      }
+    );
+
+    expect(afterImplementation).toMatchObject({
+      implementationStarted: true,
+      validationRan: true,
+      validationPassed: true,
+      acceptanceAccepted: true
+    });
+  });
+
 });

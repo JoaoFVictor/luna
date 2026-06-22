@@ -28,21 +28,36 @@ import type { ConfiguredWorkflowNodeRunner } from "./contracts.js";
 
 type MaybePromise<T> = T | Promise<T>;
 
-type AgentLoopWorkflowNode = Extract<WorkflowNode, { type: "agent_loop" }>;
+type GatedAgentLoopWorkflowNode = Extract<
+  WorkflowNode,
+  { type: "gated_agent_loop" }
+>;
 
-type ResolvedAgentLoopNode = Omit<
-  AgentLoopWorkflowNode,
-  "sandbox" | "validation" | "repair"
+type ResolvedValidationGate = Extract<
+  GatedAgentLoopWorkflowNode["gates"][number],
+  { type: "validation_commands" }
+> & {
+  commands: ValidationCommand[];
+  max_output_bytes: number;
+};
+
+type ResolvedAgentGate = Extract<
+  GatedAgentLoopWorkflowNode["gates"][number],
+  { type: "agent" }
+> & {
+  input?: Record<string, unknown>;
+};
+
+type ResolvedGatedAgentLoopNode = Omit<
+  GatedAgentLoopWorkflowNode,
+  "sandbox" | "gates" | "repair"
 > & {
   sandbox: {
     type: "trusted_host_local";
     cwd: string;
     env_allowlist: string[];
   };
-  validation: {
-    commands: ValidationCommand[];
-    max_output_bytes: number;
-  };
+  gates: Array<ResolvedValidationGate | ResolvedAgentGate>;
   repair: {
     attempts: number;
   };
@@ -62,17 +77,18 @@ export type RunAgentStepOptions = {
   artifactStore?: ArtifactStore;
 };
 
-export type RunAgentLoopStepOptions = {
+export type RunGatedAgentLoopStepOptions = {
   agent: AgentDefinition;
-  node: ResolvedAgentLoopNode;
+  gateAgents: Record<string, AgentDefinition>;
+  node: ResolvedGatedAgentLoopNode;
   model: ModelProfile;
   agentsRoot: string;
   modelProfiles: ResolvedModelProfiles;
   workflowSubagentPolicy: WorkflowSubagentPolicy;
   input: Record<string, unknown>;
-  sandbox: ResolvedAgentLoopNode["sandbox"];
-  validation: ResolvedAgentLoopNode["validation"];
-  repair: ResolvedAgentLoopNode["repair"];
+  sandbox: ResolvedGatedAgentLoopNode["sandbox"];
+  gates: ResolvedGatedAgentLoopNode["gates"];
+  repair: ResolvedGatedAgentLoopNode["repair"];
   state: WorkflowState;
   observability?: LunaObservability;
   summary?: ObservabilitySummary;
@@ -82,8 +98,8 @@ export type RunAgentLoopStepOptions = {
 export type WorkflowNodeRuntimeDependencies = {
   runBuiltInStep?: (options: RunBuiltInStepOptions) => MaybePromise<unknown>;
   runAgentStep?: (options: RunAgentStepOptions) => MaybePromise<unknown>;
-  runAgentLoopStep?: (
-    options: RunAgentLoopStepOptions
+  runGatedAgentLoopStep?: (
+    options: RunGatedAgentLoopStepOptions
   ) => MaybePromise<unknown>;
   builtInStepDependencies?: BuiltInStepDependencies;
 };
@@ -114,13 +130,13 @@ function resolveAgentModel(
   return profile;
 }
 
-function validateAgentLoopCommands(value: unknown): ValidationCommand[] {
+function validateGatedLoopCommands(value: unknown): ValidationCommand[] {
   const parsed = ValidationCommandSchema.array().safeParse(value);
 
   if (!parsed.success) {
     throw configuredWorkflowError(
-      "Agent loop validation.commands must resolve to structured validation commands",
-      "agent_loop_validation_commands_invalid",
+      "Gated agent loop validation commands must resolve to structured validation commands",
+      "gated_agent_loop_validation_commands_invalid",
       parsed.error
     );
   }
@@ -160,19 +176,18 @@ function validateNonnegativeInteger(
   return value;
 }
 
-function resolveAgentLoopNode(
-  node: AgentLoopWorkflowNode,
+function resolveGatedAgentLoopNode(
+  node: GatedAgentLoopWorkflowNode,
   state: WorkflowState
-): ResolvedAgentLoopNode {
+): ResolvedGatedAgentLoopNode {
   const sandbox = resolveWorkflowInput(node.sandbox, state);
-  const validation = resolveWorkflowInput(node.validation, state);
   const repair = resolveWorkflowInput(node.repair, state);
   const cwd = sandbox.cwd;
 
   if (typeof cwd !== "string" || cwd === "") {
     throw configuredWorkflowError(
-      "Agent loop sandbox.cwd must resolve to a path",
-      "agent_loop_sandbox_cwd_invalid"
+      "Gated agent loop sandbox.cwd must resolve to a path",
+      "gated_agent_loop_sandbox_cwd_invalid"
     );
   }
 
@@ -183,19 +198,34 @@ function resolveAgentLoopNode(
       cwd,
       env_allowlist: node.sandbox.env_allowlist
     },
-    validation: {
-      commands: validateAgentLoopCommands(validation.commands),
-      max_output_bytes: validatePositiveInteger(
-        validation.max_output_bytes,
-        "Agent loop validation.max_output_bytes must resolve to a number",
-        "agent_loop_validation_max_output_bytes_invalid"
-      )
-    },
+    gates: node.gates.map((gate) => {
+      const resolvedGate = resolveWorkflowInput(gate, state);
+
+      if (gate.type === "validation_commands") {
+        return {
+          ...gate,
+          commands: validateGatedLoopCommands(resolvedGate.commands),
+          max_output_bytes: validatePositiveInteger(
+            resolvedGate.max_output_bytes,
+            "Gated agent loop validation max_output_bytes must resolve to a number",
+            "gated_agent_loop_validation_max_output_bytes_invalid"
+          )
+        };
+      }
+
+      return {
+        ...gate,
+        input:
+          gate.input === undefined
+            ? undefined
+            : resolveWorkflowInput(gate.input, state)
+      };
+    }),
     repair: {
       attempts: validateNonnegativeInteger(
         repair.attempts,
-        "Agent loop repair.attempts must resolve to a number",
-        "agent_loop_repair_attempts_invalid"
+        "Gated agent loop repair.attempts must resolve to a number",
+        "gated_agent_loop_repair_attempts_invalid"
       )
     }
   };
@@ -222,19 +252,30 @@ export async function runWorkflowNode(
     });
   }
 
-  if (node.type === "agent_loop") {
-    if (context.dependencies.runAgentLoopStep === undefined) {
+  if (node.type === "gated_agent_loop") {
+    if (context.dependencies.runGatedAgentLoopStep === undefined) {
       throw configuredWorkflowError(
-        `No agent loop runner configured for node: ${node.id}`,
-        "agent_loop_runner_missing"
+        `No gated agent loop runner configured for node: ${node.id}`,
+        "gated_agent_loop_runner_missing"
       );
     }
 
     const agent = await loadAgentDefinition(context.agentsRoot, node.agent);
-    const resolvedNode = resolveAgentLoopNode(node, state);
+    const resolvedNode = resolveGatedAgentLoopNode(node, state);
+    const gateAgents = Object.fromEntries(
+      await Promise.all(
+        resolvedNode.gates
+          .filter((gate): gate is ResolvedAgentGate => gate.type === "agent")
+          .map(async (gate) => [
+            gate.id,
+            await loadAgentDefinition(context.agentsRoot, gate.agent)
+          ])
+      )
+    );
 
-    return await context.dependencies.runAgentLoopStep({
+    return await context.dependencies.runGatedAgentLoopStep({
       agent,
+      gateAgents,
       node: resolvedNode,
       model: resolveAgentModel(agent, context.modelProfiles),
       agentsRoot: context.agentsRoot,
@@ -242,7 +283,7 @@ export async function runWorkflowNode(
       workflowSubagentPolicy: context.workflowSubagentPolicy,
       input: resolveWorkflowInput(node.input, state),
       sandbox: resolvedNode.sandbox,
-      validation: resolvedNode.validation,
+      gates: resolvedNode.gates,
       repair: resolvedNode.repair,
       state,
       observability: context.observability,

@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   codedError,
   parsePayload,
-  requireRepository,
   requireSubject
 } from "../../invocation/helpers.js";
 import type {
@@ -16,7 +15,8 @@ const JiraPayloadSchema = z
     description: z.string().min(1),
     acceptance_criteria: z.string(),
     status: z.string().min(1),
-    issue_type: z.string().min(1)
+    issue_type: z.string().min(1),
+    repository_hint_source: z.string().min(1).optional()
   })
   .strict();
 
@@ -29,7 +29,7 @@ export type JiraIssueContext = {
   acceptanceCriteria: string;
   status: string;
   issueType: string;
-  repository: InvocationRepository;
+  repository?: InvocationRepository;
 };
 
 function jiraIssueContextInvalid(message: string): Error & { code: string } {
@@ -41,7 +41,6 @@ export function jiraIssueContextFrom(invocation: NormalizedInvocation): JiraIssu
     throw jiraIssueContextInvalid("Invocation is not a Jira issue event");
   }
 
-  const repository = requireRepository(invocation);
   const subject = requireSubject(invocation, "jira_issue");
   const jira = parsePayload(
     invocation,
@@ -59,6 +58,8 @@ export function jiraIssueContextFrom(invocation: NormalizedInvocation): JiraIssu
     acceptanceCriteria: jira.acceptance_criteria,
     status: jira.status,
     issueType: jira.issue_type,
-    repository
+    ...(invocation.repository === undefined
+      ? {}
+      : { repository: invocation.repository })
   };
 }

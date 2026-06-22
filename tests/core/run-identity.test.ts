@@ -15,7 +15,7 @@ const invocation = {
   event: "pull_request",
   action: "selected",
   target: { type: "workflow", id: "code-review" },
-  repository: { provider: "github", owner: "swinggo-dev", name: "swg-front-nuxt" },
+  repository: { provider: "github", owner: "octo-org", name: "hello-world" },
   subject: { type: "pull_request", id: "313" }
 } as const satisfies Invocation;
 
@@ -34,7 +34,7 @@ describe("run identity", () => {
 
     expect(identity).toEqual({
       run_id:
-        "20260618t150405000z-code-review-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a1-one",
+        "20260618t150405000z-code-review-github-pull-request-octo-org-hello-world-pull-request-313-a1-one",
       workflow_id: "code-review",
       attempt: 1,
       source: "github",
@@ -58,7 +58,7 @@ describe("run identity", () => {
 
     expect(identity).toEqual({
       run_id:
-        "20260618t150405123z-code-review-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a1-abcdef123456-n9x8",
+        "20260618t150405123z-code-review-github-pull-request-octo-org-hello-world-pull-request-313-a1-abcdef123456-n9x8",
       flue_run_id: "flue-run-abcdef123456",
       workflow_id: "code-review",
       attempt: 1,
@@ -73,16 +73,16 @@ describe("run identity", () => {
 
   it("preserves run identity, artifact, lock, and public Flue event compatibility", async () => {
     const previousRunId =
-      "20260618t150405123z-code-review-github-pull-request-swinggo-dev-swg-front-nuxt-pull-request-313-a1-abcdef123456-n9x8";
+      "20260618t150405123z-code-review-github-pull-request-octo-org-hello-world-pull-request-313-a1-abcdef123456-n9x8";
     const previousArtifactDirectory = path.join(
       "/tmp/luna-artifacts",
       "code-review",
       previousRunId
     );
-    const repositoryLockResource = "repository:swinggo-dev/swg-front-nuxt";
+    const repositoryLockResource = "repository:octo-org/hello-world";
     const previousLockKey = path.join(
       "/tmp/luna-locks",
-      "repository_swinggo-dev-swg-front-nuxt.lock"
+      "repository_octo-org-hello-world.lock"
     );
     const previousFlueRunId = "flue-run-abcdef123456";
     const locksRoot = await mkdtemp(path.join(tmpdir(), "luna-lock-compat-"));
@@ -190,8 +190,8 @@ describe("run identity", () => {
         target: { type: "workflow", id: "implementation" },
         repository: {
           provider: "github",
-          owner: "swinggo-dev",
-          name: "swg-front-nuxt"
+          owner: "octo-org",
+          name: "hello-world"
         },
         subject: { type: "issue", id: "ABC-123" }
       },
@@ -204,7 +204,7 @@ describe("run identity", () => {
     );
 
     expect(identity.run_id).toBe(
-      "20260618t150405000z-implementation-jira-issue-swinggo-dev-swg-front-nuxt-issue-abc-123-a1-one"
+      "20260618t150405000z-implementation-jira-issue-octo-org-hello-world-issue-abc-123-a1-one"
     );
     expect(identity.route_target).toEqual({
       type: "workflow",

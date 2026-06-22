@@ -47,6 +47,13 @@ The adapter should:
 - Fetch source metadata through source-native tooling or APIs.
 - Normalize the result into Luna's invocation shape.
 - Return clear errors for invalid input, missing auth, or unsupported sources.
+- Keep provider code isolated. Do not add one provider's auth, config, schema,
+  fixtures, tests, or docs examples to another provider's module.
+
+Shared provider helpers are allowed only when they are provider-agnostic. For
+example, a common auth loader may read `luna.auth.json` as unknown provider
+data, but provider-specific schema validation belongs under
+`src/core/providers/<provider>/`.
 
 For GitHub PRs, `src/adapters/github-pr-url/adapter.ts` is the reference
 implementation. For Jira tasks, `src/adapters/jira-task-url/adapter.ts` shows
@@ -131,6 +138,8 @@ An adapter should not:
 - Enable commit, push, or change request creation directly. For the
   `implementation` workflow, `config/implementation.yaml` controls optional
   commit, push, and change request gates after validation and acceptance.
+- Reuse another provider's module as a convenience wrapper for auth, config,
+  schema validation, tests, or fixtures.
 
 The runtime handles workflow execution after the adapter returns an invocation.
 

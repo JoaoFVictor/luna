@@ -62,7 +62,7 @@ nodes:
       - context
 
   - id: implementation
-    type: agent_loop
+    type: gated_agent_loop
     agent: code-implementer
     output_schema: implementation_result
     artifacts:
@@ -71,6 +71,12 @@ nodes:
         format: json
       - path: validation.json
         source: $.steps.implementation.validation
+        format: json
+      - path: implementation-review.json
+        source: $.steps.implementation.result.review
+        format: json
+      - path: acceptance-review.json
+        source: $.steps.implementation.result.acceptance
         format: json
       - path: implementation-result.json
         source: $.steps.implementation.result
@@ -85,9 +91,35 @@ nodes:
       type: trusted_host_local
       cwd: $.workspace.path
       env_allowlist: []
-    validation:
-      commands: $.config.implementation.validation.commands
-      max_output_bytes: $.config.implementation.validation.max_output_bytes
+    gates:
+      - id: validation
+        type: validation_commands
+        commands: $.config.implementation.validation.commands
+        max_output_bytes: $.config.implementation.validation.max_output_bytes
+      - id: review
+        type: agent
+        agent: change-reviewer
+        block_when:
+          expression: "$count(findings) > 0"
+        feedback:
+          expression: "findings"
+        input:
+          invocation: $.invocation
+          task_context: $.steps.task_context
+          context: $.steps.context
+          implementation_plan: $.steps.implementation_plan
+      - id: acceptance
+        type: agent
+        agent: change-acceptance-reviewer
+        block_when:
+          expression: "status != 'accepted'"
+        feedback:
+          expression: "{ 'status': status, 'blocking_reasons': blocking_reasons }"
+        input:
+          invocation: $.invocation
+          task_context: $.steps.task_context
+          context: $.steps.context
+          implementation_plan: $.steps.implementation_plan
     repair:
       attempts: $.config.implementation.validation.repair_attempts
     after:
@@ -100,78 +132,25 @@ nodes:
       implementation: $.steps.implementation
     artifacts:
       - path: implementation-validation.json
-        source: $.steps.implementation_validation
+        source: $.steps.implementation_validation.validation
         format: json
     after:
       - implementation
-
-  - id: worktree_diff
-    type: built_in
-    uses: collect_worktree_diff
-    artifacts:
-      - path: worktree-diff.json
-        source: $.steps.worktree_diff
-        format: json
-    after:
-      - implementation_validation
-
-  - id: implementation_review
-    type: agent
-    agent: change-reviewer
-    output_schema: implementation_review
-    artifacts:
-      - path: implementation-review.json
-        source: $.steps.implementation_review
-        format: json
-    input:
-      invocation: $.invocation
-      task_context: $.steps.task_context
-      context: $.steps.context
-      implementation_result: $.steps.implementation
-      worktree_diff: $.steps.worktree_diff
-    after:
-      - worktree_diff
-
-  - id: acceptance
-    type: agent
-    agent: change-acceptance-reviewer
-    output_schema: acceptance_decision
-    artifacts:
-      - path: acceptance-review.json
-        source: $.steps.acceptance
-        format: json
-    input:
-      invocation: $.invocation
-      task_context: $.steps.task_context
-      context: $.steps.context
-      implementation_result: $.steps.implementation
-      review: $.steps.implementation_review
-    after:
-      - implementation_review
-
-  - id: acceptance_decision
-    type: built_in
-    uses: record_acceptance_decision
-    input:
-      acceptance: $.steps.acceptance
-    artifacts:
-      - path: acceptance-decision.json
-        source: $.steps.acceptance_decision
-        format: json
-    after:
-      - acceptance
 
   - id: commit
     type: built_in
     uses: commit_changes
     input:
       message: $.steps.task_context.implementation_title
+      validation: $.steps.implementation_validation.validation
+      acceptance: $.steps.implementation.result.acceptance
+      diff: $.steps.implementation.result.diff_summary
     artifacts:
       - path: commit.json
         source: $.steps.commit
         format: json
     after:
-      - acceptance_decision
+      - implementation_validation
 
   - id: push
     type: built_in
@@ -189,7 +168,7 @@ nodes:
     input:
       push: $.steps.push
       title: $.steps.task_context.implementation_title
-      body: $.steps.task_context.jira.description
+      body: $.steps.task_context.change_request_body
     artifacts:
       - path: change-request.json
         source: $.steps.change_request

@@ -58,7 +58,7 @@ import {
 } from "./errors.js";
 import {
   configuredWorkflowNodeRunner,
-  type RunAgentLoopStepOptions,
+  type RunGatedAgentLoopStepOptions,
   type RunAgentStepOptions,
   type WorkflowNodeRuntimeContext
 } from "./node-runner.js";
@@ -91,7 +91,7 @@ import type { ErrorArtifact } from "./errors.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
 import type { RepositoryConfig } from "../config/schemas.js";
 
-export type { RunAgentLoopStepOptions, RunAgentStepOptions };
+export type { RunGatedAgentLoopStepOptions, RunAgentStepOptions };
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -107,8 +107,8 @@ export type ConfiguredWorkflowRunnerDependencies = {
   ) => RepositoryConfig;
   runBuiltInStep?: (options: RunBuiltInStepOptions) => MaybePromise<unknown>;
   runAgentStep?: (options: RunAgentStepOptions) => MaybePromise<unknown>;
-  runAgentLoopStep?: (
-    options: RunAgentLoopStepOptions
+  runGatedAgentLoopStep?: (
+    options: RunGatedAgentLoopStepOptions
   ) => MaybePromise<unknown>;
   cleanupWorktree?: typeof defaultCleanupWorktree;
   builtInStepRegistry?: BuiltInStepRegistryView;
@@ -206,6 +206,36 @@ function finalReportFrom(output: unknown): JsonValue | undefined {
 
   assertJsonValue(report, "$.report");
   return report;
+}
+
+function resolveWorkflowRepository({
+  invocation,
+  repositories,
+  workflowId,
+  required,
+  resolveRepository
+}: {
+  invocation: Invocation;
+  repositories: readonly RepositoryConfig[];
+  workflowId: string;
+  required: boolean;
+  resolveRepository: (
+    invocation: Invocation,
+    repositories: readonly RepositoryConfig[]
+  ) => RepositoryConfig;
+}): RepositoryConfig | undefined {
+  if (invocation.repository !== undefined) {
+    return resolveRepository(invocation, repositories);
+  }
+
+  if (!required) {
+    return undefined;
+  }
+
+  throw configuredWorkflowError(
+    `Workflow ${workflowId} requires repository, but invocation did not provide one`,
+    "repository_not_configured"
+  );
 }
 
 export async function runConfiguredWorkflow({
@@ -311,7 +341,13 @@ export async function runConfiguredWorkflow({
       })
     });
 
-    repository = resolveRepository(invocation, configs.repositories.repositories);
+    repository = resolveWorkflowRepository({
+      invocation,
+      repositories: configs.repositories.repositories,
+      workflowId: workflow.id,
+      required: workflow.requires.repository,
+      resolveRepository
+    });
     const configuredLockRoot = configs.app.locks?.root ?? ".luna/locks";
     const runtimeRoot = projectRoot ?? process.cwd();
     const lockRoot = path.isAbsolute(configuredLockRoot)

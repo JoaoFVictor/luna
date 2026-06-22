@@ -150,6 +150,37 @@ export function recordWorkflowNodeLifecycle(
     });
   }
 
+  if (phase === "implementation") {
+    if (
+      result.status === "succeeded" &&
+      result.outcome?.validationPassed === undefined
+    ) {
+      throw new Error(
+        "Implementation lifecycle outcome is missing validationPassed"
+      );
+    }
+
+    if (
+      result.status === "succeeded" &&
+      result.outcome?.acceptanceAccepted === undefined
+    ) {
+      throw new Error(
+        "Implementation lifecycle outcome is missing acceptanceAccepted"
+      );
+    }
+
+    return markAcceptanceAccepted(
+      markValidationResult(markImplementationStarted(evidence), {
+        ran: result.status !== "skipped",
+        passed:
+          result.status === "succeeded" &&
+          result.outcome?.validationPassed === true
+      }),
+      result.status === "succeeded" &&
+        result.outcome?.acceptanceAccepted === true
+    );
+  }
+
   if (phase === "diff") {
     return markDiffCollectionResult(evidence, {
       succeeded: result.status === "succeeded"

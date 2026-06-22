@@ -13,9 +13,14 @@ type AgentConfig = {
 type WorkflowGraph = {
   nodes: Array<{
     id: string;
-    type: "agent" | "built_in" | "agent_loop";
+    type: "agent" | "built_in" | "gated_agent_loop";
     uses?: string;
     agent?: string;
+    gates?: Array<{
+      type: string;
+      agent?: string;
+      input?: Record<string, unknown>;
+    }>;
     after?: string[];
     input?: Record<string, unknown>;
   }>;
@@ -139,11 +144,19 @@ async function parseJsonFile(path: string): Promise<unknown> {
 }
 
 function agentsWithContextInput(graph: WorkflowGraph): string[] {
-  return graph.nodes
-    .filter((node) => node.type === "agent" || node.type === "agent_loop")
+  const nodeAgents = graph.nodes
+    .filter((node) => node.type === "agent" || node.type === "gated_agent_loop")
     .filter((node) => node.input?.context === "$.steps.context")
     .map((node) => node.agent)
     .filter((agent): agent is string => agent !== undefined);
+  const gateAgents = graph.nodes.flatMap((node) =>
+    (node.gates ?? [])
+      .filter((gate) => gate.input?.context === "$.steps.context")
+      .map((gate) => gate.agent)
+      .filter((agent): agent is string => agent !== undefined)
+  );
+
+  return [...nodeAgents, ...gateAgents];
 }
 
 function collectContextAgents(graph: WorkflowGraph): string[] {
@@ -256,6 +269,7 @@ describe("config definition files", () => {
         "agents/review-planner/agent.yaml",
         "config/implementation.yaml",
         "config/jira.yaml",
+        "config/plane.yaml",
         "workflows/code-review/graph.yaml",
         "workflows/code-review/workflow.yaml",
         "workflows/example-complete-agent/graph.yaml",
@@ -417,6 +431,14 @@ describe("config definition files", () => {
         final_report: {}
       },
       report: {
+        task: {
+          provider: "jira",
+          key: "ABC-123",
+          id: "ABC-123",
+          url: "https://company.atlassian.net/browse/ABC-123",
+          title: "Fix checkout validation",
+          status: "To Do"
+        },
         jira: {
           key: "ABC-123",
           url: "https://company.atlassian.net/browse/ABC-123",
@@ -425,13 +447,13 @@ describe("config definition files", () => {
         },
         repository: {
           provider: "github",
-          owner: "swinggo-dev",
-          name: "swg-front-nuxt"
+          owner: "octo-org",
+          name: "hello-world"
         },
         status: "validation_failed",
         branch: "feature/abc-123-fix-checkout-validation",
         worktree: {
-          path: "/tmp/luna/swg-front-nuxt/run-1",
+          path: "/tmp/luna/hello-world/run-1",
           preserved: true,
           reason: "commit_disabled"
         },
@@ -463,10 +485,10 @@ describe("config definition files", () => {
       },
       workspace: {
         run_id: "run-1",
-        path: "/tmp/luna/swg-front-nuxt/run-1",
+        path: "/tmp/luna/hello-world/run-1",
         preserved: true,
         reason: "commit_disabled",
-        repository_id: "swg-front-nuxt",
+        repository_id: "hello-world",
         remote: "origin",
         base_ref: "main",
         base_sha: "base-sha",
@@ -475,6 +497,47 @@ describe("config definition files", () => {
     };
 
     expect(validate(output), formatAjvErrors(validate.errors)).toBe(true);
+    expect(
+      validate({
+        ...output,
+        run: {
+          ...output.run,
+          source: "plane",
+          subject: {
+            type: "plane_issue",
+            id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
+          }
+        },
+        report: {
+          task: {
+            provider: "plane",
+            key: "42",
+            id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+            url: "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+            title: "Fix checkout validation",
+            status: "Backlog"
+          },
+          plane: {
+            issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+            sequence_id: 42,
+            workspace_slug: "company",
+            project_id: "24f9b7",
+            priority: "high",
+            labels: ["bug"]
+          },
+          repository: output.report.repository,
+          status: output.report.status,
+          branch: output.report.branch,
+          worktree: output.report.worktree,
+          validation: output.report.validation,
+          commit: output.report.commit,
+          push: output.report.push,
+          change_request: output.report.change_request,
+          warnings: output.report.warnings
+        }
+      }),
+      formatAjvErrors(validate.errors)
+    ).toBe(true);
 
     expect(
       validate({
@@ -496,6 +559,50 @@ describe("config definition files", () => {
         }
       }),
       "workspace should reject additional properties"
+    ).toBe(false);
+
+    expect(
+      validate({
+        ...output,
+        report: {
+          ...output.report,
+          task: {
+            ...output.report.task,
+            provider: "plane"
+          }
+        }
+      }),
+      "report should reject provider-specific blocks that do not match task.provider"
+    ).toBe(false);
+
+    expect(
+      validate({
+        ...output,
+        report: {
+          ...output.report,
+          task: {
+            ...output.report.task,
+            provider: "plane"
+          },
+          plane: {
+            issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
+            workspace_slug: "company",
+            project_id: "24f9b7",
+            priority: "high",
+            labels: []
+          }
+        }
+      }),
+      "report should reject multiple provider-specific blocks"
+    ).toBe(false);
+
+    const { jira: _jira, ...reportWithoutProviderBlock } = output.report;
+    expect(
+      validate({
+        ...output,
+        report: reportWithoutProviderBlock
+      }),
+      "report should require the provider-specific block for task.provider"
     ).toBe(false);
   });
 
@@ -594,10 +701,6 @@ describe("config definition files", () => {
       "implementation_plan",
       "implementation",
       "implementation_validation",
-      "worktree_diff",
-      "implementation_review",
-      "acceptance",
-      "acceptance_decision",
       "commit",
       "push",
       "change_request",
@@ -605,7 +708,7 @@ describe("config definition files", () => {
     ]);
     expect(graph.nodes.find((node) => node.id === "implementation")).toEqual(
       expect.objectContaining({
-        type: "agent_loop",
+        type: "gated_agent_loop",
         agent: "code-implementer",
         artifacts: expect.arrayContaining([
           expect.objectContaining({
@@ -619,6 +722,16 @@ describe("config definition files", () => {
             format: "json"
           }),
           expect.objectContaining({
+            path: "implementation-review.json",
+            source: "$.steps.implementation.result.review",
+            format: "json"
+          }),
+          expect.objectContaining({
+            path: "acceptance-review.json",
+            source: "$.steps.implementation.result.acceptance",
+            format: "json"
+          }),
+          expect.objectContaining({
             path: "implementation-result.json",
             source: "$.steps.implementation.result",
             format: "json"
@@ -628,21 +741,42 @@ describe("config definition files", () => {
     );
     for (const id of [
       "implementation_plan",
-      "implementation",
-      "implementation_review",
-      "acceptance"
+      "implementation"
     ]) {
       expect(graph.nodes.find((node) => node.id === id)?.input).toMatchObject({
         context: "$.steps.context"
       });
     }
+    const implementationNode = graph.nodes.find(
+      (node) => node.id === "implementation"
+    );
+    expect(
+      implementationNode?.gates
+        ?.filter((gate) => gate.type === "agent")
+        .map((gate) => gate.agent)
+    ).toEqual(["change-reviewer", "change-acceptance-reviewer"]);
+    for (const gate of implementationNode?.gates ?? []) {
+      if (gate.type !== "agent") {
+        continue;
+      }
+      expect(gate.input).toMatchObject({ context: "$.steps.context" });
+    }
     expect(collectContextAgents(graph)).toEqual(agentsWithContextInput(graph));
 
     for (const node of graph.nodes.filter(
-      (candidate) => candidate.type === "agent" || candidate.type === "agent_loop"
+      (candidate) => candidate.type === "agent" || candidate.type === "gated_agent_loop"
     )) {
       expect(node.agent, node.id).toBeDefined();
       await expect(access(join("agents", node.agent ?? ""))).resolves.toBe(
+        undefined
+      );
+    }
+    for (const gate of implementationNode?.gates ?? []) {
+      if (gate.type !== "agent") {
+        continue;
+      }
+      expect(gate.agent, gate.type).toBeDefined();
+      await expect(access(join("agents", gate.agent ?? ""))).resolves.toBe(
         undefined
       );
     }

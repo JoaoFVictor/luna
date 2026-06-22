@@ -15,8 +15,8 @@ LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:example-complete-ag
 
 This recipe starts with a read-only workflow that operates on a GitHub PR and
 local git repository context. Luna also includes a write-mode implementation
-workflow for Jira tasks. A workflow for a different domain may need a new input
-adapter, new built-in steps, or both.
+workflow for external tasks such as Jira and Plane issues. A workflow for a
+different domain may need a new input adapter, new built-in steps, or both.
 
 ## 1. Create The Workflow Directory
 
@@ -56,9 +56,9 @@ Workflow YAML does not define a separate artifact namespace. The routed
 
 `execution.max_concurrency` controls how many safe ready nodes the scheduler
 may run at once. Repository-sensitive built-ins are still serialized by local
-locks. Agent and agent-loop nodes must not depend on shared mutable local state;
-use workflow dependencies, artifacts, and repository locks to make parallel runs
-safe.
+locks. Agent and `gated_agent_loop` nodes must not depend on shared mutable
+local state; use workflow dependencies, artifacts, and repository locks to make
+parallel runs safe.
 
 Use `trusted_local_write` only for workflows that intentionally create a writable
 worktree and run trusted local write agents.
@@ -133,7 +133,7 @@ nodes:
 
 `collect_context` reads configured repository context from
 `config/repositories.yaml` and configured agent context from each listed
-`agent.yaml`. Passing `context: $.steps.context` to an `agent` or `agent_loop`
+`agent.yaml`. Passing `context: $.steps.context` to an `agent` or `gated_agent_loop`
 does not make the raw file contents ordinary task data. Luna renders them into
 runtime instructions in this order: Luna runtime instructions, the agent's
 `instructions.md`, matching agent context, repository context, then normal
@@ -148,7 +148,7 @@ Graph rules:
 - `type: built_in` uses a supported Luna built-in.
 - `type: agent` references an agent under `agents/`.
 - Read-only `agent` nodes retry transient runtime failures by default.
-- `agent_loop` write-mode nodes reject `max_attempts > 1` to avoid replaying
+- `gated_agent_loop` write-mode nodes reject `max_attempts > 1` to avoid replaying
   local writes after a dropped connection.
 
 ## 4. Supported Built-Ins
@@ -175,14 +175,14 @@ capability, add a built-in in TypeScript and then reference it from YAML.
 See [Create a new built-in step](new-built-in.md) for the registry, metadata,
 and test pattern.
 
-## 5. Write-Mode Agent Loop
+## 5. Gated Agent Loop
 
-Write workflows can use an `agent_loop` node to run a trusted local implementer
-and repair failed validation:
+Write workflows can use a `gated_agent_loop` node to run a trusted local implementer
+and repair failed gates:
 
 ```yaml
 - id: implementation
-  type: agent_loop
+  type: gated_agent_loop
   agent: code-implementer
   output_schema: implementation_result
   artifacts:
@@ -199,18 +199,60 @@ and repair failed validation:
     type: trusted_host_local
     cwd: $.workspace.path
     env_allowlist: []
-  validation:
-    commands: $.config.implementation.validation.commands
-    max_output_bytes: $.config.implementation.validation.max_output_bytes
+  gates:
+    - id: validation
+      type: validation_commands
+      commands: $.config.implementation.validation.commands
+      max_output_bytes: $.config.implementation.validation.max_output_bytes
+    - id: review
+      type: agent
+      agent: change-reviewer
+      block_when:
+        expression: "$count(findings) > 0"
+      feedback:
+        expression: "findings"
+      input:
+        invocation: $.invocation
+        context: $.steps.context
+    - id: acceptance
+      type: agent
+      agent: change-acceptance-reviewer
+      block_when:
+        expression: "status != 'accepted'"
+      feedback:
+        expression: "{ 'status': status, 'blocking_reasons': blocking_reasons }"
+      input:
+        invocation: $.invocation
+        context: $.steps.context
   repair:
     attempts: $.config.implementation.validation.repair_attempts
 ```
 
 The referenced agent must declare `mode: trusted_local_write` in
 `agent.yaml`. `trusted_host_local` runs on the host and can edit files in the
-worktree. Use it only for agents and repositories you trust. In write workflows,
-use deterministic built-ins after agent or agent-loop nodes to record lifecycle
-gates used by workspace preserve/cleanup decisions.
+worktree. Use it only for agents and repositories you trust.
+
+Configure gates in `workflows/<id>/graph.yaml` under the `gated_agent_loop`
+node's `gates:` list. Supported gates:
+
+- `validation_commands`: runs deterministic commands and blocks on failed
+  validation.
+- workflow `agent`: runs a read-only agent as a gate. Configure `block_when` on
+  the workflow gate entry. The referenced `agents/<id>/agent.yaml` owns the
+  agent instructions and output schema.
+
+Workflow `agent` gate expressions:
+
+- `block_when.expression`: JSONata evaluated against the gate agent output. It
+  must return a boolean. `true` blocks; `false` passes.
+- `feedback.expression`: optional JSONata evaluated against the gate agent
+  output only when the gate blocks. Its result is serialized as repair
+  feedback.
+
+When any gate fails, Luna sends previous validation, gate feedback, and diff
+summary back to the trusted write agent for a repair attempt. In write
+workflows, use deterministic built-ins after agent or `gated_agent_loop` nodes
+to record lifecycle gates used by workspace preserve/cleanup decisions.
 
 ## 6. Workflow Input References
 
@@ -263,10 +305,16 @@ From a normalized invocation file:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --input path/to/invocation.json
 ```
 
-For the bundled Jira implementation workflow, the adapter command is:
+For the bundled implementation workflow, use a task adapter such as Jira:
 
 ```bash
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from jira-task-url https://company.atlassian.net/browse/ABC-123
+```
+
+or Plane:
+
+```bash
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from plane-task-url https://app.plane.so/company/browse/PROJ-42/
 ```
 
 ## 9. Test

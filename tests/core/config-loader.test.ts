@@ -12,6 +12,7 @@ import {
 import { McpConfigSchema } from "../../src/core/config/mcp.js";
 import { resolveModelProfiles } from "../../src/core/config/models.js";
 import { JiraConfigSchema } from "../../src/core/providers/jira/config.js";
+import { PlaneConfigSchema } from "../../src/core/providers/plane/config.js";
 import {
   AppConfigSchema,
   ModelsConfigSchema,
@@ -24,6 +25,7 @@ const configSchemas = {
   "app.yaml": AppConfigSchema,
   "implementation.yaml": ImplementationConfigSchema,
   "jira.yaml": JiraConfigSchema,
+  "plane.yaml": PlaneConfigSchema,
   "mcp.yaml": McpConfigSchema,
   "models.yaml": ModelsConfigSchema,
   "repositories.yaml": RepositoriesConfigSchema,

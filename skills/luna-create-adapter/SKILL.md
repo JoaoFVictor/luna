@@ -17,6 +17,9 @@ An adapter should:
 - return `InvocationSchema.parse(...)`;
 - preserve repository, subject, references, and payload data agents need;
 - produce clear errors for invalid input or missing auth.
+- keep provider code isolated: a provider adapter may use neutral core
+  contracts and its own provider helpers, but must not add auth/config/schema
+  behavior to another provider's module.
 
 An adapter must not:
 
@@ -25,6 +28,12 @@ An adapter must not:
 - write final artifacts;
 - decide workflow routing with an LLM;
 - enable commit/push/PR gates.
+- reuse another provider's module as a convenience wrapper for auth, config,
+  schema validation, tests, or fixtures.
+
+Shared helpers are allowed only when they are provider-agnostic. A common
+helper may read `luna.auth.json` as unknown provider data; provider-specific
+schema validation belongs under `src/core/providers/<provider>/`.
 
 ## Files
 
@@ -45,6 +54,10 @@ Workflow selection comes from `--target workflow:<id>`, invocation `target`, or
 
 Add tests under `tests/adapters/`. Cover valid input, invalid input, source
 failures, auth/config failures, and normalized invocation shape.
+
+Use neutral, public fixture names in tests and docs, such as
+`octo-org/hello-world` or `acme-inc/web-app`. Do not use private repository,
+workspace, organization, or local filesystem names in Luna examples.
 
 Run:
 

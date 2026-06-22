@@ -5,10 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
   jiraAuthForInstance,
   loadLunaAuth,
-  type LunaAuthConfig
+  type JiraLunaAuthConfig
 } from "../../src/core/providers/jira/auth.js";
 
-const lunaAuthFixture: LunaAuthConfig = {
+const lunaAuthFixture: JiraLunaAuthConfig = {
   providers: {
     jira: {
       company: {
