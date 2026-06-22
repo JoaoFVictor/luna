@@ -8,7 +8,8 @@ describe("model config", () => {
       model_profiles: {
         default: {
           model: "${DEFAULT_MODEL}",
-          reasoning_effort: "medium"
+          reasoning_effort: "medium",
+          transport: "sse"
         },
         deep: {
           model: "openai/gpt-5",
@@ -22,7 +23,8 @@ describe("model config", () => {
     ).toEqual({
       default: {
         model: "openai-codex/gpt-5.4-mini",
-        reasoning_effort: "medium"
+        reasoning_effort: "medium",
+        transport: "sse"
       },
       deep: {
         model: "openai/gpt-5",

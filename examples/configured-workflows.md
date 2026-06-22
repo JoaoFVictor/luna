@@ -144,6 +144,21 @@ Model profiles:
 - `fast`
 - `balanced`
 
+Model profiles live in `config/models.yaml`. Keep profile names capability
+based, and put runtime transport there instead of on agents or workflows:
+
+```yaml
+model_profiles:
+  default:
+    model: ${DEFAULT_MODEL:-openai-codex/gpt-5.4-mini}
+    reasoning_effort: medium
+    transport: sse
+```
+
+`transport` is optional. The current Flue/Pi adapter supports `auto`, `sse`,
+and `websocket`; `sse` is the local default for `openai-codex/...` profiles to
+avoid abnormal WebSocket closures on long prompts.
+
 ## Adding An Agent
 
 Create:
@@ -355,6 +370,8 @@ retry:
 The default read-only policy retries transient transport, timeout, rate-limit,
 and provider-availability failures. Trusted write-mode agent loops reject
 `max_attempts > 1` to avoid replaying side effects after a dropped connection.
+If Codex reports `WebSocket closed 1006`, set the affected model profile to
+`transport: sse` instead of increasing write-mode retry.
 
 `app.yaml` can set local lock storage defaults:
 

@@ -45,6 +45,7 @@ import {
 } from "../../retry/policy.js";
 import {
   classifyFluePromptError,
+  fluePromptFailureHint,
   readOnlyFluePromptRetryPolicy,
   writeModeFluePromptRetryPolicy
 } from "./retry.js";
@@ -199,6 +200,7 @@ async function recordPromptFailure(
   error: unknown
 ): Promise<void> {
   const durationMs = Date.now() - startedAtMs;
+  const hint = fluePromptFailureHint(error);
   recordPromptOperation(options.summary, { durationMs });
   try {
     await emitPromptEvent(
@@ -208,6 +210,7 @@ async function recordPromptFailure(
       {
         prompt_id: promptId,
         duration_ms: durationMs,
+        ...(hint === undefined ? {} : { hint }),
         error: promptErrorAttributes(error)
       },
       { status: "failed" }
@@ -252,6 +255,8 @@ async function emitPromptRetryEvent(
   errorCode: RetryErrorCode,
   retryDelayMs: number
 ): Promise<void> {
+  const hint = fluePromptFailureHint(error);
+
   await emitPromptEvent(
     options,
     "warn",
@@ -262,6 +267,7 @@ async function emitPromptRetryEvent(
       max_attempts: retryPolicy.maxAttempts,
       retry_delay_ms: retryDelayMs,
       error_code: errorCode,
+      ...(hint === undefined ? {} : { hint }),
       error: promptErrorAttributes(error)
     },
     { status: "skipped", code: errorCode }

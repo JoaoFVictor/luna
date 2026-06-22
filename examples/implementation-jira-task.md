@@ -15,6 +15,8 @@ npm install
 ## 2. Authenticate Models
 
 The default `config/models.yaml` uses Pi's `openai-codex/...` provider.
+Those profiles use `transport: sse` by default to avoid abnormal Codex
+WebSocket closures during long trusted-local prompts.
 
 ```bash
 npx @earendil-works/pi-ai login openai-codex

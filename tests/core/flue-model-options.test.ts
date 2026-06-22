@@ -17,4 +17,18 @@ describe("Flue model options", () => {
       ).toEqual({ model, thinkingLevel: reasoningEffort });
     }
   );
+
+  it("passes configured transport through to the Flue adapter", () => {
+    expect(
+      toFlueModelOptions({
+        model: "openai-codex/gpt-5.4",
+        reasoning_effort: "high",
+        transport: "sse"
+      })
+    ).toEqual({
+      model: "openai-codex/gpt-5.4",
+      thinkingLevel: "high",
+      transport: "sse"
+    });
+  });
 });

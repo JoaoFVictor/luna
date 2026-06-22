@@ -33,7 +33,8 @@ export type RepositoriesConfig = z.infer<typeof RepositoriesConfigSchema>;
 export const ModelProfileSchema = z
   .object({
     model: NonEmptyStringSchema,
-    reasoning_effort: z.enum(["low", "medium", "high"])
+    reasoning_effort: z.enum(["low", "medium", "high"]),
+    transport: z.enum(["auto", "sse", "websocket"]).optional()
   })
   .strict();
 export type ModelProfile = z.infer<typeof ModelProfileSchema>;

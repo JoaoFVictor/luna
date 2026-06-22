@@ -128,3 +128,8 @@ For private repositories, make sure SSH or HTTPS git auth works outside Luna.
 `auth.json` is missing
 
 Run `npx @earendil-works/pi-ai login openai-codex` from the Luna project root.
+
+`WebSocket closed 1006`
+
+This is an abnormal Codex WebSocket transport closure. Keep read-only retry
+bounded and set the affected `config/models.yaml` profile to `transport: sse`.
