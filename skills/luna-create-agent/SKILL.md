@@ -29,7 +29,8 @@ agents/<agent-id>/
 - `instructions_file` and `output_schema` must stay inside the agent directory.
 - Optional `context.files` lists agent-owned reference files relative to
   `agents/<agent-id>/`. Workflows must run `collect_context` and pass
-  `context: $.steps.context` for agents to receive them.
+  `context: $.steps.context` for agents to receive them as runtime
+  instructions.
 
 ## Reuse First
 
@@ -45,11 +46,16 @@ Keep orchestration in `workflows/<id>/graph.yaml`, not in agent instructions.
 - `tools`: IDs from `src/core/tools/catalog.ts`.
 - `mcp_servers`: IDs from `config/mcp.yaml`.
 - `subagents`: referenced Luna agent IDs.
-- `context.files`: audited reference files passed through workflow input.
+- `context.files`: audited reference files injected into runtime instructions.
 
 Flue materializes skills, tools, MCP servers, and subagent profiles through
 `src/core/agent-runtime/flue/capabilities.ts`; do not import Flue runtime APIs
 from generic agent definition or policy modules.
+
+When context is collected, Luna renders instructions in this order: Luna
+runtime instructions, the current agent's `instructions.md`, matching
+agent-owned context, repository context, then normal workflow input. Raw context
+file contents must not remain in task JSON; use `context_audit` for metadata.
 
 Subagents are lightweight internal delegation. A referenced subagent may use
 skills as instructions, but must not declare local tools, MCP servers, or nested

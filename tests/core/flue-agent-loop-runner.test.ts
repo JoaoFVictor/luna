@@ -26,8 +26,42 @@ describe("trusted_host_local Flue agent loop runner", () => {
   });
 
   afterEach(() => {
+    vi.doUnmock("node:fs/promises");
     cleanupFlueMocks();
   });
+
+  const collectedContext = {
+    kind: "luna.collect_context.v1",
+    repository: {
+      root: "/repo",
+      configured: ["AGENTS.md"],
+      read: [
+        {
+          path: "AGENTS.md",
+          bytes: 26,
+          content: "Repository context for tests.\n"
+        }
+      ],
+      missing: [],
+      skipped: []
+    },
+    agents: [
+      {
+        id: "code-implementer",
+        root: "/agents/code-implementer",
+        configured: ["agent.md"],
+        read: [
+          {
+            path: "agent.md",
+            bytes: 25,
+            content: "Agent context for tests.\n"
+          }
+        ],
+        missing: [],
+        skipped: []
+      }
+    ]
+  } as const;
 
   it("runs trusted_host_local agent_loop steps with Flue local cwd and env allowlist", async () => {
     process.env.LUNA_ALLOWED_TOKEN = "allowed-secret";
@@ -75,7 +109,6 @@ describe("trusted_host_local Flue agent loop runner", () => {
         additionalProperties: true
       })
     );
-
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
         const runAgentLoopStep =
@@ -127,7 +160,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
-          input: { task: "Fix checkout validation" },
+          input: { task: "Fix checkout validation", context: collectedContext },
           sandbox: {
             type: "trusted_host_local",
             cwd: worktreePath,
@@ -172,6 +205,31 @@ describe("trusted_host_local Flue agent loop runner", () => {
           model: "openai/implementer-test",
           sandbox: { __flueLocalSandbox: true }
         });
+        const initializedInstructions = initialized.instructions;
+        expect(initializedInstructions).toEqual(expect.any(String));
+        if (initializedInstructions === undefined) {
+          throw new Error("Expected initialized agent instructions");
+        }
+
+        expect(initializedInstructions).toContain("Agent context for tests.");
+        expect(initializedInstructions).toContain(
+          "Repository context for tests."
+        );
+        expect(initializedInstructions).toContain(
+          "trusted host-local write mode"
+        );
+        expect(initializedInstructions).toContain(
+          "Make changes only in the configured worktree"
+        );
+        expect(initializedInstructions.indexOf("# Luna Runtime Instructions")).toBeLessThan(
+          initializedInstructions.indexOf("# Agent Instructions")
+        );
+        expect(initializedInstructions.indexOf("# Agent Instructions")).toBeLessThan(
+          initializedInstructions.indexOf("# Agent Context")
+        );
+        expect(initializedInstructions.indexOf("# Agent Context")).toBeLessThan(
+          initializedInstructions.indexOf("# Repository Context")
+        );
         expect(initialized.skills).toHaveLength(1);
         expect(initialized.tools).toHaveLength(2);
         await initialized.tools?.[0]?.execute({});
@@ -220,6 +278,10 @@ describe("trusted_host_local Flue agent loop runner", () => {
       })
     );
     expect(promptCalls[0].text).toContain("Fix checkout validation");
+    expect(promptCalls[0].text).toContain("context_audit");
+    expect(promptCalls[0].text).not.toContain("Agent context for tests.");
+    expect(promptCalls[0].text).not.toContain("Repository context for tests.");
+    expect(promptCalls[0].text).not.toContain("trusted host-local write mode");
     expect(localCalls).toEqual([
       {
         cwd: worktreePath,
@@ -400,20 +462,25 @@ describe("trusted_host_local Flue agent loop runner", () => {
       })
     } as never);
 
-    expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith({
-      agent: expect.objectContaining({ id: "code-implementer" }),
-      cwd: worktreePath,
-      agentsRoot: path.join(root, "agents"),
-      modelProfiles,
-          workflowSubagentPolicy: { allow_write: false },
-      mcpConfig: { mcp_servers: [] },
-      env: process.env
-    });
+    expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({ id: "code-implementer" }),
+        cwd: worktreePath,
+        agentsRoot: path.join(root, "agents"),
+        modelProfiles,
+        workflowSubagentPolicy: { allow_write: false },
+        mcpConfig: { mcp_servers: [] },
+        env: process.env,
+        context: undefined
+      })
+    );
     expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("resolves trusted_host_local agent_loop capabilities once across repair attempts and closes after completion", async () => {
     const initCalls: InitCall[] = [];
+    const initializedInstructions: string[] = [];
+    const promptCalls: PromptCall[] = [];
     const validationResults = [
       { passed: false, commands: [] },
       { passed: true, commands: [] }
@@ -476,6 +543,28 @@ describe("trusted_host_local Flue agent loop runner", () => {
         additionalProperties: true
       })
     );
+    let instructionReads = 0;
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual =
+        await importOriginal<typeof import("node:fs/promises")>();
+
+      return {
+        ...actual,
+        readFile: async (
+          file: Parameters<typeof actual.readFile>[0],
+          options?: Parameters<typeof actual.readFile>[1]
+        ) => {
+          if (file === instructionsPath) {
+            instructionReads += 1;
+            return instructionReads === 1
+              ? "Implement the requested change.\n"
+              : "Changed instructions between attempts.\n";
+          }
+
+          return await actual.readFile(file, options);
+        }
+      };
+    });
 
     const runConfiguredWorkflow = vi.fn(
       async (options: RunConfiguredWorkflowOptions) => {
@@ -520,7 +609,7 @@ describe("trusted_host_local Flue agent loop runner", () => {
           agentsRoot: path.join(root, "agents"),
           modelProfiles,
           workflowSubagentPolicy: { allow_write: false },
-          input: { task: "Fix checkout validation" },
+          input: { task: "Fix checkout validation", context: collectedContext },
           sandbox: {
             type: "trusted_host_local",
             cwd: worktreePath,
@@ -559,15 +648,25 @@ describe("trusted_host_local Flue agent loop runner", () => {
 
         expect(initialized.skills).toHaveLength(1);
         expect(initialized.tools).toHaveLength(1);
+        const instructions = initialized.instructions;
+        expect(instructions).toEqual(expect.any(String));
+        if (instructions === undefined) {
+          throw new Error("Expected initialized agent instructions");
+        }
+        initializedInstructions.push(instructions);
 
         return {
           session: vi.fn(async () => ({
-            prompt: vi.fn(async () => ({
-              data: {
-                status: "implemented",
-                summary: "Attempt completed."
-              }
-            }))
+            prompt: vi.fn(async (text: string, options: Record<string, unknown>) => {
+              promptCalls.push({ text, options });
+
+              return {
+                data: {
+                  status: "implemented",
+                  summary: "Attempt completed."
+                }
+              };
+            })
           }))
         };
       })
@@ -581,17 +680,33 @@ describe("trusted_host_local Flue agent loop runner", () => {
       }
     });
     expect(initCalls).toHaveLength(2);
+    expect(initializedInstructions).toHaveLength(2);
+    expect(initializedInstructions[1]).toBe(initializedInstructions[0]);
+    expect(initializedInstructions[1]).not.toContain(
+      "Changed instructions between attempts."
+    );
+    expect(promptCalls).toHaveLength(2);
+    for (const call of promptCalls) {
+      expect(call.text).toContain("context_audit");
+      expect(call.text).not.toContain("Agent context for tests.");
+      expect(call.text).not.toContain("Repository context for tests.");
+    }
+    expect(promptCalls[1].text).toContain("previous_validation");
+    expect(promptCalls[1].text).toContain("diff_summary");
     expect(runValidationCommands).toHaveBeenCalledTimes(2);
     expect(resolveFlueAgentCapabilities).toHaveBeenCalledTimes(1);
-    expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith({
-      agent: expect.objectContaining({ id: "code-implementer" }),
-      cwd: worktreePath,
-      agentsRoot: path.join(root, "agents"),
-      modelProfiles,
-          workflowSubagentPolicy: { allow_write: false },
-      mcpConfig: { mcp_servers: [] },
-      env: process.env
-    });
+    expect(resolveFlueAgentCapabilities).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({ id: "code-implementer" }),
+        cwd: worktreePath,
+        agentsRoot: path.join(root, "agents"),
+        modelProfiles,
+        workflowSubagentPolicy: { allow_write: false },
+        mcpConfig: { mcp_servers: [] },
+        env: process.env,
+        context: collectedContext
+      })
+    );
     expect(close).toHaveBeenCalledTimes(1);
   });
 

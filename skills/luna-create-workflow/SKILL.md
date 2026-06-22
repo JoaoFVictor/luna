@@ -43,7 +43,9 @@ cycles are invalid.
 Use `collect_context` when a workflow should pass configured repository or
 agent context files to model nodes. Write `context-intake.json` as an artifact,
 list every agent/agent_loop that consumes context in `input.agents`, and pass
-`context: $.steps.context` explicitly to those nodes.
+`context: $.steps.context` explicitly to those nodes. Luna promotes collected
+context into runtime instructions, ordered as agent-owned context before
+repository context, and keeps only `context_audit` metadata in task input.
 
 For `git_managed_write` workflows, keep lifecycle decisions in deterministic
 built-ins. If an agent or agent-loop output participates in workspace

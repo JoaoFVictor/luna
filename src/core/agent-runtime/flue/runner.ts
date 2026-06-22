@@ -12,6 +12,10 @@ import {
   runAgentLoopStateMachine,
   type RunWritableAgentInput
 } from "../../agents/loop-runner.js";
+import {
+  contextIntakeFrom,
+  prepareAgentInstructionEnvelope
+} from "../../agents/instruction-stack.js";
 import type {
   RunAgentLoopStepOptions,
   RunAgentStepOptions
@@ -49,6 +53,10 @@ type FlueAgentRunnerOptions = {
   ctx: FlueContext<Invocation>;
   mcpConfig?: McpConfig;
 };
+
+type AgentInstructionEnvelope = ReturnType<
+  typeof prepareAgentInstructionEnvelope
+>;
 
 export type FlueAgentRunner = {
   runAgentStep(options: RunAgentStepOptions): Promise<unknown>;
@@ -492,12 +500,22 @@ export async function runFlueAgentStep(
   mcpConfig?: McpConfig
 ): Promise<unknown> {
   const capabilityCwd = capabilityCwdFor(options);
+  const instructions = await readFile(options.agent.instructionsPath, "utf8");
+  const envelope = prepareAgentInstructionEnvelope({
+    agent: {
+      id: options.agent.id,
+      mode: options.agent.mode,
+      instructions
+    },
+    taskInput: options.input
+  });
   const capabilities = await resolveFlueAgentCapabilities({
     agent: options.agent,
     cwd: capabilityCwd,
     agentsRoot: options.agentsRoot,
     modelProfiles: options.modelProfiles,
     workflowSubagentPolicy: options.workflowSubagentPolicy,
+    context: contextIntakeFrom(options.input.context),
     mcpConfig,
     observability: options.observability,
     summary: options.summary,
@@ -507,7 +525,7 @@ export async function runFlueAgentStep(
   try {
     const agent = createAgent(async () => ({
       description: options.agent.description,
-      instructions: await readFile(options.agent.instructionsPath, "utf8"),
+      instructions: envelope.instructions,
       skills: capabilities.skills,
       tools: capabilities.tools,
       subagents: capabilities.subagents,
@@ -521,12 +539,9 @@ export async function runFlueAgentStep(
       options,
       session,
       promptId,
-      text:
-        [
-          options.agent.description,
-          "Use only the provided workflow input and return structured output matching the configured schema.",
-          promptBody(options.input)
-        ].join("\n\n"),
+      text: [options.agent.description, promptBody(envelope.taskInput)].join(
+        "\n\n"
+      ),
       promptOptions: {
         result: await resultSchema(options.agent.outputSchemaPath),
         ...toFlueModelOptions(options.model)
@@ -542,18 +557,24 @@ export async function runFlueAgentStep(
 
 function writableAgentPrompt(
   options: RunAgentLoopStepOptions,
-  input: RunWritableAgentInput
+  input: RunWritableAgentInput,
+  workflowInput: Record<string, unknown>
 ): string {
   return [
     options.agent.description,
-    "You are running in trusted host-local mode. Make changes only in the configured worktree and return structured output matching the configured schema.",
     promptBody({
       phase: input.phase,
       attempt: input.attempt,
-      workflow_input: options.input,
-      previous_validation: input.previousValidation,
-      previous_error: input.previousError,
-      diff_summary: input.diffSummary
+      workflow_input: workflowInput,
+      ...(input.previousValidation === undefined
+        ? {}
+        : { previous_validation: input.previousValidation }),
+      ...(input.previousError === undefined
+        ? {}
+        : { previous_error: input.previousError }),
+      ...(input.diffSummary === undefined
+        ? {}
+        : { diff_summary: input.diffSummary })
     })
   ].join("\n\n");
 }
@@ -562,12 +583,13 @@ async function runWritableAgent(
   ctx: FlueContext<Invocation>,
   options: RunAgentLoopStepOptions,
   input: RunWritableAgentInput,
-  capabilities: ResolvedFlueAgentCapabilities
+  capabilities: ResolvedFlueAgentCapabilities,
+  envelope: AgentInstructionEnvelope
 ): Promise<unknown> {
   const retryPolicy = writeModeRetryPolicy(options);
   const agent = createAgent(async () => ({
     description: options.agent.description,
-    instructions: await readFile(options.agent.instructionsPath, "utf8"),
+    instructions: envelope.instructions,
     skills: capabilities.skills,
     tools: capabilities.tools,
     subagents: capabilities.subagents,
@@ -585,7 +607,7 @@ async function runWritableAgent(
     options,
     session,
     promptId,
-    text: writableAgentPrompt(options, input),
+    text: writableAgentPrompt(options, input, envelope.taskInput),
     retryPolicy,
     promptData: {
       phase: input.phase,
@@ -619,12 +641,22 @@ export async function runFlueAgentLoopStep(
     );
   }
 
+  const instructions = await readFile(options.agent.instructionsPath, "utf8");
+  const envelope = prepareAgentInstructionEnvelope({
+    agent: {
+      id: options.agent.id,
+      mode: "trusted_host_local_write",
+      instructions
+    },
+    taskInput: options.input
+  });
   const capabilities = await resolveFlueAgentCapabilities({
     agent: options.agent,
     cwd: options.sandbox.cwd,
     agentsRoot: options.agentsRoot,
     modelProfiles: options.modelProfiles,
     workflowSubagentPolicy: options.workflowSubagentPolicy,
+    context: contextIntakeFrom(options.input.context),
     mcpConfig,
     observability: options.observability,
     summary: options.summary,
@@ -638,7 +670,7 @@ export async function runFlueAgentLoopStep(
       repairAttempts: options.repair.attempts,
       dependencies: {
         runWritableAgent: async (input) =>
-          await runWritableAgent(ctx, options, input, capabilities),
+          await runWritableAgent(ctx, options, input, capabilities, envelope),
         runValidation: async () =>
           await runValidationCommands({
             cwd: options.sandbox.cwd,

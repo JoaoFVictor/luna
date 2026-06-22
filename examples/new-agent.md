@@ -36,8 +36,9 @@ Rules:
 - `mode` supports `read_only` and `trusted_host_local_write`.
 - `model_profile` must exist in `config/models.yaml`.
 - `instructions_file` and `output_schema` must stay inside the agent directory.
-- `context.files` is optional. Use it for reusable guidance files that should
-  be passed as workflow input when a workflow runs `collect_context`.
+- `context.files` is optional. Use it for reusable guidance files that Luna
+  should promote into runtime instructions when a workflow runs
+  `collect_context`.
 
 Use capability-based model profiles such as `default`, `deep`, `fast`, and
 `balanced`. Avoid role-based profile names like `planner` or `reviewer`.
@@ -99,7 +100,7 @@ To create a new local tool, see [Create a new local tool](new-tool.md).
 ## Agent Context
 
 Use `context.files` for agent-owned reference material that should be audited
-and passed to the agent alongside repository context:
+and injected into that agent's runtime instructions before repository context:
 
 ```yaml
 context:
@@ -109,7 +110,9 @@ context:
 ```
 
 Paths are relative to `agents/<id>/`. Missing files are recorded in
-`context-intake.json`; path escapes and oversized files are skipped.
+`context-intake.json`; path escapes and oversized files are skipped. The raw
+file contents are not kept in the agent task payload. Agents receive a
+`context_audit` summary in input instead.
 
 ## MCP Capabilities
 

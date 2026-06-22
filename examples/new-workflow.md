@@ -124,6 +124,15 @@ nodes:
       - context
 ```
 
+`collect_context` reads configured repository context from
+`config/repositories.yaml` and configured agent context from each listed
+`agent.yaml`. Passing `context: $.steps.context` to an `agent` or `agent_loop`
+does not make the raw file contents ordinary task data. Luna renders them into
+runtime instructions in this order: Luna runtime instructions, the agent's
+`instructions.md`, matching agent context, repository context, then normal
+workflow input. The task input receives `context_audit` with read, missing, and
+skipped file metadata.
+
 Graph rules:
 
 - Node ids must be unique.

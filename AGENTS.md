@@ -44,7 +44,8 @@ Before changing an area, read the matching project skill:
 - Do not create compatibility wrappers or deadcode for old architecture.
 - Keep agents reusable; put orchestration in workflow graphs.
 - Put context files in repository or agent config; collect them through
-  `collect_context` and pass `$.steps.context` explicitly.
+  `collect_context` and pass `context: $.steps.context` explicitly so Luna can
+  render them as runtime instructions with `context_audit` task metadata.
 - Register built-ins through `src/core/built-ins/catalog.ts`.
 - Register local tools through `src/core/tools/catalog.ts`; Flue
   materialization lives in `src/core/agent-runtime/flue/tool-registry.ts`.
