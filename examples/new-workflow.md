@@ -6,12 +6,15 @@ agents, no new TypeScript workflow entrypoint is required.
 Workflow definitions live under `workflows/<id>/`. Luna keeps one generic
 TypeScript workflow entrypoint at `src/workflows/luna.ts`.
 
-For a runnable write-mode reference that uses the full example agent, see
-`workflows/example-complete-agent/`.
+For the smallest runnable read-only reference, see
+`workflows/example-minimal-agent/`.
 
 ```sh
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:example-complete-agent --from github-pr-url https://github.com/org/repo/pull/123
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:example-minimal-agent --from github-pr-url https://github.com/org/repo/pull/123
 ```
+
+For a runnable write-mode reference that uses the full example agent, see
+`workflows/example-complete-agent/`.
 
 This recipe starts with a read-only workflow that operates on a GitHub PR and
 local git repository context. Luna also includes a write-mode implementation

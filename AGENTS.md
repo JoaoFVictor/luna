@@ -25,6 +25,9 @@ Primary extension points:
 - `src/core/providers/<id>/`: provider-specific integrations and adapters to
   provider APIs, auth, config, reports, built-ins, and change-request services.
 - `src/core/tools/`: Luna-native local tool contracts and catalog.
+- `src/core/agent-runtime/flue/`: current Flue runtime adapter, including
+  runner, capabilities, tool/MCP materialization, model options, Pi auth, and
+  observability.
 - `skills/`: reusable guidance for LLMs and runtime agents.
 
 ## Use The Luna Skills
@@ -38,6 +41,8 @@ Before changing an area, read the matching project skill:
 - `skills/luna-create-built-in/SKILL.md`: create workflow built-ins.
 - `skills/luna-create-tool/SKILL.md`: create local Luna tools.
 - `skills/luna-review-change/SKILL.md`: review Luna changes critically.
+- `skills/implementation-safe-git/SKILL.md`: safe file/git discipline for
+  trusted local write agents and implementation loops.
 
 ## Non-Negotiables
 
@@ -78,7 +83,8 @@ Before changing an area, read the matching project skill:
   `src/core/built-ins/`.
 - Register local tools through `src/core/tools/catalog.ts`; Flue
   materialization lives in `src/core/agent-runtime/flue/tool-registry.ts`.
-- Update README/examples when adding public extension points.
+- Update AGENTS.md, README, examples, and skills when changing public
+  extension points or durable authoring patterns.
 - Run focused tests for the touched area plus `npm run typecheck`,
   `npm run typecheck:unused-src`, and `npm run lint:unused`.
 

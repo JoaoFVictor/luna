@@ -1,0 +1,11 @@
+id: example-minimal-agent
+type: workflow
+mode: read_only
+input_schema: input.schema.json
+output_schema: output.schema.json
+graph: graph.yaml
+requires:
+  repository: true
+execution:
+  max_concurrency: 2
+  lock_timeout_ms: 120000

@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "run", "workflow_id", "steps"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "success"
+        },
+        "workflow_id": {
+          "type": "string",
+          "const": "example-minimal-agent"
+        },
+        "run": {
+          "$ref": "#/definitions/run_identity"
+        },
+        "steps": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspace"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "run", "workflow_id", "error"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "failed"
+        },
+        "workflow_id": {
+          "type": "string",
+          "const": "example-minimal-agent"
+        },
+        "run": {
+          "$ref": "#/definitions/run_identity"
+        },
+        "error": {
+          "$ref": "#/definitions/error_artifact"
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspace"
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "run_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "attempt", "source", "event"],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "route_target": {
+          "$ref": "#/definitions/route_target"
+        },
+        "subject": {
+          "$ref": "#/definitions/run_subject"
+        }
+      }
+    },
+    "route_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "workflow"
+        },
+        "id": {
+          "type": "string",
+          "const": "example-minimal-agent"
+        }
+      }
+    },
+    "run_subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "error_artifact": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["message"],
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

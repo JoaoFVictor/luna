@@ -1,4 +1,4 @@
-# Create a new built-in step
+# Create A New Built-In Step
 
 Built-ins are deterministic local capabilities that workflow YAML can call with:
 
@@ -13,7 +13,7 @@ filesystem/git operations, repository context, artifact shaping, validation, or
 state plumbing. Use an agent when the work is model-driven. Use an adapter when
 the work only converts external input into a Luna invocation.
 
-## 1. Choose the domain file
+## 1. Choose The Domain File
 
 Runtime-neutral built-ins live under `src/core/built-ins/`. Provider-specific
 built-ins live under `src/core/providers/<provider>/built-ins.ts`.
@@ -31,7 +31,7 @@ existing domain. If you create a new domain file, create a matching focused
 test file under `tests/core/`, for example
 `tests/core/built-ins-my-domain.test.ts`.
 
-## 2. Define the step
+## 2. Define The Step
 
 Export each built-in individually with `defineBuiltInStep`:
 
@@ -57,7 +57,7 @@ Keep the step small. If several built-ins need the same state parsing, add a
 helper to `state.ts`. If the helper executes domain behavior, keep it in the
 domain file instead.
 
-## 3. Add metadata only when the runner needs it
+## 3. Add Metadata Only When The Runner Needs It
 
 Most built-ins do not need metadata.
 
@@ -90,7 +90,7 @@ export const finalSomethingReportBuiltIn = defineBuiltInStep({
 Do not add name checks to `src/core/configured-workflow/runner.ts`. Runner
 behavior must come from metadata.
 
-## 4. Register it in the provider registry
+## 4. Register It In The Provider Registry
 
 Add provider-facing steps to `src/core/providers/built-ins.ts`:
 
@@ -108,13 +108,13 @@ Runtime-neutral built-ins and shared catalog helpers stay under
 registry, so YAML validation and runtime execution must see the same active
 registry.
 
-## 5. Import direct owners
+## 5. Import Direct Owners
 
 Do not add new barrel exports for built-in domain files. Runtime registration
 comes from the active provider registry; tests and other internal consumers
 should import the domain file that owns the step directly.
 
-## 6. Use it from workflow YAML
+## 6. Use It From Workflow YAML
 
 Add a node to `workflows/<workflow-id>/graph.yaml`:
 
@@ -131,7 +131,7 @@ Add a node to `workflows/<workflow-id>/graph.yaml`:
 `input` values can reference workflow state through JSON-path-like expressions
 resolved by Luna before the built-in runs.
 
-## 7. Test it directly
+## 7. Test It Directly
 
 Create or update the focused domain test:
 

@@ -1,0 +1,6 @@
+id: example-minimal-agent
+description: Minimal read-only example agent for first-time Luna authors.
+model_profile: fast
+mode: read_only
+instructions_file: instructions.md
+output_schema: output.schema.json

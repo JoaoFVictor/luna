@@ -8,7 +8,7 @@ build/
 
 # Local runtime artifacts
 .runs/
-docs/
+docs/*/
 *.log
 
 # Environment and secrets

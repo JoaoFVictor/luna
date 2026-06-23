@@ -62,6 +62,20 @@ catalog. Flue tool materialization lives under `src/core/agent-runtime/flue/`.
 
 `skills/` contains reusable guidance for LLMs and runtime agents.
 
+## Documentation
+
+Use `docs/` when you need to understand Luna's architecture before changing a
+layer. These files explain what each layer owns, how it runs, what it should
+not do, and where the canonical source and tests live:
+
+- [Architecture overview](docs/README.md)
+- [Agents, context, and skills](docs/agents-context-and-skills.md)
+- [Workflows and artifacts](docs/workflows-and-artifacts.md)
+- [Adapters and providers](docs/adapters-and-providers.md)
+- [Built-ins, tools, and runtime](docs/built-ins-tools-and-runtime.md)
+
+Use `examples/` for practical recipes and copyable starting points.
+
 ## Try A Starter Workflow
 
 Install dependencies:
@@ -128,7 +142,14 @@ or the Plane adapter notes in [Configured workflows](examples/configured-workflo
 
 ## Build Your Own Workflow
 
-Start from the complete workflow and agent pair:
+Start from the minimal read-only pair when you want the smallest runnable
+shape:
+
+- `workflows/example-minimal-agent/`
+- `agents/example-minimal-agent/`
+
+Use the complete pair when you need to inspect skills, tools, subagents,
+trusted write mode, validation, and optional artifacts:
 
 - `workflows/example-complete-agent/`
 - `agents/example-complete-agent/`
@@ -247,10 +268,12 @@ Workflows:
 
 - `code-review`
 - `example-complete-agent`
+- `example-minimal-agent`
 - `implementation`
 
 Agents:
 
+- `example-minimal-agent`
 - `example-complete-agent`
 - `review-planner`
 - `change-reviewer`
@@ -295,6 +318,8 @@ Project skills:
 
 ## Guides
 
+- [Architecture deep dives](docs/README.md)
+- [Examples index](examples/README.md)
 - [Run a GitHub PR review](examples/review-pr.md)
 - [Implement a Jira task](examples/implementation-jira-task.md)
 - [Configured workflows reference](examples/configured-workflows.md)

@@ -1,4 +1,4 @@
-# Create a new local tool
+# Create A New Local Tool
 
 Local tools are deterministic Luna-native TypeScript functions that can be
 materialized for the current agent runtime. Use a tool when an agent needs a
@@ -13,7 +13,7 @@ Do not use a tool for orchestration. Workflow order belongs in `graph.yaml`.
 Do not use a tool for external input normalization. That belongs in an input
 adapter.
 
-## 1. Decide the tool boundary
+## 1. Decide The Tool Boundary
 
 A good local tool:
 
@@ -40,7 +40,7 @@ needs tools.
 
 Current examples live in `src/core/tools/repository.ts`.
 
-## 2. Implement the Luna tool
+## 2. Implement The Luna Tool
 
 Add the implementation to an existing file under `src/core/tools/` or create a
 new domain file there:
@@ -74,7 +74,7 @@ The id used in `agent.yaml` can contain dots, such as
 `repository.last-commit`. Luna converts it to a model-facing Flue tool name at
 the runtime adapter boundary, such as `repository_last_commit`.
 
-## 3. Register the tool
+## 3. Register The Tool
 
 Add it to `src/core/tools/catalog.ts`:
 
@@ -94,7 +94,7 @@ adapter boundary.
 Other Flue runtime wiring, including capability resolution and workflow launch
 assembly, also lives under `src/core/agent-runtime/flue/**`.
 
-## 4. Attach the tool to an agent
+## 4. Attach The Tool To An Agent
 
 In `agents/<agent-id>/agent.yaml`:
 
@@ -106,7 +106,7 @@ tools:
 Workflows do not declare tools directly. A workflow selects agents; agents bring
 their own tools.
 
-## 5. Test the registry behavior
+## 5. Test The Registry Behavior
 
 Update `tests/core/flue-tool-registry.test.ts`:
 
@@ -135,7 +135,7 @@ npm run typecheck:unused-src
 npm run lint:unused
 ```
 
-## 6. Document public tools
+## 6. Document Public Tools
 
 If the tool is meant to be reused by future agents, update:
 

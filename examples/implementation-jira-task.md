@@ -162,7 +162,7 @@ Important files:
 - `implementation-attempts.json`: implementer attempts and repair loop history.
 - `validation.json`: validation command output.
 - `worktree-diff.json`: collected diff after implementation.
-- `commit.json`, `push.json`, and `pull-request.json`: optional publishing
+- `commit.json`, `push.json`, and `change-request.json`: optional publishing
   gate artifacts.
 
 ## Troubleshooting

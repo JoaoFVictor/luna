@@ -20,6 +20,26 @@ async function listFiles(repoRoot: string, relativeDirectory: string): Promise<s
   return nested.flat().sort();
 }
 
+function isFileSystemError(error: unknown): error is { code?: string } {
+  return typeof error === "object" && error !== null && "code" in error;
+}
+
+async function listTopLevelFilesIfExists(repoRoot: string, relativeDirectory: string): Promise<string[]> {
+  try {
+    const root = path.join(repoRoot, relativeDirectory);
+    const entries = await readdir(root, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.posix.join(relativeDirectory, entry.name))
+      .sort();
+  } catch (error) {
+    if (isFileSystemError(error) && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
 function yamlFenceBodies(content: string): string[] {
   return [...content.matchAll(/```ya?ml\n([\s\S]*?)```/g)].map((match) => match[1]);
 }
@@ -88,6 +108,7 @@ async function workflowIdsFromDefinitions(repoRoot: string): Promise<string[]> {
 async function publicDocumentationFiles(repoRoot: string): Promise<string[]> {
   return [
     "README.md",
+    ...(await listTopLevelFilesIfExists(repoRoot, "docs")).filter((file) => file.endsWith(".md")),
     ...(await listFiles(repoRoot, "examples")).filter((file) => file.endsWith(".md")),
     ...(await listFiles(repoRoot, "skills")).filter((file) => file.endsWith(".md"))
   ].sort();
