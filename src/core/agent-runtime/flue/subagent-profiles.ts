@@ -5,10 +5,11 @@ import {
   type ToolDefinition
 } from "@flue/runtime";
 import { loadAgentDefinition } from "../../agents/definition.js";
-import { loadFlueSkill } from "./skill-loader.js";
+import { flueSkillFromResolvedSkill } from "./skill-loader.js";
 import { resolveFlueTools } from "./tool-registry.js";
 import { toFlueModelOptions } from "./model-options.js";
 import type { ResolvedModelProfiles } from "../../config/models.js";
+import type { RepositoryConfig } from "../../config/schemas.js";
 import {
   customEvent,
   type LunaObservability
@@ -26,6 +27,7 @@ import {
   type ResolvedSubagentPolicy,
   type WorkflowSubagentPolicy
 } from "../../agents/subagent-policy.js";
+import { resolveEffectiveSkillReferences } from "../../skills/definition.js";
 
 function subagentError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };
@@ -186,6 +188,7 @@ export async function resolveFlueSubagentProfiles({
   workflowSubagentPolicy,
   cwd,
   context,
+  repository,
   observability,
   summary,
   observabilitySummary
@@ -197,6 +200,7 @@ export async function resolveFlueSubagentProfiles({
   workflowSubagentPolicy?: WorkflowSubagentPolicy;
   cwd?: string;
   context?: ContextIntake;
+  repository?: RepositoryConfig;
   observability?: LunaObservability;
   summary?: ObservabilitySummary;
   observabilitySummary?: ObservabilitySummary;
@@ -299,11 +303,18 @@ export async function resolveFlueSubagentProfiles({
       );
     }
 
-    const skills = await Promise.all(
-      (agent.skills ?? []).map((skillPath) =>
-        loadFlueSkill(agent.directory, skillPath)
-      )
-    );
+    const skillReferences = await resolveEffectiveSkillReferences({
+      repository:
+        repository === undefined
+          ? undefined
+          : {
+              root: cwd ?? repository.path,
+              skills: repository.skills
+            },
+      agentDirectory: agent.directory,
+      agentSkills: agent.skills
+    });
+    const skills = skillReferences.map(flueSkillFromResolvedSkill);
 
     let tools: ToolDefinition[] = [];
     try {

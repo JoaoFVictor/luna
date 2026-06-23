@@ -68,6 +68,11 @@ Before changing an area, read the matching project skill:
 - Put context files in repository or agent config; collect them through
   `collect_context` and pass `context: $.steps.context` explicitly so Luna can
   render them as runtime instructions with `context_audit` task metadata.
+- Keep skills explicit and layered. Repository skills live in
+  `config/repositories.yaml` and resolve relative to the prepared repository
+  root. Agent skills live in `agents/<id>/agent.yaml` and resolve relative to
+  the agent directory. Luna loads repository skills first, then agent skills;
+  do not mix skill loading into context intake or provider adapters.
 - Register provider-facing built-ins through `src/core/providers/built-ins.ts`;
   keep runtime-neutral built-ins and shared catalog helpers under
   `src/core/built-ins/`.

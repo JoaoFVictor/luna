@@ -1,1 +1,21 @@
 mcp_servers: []
+# mcp_servers:
+#   - id: example-mcp
+#     # MCP transport: streamable-http or sse.
+#     transport: streamable-http
+#     # Environment variable that contains the MCP server URL.
+#     url_env: EXAMPLE_MCP_URL
+#     # Optional headers. Each value is read from an environment variable.
+#     headers:
+#       Authorization:
+#         env: EXAMPLE_MCP_TOKEN
+#         prefix: "Bearer "
+#     # Tool ids this server may expose to agents.
+#     allowed_tools:
+#       - example.tool
+#     # Agent modes allowed to use this server.
+#     allowed_agent_modes:
+#       - read_only
+#       - trusted_local_write
+#     # Request timeout for this server.
+#     timeout_ms: 30000

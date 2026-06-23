@@ -101,6 +101,8 @@ repositories:
     expected_remote_urls:
       - git@github.com:org/repo.git
       - https://github.com/org/repo.git
+    skills:
+      - .luna/skills/repository-guidance/SKILL.md
     context:
       files:
         - AGENTS.md
@@ -190,6 +192,13 @@ Luna renders collected context as runtime instructions, then sends a compact
 `context_audit` summary in the task input. Each run writes
 `context-intake.json`, so missing, skipped, and read context files remain
 inspectable.
+
+Skills are explicit runtime capabilities, not implicit context. Repository
+skills live in `config/repositories.yaml` and are resolved relative to the
+prepared repository root. Agent skills live in `agents/<id>/agent.yaml` and are
+resolved relative to the agent directory. Luna materializes repository skills
+first, then agent skills, dedupes the same resolved file, and rejects duplicate
+skill `name` values from different files.
 
 Every run writes artifacts under:
 

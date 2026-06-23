@@ -48,6 +48,13 @@ Keep orchestration in `workflows/<id>/graph.yaml`, not in agent instructions.
 - `subagents`: referenced Luna agent IDs.
 - `context.files`: audited reference files injected into runtime instructions.
 
+Repository-wide skills belong in `config/repositories.yaml`, resolved relative
+to the prepared repository root. Agent skills belong in `agent.yaml`, resolved
+relative to the agent directory. Luna loads repository skills first, then agent
+skills, dedupes the same resolved `SKILL.md`, and rejects duplicate skill
+`name` values from different files. Do not copy repository procedures into each
+agent just to share them.
+
 Flue materializes skills, tools, MCP servers, and subagent profiles through
 `src/core/agent-runtime/flue/capabilities.ts`; do not import Flue runtime APIs
 from generic agent definition or policy modules.

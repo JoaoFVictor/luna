@@ -1,14 +1,10 @@
 import { z } from "zod";
+import { SkillPathSchema } from "../skills/schemas.js";
 
 export const CapabilityIdSchema = z
   .string()
   .min(1)
   .regex(/^[a-z0-9][a-z0-9._-]*[a-z0-9]$|^[a-z0-9]$/);
-
-export const SkillPathSchema = z.string().min(1).refine(
-  (value) => value.endsWith("/SKILL.md") || value === "SKILL.md",
-  "Skill paths must point to SKILL.md"
-);
 
 const SubagentPolicyOverrideSchema = z
   .object({

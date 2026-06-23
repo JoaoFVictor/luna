@@ -9,8 +9,14 @@ execution:
   lock_timeout_ms: 120000
 observability:
   exporters:
+    # events.jsonl is mandatory and cannot be configured here.
+    # jsonl:
+    #   enabled: true
+    #   required: true
     runtime_log:
       enabled: true
       required: false
 subagent_policy:
   allow_write: false
+requires:
+  repository: true

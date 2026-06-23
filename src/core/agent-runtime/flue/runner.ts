@@ -26,6 +26,7 @@ import {
   resolveFlueAgentCapabilities,
   type ResolvedFlueAgentCapabilities
 } from "./capabilities.js";
+import { repositoryConfigFromState } from "../../workflow/state.js";
 import {
   toFlueModelOptions,
   toFluePromptOptions
@@ -534,6 +535,7 @@ export async function runFlueAgentStep(
     mcpConfig,
     observability: options.observability,
     summary: options.summary,
+    repository: repositoryConfigFromState(options.state),
     env: process.env
   });
 
@@ -696,6 +698,7 @@ async function initializeGateAgentSessions(
       mcpConfig,
       observability: options.observability,
       summary: options.summary,
+      repository: repositoryConfigFromState(options.state),
       env: process.env
     });
     capabilitiesToClose.push(capabilities);
@@ -840,6 +843,7 @@ export async function runFlueGatedAgentLoopStep(
     mcpConfig,
     observability: options.observability,
     summary: options.summary,
+    repository: repositoryConfigFromState(options.state),
     env: process.env
   });
 

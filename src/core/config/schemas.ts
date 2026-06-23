@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SkillPathSchema } from "../skills/schemas.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -18,6 +19,7 @@ export const RepositoryConfigSchema = z
     path: NonEmptyStringSchema,
     remote: NonEmptyStringSchema,
     expected_remote_urls: z.array(NonEmptyStringSchema).optional(),
+    skills: z.array(SkillPathSchema).optional(),
     context: ContextConfigSchema.optional()
   })
   .strict();

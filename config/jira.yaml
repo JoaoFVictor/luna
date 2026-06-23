@@ -1,10 +1,14 @@
 instances:
+  # Instance id referenced by Jira task URLs/adapters.
   - id: company
+    # Jira instance base URL.
     base_url: https://company.atlassian.net
+    # Optional repository hint read from a Jira field.
     repository_hint:
       source: field
       field_id: customfield_12345
       format: github_full_name
+    # Optional acceptance criteria field read from Jira.
     acceptance_criteria_field:
       field_id: customfield_67890
       format: markdown

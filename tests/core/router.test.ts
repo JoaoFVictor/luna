@@ -37,6 +37,18 @@ const routingConfig: RoutingConfig = {
         type: "workflow",
         id: "implementation"
       }
+    },
+    {
+      name: "plane-issue-implementation",
+      when: {
+        source: "plane",
+        event: "issue",
+        action: "selected"
+      },
+      target: {
+        type: "workflow",
+        id: "implementation"
+      }
     }
   ]
 };
@@ -135,6 +147,20 @@ describe("router", () => {
         {
           version: "2026-06",
           source: "jira",
+          event: "issue",
+          action: "selected"
+        },
+        routingConfig
+      )
+    ).toEqual({ type: "workflow", id: "implementation" });
+  });
+
+  it("routes Plane issue selected action to workflow implementation", () => {
+    expect(
+      routeInvocation(
+        {
+          version: "2026-06",
+          source: "plane",
           event: "issue",
           action: "selected"
         },

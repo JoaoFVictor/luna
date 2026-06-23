@@ -4,7 +4,11 @@ import type {
 import type { Invocation, RunIdentity } from "../invocation/types.js";
 import type { RuntimeConfigState } from "../configured-workflow/contracts.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
-import type { AppConfig, RepositoryConfig } from "../config/schemas.js";
+import {
+  RepositoryConfigSchema,
+  type AppConfig,
+  type RepositoryConfig
+} from "../config/schemas.js";
 
 export type WorkflowState = {
   invocation: unknown;
@@ -32,6 +36,16 @@ export type SchedulerWorkflowState = WorkflowState & {
   workspace?: WorkspaceRecord;
   lifecycleEvidence?: ImplementationLifecycleEvidence;
 };
+
+export function repositoryConfigFromState(
+  state: Pick<WorkflowState, "repository">
+): RepositoryConfig | undefined {
+  if (state.repository === undefined) {
+    return undefined;
+  }
+
+  return RepositoryConfigSchema.parse(state.repository);
+}
 
 function workflowStateError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };

@@ -752,6 +752,8 @@ repositories:
     remote: origin
     expected_remote_urls:
       - git@github.com:org/repo.git
+    skills:
+      - .luna/skills/repository-guidance/SKILL.md
     context:
       files:
         - AGENTS.md
@@ -763,6 +765,14 @@ context files from the prepared workspace and writes `context-intake.json` with
 read, missing, and skipped files. Agent and `gated_agent_loop` nodes that receive
 `context: $.steps.context` get those files as runtime instructions, with raw
 contents removed from task JSON.
+
+Repository skills are separate from context. They are runtime skills declared in
+`config/repositories.yaml`, resolved relative to the prepared repository root,
+and loaded before the current agent's own `skills`. Use repository skills for
+repo-wide procedures or domain rules that should apply to every agent operating
+on that repository. Use agent skills for role-specific procedures. Luna dedupes
+the same resolved `SKILL.md` and rejects two different files with the same skill
+`name`.
 
 The Jira adapter uses `config/jira.yaml` to map a Jira instance and the task
 field that may contain a repository hint:

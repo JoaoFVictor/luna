@@ -7,6 +7,7 @@ import type { AgentDefinition } from "../../src/core/agents/definition.js";
 import { resolveFlueMcpTools } from "../../src/core/agent-runtime/flue/mcp-capabilities.js";
 import { resolveFlueAgentCapabilities } from "../../src/core/agent-runtime/flue/capabilities.js";
 import type { McpConfig } from "../../src/core/config/mcp.js";
+import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 import type { ContextIntake } from "../../src/core/context/intake.js";
 import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
@@ -134,6 +135,52 @@ describe("flue agent capabilities", () => {
       });
       expect(capabilities.tools).toHaveLength(1);
       expect(capabilities.tools[0]?.name).toBe("repository_status");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prepends repository skills before agent skills", async () => {
+    const { root, agent } = await writeCodeImplementerFixture();
+    const repoRoot = path.join(root, "repo");
+    const repoSkillDir = path.join(repoRoot, ".luna", "skills", "repo-baseline");
+
+    await mkdir(repoSkillDir, { recursive: true });
+    await writeFile(
+      path.join(repoSkillDir, "SKILL.md"),
+      [
+        "---",
+        "name: repo-baseline",
+        "description: Repository-specific implementation guidance.",
+        "---",
+        "",
+        "- Follow repository conventions.",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+
+    try {
+      const repository: RepositoryConfig = {
+        id: "repo",
+        provider: "github",
+        owner: "org",
+        name: "repo",
+        path: repoRoot,
+        remote: "git@github.com:org/repo.git",
+        skills: [".luna/skills/repo-baseline/SKILL.md"]
+      };
+
+      const capabilities = await resolveFlueAgentCapabilities({
+        agent,
+        cwd: repoRoot,
+        repository
+      });
+
+      expect(capabilities.skills.map((skill) => skill.name)).toEqual([
+        "repo-baseline",
+        "implementation-safe-git"
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

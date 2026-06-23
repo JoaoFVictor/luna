@@ -13,8 +13,14 @@ skills:
 tools:
   - repository.status
   - repository.diff-summary
+# Optional MCP server ids from config/mcp.yaml.
+# mcp_servers:
+#   - example-mcp
 subagents:
   - change-reviewer
   - id: change-acceptance-reviewer
     policy:
       mode: read_only
+      # allow_tools is only valid when mode is trusted_local_write.
+      # allow_tools:
+      #   - repository.status

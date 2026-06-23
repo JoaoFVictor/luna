@@ -92,6 +92,10 @@ skills:
   - ../../skills/implementation-safe-git/SKILL.md
 ```
 
+Repository-wide skills belong in `config/repositories.yaml`, not in every
+agent. Effective skill order is repository skills first, then agent skills. Use
+agent skills only for role-specific behavior owned by this agent.
+
 Tools execute TypeScript and must exist in Luna's tool registry:
 
 ```yaml

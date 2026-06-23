@@ -1,8 +1,20 @@
 routes:
+  # Routes are evaluated in order. Keep the deterministic target in YAML.
   - name: explicit-target
     when:
+      # Matches invocations that already provide a target.
       has_target: true
+      # Optional match fields:
+      # source: github
+      # event: pull_request
+      # event_in: [pull_request, issue]
+      # action: opened
+      # action_in: [selected, opened]
     use_target_from_input: true
+    # Static workflow target when use_target_from_input is not used.
+    # target:
+    #   type: workflow
+    #   id: implementation
 
   - name: github-pr-code-review
     when:
@@ -16,6 +28,15 @@ routes:
   - name: jira-issue-implementation
     when:
       source: jira
+      event: issue
+      action: selected
+    target:
+      type: workflow
+      id: implementation
+
+  - name: plane-issue-implementation
+    when:
+      source: plane
       event: issue
       action: selected
     target:

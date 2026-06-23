@@ -1,11 +1,12 @@
 import type { AgentProfile, Skill, ToolDefinition } from "@flue/runtime";
 import type { AgentDefinition } from "../../agents/definition.js";
 import { resolveFlueMcpTools } from "./mcp-capabilities.js";
-import { loadFlueSkill } from "./skill-loader.js";
+import { flueSkillFromResolvedSkill } from "./skill-loader.js";
 import { resolveFlueSubagentProfiles } from "./subagent-profiles.js";
 import { resolveFlueTools } from "./tool-registry.js";
 import type { McpConfig } from "../../config/mcp.js";
 import type { ResolvedModelProfiles } from "../../config/models.js";
+import type { RepositoryConfig } from "../../config/schemas.js";
 import {
   customEvent,
   type LunaObservability
@@ -14,6 +15,7 @@ import { sanitizeJsonObject } from "../../observability/sanitize.js";
 import type { ObservabilitySummary } from "../../observability/summary.js";
 import type { WorkflowSubagentPolicy } from "../../agents/subagent-policy.js";
 import type { ContextIntake } from "../../context/intake.js";
+import { resolveEffectiveSkillReferences } from "../../skills/definition.js";
 
 export type ResolvedFlueAgentCapabilities = {
   skills: Skill[];
@@ -114,7 +116,8 @@ export async function resolveFlueAgentCapabilities({
   summary,
   observabilitySummary,
   workflowSubagentPolicy,
-  context
+  context,
+  repository
 }: {
   agent: AgentDefinition;
   cwd: string;
@@ -127,13 +130,21 @@ export async function resolveFlueAgentCapabilities({
   observabilitySummary?: ObservabilitySummary;
   workflowSubagentPolicy?: WorkflowSubagentPolicy;
   context?: ContextIntake;
+  repository?: RepositoryConfig;
 }): Promise<ResolvedFlueAgentCapabilities> {
   try {
-    const skills = await Promise.all(
-      (agent.skills ?? []).map((skillPath) =>
-        loadFlueSkill(agent.directory, skillPath)
-      )
-    );
+    const skillReferences = await resolveEffectiveSkillReferences({
+      repository:
+        repository === undefined
+          ? undefined
+          : {
+              root: cwd,
+              skills: repository.skills
+            },
+      agentDirectory: agent.directory,
+      agentSkills: agent.skills
+    });
+    const skills = skillReferences.map(flueSkillFromResolvedSkill);
     const localTools = resolveFlueTools({
       ids: agent.tools ?? [],
       agentMode: agent.mode,
@@ -159,7 +170,8 @@ export async function resolveFlueAgentCapabilities({
         observability,
         summary,
         observabilitySummary,
-        context
+        context,
+        repository
       });
     }
     const mcp = await resolveFlueMcpTools({
