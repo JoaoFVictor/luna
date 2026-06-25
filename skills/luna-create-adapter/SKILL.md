@@ -33,7 +33,7 @@ An adapter must not:
 
 Shared helpers are allowed only when they are provider-agnostic. A common
 helper may read `luna.auth.json` as unknown provider data; provider-specific
-schema validation belongs under `src/core/providers/<provider>/`.
+schema validation belongs under the owning `src/providers/<provider>/` module.
 
 ## Files
 

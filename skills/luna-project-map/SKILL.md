@@ -5,14 +5,15 @@ description: Use when first working in Luna, orienting to its architecture, deci
 
 # Luna Project Map
 
-Luna is a multi-agent workflow orchestration repo with Flue as the current
-agent runtime adapter. Start by reading `README.md` and
-`examples/configured-workflows.md`.
+Luna is a multi-agent workflow orchestration repo built around generic YAML
+workflows, runtime-neutral core contracts, provider-owned integrations, and
+concrete agent runtimes. Start with `AGENTS.md`; broad README/examples may lag
+until the rebuild docs task.
 
 Runtime flow:
 
 ```text
-adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated_agent_loop -> artifacts
+adapter -> invocation -> deterministic router -> YAML workflow graph -> runtime composition -> built-ins/agents/gated_agent_loop -> artifacts
 ```
 
 ## Extension Points
@@ -23,10 +24,13 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated_agen
 | Reusable worker | `agents/<id>/` | `examples/new-agent.md` |
 | Orchestration shape | `workflows/<id>/` | `examples/new-workflow.md` |
 | Deterministic workflow action | `src/core/built-ins/` | `examples/new-built-in.md` |
+| Workflow core contracts | `src/core/workflow/` | Runtime-neutral graph, validation, and execution policy |
+| Provider-owned integration | `src/providers/<provider>/` | Provider SDK/API, auth, schema, payload, report, built-ins, and change-request code |
 | Repository/agent context intake | `src/core/context/` + `collect_context` | `examples/new-agent.md`, `examples/new-workflow.md` |
 | Write-mode git/workspace services | `src/core/write-mode/` | `skills/luna-create-built-in/SKILL.md` |
 | Agent-local callable function | `src/core/tools/` + `src/core/tools/catalog.ts` | `examples/new-tool.md` |
-| Current agent runtime adapter | `src/core/agent-runtime/flue/` | Flue runner, capabilities, CLI launch, model projection, Pi auth, observability bridge |
+| Concrete agent runtime adapter | `src/agent-runtimes/<runtime>/` | Runtime runner, capabilities, CLI launch, model projection, auth bridge, observability bridge |
+| Legacy Flue adapter until Task 18 cutover | `src/core/agent-runtime/flue/**` | Existing code only; target runtime work belongs under `src/agent-runtimes/flue/` |
 | LLM/runtime guidance | `skills/<id>/SKILL.md` | existing skills |
 
 ## Boundaries
@@ -42,21 +46,21 @@ adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated_agen
   implementation built-ins.
 - Tool: deterministic function exposed to an agent.
 - Skill: instructions loaded by an LLM or configured runtime agent.
-- Runtime adapter: provider-specific materialization for agents, tools, MCP,
+- Runtime adapter: runtime-specific materialization for agents, tools, MCP,
   model options, observability sinks, and workflow launch composition.
 
 ## Provider Isolation
 
-Provider-specific code must stay in its own lane. Do not put Plane behavior,
-schemas, auth, config, fixtures, or tests inside Jira modules, and do not put
-Jira behavior inside Plane modules. The same rule applies to every provider
-pair.
+Provider-specific code must stay in its own lane under `src/providers/`. Do
+not put Plane behavior, schemas, auth, config, fixtures, or tests inside Jira
+modules, and do not put Jira behavior inside Plane modules. The same rule
+applies to every provider pair.
 
 Shared provider helpers are allowed only when they are truly provider-agnostic.
-For example, `src/core/providers/auth.ts` may read `luna.auth.json` and expose
-unknown provider data, but it must not validate or mention Jira, Plane, GitHub,
-or any other provider-specific credential shape. Provider-specific validation
-belongs under that provider's directory.
+They may read `luna.auth.json` as unknown provider data, but must not validate
+or mention Jira, Plane, GitHub, or any other provider-specific credential
+shape. Provider-specific validation belongs under that provider's directory in
+`src/providers/`.
 
 Adapters for external providers are provider-owned boundaries. They may import
 neutral core contracts and their own provider helper modules, but must not
@@ -70,8 +74,10 @@ reach into another provider's directory.
   registry and metadata map.
 - Do not register local tools outside `src/core/tools/catalog.ts`.
 - Do not keep compatibility wrappers or deadcode.
-- Do not put Flue-specific implementation files back under `src/core/flue-*` or
-  provider-neutral modules.
+- Do not put Flue-specific implementation files under provider-neutral modules
+  or old `src/core/flue-*` paths.
+- Do not add provider SDK, schema, auth, payload, report, or change-request code
+  under `src/core/providers/**`.
 - Do not add built-in barrel exports such as `built-ins/index.ts`.
 
 ## Verification

@@ -28,8 +28,8 @@ Good tools:
 Tools under `src/core/tools/` are runtime-neutral by default. Do not put
 provider-specific auth, config, schemas, URLs, or payload parsing into a
 generic tool module. If a tool truly needs provider behavior, keep the
-provider-specific code under `src/core/providers/<provider>/` and expose only a
-neutral tool contract through `src/core/tools/`.
+provider-specific code under the owning `src/providers/<provider>/` module and
+expose only a neutral tool contract through `src/core/tools/`.
 
 Never reuse another provider's module as a convenience wrapper. Plane behavior
 does not belong in Jira modules, Jira behavior does not belong in Plane
@@ -44,7 +44,7 @@ under old `src/tools/` paths.
 - Implement domain tools under `src/core/tools/`.
 - Register public tool IDs in `src/core/tools/catalog.ts`.
 - Materialize Flue `ToolDefinition`s only in
-  `src/core/agent-runtime/flue/tool-registry.ts`.
+  `src/agent-runtimes/flue/tool-registry.ts`.
 - Attach IDs in `agents/<id>/agent.yaml`.
 
 Tool IDs may contain dots, like `repository.status`. The Flue adapter converts
@@ -52,7 +52,9 @@ them into safe model-facing names, like `repository_status`. Do not import
 `@flue/runtime` or call `defineTool` from `src/core/tools/**`; that belongs only
 at the Flue adapter boundary.
 
-Keep Flue-specific tests and imports pointed at `src/core/agent-runtime/flue/**`.
+Keep Flue-specific tests and imports pointed at `src/agent-runtimes/flue/**`.
+Existing legacy Flue code under `src/core/agent-runtime/flue/**` may remain
+only until the Task 18 atomic cutover.
 Do not add forwarding files under old `src/core/flue-*.ts` paths.
 
 ## Testing

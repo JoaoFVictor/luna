@@ -11,13 +11,13 @@ capabilities called by workflow YAML.
 ## Files
 
 - `src/core/built-ins/<domain>.ts`: runtime-neutral exported step objects.
-- `src/core/providers/<provider>/built-ins.ts`: provider-specific exported step
-  objects.
+- `src/providers/<provider>/built-ins.ts`: provider-specific exported step
+  objects and provider payload/auth/schema handling.
 - `src/core/built-ins/state.ts`: shared state/input parsing helpers only.
 - `src/core/built-ins/catalog.ts`: shared catalog helpers and runtime-neutral
   built-in exports.
-- `src/core/providers/built-ins.ts`: active provider-facing built-in registry
-  used by the Flue workflow factory.
+- Runtime composition roots: wire provider-owned built-ins into the selected
+  runtime without adding provider behavior to generic core modules.
 - `src/core/write-mode/`: owned services and contracts for write-mode git
   branches, worktrees, gates, lifecycle, and transaction journals.
 
@@ -30,11 +30,11 @@ Keep runtime-neutral built-ins provider-agnostic. Code under
 `src/core/built-ins/` must not mention provider-specific auth, config, schemas,
 URLs, or payload details.
 
-Keep provider-specific built-ins isolated under their own provider directory. A
-Plane built-in must not add Plane behavior to Jira modules, and a Jira built-in
-must not add Jira behavior to Plane modules. Shared helpers are allowed only
-when they are truly provider-agnostic; provider-specific validation belongs
-under `src/core/providers/<provider>/`.
+Keep provider-specific built-ins isolated under their own provider directory in
+`src/providers/`. A Plane built-in must not add Plane behavior to Jira modules,
+and a Jira built-in must not add Jira behavior to Plane modules. Shared helpers
+are allowed only when they are truly provider-agnostic; provider-specific
+validation belongs under that provider's directory.
 
 ## Metadata
 
@@ -44,15 +44,16 @@ Most built-ins need no metadata.
 - `deferredLifecycle: "final_report"`: final report step runs after workspace
   preserve/cleanup decision.
 
-Do not add name checks to `src/core/configured-workflow/runner.ts`; runner
+Do not add name checks to workflow runner or runtime composition code; runner
 behavior comes from metadata.
 
 ## Registration
 
-Add provider-facing built-ins to `defaultBuiltInSteps` in
-`src/core/providers/built-ins.ts`. Keep runtime-neutral built-ins and shared
-catalog helpers under `src/core/built-ins/`. Do not create another handwritten
-built-in name list in workflow validation or runner code.
+Keep runtime-neutral built-ins and shared catalog helpers under
+`src/core/built-ins/`. Add provider-facing built-ins in the owning
+`src/providers/<provider>/` module and wire them through composition roots. Do
+not create another handwritten built-in name list in workflow validation or
+runner code.
 Do not add barrel exports for new domain files; import owning modules directly.
 Do not create compatibility wrappers for old built-in module paths.
 

@@ -55,9 +55,11 @@ skills, dedupes the same resolved `SKILL.md`, and rejects duplicate skill
 `name` values from different files. Do not copy repository procedures into each
 agent just to share them.
 
-Flue materializes skills, tools, MCP servers, and subagent profiles through
-`src/core/agent-runtime/flue/capabilities.ts`; do not import Flue runtime APIs
-from generic agent definition or policy modules.
+Flue materializes skills, tools, MCP servers, and subagent profiles through the
+runtime adapter under `src/agent-runtimes/flue/`; do not import Flue runtime
+APIs from generic agent definition or policy modules. Existing legacy Flue code
+under `src/core/agent-runtime/flue/**` may remain only until the Task 18 atomic
+cutover.
 
 When context is collected, Luna renders instructions in this order: Luna
 runtime instructions, the current agent's `instructions.md`, matching
