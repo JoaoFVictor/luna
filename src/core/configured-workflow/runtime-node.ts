@@ -31,6 +31,7 @@ export type ConfiguredWorkflowAgentNode = {
   artifacts?: ConfiguredWorkflowArtifactPlan[];
   after?: string[];
   retry?: Record<string, unknown>;
+  runtime_requirements?: string[];
 };
 
 export type ConfiguredWorkflowValidationGate = {
@@ -108,7 +109,10 @@ function projectRuntimeNode(node: WorkflowNode): ConfiguredWorkflowRuntimeNode {
       type: "agent",
       agent: node.agent,
       output_schema: node.output_schema,
-      ...(node.retry === undefined ? {} : { retry: node.retry })
+      ...(node.retry === undefined ? {} : { retry: node.retry }),
+      ...(node.runtime_requirements === undefined
+        ? {}
+        : { runtime_requirements: node.runtime_requirements })
     };
   }
 

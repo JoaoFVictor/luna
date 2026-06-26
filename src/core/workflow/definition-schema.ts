@@ -1,4 +1,5 @@
 import YAML from "yaml";
+import { AgentRuntimeRequirementSchema } from "../agent-runtime/contracts.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import { assertExpressionObject } from "./expression.js";
 import { WorkflowDefinitionError } from "./definition-errors.js";
@@ -27,7 +28,7 @@ const TOP_LEVEL_FIELDS = new Set([
 
 const NODE_FIELDS: Record<string, ReadonlySet<string>> = {
   built_in: new Set(["id", "type", "uses", "input", "artifacts", "after", "policies"]),
-  agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "policies"]),
+  agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "runtime_requirements", "policies"]),
   pattern: new Set(["id", "type", "uses", "worker", "input", "gates", "repair", "artifacts", "after", "capabilities", "policies"]),
   human_gate: new Set(["id", "type", "uses", "decision", "after", "input", "artifacts"])
 };
@@ -243,7 +244,15 @@ function readNode(
       output_schema: outputSchema,
       ...(raw.retry === undefined
         ? {}
-        : { retry: assertObject(raw.retry, `${yamlPath}.retry`) })
+        : { retry: assertObject(raw.retry, `${yamlPath}.retry`) }),
+      ...(raw.runtime_requirements === undefined
+        ? {}
+        : {
+            runtime_requirements: readRuntimeRequirements(
+              raw.runtime_requirements,
+              `${yamlPath}.runtime_requirements`
+            )
+          })
     };
   }
   if (type === "human_gate") {
@@ -269,6 +278,21 @@ function readNode(
       ? {}
       : { repair: assertObject(raw.repair, `${yamlPath}.repair`) })
   };
+}
+
+function readRuntimeRequirements(value: unknown, yamlPath: string): string[] {
+  return readStringArray(value, yamlPath).map((requirement, index) => {
+    const result = AgentRuntimeRequirementSchema.safeParse(requirement);
+    if (!result.success) {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_invalid",
+        `Unsupported runtime requirement: ${requirement}`,
+        { path: `${yamlPath}[${index}]` }
+      );
+    }
+
+    return result.data;
+  });
 }
 
 function readGates(value: unknown, yamlPath: string): ParsedWorkflowGate[] {

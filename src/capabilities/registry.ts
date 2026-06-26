@@ -5,6 +5,7 @@ import { manifest as contextManifest } from "./context/manifest.js";
 import { manifest as gitManifest } from "./git/manifest.js";
 import { manifest as localExecManifest } from "./local-exec/manifest.js";
 import { manifest as qualityGatesManifest } from "./quality-gates/manifest.js";
+import { manifest as repositoryManifest } from "./repository/manifest.js";
 import { manifest as reportsManifest } from "./reports/manifest.js";
 import { manifest as repositoryWorkspaceManifest } from "./repository-workspace/manifest.js";
 import { manifest as repositoryWriteManifest } from "./repository-write/manifest.js";
@@ -18,6 +19,7 @@ export const officialCapabilityManifests = Object.freeze([
   runtimeManifest,
   reportsManifest,
   qualityGatesManifest,
+  repositoryManifest,
   localExecManifest,
   repositoryWorkspaceManifest,
   gitManifest,

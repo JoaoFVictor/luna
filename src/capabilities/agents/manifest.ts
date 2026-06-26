@@ -50,7 +50,10 @@ export const manifest = capabilityManifest({
         "runtime_auth_failed",
         "runtime_rate_limited",
         "runtime_provider_unavailable",
-        "runtime_output_schema_invalid"
+        "runtime_tool_materialization_failed",
+        "runtime_output_schema_invalid",
+        "runtime_cancelled",
+        "runtime_unknown_failure"
       ]
     }
   },
@@ -66,4 +69,3 @@ export const manifest = capabilityManifest({
   },
   docs: [{ title: "Reusable agent nodes" }]
 });
-

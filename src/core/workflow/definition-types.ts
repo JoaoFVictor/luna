@@ -74,6 +74,7 @@ export type WorkflowAgentNode = {
   artifacts?: ArtifactWritePlan[];
   after?: string[];
   retry?: Record<string, unknown>;
+  runtime_requirements?: string[];
 };
 
 export type ParsedCapabilityGate = {
