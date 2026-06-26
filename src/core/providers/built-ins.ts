@@ -8,7 +8,7 @@ import {
   runValidationCommandsBuiltIn
 } from "../built-ins/implementation.js";
 import { collectContextBuiltIn } from "../built-ins/context.js";
-import { finalReportBuiltIn } from "../built-ins/report.js";
+import { finalReportBuiltIn } from "../../capabilities/reports/final-report.js";
 import {
   createBuiltInStepCatalog,
   gitCommitBuiltIn,

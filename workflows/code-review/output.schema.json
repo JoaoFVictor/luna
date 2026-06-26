@@ -119,23 +119,8 @@
       }
     },
     "final_report": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["acceptance", "findings"],
-      "properties": {
-        "acceptance": {
-          "$ref": "#/definitions/acceptance"
-        },
-        "findings": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/finding"
-          }
-        },
-        "workspace": {
-          "$ref": "#/definitions/workspace"
-        }
-      }
+      "type": "string",
+      "minLength": 1
     },
     "acceptance": {
       "type": "object",

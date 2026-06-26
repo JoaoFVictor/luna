@@ -1,4 +1,8 @@
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
+import {
+  finalReportInputSchema,
+  finalReportOutputSchema
+} from "./final-report.js";
 
 export const manifest = capabilityManifest({
   id: "reports",
@@ -7,38 +11,8 @@ export const manifest = capabilityManifest({
   built_ins: {
     "reports.final_report": {
       id: "reports.final_report",
-      input_schema: {
-        type: "object",
-        additionalProperties: false,
-        required: ["sections"],
-        properties: {
-          title: { type: "string" },
-          sections: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              required: ["heading", "content"],
-              properties: {
-                heading: { type: "string" },
-                content: { type: "string" }
-              }
-            }
-          }
-        }
-      },
-      output_schema: {
-        type: "object",
-        additionalProperties: false,
-        required: ["report"],
-        properties: {
-          report: { type: "string" },
-          artifact_refs: {
-            type: "array",
-            items: { type: "string" }
-          }
-        }
-      },
+      input_schema: finalReportInputSchema,
+      output_schema: finalReportOutputSchema,
       required_ports: []
     }
   },

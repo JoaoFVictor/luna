@@ -26,7 +26,7 @@ import {
   runValidationCommandsBuiltIn
 } from "./implementation.js";
 import { collectContextBuiltIn } from "./context.js";
-import { finalReportBuiltIn } from "./report.js";
+import { finalReportBuiltIn } from "../../capabilities/reports/final-report.js";
 import { builtInError } from "./errors.js";
 import { builtInStepMetadataByName } from "./metadata.js";
 import { defineBuiltInRegistry } from "./registry.js";

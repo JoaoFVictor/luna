@@ -1,5 +1,8 @@
 import path from "node:path";
-import { writePlannedArtifacts } from "../workflow/artifact-write-plan.js";
+import {
+  artifactStorePublisher,
+  publishDeclaredArtifacts
+} from "../../capabilities/artifacts/publisher.js";
 import { ArtifactStore } from "../artifacts/store.js";
 import { cleanup as defaultCleanupWorktree } from "../git/worktree-cleanup.js";
 import {
@@ -232,7 +235,8 @@ function finalReportFrom(output: unknown): JsonValue | undefined {
     return undefined;
   }
 
-  const report = (output as { json?: unknown }).json;
+  const report =
+    (output as { report?: unknown }).report ?? (output as { json?: unknown }).json;
   if (report === undefined) {
     return undefined;
   }
@@ -526,8 +530,8 @@ export async function runConfiguredWorkflow({
         return output;
       },
       writePlannedArtifacts: async (node, output, state) =>
-        await writePlannedArtifacts({
-          artifactStore: activeArtifactStore,
+        await publishDeclaredArtifacts({
+          publisher: artifactStorePublisher(activeArtifactStore),
           node,
           output,
           state
@@ -615,8 +619,8 @@ export async function runConfiguredWorkflow({
         throw error;
       }
 
-      await writePlannedArtifacts({
-        artifactStore,
+      await publishDeclaredArtifacts({
+        publisher: artifactStorePublisher(artifactStore),
         node,
         output,
         state

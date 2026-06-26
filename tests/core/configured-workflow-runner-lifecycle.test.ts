@@ -215,6 +215,35 @@ describe("configured workflow runner", () => {
     }
   });
 
+  it("promotes reports.final_report output to the successful workflow report", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeDeferredFinalReportValidationWorkflow(root);
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          runBuiltInStep: vi.fn(async () => ({ report: "# Done" }))
+        }
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status !== "success") {
+        throw new Error("Expected successful result");
+      }
+      expect(result.report).toBe("# Done");
+      await expect(
+        readJson(root, "code-review", githubRun.run_id, "final-report.json")
+      ).resolves.toEqual({ report: "# Done" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
 
   it("cleans successful workspaces when preserve_on_success is false and rewrites final workspace", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));

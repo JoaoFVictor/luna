@@ -1,16 +1,8 @@
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
-
-const artifactRefSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["id", "uri", "node_id"],
-  properties: {
-    id: { type: "string" },
-    uri: { type: "string" },
-    node_id: { type: "string" },
-    media_type: { type: "string" }
-  }
-} as const;
+import {
+  artifactPublisherOutputSchema,
+  artifactRefSchema
+} from "./publisher.js";
 
 export const manifest = capabilityManifest({
   id: "artifacts",
@@ -22,6 +14,13 @@ export const manifest = capabilityManifest({
       source_node_ownership: "declaring_node",
       path_policy: "declared_path",
       overwrite_policy: "forbid",
+      config_schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          overwrite_policy: { enum: ["forbid", "replace"] }
+        }
+      },
       backend_requirements: ["artifact_manifest_store"],
       manifest_transaction: "required"
     }
@@ -46,8 +45,11 @@ export const manifest = capabilityManifest({
     "artifacts.artifact_ref": {
       id: "artifacts.artifact_ref",
       schema: artifactRefSchema
+    },
+    "artifacts.publisher_output": {
+      id: "artifacts.publisher_output",
+      schema: artifactPublisherOutputSchema
     }
   },
   docs: [{ title: "Artifact declarations and manifest publishing" }]
 });
-

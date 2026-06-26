@@ -54,6 +54,21 @@ describe("strict workflow field validation", () => {
     });
   });
 
+  it("rejects unsupported artifact overwrite policies before scheduling", async () => {
+    const root = await copyWorkflowFixture("minimum");
+    await patchWorkflow(root, "minimum", (yaml) =>
+      yaml.replace("format: json", "config:\n          overwrite_policy: version\n        format: json")
+    );
+
+    await expect(loadWorkflowDefinition(root, "minimum", {
+      capabilityRegistry: registry()
+    })).rejects.toMatchObject({
+      code: "workflow_capability_config_invalid",
+      capability: "artifacts.manifest_publisher",
+      path: "$.nodes[0].artifacts[0].config"
+    });
+  });
+
   it("rejects stale context.collect_context input fields not accepted by runtime", async () => {
     const root = await copyWorkflowFixture("minimum");
     await patchWorkflow(root, "minimum", (yaml) =>

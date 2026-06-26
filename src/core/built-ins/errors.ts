@@ -2,6 +2,7 @@ export type BuiltInErrorCode =
   | "built_in_duplicate"
   | "built_in_input_invalid"
   | "built_in_input_missing"
+  | "built_in_output_invalid"
   | "built_in_state_missing"
   | "built_in_unsupported";
 
