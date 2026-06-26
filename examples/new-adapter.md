@@ -53,7 +53,7 @@ The adapter should:
 Shared provider helpers are allowed only when they are provider-agnostic. For
 example, a common auth loader may read `luna.auth.json` as unknown provider
 data, but provider-specific schema validation belongs under
-`src/core/providers/<provider>/`.
+`src/providers/<provider>/`.
 
 For GitHub PRs, `src/adapters/github-pr-url/adapter.ts` is the reference
 implementation. For Jira tasks, `src/adapters/jira-task-url/adapter.ts` shows

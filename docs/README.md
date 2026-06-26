@@ -54,7 +54,7 @@ behavior as a graph node.
 Use `src/core/tools/` when an agent needs a small deterministic local function
 during its model session.
 
-Use `src/core/providers/<provider>/` when the behavior is provider-specific:
+Use `src/providers/<provider>/` when the behavior is provider-specific:
 auth, source API config, provider payload parsing, task context rendering,
 reports, or change-request publishing.
 
@@ -75,4 +75,3 @@ needs to change.
 - Built-in metadata, not ad hoc name checks, drives scheduler behavior such as
   repository locks, workspace capture, lifecycle evidence, and deferred final
   reports.
-

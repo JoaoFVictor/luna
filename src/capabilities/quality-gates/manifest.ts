@@ -13,6 +13,21 @@ const repairFeedbackSchema = {
   }
 } as const;
 
+const validationCommandSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["cmd", "args"],
+  properties: {
+    cmd: { type: "string" },
+    args: {
+      type: "array",
+      items: { type: "string" }
+    },
+    cwd: { type: "string" },
+    timeout_ms: { type: "number", minimum: 1 }
+  }
+} as const;
+
 export const manifest = capabilityManifest({
   id: "quality-gates",
   kind: "execution",
@@ -38,11 +53,30 @@ export const manifest = capabilityManifest({
       output_schema: {
         type: "object",
         additionalProperties: false,
-        required: ["status", "iterations"],
+        required: [
+          "status",
+          "attempts_exhausted",
+          "attempts",
+          "validation",
+          "final_validation",
+          "gates",
+          "result"
+        ],
         properties: {
           status: { enum: ["passed", "failed"] },
-          iterations: { type: "number", minimum: 1 },
-          output: { description: "Final writer output." }
+          attempts_exhausted: { type: "boolean" },
+          attempts: { type: "array" },
+          validation: { type: "object" },
+          final_validation: { type: "object" },
+          gates: { type: "array" },
+          result: {
+            type: "object",
+            additionalProperties: true,
+            required: ["status"],
+            properties: {
+              status: { type: "string" }
+            }
+          }
         }
       },
       expand: { type: "declaring_node_subgraph" },
@@ -50,6 +84,35 @@ export const manifest = capabilityManifest({
     }
   },
   gates: {
+    "quality-gates.validation_commands": {
+      id: "quality-gates.validation_commands",
+      input_schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["commands", "max_output_bytes"],
+        properties: {
+          commands: {
+            type: "array",
+            minItems: 1,
+            items: validationCommandSchema
+          },
+          max_output_bytes: { type: "number", minimum: 1 }
+        }
+      },
+      decision_schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["passed"],
+        properties: {
+          passed: { type: "boolean" },
+          feedback: repairFeedbackSchema
+        }
+      },
+      output_schema: repairFeedbackSchema,
+      local_context_roots: ["$.gate"],
+      interrupt: "none",
+      repair_feedback_schema: repairFeedbackSchema
+    },
     "quality-gates.agent_review": {
       id: "quality-gates.agent_review",
       input_schema: {
@@ -78,4 +141,3 @@ export const manifest = capabilityManifest({
   },
   docs: [{ title: "Gated agent loop pattern and gate contracts" }]
 });
-

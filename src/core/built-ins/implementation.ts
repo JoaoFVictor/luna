@@ -233,11 +233,19 @@ export function createOpenChangeRequestBuiltIn(
         enabled: implementation.change_request.enabled,
         cwd: workspace.path,
         push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
-        branch: workspace.branch,
+        branch:
+          typeof resolved.source_branch === "string"
+            ? resolved.source_branch
+            : workspace.branch,
         baseRef: implementation.change_request.base_ref,
         draft: implementation.change_request.draft,
         title: requiredInput(resolved.title as string | undefined, "title"),
-        body: typeof resolved.body === "string" ? resolved.body : undefined
+        body:
+          typeof resolved.description === "string"
+            ? resolved.description
+            : typeof resolved.body === "string"
+              ? resolved.body
+              : undefined
       });
     }
   });

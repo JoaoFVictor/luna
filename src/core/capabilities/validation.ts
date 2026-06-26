@@ -133,6 +133,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
     "source_node_ownership",
     "path_policy",
     "overwrite_policy",
+    "config_schema",
     "backend_requirements",
     "manifest_transaction"
   ]),

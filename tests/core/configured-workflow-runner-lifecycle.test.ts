@@ -24,8 +24,45 @@ import {
   writeImplementationWorkflow,
   writePreflightWorkflow,
   writeReviewPlannerAgent,
-  writeWorkflow
+  writeWorkflow,
+  writeWorkflowSchemas
 } from "./configured-workflow-runner-test-helpers.js";
+
+async function writeDeferredFinalReportValidationWorkflow(
+  root: string,
+  workflowId = "code-review"
+): Promise<void> {
+  await mkdir(path.join(root, "workflows", workflowId), { recursive: true });
+  await writeWorkflowSchemas(root, workflowId);
+  await writeFile(
+    path.join(root, "workflows", workflowId, "workflow.yaml"),
+    [
+      `id: ${workflowId}`,
+      "type: workflow",
+      "mode: read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "capabilities:",
+      "  - reports",
+      "  - artifacts",
+      "nodes:",
+      "  - id: final",
+      "    type: built_in",
+      "    uses: reports.final_report",
+      "    input:",
+      "      sections:",
+      "        - heading: Done",
+      "          content: ok",
+      "    artifacts:",
+      "      - path: final-report.json",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.final\"",
+      "        format: json",
+      ""
+    ].join("\n")
+  );
+}
 
 describe("configured workflow runner", () => {
   it("runs final_implementation_report after write-mode workspace lifecycle decision", async () => {
@@ -133,6 +170,39 @@ describe("configured workflow runner", () => {
       ).resolves.toMatchObject({
         workspace: cleanedWorkspace
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("validates deferred final report output before writing artifacts", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeDeferredFinalReportValidationWorkflow(root);
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        throwOnError: false,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          runBuiltInStep: vi.fn(async () => ({ report: 42 }))
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") {
+        throw new Error("Expected failed result");
+      }
+      expect(result.error.details).toMatchObject({
+        step_id: "final",
+        cause_code: "workflow_capability_config_invalid"
+      });
+      await expect(
+        pathExists(artifactPath(root, "code-review", githubRun.run_id, "final-report.json"))
+      ).resolves.toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -3,9 +3,252 @@ type: workflow
 mode: trusted_local_write
 input_schema: input.schema.json
 output_schema: output.schema.json
-graph: graph.yaml
+capabilities:
+  - runtime
+  - context
+  - agents
+  - artifacts
+  - quality-gates
+  - reports
+  - git
+  - change-request
 requires:
   repository: true
 execution:
   max_concurrency: 2
   lock_timeout_ms: 120000
+nodes:
+  - id: preflight
+    type: built_in
+    uses: runtime.preflight
+    artifacts:
+      - path: preflight.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.preflight"
+        format: json
+
+  - id: workspace
+    type: built_in
+    uses: runtime.prepare_implementation_worktree
+    input:
+      subject:
+        key:
+          expression: "$.invocation.subject.id"
+        title:
+          expression: "$.invocation.subject.title"
+    artifacts:
+      - path: workspace.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.workspace"
+        format: json
+    after:
+      - preflight
+
+  - id: task_context
+    type: built_in
+    uses: runtime.collect_task_context
+    artifacts:
+      - path: task-context.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.task_context"
+        format: json
+    after:
+      - preflight
+
+  - id: context
+    type: built_in
+    uses: context.collect_context
+    artifacts:
+      - path: context-intake.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.context"
+        format: json
+    input:
+      agents:
+        - implementation-planner
+        - code-implementer
+        - change-reviewer
+        - change-acceptance-reviewer
+    after:
+      - workspace
+
+  - id: implementation_plan
+    type: agent
+    agent: implementation-planner
+    output_schema: output.schema.json
+    artifacts:
+      - path: implementation-plan.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation_plan"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      task_context:
+        expression: "$.steps.task_context"
+    after:
+      - context
+      - task_context
+
+  - id: implementation
+    type: pattern
+    uses: quality-gates.gated_agent_loop
+    worker: code-implementer
+    artifacts:
+      - path: implementation-result.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      implementation_plan:
+        expression: "$.steps.implementation_plan"
+      workspace:
+        expression: "$.workspace"
+      task_context:
+        expression: "$.steps.task_context"
+    gates:
+      - id: validation
+        type: quality-gates.validation_commands
+        input:
+          commands:
+            expression: "$.config.implementation.validation.commands"
+          max_output_bytes:
+            expression: "$.config.implementation.validation.max_output_bytes"
+      - id: review
+        type: quality-gates.agent_review
+        input:
+          review_agent: change-reviewer
+          subject:
+            expression: "$.gate.output"
+        block_when:
+          expression: "$.gate.decision = 'fail'"
+        feedback:
+          expression: "$.gate.feedback"
+      - id: acceptance
+        type: quality-gates.agent_review
+        input:
+          review_agent: change-acceptance-reviewer
+          subject:
+            expression: "$.gate.output"
+        block_when:
+          expression: "$.gate.decision = 'fail'"
+        feedback:
+          expression: "$.gate.feedback"
+    repair:
+      attempts:
+        expression: "$.config.implementation.validation.repair_attempts"
+    after:
+      - implementation_plan
+
+  - id: implementation_validation
+    type: built_in
+    uses: runtime.record_implementation_validation
+    input:
+      implementation:
+        expression: "$.steps.implementation"
+    artifacts:
+      - path: validation.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation_validation.validation"
+        format: json
+      - path: acceptance-review.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation_validation.acceptance"
+        format: json
+    after:
+      - implementation
+
+  - id: worktree_diff
+    type: built_in
+    uses: runtime.collect_worktree_diff
+    artifacts:
+      - path: diff.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.worktree_diff"
+        format: json
+    after:
+      - implementation_validation
+
+  - id: commit
+    type: built_in
+    uses: runtime.commit_changes
+    input:
+      validation:
+        expression: "$.steps.implementation_validation.validation"
+      acceptance:
+        expression: "$.steps.implementation_validation.acceptance"
+      diff:
+        expression: "$.steps.worktree_diff"
+      message:
+        expression: "$.invocation.subject.title"
+    artifacts:
+      - path: commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.commit"
+        format: json
+    after:
+      - worktree_diff
+
+  - id: push
+    type: built_in
+    uses: runtime.push_branch
+    artifacts:
+      - path: push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.push"
+        format: json
+    after:
+      - commit
+
+  - id: change_request
+    type: built_in
+    uses: runtime.open_change_request
+    input:
+      title:
+        expression: "$.invocation.subject.title"
+      description:
+        expression: "$.steps.implementation"
+      source_branch:
+        expression: "$.workspace.branch"
+    artifacts:
+      - path: change-request.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.change_request"
+        format: json
+    after:
+      - push
+
+  - id: final_report
+    type: built_in
+    uses: runtime.final_implementation_report
+    artifacts:
+      - path: final-report.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.final_report.json"
+        format: json
+      - path: final-report.md
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.final_report.markdown"
+        format: markdown
+    after:
+      - change_request

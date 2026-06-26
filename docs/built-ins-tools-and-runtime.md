@@ -30,7 +30,8 @@ know provider auth, provider payload shapes, provider URLs, or Flue details.
 
 Provider-facing built-ins are composed through
 `src/core/providers/built-ins.ts`. That composition root can dispatch to
-provider-owned code based on `invocation.source`.
+provider-owned code under `src/providers/<provider>/` based on
+`invocation.source`.
 
 For example, source providers can render task context or final reports in their
 own format while keeping the generic workflow graph stable.
@@ -167,7 +168,8 @@ or workflow graphs.
 - Built-in catalog: `src/core/built-ins/catalog.ts`
 - Built-in metadata: `src/core/built-ins/metadata.ts`
 - Implementation built-ins: `src/core/built-ins/implementation.ts`
-- Provider built-ins: `src/core/providers/built-ins.ts`
+- Provider built-in composition: `src/core/providers/built-ins.ts`
+- Provider-owned implementations: `src/providers/<provider>/`
 - Tool contracts: `src/core/tools/contracts.ts`
 - Tool catalog: `src/core/tools/catalog.ts`
 - Repository tools: `src/core/tools/repository.ts`
@@ -176,8 +178,8 @@ or workflow graphs.
 - Flue model options: `src/core/agent-runtime/flue/model-options.ts`
 - Flue observability: `src/core/agent-runtime/flue/observability.ts`
 - Write-mode services: `src/core/write-mode/`
-- GitHub change-request actions:
-  `src/core/providers/github/change-request-actions.ts`
+- Provider change-request actions:
+  `src/providers/<provider>/change-request/`
 
 Useful tests include `tests/core/built-ins-registry.test.ts`,
 `tests/core/built-ins-implementation.test.ts`,
@@ -188,4 +190,3 @@ Useful tests include `tests/core/built-ins-registry.test.ts`,
 `tests/core/flue-model-options.test.ts`, `tests/core/observability.test.ts`,
 implementation git action tests, `tests/core/workspace-lifecycle.test.ts`,
 and `tests/core/workflow-execution-policy.test.ts`.
-

@@ -157,21 +157,22 @@ trusted write mode, validation, and optional artifacts:
 Then create:
 
 - `workflows/<id>/workflow.yaml`
-- `workflows/<id>/graph.yaml`
 - `workflows/<id>/input.schema.json`
 - `workflows/<id>/output.schema.json`
 
-Put orchestration in `graph.yaml`. Use:
+Put orchestration in `workflow.yaml` `nodes:`. Use:
 
 - `built_in` nodes for deterministic TypeScript behavior;
 - `agent` nodes for model judgment with structured output;
-- `gated_agent_loop` nodes for trusted local write work with validation and repair.
+- `pattern` nodes such as `quality-gates.gated_agent_loop` for trusted local
+  write work with validation and repair.
 
-`gated_agent_loop` gates are configured in `workflows/<id>/graph.yaml` under
-the node's `gates:` list. Luna supports `validation_commands` gates and
-read-only workflow `agent` gates. For an `agent` gate, configure `block_when`
-as a JSONata expression on the workflow gate entry, not in the referenced agent
-definition. `block_when.expression` must return a boolean, and optional
+`quality-gates.gated_agent_loop` gates are configured in
+`workflows/<id>/workflow.yaml` under the pattern node's `gates:` list. Luna
+supports `quality-gates.validation_commands` gates and read-only workflow
+`agent` gates. For an `agent` gate, configure `block_when` as a JSONata
+expression on the workflow gate entry, not in the referenced agent definition.
+`block_when.expression` must return a boolean, and optional
 `feedback.expression` selects repair feedback when the gate blocks. Failed gates
 loop back into the trusted write agent for a repair attempt.
 
@@ -202,7 +203,7 @@ run artifact directory.
 
 Luna does not ask agents or Flue to discover repository guidance implicitly.
 Workflows that need guidance files run `collect_context` and pass
-`context: $.steps.context` explicitly to model nodes.
+`context: { expression: "$.steps.context" }` explicitly to model nodes.
 
 Context files may come from:
 
@@ -283,22 +284,24 @@ Agents:
 
 Built-in steps:
 
-- `preflight`
-- `prepare_worktree`
-- `collect_context`
-- `collect_repo_context`
-- `validate_code_review_findings`
-- `final_code_review_report`
-- `prepare_implementation_worktree`
-- `collect_task_context`
-- `run_validation_commands`
-- `record_implementation_validation`
-- `collect_worktree_diff`
-- `record_acceptance_decision`
-- `commit_changes`
-- `push_branch`
-- `open_change_request`
-- `final_implementation_report`
+- `change-request.create`
+- `context.collect_context`
+- `git.commit`
+- `reports.final_report`
+- `repository-workspace.capture`
+- `runtime.collect_repo_context`
+- `runtime.collect_task_context`
+- `runtime.collect_worktree_diff`
+- `runtime.commit_changes`
+- `runtime.final_code_review_report`
+- `runtime.final_implementation_report`
+- `runtime.open_change_request`
+- `runtime.preflight`
+- `runtime.prepare_implementation_worktree`
+- `runtime.prepare_worktree`
+- `runtime.push_branch`
+- `runtime.record_implementation_validation`
+- `runtime.validate_code_review_findings`
 
 Local tools:
 

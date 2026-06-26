@@ -26,7 +26,6 @@ different domain may need a new input adapter, new built-in steps, or both.
 ```text
 workflows/my-workflow/
   workflow.yaml
-  graph.yaml
   input.schema.json
   output.schema.json
 ```
@@ -39,71 +38,60 @@ type: workflow
 mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
-graph: graph.yaml
+capabilities:
+  - runtime
+  - repository-workspace
+  - context
+  - agents
+  - artifacts
+requires:
+  repository: true
 execution:
   max_concurrency: 2
   lock_timeout_ms: 120000
-```
-
-Rules:
-
-- The directory name and `id` must match.
-- `mode` supports `read_only` and `trusted_local_write`.
-- Schema and graph paths must stay inside the workflow directory.
-
-Artifact directories are always resolved as:
-`<app.artifacts.root>/<workflow-id>/<run-id>/`
-
-Workflow YAML does not define a separate artifact namespace. The routed
-`workflow_id` is the only namespace.
-
-`execution.max_concurrency` controls how many safe ready nodes the scheduler
-may run at once. Repository-sensitive built-ins are still serialized by local
-locks. Agent and `gated_agent_loop` nodes must not depend on shared mutable
-local state; use workflow dependencies, artifacts, and repository locks to make
-parallel runs safe.
-
-Use `trusted_local_write` only for workflows that intentionally create a writable
-worktree and run trusted local write agents.
-
-## 3. Add `graph.yaml`
-
-```yaml
 nodes:
   - id: preflight
     type: built_in
-    uses: preflight
+    uses: runtime.preflight
     artifacts:
       - path: preflight.json
-        source: $.steps.preflight
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.preflight"
         format: json
 
   - id: workspace
     type: built_in
-    uses: prepare_worktree
+    uses: repository-workspace.capture
     artifacts:
       - path: workspace.json
-        source: $.steps.workspace
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.workspace"
         format: json
     after:
       - preflight
 
   - id: repo_context
     type: built_in
-    uses: collect_repo_context
+    uses: runtime.collect_repo_context
     artifacts:
       - path: repo-context.json
-        source: $.steps.repo_context
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.repo_context"
         format: json
     after:
       - workspace
 
   - id: context
     type: built_in
-    uses: collect_context
+    uses: context.collect_context
     artifacts:
       - path: context-intake.json
-        source: $.steps.context
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.context"
         format: json
     input:
       agents:
@@ -114,7 +102,7 @@ nodes:
   - id: my_agent_step
     type: agent
     agent: my-agent
-    output_schema: my_output
+    output_schema: my-agent-output.schema.json
     retry:
       max_attempts: 3
       initial_delay_ms: 1000
@@ -123,25 +111,51 @@ nodes:
       jitter: full
     artifacts:
       - path: my-agent-output.json
-        source: $.steps.my_agent_step
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.my_agent_step"
         format: json
     input:
-      invocation: $.invocation
-      repo_context: $.steps.repo_context
-      context: $.steps.context
+      invocation:
+        expression: "$.invocation"
+      repo_context:
+        expression: "$.steps.repo_context"
+      context:
+        expression: "$.steps.context"
     after:
       - repo_context
       - context
 ```
 
+Rules:
+
+- The directory name and `id` must match.
+- `mode` supports `read_only` and `trusted_local_write`.
+- Schema paths must stay inside the workflow directory.
+
+Artifact directories are always resolved as:
+`<app.artifacts.root>/<workflow-id>/<run-id>/`
+
+Workflow YAML does not define a separate artifact namespace. The routed
+`workflow_id` is the only namespace.
+
+`execution.max_concurrency` controls how many safe ready nodes the scheduler
+may run at once. Repository-sensitive built-ins are still serialized by local
+locks. Agent and pattern nodes must not depend on shared mutable local state;
+use workflow dependencies, artifacts, and repository locks to make parallel
+runs safe.
+
+Use `trusted_local_write` only for workflows that intentionally create a
+writable worktree and run trusted local write agents.
+
 `collect_context` reads configured repository context from
 `config/repositories.yaml` and configured agent context from each listed
-`agent.yaml`. Passing `context: $.steps.context` to an `agent` or `gated_agent_loop`
-does not make the raw file contents ordinary task data. Luna renders them into
-runtime instructions in this order: Luna runtime instructions, the agent's
-`instructions.md`, matching agent context, repository context, then normal
-workflow input. The task input receives `context_audit` with read, missing, and
-skipped file metadata.
+`agent.yaml`. Passing `context: { expression: "$.steps.context" }` to an agent
+or pattern worker does not make the raw file contents ordinary task data. Luna
+renders them into runtime instructions in this order: Luna runtime instructions,
+the agent's `instructions.md`, matching agent context, repository context, then
+normal workflow input. The task input receives `context_audit` with read,
+missing, and skipped file metadata.
 
 Graph rules:
 
@@ -150,28 +164,31 @@ Graph rules:
 - Cycles are rejected.
 - `type: built_in` uses a supported Luna built-in.
 - `type: agent` references an agent under `agents/`.
+- `type: pattern` references a supported workflow pattern.
 - Read-only `agent` nodes retry transient runtime failures by default.
-- `gated_agent_loop` write-mode nodes reject `max_attempts > 1` to avoid replaying
-  local writes after a dropped connection.
+- Trusted write gated agent loops use `repair.attempts` for validation repair
+  and reject retry semantics that would replay local file writes.
 
 ## 4. Supported Built-Ins
 
-- `preflight`
-- `prepare_worktree`
-- `collect_context`
-- `collect_repo_context`
-- `validate_code_review_findings`
-- `final_code_review_report`
-- `prepare_implementation_worktree`
-- `collect_task_context`
-- `run_validation_commands`
-- `record_implementation_validation`
-- `collect_worktree_diff`
-- `record_acceptance_decision`
-- `commit_changes`
-- `push_branch`
-- `open_change_request`
-- `final_implementation_report`
+- `runtime.preflight`
+- `context.collect_context`
+- `repository-workspace.capture`
+- `runtime.collect_repo_context`
+- `runtime.validate_code_review_findings`
+- `runtime.final_code_review_report`
+- `reports.final_report`
+- `runtime.prepare_worktree`
+- `runtime.prepare_implementation_worktree`
+- `runtime.collect_task_context`
+- `runtime.record_implementation_validation`
+- `runtime.collect_worktree_diff`
+- `runtime.commit_changes`
+- `runtime.push_branch`
+- `runtime.open_change_request`
+- `runtime.final_implementation_report`
+- `git.commit`
+- `change-request.create`
 
 Some built-ins are workflow-specific. If a workflow needs a new local
 capability, add a built-in in TypeScript and then reference it from YAML.
@@ -180,69 +197,75 @@ and test pattern.
 
 ## 5. Gated Agent Loop
 
-Write workflows can use a `gated_agent_loop` node to run a trusted local implementer
-and repair failed gates:
+Write workflows can use a `quality-gates.gated_agent_loop` pattern node to run
+a trusted local implementer and repair failed gates:
 
 ```yaml
 - id: implementation
-  type: gated_agent_loop
-  agent: code-implementer
-  output_schema: implementation_result
+  type: pattern
+  uses: quality-gates.gated_agent_loop
+  worker: code-implementer
   artifacts:
     - path: implementation-attempts.json
-      source: $.steps.implementation.attempts
+      publisher: artifacts.manifest_publisher
+      source:
+        expression: "$.steps.implementation.attempts"
       format: json
     - path: validation.json
-      source: $.steps.implementation.validation
+      publisher: artifacts.manifest_publisher
+      source:
+        expression: "$.steps.implementation.validation"
       format: json
     - path: implementation-result.json
-      source: $.steps.implementation.result
+      publisher: artifacts.manifest_publisher
+      source:
+        expression: "$.steps.implementation.result"
       format: json
-  sandbox:
-    type: trusted_host_local
-    cwd: $.workspace.path
-    env_allowlist: []
   gates:
     - id: validation
-      type: validation_commands
-      commands: $.config.implementation.validation.commands
-      max_output_bytes: $.config.implementation.validation.max_output_bytes
+      type: quality-gates.validation_commands
+      input:
+        commands:
+          expression: "$.config.implementation.validation.commands"
+        max_output_bytes:
+          expression: "$.config.implementation.validation.max_output_bytes"
     - id: review
-      type: agent
-      agent: change-reviewer
-      block_when:
-        expression: "$count(findings) > 0"
-      feedback:
-        expression: "findings"
+      type: quality-gates.agent_review
       input:
-        invocation: $.invocation
-        context: $.steps.context
+        review_agent: change-reviewer
+        subject:
+          expression: "$.gate.output"
+      block_when:
+        expression: "$.gate.decision = 'fail'"
+      feedback:
+        expression: "$.gate.feedback"
     - id: acceptance
-      type: agent
-      agent: change-acceptance-reviewer
-      block_when:
-        expression: "status != 'accepted'"
-      feedback:
-        expression: "{ 'status': status, 'blocking_reasons': blocking_reasons }"
+      type: quality-gates.agent_review
       input:
-        invocation: $.invocation
-        context: $.steps.context
+        review_agent: change-acceptance-reviewer
+        subject:
+          expression: "$.gate.output"
+      block_when:
+        expression: "$.gate.decision = 'fail'"
+      feedback:
+        expression: "$.gate.feedback"
   repair:
-    attempts: $.config.implementation.validation.repair_attempts
+    attempts:
+      expression: "$.config.implementation.validation.repair_attempts"
 ```
 
 The referenced agent must declare `mode: trusted_local_write` in
 `agent.yaml`. `trusted_host_local` runs on the host and can edit files in the
 worktree. Use it only for agents and repositories you trust.
 
-Configure gates in `workflows/<id>/graph.yaml` under the `gated_agent_loop`
-node's `gates:` list. Supported gates:
+Configure gates in `workflows/<id>/workflow.yaml` under the pattern node's
+`gates:` list. Supported gates:
 
-- `validation_commands`: runs deterministic commands and blocks on failed
-  validation.
-- workflow `agent`: runs a read-only agent as a gate. Configure `block_when` on
-  the workflow gate entry. The referenced `agents/<id>/agent.yaml` owns the
-  agent instructions and output schema.
+- `quality-gates.validation_commands`: runs deterministic commands and blocks
+  on failed validation.
+- `quality-gates.agent_review`: runs a read-only agent as a gate. Configure
+  `input.review_agent` on the workflow gate entry. The referenced
+  `agents/<id>/agent.yaml` owns the agent instructions and output schema.
 
 Workflow `agent` gate expressions:
 
@@ -254,8 +277,8 @@ Workflow `agent` gate expressions:
 
 When any gate fails, Luna sends previous validation, gate feedback, and diff
 summary back to the trusted write agent for a repair attempt. In write
-workflows, use deterministic built-ins after agent or `gated_agent_loop` nodes
-to record lifecycle gates used by workspace preserve/cleanup decisions.
+workflows, use deterministic built-ins after agent or pattern nodes to record
+lifecycle gates used by workspace preserve/cleanup decisions.
 
 ## 6. Workflow Input References
 
@@ -273,10 +296,14 @@ Example:
 
 ```yaml
 input:
-  invocation: $.invocation
-  context: $.steps.context
-  plan: $.steps.review_plan
-  findings: $.steps.validate_findings
+  invocation:
+    expression: "$.invocation"
+  context:
+    expression: "$.steps.context"
+  plan:
+    expression: "$.steps.review_plan"
+  findings:
+    expression: "$.steps.validate_findings"
 ```
 
 References support whole values and nested paths, such as
@@ -323,7 +350,7 @@ LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --fr
 ## 9. Test
 
 ```bash
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow/definition.test.ts tests/core/workflow/graph-analysis.test.ts tests/core/configured-workflow-runner.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused

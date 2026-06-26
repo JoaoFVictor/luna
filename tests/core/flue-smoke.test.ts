@@ -205,21 +205,18 @@ async function writeSmokeConfig(
       "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
-      "graph: graph.yaml",
-      ""
-    ].join("\n"),
-    "utf8"
-  );
-  await writeFile(
-    path.join(root, "workflows", "code-review", "graph.yaml"),
-    [
+      "capabilities:",
+      "  - runtime",
+      "  - artifacts",
       "nodes:",
       "  - id: preflight",
       "    type: built_in",
-      "    uses: preflight",
+      "    uses: runtime.preflight",
       "    artifacts:",
       "      - path: final-report.json",
-      "        source: $.steps.preflight",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.preflight\"",
       "        format: json",
       ""
     ].join("\n"),

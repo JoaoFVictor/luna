@@ -14,7 +14,6 @@ The usual files are:
 ```text
 workflows/<id>/
   workflow.yaml
-  graph.yaml
   input.schema.json
   output.schema.json
 ```
@@ -44,10 +43,12 @@ registry.
 `agent` nodes call reusable agent definitions and validate structured model
 output.
 
-`gated_agent_loop` nodes run trusted local write agents with validation and
-gate repair loops. They are only valid in trusted write workflows.
+`pattern` nodes run reusable workflow patterns such as
+`quality-gates.gated_agent_loop` for trusted local write agents with validation
+and gate repair loops. Trusted write patterns are only valid in trusted write
+workflows.
 
-Read-only workflows cannot use `gated_agent_loop` or write lifecycle built-ins.
+Read-only workflows cannot use trusted write patterns or write lifecycle built-ins.
 Trusted write workflows must still declare their write behavior explicitly in
 the graph and implementation config.
 
@@ -65,10 +66,9 @@ The scheduler state contains:
 - workspace, agents, and workflow roots
 - lifecycle evidence
 
-Node inputs are explicit. A string that starts with `$.` replaces the whole
-field value with a value from workflow state. Supported roots are
-`$.invocation`, `$.config`, `$.repository`, `$.run`, `$.workspace`, and
-`$.steps.<node-id>`.
+Node inputs are explicit. Dynamic values must use an expression object:
+`{ expression: "$.steps.<node-id>" }`. Supported roots are `$.invocation`,
+`$.config`, `$.repository`, `$.run`, `$.workspace`, and `$.steps.<node-id>`.
 
 This is not arbitrary string interpolation. Prefer explicit fields over hiding
 state lookup inside prose.
@@ -190,7 +190,9 @@ workspace state, not just the state at worktree creation time.
 - Artifact store: `src/core/artifacts/store.ts`
 - Gated loop types: `src/core/agents/gated-loop-runner.ts`
 
-Useful tests include `tests/core/workflow-definition.test.ts`,
+Useful tests include `tests/core/workflow/definition.test.ts`,
+`tests/core/workflow/definition-output.test.ts`,
+`tests/core/workflow/graph-analysis.test.ts`,
 `tests/core/workflow-scheduler.test.ts`,
 `tests/core/workflow-execution-policy.test.ts`,
 `tests/core/artifact-write-plan.test.ts`,
@@ -198,4 +200,3 @@ Useful tests include `tests/core/workflow-definition.test.ts`,
 `tests/core/router.test.ts`, `tests/core/workflow-state.test.ts`,
 `tests/core/gated-agent-loop-runner.test.ts`, and
 `tests/core/flue-gated-agent-loop-retry.test.ts`.
-

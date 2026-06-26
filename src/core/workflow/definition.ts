@@ -1,259 +1,196 @@
+import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
-import { realpath } from "node:fs/promises";
-import { z } from "zod";
-import {
-  ArtifactWritePlanSchema,
-  assertNoDuplicateArtifactPaths,
-  normalizeArtifactWritePlans
-} from "./artifact-write-plan.js";
-import { builtInStepMetadataRegistry } from "../built-ins/catalog.js";
-import type { BuiltInStepRegistryView } from "../built-ins/types.js";
-import { loadYamlFile } from "../config/loader.js";
-import { assertSafeSegment, isInsideRoot } from "../security/path.js";
 import {
   defaultWorkflowSubagentPolicy,
   type WorkflowSubagentPolicy
 } from "../agents/subagent-policy.js";
-import { ValidationCommandSchema } from "../validation/runner.js";
-
-const NonEmptyStringSchema = z.string().min(1);
-
-const WorkflowExecutionSchema = z
-  .object({
-    max_concurrency: z.number().int().positive().optional(),
-    lock_timeout_ms: z.number().int().positive().optional()
-  })
-  .strict();
-
-const OptionalExporterConfigSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    required: z.boolean().optional()
-  })
-  .strict();
-
-const ObservabilityConfigSchema = z
-  .object({
-    exporters: z
-      .object({
-        jsonl: OptionalExporterConfigSchema.optional(),
-        runtime_log: OptionalExporterConfigSchema.optional()
-      })
-      .strict()
-      .optional()
-  })
-  .strict()
-  .optional();
-
-const SubagentPolicySchema = z
-  .object({
-    allow_write: z.boolean().optional()
-  })
-  .strict()
-  .optional();
-
-const WorkflowRequirementsSchema = z
-  .object({
-    repository: z.boolean().optional()
-  })
-  .strict()
-  .optional();
-
-export const WorkflowMetadataSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    type: z.literal("workflow"),
-    mode: z.enum(["read_only", "trusted_local_write"]),
-    input_schema: NonEmptyStringSchema,
-    output_schema: NonEmptyStringSchema,
-    graph: NonEmptyStringSchema,
-    execution: WorkflowExecutionSchema.optional(),
-    observability: ObservabilityConfigSchema,
-    subagent_policy: SubagentPolicySchema,
-    requires: WorkflowRequirementsSchema
-  })
-  .strict();
-
-const BuiltInNodeSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    type: z.literal("built_in"),
-    uses: NonEmptyStringSchema,
-    artifacts: z.array(ArtifactWritePlanSchema).optional(),
-    input: z.record(z.unknown()).optional(),
-    after: z.array(NonEmptyStringSchema).optional()
-  })
-  .strict();
-
-const RetryPolicySchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    max_attempts: z.number().int().positive().optional(),
-    initial_delay_ms: z.number().int().nonnegative().optional(),
-    max_delay_ms: z.number().int().positive().optional(),
-    backoff_multiplier: z.number().gte(1).optional(),
-    jitter: z.enum(["none", "full"]).optional(),
-    retryable_error_codes: z
-      .array(
-        z.enum([
-          "transient_transport_failure",
-          "timeout",
-          "provider_unavailable",
-          "rate_limited",
-          "permanent_failure",
-          "unknown_failure"
-        ])
-      )
-      .optional()
-  })
-  .strict()
-  .optional();
-
-const AgentNodeSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    type: z.literal("agent"),
-    agent: NonEmptyStringSchema,
-    output_schema: NonEmptyStringSchema,
-    artifacts: z.array(ArtifactWritePlanSchema).optional(),
-    retry: RetryPolicySchema,
-    input: z.record(z.unknown()).optional(),
-    after: z.array(NonEmptyStringSchema).optional()
-  })
-  .strict();
-
-const ValidationGateSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    type: z.literal("validation_commands"),
-    commands: z.union([
-      NonEmptyStringSchema,
-      z.array(ValidationCommandSchema)
-    ]),
-    max_output_bytes: z.union([
-      NonEmptyStringSchema,
-      z.number().int().positive()
-    ])
-  })
-  .strict();
-
-const GateJsonataExpressionSchema = z
-  .object({
-    expression: NonEmptyStringSchema
-  })
-  .strict();
-
-const AgentGateSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    type: z.literal("agent"),
-    agent: NonEmptyStringSchema,
-    block_when: GateJsonataExpressionSchema,
-    feedback: GateJsonataExpressionSchema.optional(),
-    input: z.record(z.unknown()).optional()
-  })
-  .strict();
-
-const GatedAgentLoopNodeSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    type: z.literal("gated_agent_loop"),
-    agent: NonEmptyStringSchema,
-    output_schema: NonEmptyStringSchema,
-    artifacts: z.array(ArtifactWritePlanSchema).optional(),
-    retry: RetryPolicySchema,
-    sandbox: z
-      .object({
-        type: z.literal("trusted_host_local"),
-        cwd: NonEmptyStringSchema,
-        env_allowlist: z.array(NonEmptyStringSchema)
-      })
-      .strict(),
-    gates: z.array(
-      z.discriminatedUnion("type", [ValidationGateSchema, AgentGateSchema])
-    ),
-    repair: z
-      .object({
-        attempts: z.union([
-          NonEmptyStringSchema,
-          z.number().int().nonnegative()
-        ])
-      })
-      .strict(),
-    input: z.record(z.unknown()).optional(),
-    after: z.array(NonEmptyStringSchema).optional()
-  })
-  .strict();
-
-const WorkflowGraphShapeSchema = z
-  .object({
-    nodes: z
-      .array(
-        z.discriminatedUnion("type", [
-          BuiltInNodeSchema,
-          AgentNodeSchema,
-          GatedAgentLoopNodeSchema
-        ])
-      )
-      .min(1)
-  })
-  .strict();
-
-const WorkflowGraphSchema = {
-  parse(value: unknown): z.infer<typeof WorkflowGraphShapeSchema> {
-    const graph = WorkflowGraphShapeSchema.parse(value);
-    const knownStepIds = new Set(graph.nodes.map((node) => node.id));
-    const nodes = graph.nodes.map((node) => ({
-      ...node,
-      artifacts: normalizeArtifactWritePlans(
-        node.id,
-        node.artifacts,
-        knownStepIds
-      )
-    }));
-    assertNoDuplicateArtifactPaths(nodes);
-
-    return { nodes } as z.infer<typeof WorkflowGraphShapeSchema>;
-  }
-};
-
-export type WorkflowMetadata = z.infer<typeof WorkflowMetadataSchema>;
-export type WorkflowExecution = {
-  max_concurrency: number;
-  lock_timeout_ms?: number;
-};
-export type WorkflowRequirements = {
-  repository: boolean;
-};
-export type WorkflowObservabilityConfig = {
-  exporters: {
-    runtime_log: { enabled: boolean; required: boolean };
-  };
-};
-export const defaultWorkflowObservabilityConfig: WorkflowObservabilityConfig = {
-  exporters: {
-    runtime_log: { enabled: true, required: false }
-  }
-};
-export type WorkflowGraph = z.infer<typeof WorkflowGraphShapeSchema>;
-export type WorkflowNode = WorkflowGraph["nodes"][number];
-
-export type WorkflowDefinition = Omit<
+import type { CapabilityRegistry } from "../capabilities/registry.js";
+import { assertSafeSegment, isInsideRoot } from "../security/path.js";
+import { WorkflowDefinitionError } from "./definition-errors.js";
+import type { WorkflowDefinitionErrorCode } from "./definition-errors.js";
+import {
+  assertWorkflowDocument,
+  normalizeExecution,
+  parseWorkflowYaml,
+  readCapabilities,
+  readGraph,
+  requireString
+} from "./definition-schema.js";
+import { defaultWorkflowObservabilityConfig } from "./definition-types.js";
+import {
+  collectExternalDefinitionDigests,
+  computeWorkflowRevision,
+  LUNA_WORKFLOW_COMPILER_SCHEMA_VERSION,
+  LUNA_WORKFLOW_RUNTIME_SCHEMA_VERSION
+} from "./definition-revision.js";
+import type { DefinitionDigestResolver } from "./definition-digests.js";
+import type {
+  LoadWorkflowDefinitionOptions,
+  ParsedWorkflowGraph,
+  WorkflowDefinition,
   WorkflowMetadata,
-  "graph" | "execution"
-> & {
-  directory: string;
-  graph: WorkflowGraph;
-  execution: WorkflowExecution;
-  requires: WorkflowRequirements;
-  observability: WorkflowObservabilityConfig;
-  subagent_policy: WorkflowSubagentPolicy;
-};
+  WorkflowRequirements
+} from "./definition-types.js";
+import {
+  validateDeclaredCapabilities,
+  validateAgentOutputSchemas,
+  validateNodesAgainstCapabilities
+} from "./definition-validation.js";
+import { analyzeWorkflowGraph } from "./graph-analysis.js";
 
-function workflowDefinitionError(message: string, code: string): Error & { code: string } {
-  const error = new Error(message) as Error & { code: string };
-  error.code = code;
-  return error;
+export {
+  LUNA_WORKFLOW_COMPILER_SCHEMA_VERSION,
+  LUNA_WORKFLOW_RUNTIME_SCHEMA_VERSION
+};
+export { WorkflowDefinitionError } from "./definition-errors.js";
+export type { WorkflowDefinitionErrorCode } from "./definition-errors.js";
+export type { DefinitionDigestResolver } from "./definition-digests.js";
+export {
+  defaultWorkflowObservabilityConfig,
+  WorkflowMetadataSchema
+} from "./definition-types.js";
+export type {
+  ArtifactWritePlan,
+  LoadWorkflowDefinitionOptions,
+  WorkflowAgentNode,
+  WorkflowBuiltInNode,
+  WorkflowDefinition,
+  WorkflowExecution,
+  WorkflowGraph,
+  WorkflowHumanGateNode,
+  WorkflowMetadata,
+  WorkflowNode,
+  WorkflowObservabilityConfig,
+  WorkflowPatternNode,
+  WorkflowRequirements,
+} from "./definition-types.js";
+export {
+  validateWorkflowAgentNodeOutput,
+  validateWorkflowNodeOutput
+} from "./definition-validation.js";
+
+export async function loadWorkflowDefinition(
+  workflowsRoot: string,
+  workflowId: string,
+  options: LoadWorkflowDefinitionOptions = {}
+): Promise<WorkflowDefinition> {
+  assertSafeSegment(workflowId);
+  const directory = path.join(workflowsRoot, workflowId);
+  const workflowYaml = await readFile(path.join(directory, "workflow.yaml"), "utf8");
+
+  return await loadWorkflowDefinitionFromMetadata({
+    directory,
+    metadata: parseWorkflowYaml(workflowYaml) as WorkflowMetadata,
+    workflowId,
+    workflowYaml,
+    capabilityRegistry: options.capabilityRegistry,
+    digestResolver: options.digestResolver
+  });
+}
+
+export async function loadWorkflowDefinitionFromMetadata({
+  directory,
+  metadata,
+  workflowId,
+  workflowYaml,
+  capabilityRegistry,
+  digestResolver
+}: {
+  directory: string;
+  metadata: WorkflowMetadata;
+  workflowId: string;
+  workflowYaml?: string;
+  capabilityRegistry?: CapabilityRegistry;
+  digestResolver?: DefinitionDigestResolver;
+}): Promise<WorkflowDefinition> {
+  const raw = assertWorkflowDocument(metadata);
+  const id = requireString(raw.id, "$.id");
+  if (id !== workflowId) {
+    throw new WorkflowDefinitionError(
+      "workflow_id_mismatch",
+      `Workflow id ${id} does not match directory ${workflowId}`,
+      { path: "$.id" }
+    );
+  }
+  if (raw.type !== "workflow") {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow type must be workflow.",
+      { path: "$.type" }
+    );
+  }
+
+  const inputSchemaPath = requireString(raw.input_schema, "$.input_schema");
+  const outputSchemaPath = requireString(raw.output_schema, "$.output_schema");
+  const inputSchemaContent = await readJsonSchema(directory, inputSchemaPath);
+  const outputSchemaContent = await readJsonSchema(directory, outputSchemaPath);
+  const capabilities = readCapabilities(raw.capabilities);
+  validateDeclaredCapabilities(capabilities, capabilityRegistry);
+
+  const parsedGraph = readGraph(raw, capabilityRegistry);
+  const nodeIds = new Set(parsedGraph.nodes.map((node) => node.id));
+  validateNodesAgainstCapabilities(
+    parsedGraph.nodes,
+    capabilities,
+    nodeIds,
+    capabilityRegistry
+  );
+  await validateAgentOutputSchemas(parsedGraph.nodes, directory, capabilities, capabilityRegistry);
+  analyzeParsedGraph(parsedGraph);
+
+  const externalDefinitionDigests = await collectExternalDefinitionDigests(
+    parsedGraph.nodes,
+    digestResolver
+  );
+  const revision = computeWorkflowRevision({
+    canonicalWorkflow:
+      workflowYaml === undefined ? raw : parseWorkflowYaml(workflowYaml),
+    inputSchemaContent,
+    outputSchemaContent,
+    capabilities,
+    externalDefinitionDigests,
+    capabilityRegistry
+  });
+
+  return {
+    id,
+    type: "workflow",
+    mode: normalizeMode(raw.mode),
+    directory,
+    input_schema: inputSchemaPath,
+    output_schema: outputSchemaPath,
+    input_schema_content: inputSchemaContent,
+    output_schema_content: outputSchemaContent,
+    capabilities,
+    graph: parsedGraph,
+    revision,
+    external_definition_digests: externalDefinitionDigests,
+    execution: normalizeExecution(raw.execution),
+    requires: normalizeRequirements(raw.requires),
+    observability: normalizeObservability(raw.observability),
+    subagent_policy: normalizeSubagentPolicy(raw.subagent_policy)
+  };
+}
+
+async function readJsonSchema(
+  directory: string,
+  relativePath: string
+): Promise<unknown> {
+  const schemaPath = await safeWorkflowPath(directory, relativePath);
+  try {
+    return JSON.parse(await readFile(schemaPath, "utf8"));
+  } catch (cause) {
+    if ((cause as { code?: unknown }).code === "ENOENT") {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_missing",
+        `Workflow schema is missing: ${relativePath}`
+      );
+    }
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      `Workflow schema is invalid JSON: ${relativePath}`
+    );
+  }
 }
 
 async function safeWorkflowPath(
@@ -262,256 +199,206 @@ async function safeWorkflowPath(
 ): Promise<string> {
   const root = path.resolve(directory);
   const resolved = path.resolve(root, relativePath);
-
   if (!isInsideRoot(root, resolved)) {
-    throw workflowDefinitionError(
-      `Workflow file path escapes workflow directory: ${relativePath}`,
-      "workflow_path_escape"
+    throw new WorkflowDefinitionError(
+      "workflow_path_escape",
+      `Workflow file path escapes workflow directory: ${relativePath}`
     );
   }
 
-  const rootReal = await realpath(root);
-  const resolvedReal = await realpath(resolved);
-
-  if (!isInsideRoot(rootReal, resolvedReal)) {
-    throw workflowDefinitionError(
-      `Workflow file path resolves outside workflow directory: ${relativePath}`,
-      "workflow_path_escape"
-    );
+  try {
+    const rootReal = await realpath(root);
+    const resolvedReal = await realpath(resolved);
+    if (!isInsideRoot(rootReal, resolvedReal)) {
+      throw new WorkflowDefinitionError(
+        "workflow_path_escape",
+        `Workflow file path resolves outside workflow directory: ${relativePath}`
+      );
+    }
+  } catch (cause) {
+    if ((cause as { code?: unknown }).code === "ENOENT") {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_missing",
+        `Workflow referenced file does not exist: ${relativePath}`
+      );
+    }
+    throw cause;
   }
 
   return resolved;
 }
 
-function assertNoDuplicateNodeIds(nodes: WorkflowNode[]): void {
-  const seen = new Set<string>();
-
-  for (const node of nodes) {
-    if (seen.has(node.id)) {
-      throw workflowDefinitionError(
-        `Duplicate workflow node id: ${node.id}`,
-        "workflow_node_duplicate"
+function analyzeParsedGraph(graph: ParsedWorkflowGraph): void {
+  try {
+    analyzeWorkflowGraph(graph);
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause) {
+      throw new WorkflowDefinitionError(
+        (cause as { code: WorkflowDefinitionErrorCode }).code,
+        cause.message,
+        { path: (cause as { path?: string }).path }
       );
     }
-
-    seen.add(node.id);
+    throw cause;
   }
 }
 
-function assertBuiltInNamesRegistered(
-  nodes: WorkflowNode[],
-  builtInStepRegistry: BuiltInStepRegistryView
-): void {
-  for (const node of nodes) {
-    if (node.type !== "built_in") {
-      continue;
-    }
-
-    try {
-      builtInStepRegistry.require(node.uses);
-    } catch {
-      throw workflowDefinitionError(
-        `Unsupported built-in step: ${node.uses}`,
-        "workflow_built_in_unknown"
+function normalizeRequirements(value: unknown): WorkflowRequirements {
+  if (value === undefined) {
+    return { repository: false };
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow requires must be an object.",
+      { path: "$.requires" }
+    );
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "repository") {
+      throw new WorkflowDefinitionError(
+        "workflow_unknown_field",
+        `Unknown workflow field ${key} at $.requires.`,
+        { path: `$.requires.${key}` }
       );
     }
   }
+  if (record.repository !== undefined && typeof record.repository !== "boolean") {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow requires.repository must be boolean.",
+      { path: "$.requires.repository" }
+    );
+  }
+  return { repository: record.repository === true };
 }
 
-function assertDependenciesExist(nodes: WorkflowNode[]): void {
-  const ids = new Set(nodes.map((node) => node.id));
-
-  for (const node of nodes) {
-    for (const dependency of node.after ?? []) {
-      if (!ids.has(dependency)) {
-        throw workflowDefinitionError(
-          `Workflow node ${node.id} depends on unknown node ${dependency}`,
-          "workflow_dependency_unknown"
-        );
-      }
-    }
+function normalizeSubagentPolicy(value: unknown): WorkflowSubagentPolicy {
+  if (value === undefined) {
+    return defaultWorkflowSubagentPolicy;
   }
-}
-
-function assertAcyclic(nodes: WorkflowNode[]): void {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-
-  function visit(id: string): void {
-    if (visited.has(id)) {
-      return;
-    }
-
-    if (visiting.has(id)) {
-      throw workflowDefinitionError(
-        `Workflow graph contains a cycle at ${id}`,
-        "workflow_cycle_detected"
-      );
-    }
-
-    visiting.add(id);
-    const node = byId.get(id);
-    for (const dependency of node?.after ?? []) {
-      visit(dependency);
-    }
-    visiting.delete(id);
-    visited.add(id);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow subagent_policy must be an object.",
+      { path: "$.subagent_policy" }
+    );
   }
-
-  for (const node of nodes) {
-    visit(node.id);
-  }
-}
-
-function validateWorkflowGraph(
-  graph: WorkflowGraph,
-  builtInStepRegistry: BuiltInStepRegistryView,
-  workflowMode: WorkflowMetadata["mode"]
-): void {
-  assertBuiltInNamesRegistered(graph.nodes, builtInStepRegistry);
-  assertNoDuplicateNodeIds(graph.nodes);
-  assertDependenciesExist(graph.nodes);
-  assertAcyclic(graph.nodes);
-
-  if (workflowMode !== "read_only") {
-    return;
-  }
-
-  for (const node of graph.nodes) {
-    if (node.type === "gated_agent_loop") {
-      throw workflowDefinitionError(
-        `Workflow ${workflowMode} cannot declare gated_agent_loop node: ${node.id}`,
-        "workflow_read_only_write_node"
-      );
-    }
-
-    if (node.type !== "built_in") {
-      continue;
-    }
-
-    const metadata = builtInStepRegistry.require(node.uses).metadata;
-    if (metadata?.implementationLifecycle !== undefined) {
-      throw workflowDefinitionError(
-        `Workflow ${workflowMode} cannot declare write lifecycle built-in: ${node.uses}`,
-        "workflow_read_only_write_node"
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "allow_write") {
+      throw new WorkflowDefinitionError(
+        "workflow_unknown_field",
+        `Unknown workflow field ${key} at $.subagent_policy.`,
+        { path: `$.subagent_policy.${key}` }
       );
     }
   }
+  if (record.allow_write !== undefined && typeof record.allow_write !== "boolean") {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow subagent_policy.allow_write must be boolean.",
+      { path: "$.subagent_policy.allow_write" }
+    );
+  }
+  return {
+    ...defaultWorkflowSubagentPolicy,
+    ...(record as Partial<WorkflowSubagentPolicy>)
+  };
 }
 
-function normalizeObservabilityConfig(
-  config: z.infer<typeof ObservabilityConfigSchema>
-): WorkflowObservabilityConfig {
-  if (config?.exporters?.jsonl !== undefined) {
-    throw new Error("events.jsonl is mandatory and cannot be configured");
+function normalizeMode(value: unknown): "read_only" | "trusted_local_write" {
+  if (value === undefined || value === "read_only") {
+    return "read_only";
   }
+  if (value === "trusted_local_write") {
+    return "trusted_local_write";
+  }
+  throw new WorkflowDefinitionError(
+    "workflow_schema_invalid",
+    "Workflow mode must be read_only or trusted_local_write.",
+    { path: "$.mode" }
+  );
+}
 
+function normalizeObservability(value: unknown): WorkflowDefinition["observability"] {
+  if (value === undefined) {
+    return defaultWorkflowObservabilityConfig;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow observability must be an object.",
+      { path: "$.observability" }
+    );
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "exporters") {
+      throw new WorkflowDefinitionError(
+        "workflow_unknown_field",
+        `Unknown workflow field ${key} at $.observability.`,
+        { path: `$.observability.${key}` }
+      );
+    }
+  }
+  const exporters = assertObjectLike(record.exporters ?? {}, "$.observability.exporters");
+  for (const key of Object.keys(exporters)) {
+    if (key !== "runtime_log") {
+      throw new WorkflowDefinitionError(
+        "workflow_unknown_field",
+        `Unknown workflow field ${key} at $.observability.exporters.`,
+        { path: `$.observability.exporters.${key}` }
+      );
+    }
+  }
+  const runtimeLog = assertObjectLike(
+    exporters.runtime_log ?? defaultWorkflowObservabilityConfig.exporters.runtime_log,
+    "$.observability.exporters.runtime_log"
+  );
+  for (const key of Object.keys(runtimeLog)) {
+    if (key !== "enabled" && key !== "required") {
+      throw new WorkflowDefinitionError(
+        "workflow_unknown_field",
+        `Unknown workflow field ${key} at $.observability.exporters.runtime_log.`,
+        { path: `$.observability.exporters.runtime_log.${key}` }
+      );
+    }
+  }
+  if (runtimeLog.enabled !== undefined && typeof runtimeLog.enabled !== "boolean") {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow observability runtime_log.enabled must be boolean.",
+      { path: "$.observability.exporters.runtime_log.enabled" }
+    );
+  }
+  if (runtimeLog.required !== undefined && typeof runtimeLog.required !== "boolean") {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow observability runtime_log.required must be boolean.",
+      { path: "$.observability.exporters.runtime_log.required" }
+    );
+  }
   return {
     exporters: {
       runtime_log: {
-        ...defaultWorkflowObservabilityConfig.exporters.runtime_log,
-        ...config?.exporters?.runtime_log
+        enabled:
+          runtimeLog.enabled ?? defaultWorkflowObservabilityConfig.exporters.runtime_log.enabled,
+        required:
+          runtimeLog.required ?? defaultWorkflowObservabilityConfig.exporters.runtime_log.required
       }
     }
   };
 }
 
-function normalizeSubagentPolicy(
-  policy: z.infer<typeof SubagentPolicySchema>
-): WorkflowSubagentPolicy {
-  return {
-    ...defaultWorkflowSubagentPolicy,
-    ...(policy?.allow_write === undefined ? {} : { allow_write: policy.allow_write })
-  };
-}
-
-function normalizeRequirements(
-  requirements: z.infer<typeof WorkflowRequirementsSchema>,
-  graph: WorkflowGraph,
-  builtInStepRegistry: BuiltInStepRegistryView
-): WorkflowRequirements {
-  const graphRequiresRepository = graph.nodes.some((node) => {
-    if (node.type !== "built_in") {
-      return false;
-    }
-
-    const metadata = builtInStepRegistry.require(node.uses).metadata;
-    return (
-      metadata?.requiresRepository === true ||
-      metadata?.locks?.some((lock) => lock.resource === "repository") === true
-    );
-  });
-
-  if (requirements?.repository === false && graphRequiresRepository) {
-    throw workflowDefinitionError(
-      "Workflow disables repository but graph contains repository-sensitive built-ins",
-      "workflow_repository_requirement_invalid"
+function assertObjectLike(value: unknown, yamlPath: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      `Expected object at ${yamlPath}.`,
+      { path: yamlPath }
     );
   }
-
-  return {
-    repository: requirements?.repository ?? graphRequiresRepository
-  };
-}
-
-export async function loadWorkflowDefinition(
-  workflowsRoot: string,
-  workflowId: string,
-  options: { builtInStepRegistry?: BuiltInStepRegistryView } = {}
-): Promise<WorkflowDefinition> {
-  assertSafeSegment(workflowId);
-  const directory = path.join(workflowsRoot, workflowId);
-  const metadata = await loadYamlFile(
-    path.join(directory, "workflow.yaml"),
-    WorkflowMetadataSchema
-  );
-
-  return await loadWorkflowDefinitionFromMetadata({
-    directory,
-    metadata,
-    workflowId,
-    builtInStepRegistry: options.builtInStepRegistry
-  });
-}
-
-export async function loadWorkflowDefinitionFromMetadata({
-  directory,
-  metadata,
-  workflowId,
-  builtInStepRegistry = builtInStepMetadataRegistry
-}: {
-  directory: string;
-  metadata: WorkflowMetadata;
-  workflowId: string;
-  builtInStepRegistry?: BuiltInStepRegistryView;
-}): Promise<WorkflowDefinition> {
-  if (metadata.id !== workflowId) {
-    throw workflowDefinitionError(
-      `Workflow id ${metadata.id} does not match directory ${workflowId}`,
-      "workflow_id_mismatch"
-    );
-  }
-
-  const graphPath = await safeWorkflowPath(directory, metadata.graph);
-  const graph = await loadYamlFile(
-    graphPath,
-    WorkflowGraphSchema
-  );
-  validateWorkflowGraph(graph, builtInStepRegistry, metadata.mode);
-
-  return {
-    ...metadata,
-    directory,
-    graph,
-    execution: {
-      max_concurrency: metadata.execution?.max_concurrency ?? 1,
-      ...(metadata.execution?.lock_timeout_ms === undefined
-        ? {}
-        : { lock_timeout_ms: metadata.execution.lock_timeout_ms })
-    },
-    requires: normalizeRequirements(metadata.requires, graph, builtInStepRegistry),
-    observability: normalizeObservabilityConfig(metadata.observability),
-    subagent_policy: normalizeSubagentPolicy(metadata.subagent_policy)
-  };
+  return value as Record<string, unknown>;
 }

@@ -2,7 +2,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { assertJsonValue } from "../json/value.js";
-import type { WorkflowNode } from "./definition.js";
+import type { WorkflowExpression } from "./expression.js";
 import type { SchedulerWorkflowState } from "./state.js";
 
 export type ArtifactFormat = "json" | "markdown";
@@ -16,13 +16,26 @@ export type ArtifactWritePlan = {
 
 type ArtifactWriter = Pick<ArtifactStore, "writeJson" | "writeMarkdown">;
 
+type WorkflowArtifactLike = {
+  path: string;
+  source: string | WorkflowExpression;
+  format: ArtifactFormat;
+  required: boolean;
+};
+
+type WorkflowNodeWithArtifacts = {
+  id: string;
+  artifacts?: readonly WorkflowArtifactLike[];
+};
+
 const SOURCE_PREFIX = "$.steps.";
 const ARTIFACT_SOURCE_SEGMENT = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
 export const ArtifactWritePlanSchema = z
   .object({
     path: z.string(),
-    source: z.string(),
+    publisher: z.string(),
+    source: z.object({ expression: z.string() }).strict(),
     format: z.enum(["json", "markdown"]),
     required: z.boolean().optional()
   })
@@ -101,7 +114,7 @@ export function normalizeArtifactWritePlans(
 
   return rawPlans.map((rawPlan) => {
     assertSafeArtifactPath(rawPlan.path);
-    const [stepId] = parseArtifactSource(rawPlan.source);
+    const [stepId] = parseArtifactSource(rawPlan.source.expression);
 
     if (!knownStepIds.has(stepId)) {
       throw artifactPlanError(
@@ -119,7 +132,7 @@ export function normalizeArtifactWritePlans(
 
     return {
       path: rawPlan.path,
-      source: rawPlan.source,
+      source: rawPlan.source.expression,
       format: rawPlan.format,
       required: rawPlan.required ?? true
     };
@@ -127,7 +140,7 @@ export function normalizeArtifactWritePlans(
 }
 
 export function assertNoDuplicateArtifactPaths(
-  nodes: readonly Pick<WorkflowNode, "id" | "artifacts">[]
+  nodes: readonly WorkflowNodeWithArtifacts[]
 ): void {
   const seen = new Map<string, string>();
 
@@ -179,7 +192,7 @@ export async function writePlannedArtifacts({
   state
 }: {
   artifactStore: ArtifactWriter;
-  node: Pick<WorkflowNode, "id" | "artifacts">;
+  node: WorkflowNodeWithArtifacts;
   output: unknown;
   state: SchedulerWorkflowState;
 }): Promise<void> {
@@ -192,7 +205,10 @@ export async function writePlannedArtifacts({
   };
 
   for (const artifact of node.artifacts ?? []) {
-    const resolved = resolveArtifactSource(artifact.source, artifactState);
+    const source = typeof artifact.source === "string"
+      ? artifact.source
+      : artifact.source.expression;
+    const resolved = resolveArtifactSource(source, artifactState);
 
     if (!resolved.found) {
       if (artifact.required === false) {
@@ -200,7 +216,7 @@ export async function writePlannedArtifacts({
       }
 
       throw artifactPlanError(
-        `Required artifact source is missing: ${artifact.source}`,
+        `Required artifact source is missing: ${source}`,
         "workflow_artifact_source_missing"
       );
     }
@@ -213,7 +229,7 @@ export async function writePlannedArtifacts({
 
     if (typeof resolved.value !== "string") {
       throw artifactPlanError(
-        `Artifact source must resolve to a string for ${artifact.format}: ${artifact.source}`,
+        `Artifact source must resolve to a string for ${artifact.format}: ${source}`,
         "workflow_artifact_string_required"
       );
     }

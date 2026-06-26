@@ -855,6 +855,7 @@ describe("implementation workflow e2e", () => {
         "prepare_implementation_worktree",
         "implementation-planner",
         "gated_agent_loop",
+        "collect_worktree_diff",
         "commit_changes",
         "push_branch",
         "open_change_request",

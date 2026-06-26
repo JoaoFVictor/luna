@@ -55,14 +55,15 @@ Before changing an area, read the matching project skill:
 - Keep routing deterministic. Do not ask an LLM which workflow to run.
 - Do not add workflow-specific CLI commands; use `run --target workflow:<id>`.
 - Do not create compatibility wrappers or deadcode for old architecture.
-- Keep agents reusable; put orchestration in workflow graphs.
-- Use `gated_agent_loop` for trusted local write loops. Gates are configured in
-  `workflows/<id>/graph.yaml` under the node's `gates:` list. Current gate
-  types are `validation_commands` and read-only workflow `agent` gates. For an
-  `agent` gate, configure JSONata `block_when.expression` and optional
-  `feedback.expression` on the workflow gate entry, never in
-  `agents/<id>/agent.yaml`; failed gates loop back to the writer as repair
-  input. Keep gate policy provider-agnostic.
+- Keep agents reusable; put orchestration in workflow YAML nodes.
+- Use `quality-gates.gated_agent_loop` pattern nodes for trusted local write
+  loops. Gates are configured in `workflows/<id>/workflow.yaml` under the
+  pattern node's `gates:` list. Current gate types are
+  `quality-gates.validation_commands` and `quality-gates.agent_review`. For an
+  agent-review gate, configure JSONata `block_when.expression`, optional
+  `feedback.expression`, and `input.review_agent` on the workflow gate entry,
+  never in `agents/<id>/agent.yaml`; failed gates loop back to the writer as
+  repair input. Keep gate policy provider-agnostic.
 - Keep module responsibilities isolated. Generic modules must stay agnostic:
   `src/core/built-ins/`, `src/core/tools/`, `src/core/context/`,
   `src/core/workflow/`, runtime-neutral core contracts, and shared helpers
@@ -79,8 +80,9 @@ Before changing an area, read the matching project skill:
   `src/adapters/registry.ts`, provider capability registries, or runtime
   factories, not in leaf modules.
 - Put context files in repository or agent config; collect them through
-  `collect_context` and pass `context: $.steps.context` explicitly so Luna can
-  render them as runtime instructions with `context_audit` task metadata.
+  `collect_context` and pass `context: { expression: "$.steps.context" }`
+  explicitly so Luna can render them as runtime instructions with
+  `context_audit` task metadata.
 - Keep skills explicit and layered. Repository skills live in
   `config/repositories.yaml` and resolve relative to the prepared repository
   root. Agent skills live in `agents/<id>/agent.yaml` and resolve relative to

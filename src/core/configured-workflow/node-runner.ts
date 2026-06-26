@@ -11,7 +11,6 @@ import type {
 } from "../built-ins/types.js";
 import { resolveWorkflowInput, type WorkflowState } from "../workflow/state.js";
 import type { WorkflowSubagentPolicy } from "../agents/subagent-policy.js";
-import type { WorkflowNode } from "../workflow/definition.js";
 import type { ResolvedModelProfiles } from "../config/models.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type {
@@ -25,11 +24,14 @@ import type {
 import type { ObservabilitySummary } from "../observability/summary.js";
 import { configuredWorkflowError } from "./errors.js";
 import type { ConfiguredWorkflowNodeRunner } from "./contracts.js";
+import type {
+  ConfiguredWorkflowRuntimeNode
+} from "./runtime-node.js";
 
 type MaybePromise<T> = T | Promise<T>;
 
 type GatedAgentLoopWorkflowNode = Extract<
-  WorkflowNode,
+  ConfiguredWorkflowRuntimeNode,
   { type: "gated_agent_loop" }
 >;
 
@@ -65,7 +67,7 @@ type ResolvedGatedAgentLoopNode = Omit<
 
 export type RunAgentStepOptions = {
   agent: AgentDefinition;
-  node: Extract<WorkflowNode, { type: "agent" }>;
+  node: Extract<ConfiguredWorkflowRuntimeNode, { type: "agent" }>;
   model: ModelProfile;
   agentsRoot: string;
   modelProfiles: ResolvedModelProfiles;
@@ -232,7 +234,7 @@ function resolveGatedAgentLoopNode(
 }
 
 export async function runWorkflowNode(
-  node: WorkflowNode,
+  node: ConfiguredWorkflowRuntimeNode,
   state: WorkflowState,
   context: WorkflowNodeRuntimeContext
 ): Promise<unknown> {
@@ -299,16 +301,17 @@ export async function runWorkflowNode(
     );
   }
 
-  const agent = await loadAgentDefinition(context.agentsRoot, node.agent);
+  const agentNode = node as Extract<ConfiguredWorkflowRuntimeNode, { type: "agent" }>;
+  const agent = await loadAgentDefinition(context.agentsRoot, agentNode.agent);
 
   return await context.dependencies.runAgentStep({
     agent,
-    node,
+    node: agentNode,
     model: resolveAgentModel(agent, context.modelProfiles),
     agentsRoot: context.agentsRoot,
     modelProfiles: context.modelProfiles,
     workflowSubagentPolicy: context.workflowSubagentPolicy,
-    input: resolveWorkflowInput(node.input, state),
+    input: resolveWorkflowInput(agentNode.input, state),
     state,
     observability: context.observability,
     summary: context.summary,

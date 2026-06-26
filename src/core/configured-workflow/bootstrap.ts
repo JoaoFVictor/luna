@@ -38,6 +38,7 @@ import {
   type ModelsConfig,
   type RepositoriesConfig
 } from "../config/schemas.js";
+import { officialCapabilityRegistry } from "../../capabilities/registry.js";
 import type { RuntimeConfigState } from "./contracts.js";
 import {
   defaultWorkflowObservabilityConfig,
@@ -124,11 +125,11 @@ function workflowIdFromRoute(
 async function loadConfiguredWorkflow(
   workflowsRoot: string,
   workflowId: string,
-  builtInStepRegistry: BuiltInStepRegistryView | undefined
+  _builtInStepRegistry: BuiltInStepRegistryView | undefined
 ): Promise<WorkflowDefinition> {
   try {
     return await loadWorkflowDefinition(workflowsRoot, workflowId, {
-      builtInStepRegistry
+      capabilityRegistry: officialCapabilityRegistry
     });
   } catch (cause) {
     const error = configuredWorkflowError(

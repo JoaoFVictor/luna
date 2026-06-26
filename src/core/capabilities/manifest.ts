@@ -63,6 +63,7 @@ export type ArtifactPublisherRegistration = {
   readonly source_node_ownership: "declaring_node";
   readonly path_policy: "declared_path" | "capability_scoped";
   readonly overwrite_policy: "forbid" | "replace" | "version";
+  readonly config_schema?: JsonSchemaLike;
   readonly backend_requirements?: readonly string[];
   readonly manifest_transaction: "required";
 };

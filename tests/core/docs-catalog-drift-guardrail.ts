@@ -2,7 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { expect } from "vitest";
 import YAML from "yaml";
-import { builtInStepNames } from "../../src/core/providers/built-ins.js";
+import { officialCapabilityManifests } from "../../src/capabilities/registry.js";
 import { lunaToolCatalog } from "../../src/core/tools/catalog.js";
 
 async function readText(repoRoot: string, relativePath: string): Promise<string> {
@@ -105,6 +105,12 @@ async function workflowIdsFromDefinitions(repoRoot: string): Promise<string[]> {
   return ids.sort();
 }
 
+async function officialAuthoringBuiltIns(): Promise<string[]> {
+  return officialCapabilityManifests
+    .flatMap((manifest) => Object.keys("built_ins" in manifest ? manifest.built_ins ?? {} : {}))
+    .sort();
+}
+
 async function publicDocumentationFiles(repoRoot: string): Promise<string[]> {
   return [
     "README.md",
@@ -195,7 +201,7 @@ export function deletedPathRecommendationViolations(
 }
 
 export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise<void> {
-  const builtIns = [...builtInStepNames].sort();
+  const builtIns = await officialAuthoringBuiltIns();
   const toolIds = Object.keys(lunaToolCatalog).sort();
   const workflowIds = await workflowIdsFromDefinitions(repoRoot);
   const legacyViolations: string[] = [];

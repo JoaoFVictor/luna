@@ -6,8 +6,8 @@ import type { RunIdentityOptions } from "../invocation/run-identity.js";
 import type { Invocation, RunIdentity } from "../invocation/types.js";
 import type { ErrorArtifact } from "./errors.js";
 import type { ImplementationConfig, WorkspaceRecord } from "../write-mode/types.js";
-import type { WorkflowNode } from "../workflow/definition.js";
 import type { WorkflowState } from "../workflow/state.js";
+import type { ConfiguredWorkflowRuntimeNode } from "./runtime-node.js";
 import type {
   ConfiguredWorkflowBootstrapConfigs,
   ConfiguredWorkflowBootstrapOptions,
@@ -63,7 +63,7 @@ export type ConfiguredWorkflowResult =
 
 export type ConfiguredWorkflowNodeRunner = {
   runNode(options: {
-    node: WorkflowNode;
+    node: ConfiguredWorkflowRuntimeNode;
     state: WorkflowState;
     context: WorkflowNodeRuntimeContext;
   }): Promise<unknown>;

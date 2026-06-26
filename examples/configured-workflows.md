@@ -109,22 +109,24 @@ Agents:
 
 Built-in steps:
 
-- `preflight`
-- `prepare_worktree`
-- `collect_context`
-- `collect_repo_context`
-- `validate_code_review_findings`
-- `final_code_review_report`
-- `prepare_implementation_worktree`
-- `collect_task_context`
-- `run_validation_commands`
-- `record_implementation_validation`
-- `collect_worktree_diff`
-- `record_acceptance_decision`
-- `commit_changes`
-- `push_branch`
-- `open_change_request`
-- `final_implementation_report`
+- `change-request.create`
+- `context.collect_context`
+- `git.commit`
+- `reports.final_report`
+- `repository-workspace.capture`
+- `runtime.collect_repo_context`
+- `runtime.collect_task_context`
+- `runtime.collect_worktree_diff`
+- `runtime.commit_changes`
+- `runtime.final_code_review_report`
+- `runtime.final_implementation_report`
+- `runtime.open_change_request`
+- `runtime.preflight`
+- `runtime.prepare_implementation_worktree`
+- `runtime.prepare_worktree`
+- `runtime.push_branch`
+- `runtime.record_implementation_validation`
+- `runtime.validate_code_review_findings`
 
 Local tools:
 
@@ -158,14 +160,14 @@ Model profiles:
 | New external input | `src/adapters/<id>/` | [new-adapter.md](new-adapter.md) | [Adapters and providers](../docs/adapters-and-providers.md) |
 | New deterministic workflow step | `src/core/built-ins/` or provider built-ins | [new-built-in.md](new-built-in.md) | [Built-ins, tools, and runtime](../docs/built-ins-tools-and-runtime.md) |
 | New agent-local function | `src/core/tools/` | [new-tool.md](new-tool.md) | [Built-ins, tools, and runtime](../docs/built-ins-tools-and-runtime.md) |
-| Provider-specific auth, config, context, reports, or publishing | `src/core/providers/<provider>/` | [new-adapter.md](new-adapter.md) plus provider tests | [Adapters and providers](../docs/adapters-and-providers.md) |
+| Provider-specific auth, config, context, reports, or publishing | `src/providers/<provider>/` | [new-adapter.md](new-adapter.md) plus provider tests | [Adapters and providers](../docs/adapters-and-providers.md) |
 
 ## Context And Skills
 
 Context is explicit. A workflow must run `collect_context`, list the agents
-that consume context, and pass `context: $.steps.context` to those model nodes.
-Luna renders agent context before repository context and leaves a
-`context_audit` summary in task input.
+that consume context, and pass `context: { expression: "$.steps.context" }` to
+those model nodes. Luna renders agent context before repository context and
+leaves a `context_audit` summary in task input.
 
 Skills are separate runtime capabilities. Repository skills live in
 `config/repositories.yaml`; agent skills live in `agents/<id>/agent.yaml`.
@@ -200,7 +202,7 @@ npm test -- tests/core/agent-definition.test.ts tests/core/flue-agent-capabiliti
 For a new or changed workflow:
 
 ```bash
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow/definition.test.ts tests/core/workflow/graph-analysis.test.ts tests/core/configured-workflow-runner.test.ts
 ```
 
 For adapter, built-in, or tool changes, use the focused guide for that area.

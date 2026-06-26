@@ -171,6 +171,7 @@ describe("built-in step registry", () => {
       "collect_repo_context",
       "validate_code_review_findings",
       "final_code_review_report",
+      "final_report",
       "prepare_implementation_worktree",
       "collect_task_context",
       "run_validation_commands",

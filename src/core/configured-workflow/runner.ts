@@ -41,9 +41,12 @@ import {
 } from "../invocation/run-identity.js";
 import { lifecycleEvidenceFromSchedulerState } from "../write-mode/lifecycle.js";
 import {
-  defaultWorkflowObservabilityConfig,
-  type WorkflowNode
+  defaultWorkflowObservabilityConfig
 } from "../workflow/definition.js";
+import {
+  validateWorkflowAgentNodeOutput,
+  validateWorkflowNodeOutput
+} from "../workflow/definition-validation.js";
 import type { SchedulerWorkflowState } from "../workflow/state.js";
 import { resolveRepository as defaultResolveRepository } from "../workflow/workspace-resolver.js";
 import {
@@ -89,7 +92,12 @@ import type {
 import type { Invocation, RunIdentity } from "../invocation/types.js";
 import type { ErrorArtifact } from "./errors.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
+import { officialCapabilityRegistry } from "../../capabilities/registry.js";
 import type { RepositoryConfig } from "../config/schemas.js";
+import {
+  projectConfiguredWorkflowRuntimeNodes,
+  type ConfiguredWorkflowRuntimeNode
+} from "./runtime-node.js";
 
 export type { RunGatedAgentLoopStepOptions, RunAgentStepOptions };
 
@@ -144,10 +152,12 @@ export type {
   ConfiguredWorkflowSuccessResult
 };
 
-function topologicalNodes(nodes: WorkflowNode[]): WorkflowNode[] {
+function topologicalNodes(
+  nodes: ConfiguredWorkflowRuntimeNode[]
+): ConfiguredWorkflowRuntimeNode[] {
   const remaining = new Map(nodes.map((node) => [node.id, node]));
   const completed = new Set<string>();
-  const ordered: WorkflowNode[] = [];
+  const ordered: ConfiguredWorkflowRuntimeNode[] = [];
 
   while (remaining.size > 0) {
     const ready = [...remaining.values()].find((node) =>
@@ -184,7 +194,7 @@ function isWorkspaceRecord(output: unknown): output is WorkspaceRecord {
 }
 
 function builtInMetadata(
-  node: WorkflowNode,
+  node: ConfiguredWorkflowRuntimeNode,
   activeRegistry: BuiltInStepRegistryView
 ): BuiltInStepMetadata {
   if (node.type !== "built_in") {
@@ -382,7 +392,39 @@ export async function runConfiguredWorkflow({
       agentsRoot: resolvedAgentsRoot,
       steps: {}
     };
-    const orderedNodes = topologicalNodes(workflow.graph.nodes);
+    const orderedNodes = topologicalNodes(
+      projectConfiguredWorkflowRuntimeNodes(workflow)
+    );
+    const canonicalNodesById = new Map(
+      workflow.graph.nodes.map((node) => [node.id, node])
+    );
+    const validateOutputBeforeCommit = async (
+      node: ConfiguredWorkflowRuntimeNode,
+      output: unknown
+    ): Promise<void> => {
+      const canonicalNode = canonicalNodesById.get(node.id);
+      if (canonicalNode === undefined) {
+        return;
+      }
+      if (canonicalNode.type === "agent") {
+        await validateWorkflowAgentNodeOutput({
+          node: canonicalNode,
+          output,
+          workflowDirectory: workflow.directory,
+          declaredCapabilities: workflow.capabilities,
+          capabilityRegistry: officialCapabilityRegistry,
+          path: `$.steps.${node.id}`
+        });
+        return;
+      }
+      validateWorkflowNodeOutput({
+        node: canonicalNode,
+        output,
+        declaredCapabilities: workflow.capabilities,
+        capabilityRegistry: officialCapabilityRegistry,
+        path: `$.steps.${node.id}`
+      });
+    };
     const { mainNodes, deferredNodes: deferredFinalReportNodes } =
       splitDeferredFinalReportNodesByPolicy({
         nodes: orderedNodes,
@@ -406,8 +448,15 @@ export async function runConfiguredWorkflow({
       execution: { max_concurrency: workflow.execution.max_concurrency },
       observability,
       summary,
-      runNode: async ({ node, state }) =>
-        await nodeRunner.runNode({ node, state, context: nodeRuntimeContext }),
+      runNode: async ({ node, state }) => {
+        const output = await nodeRunner.runNode({
+          node,
+          state,
+          context: nodeRuntimeContext
+        });
+        await validateOutputBeforeCommit(node, output);
+        return output;
+      },
       writePlannedArtifacts: async (node, output, state) =>
         await writePlannedArtifacts({
           artifactStore: activeArtifactStore,
@@ -429,7 +478,9 @@ export async function runConfiguredWorkflow({
     if (scheduleResult.status === "failed") {
       const primaryFailure = scheduleResult.primaryFailure;
       const error = configuredWorkflowError(
-        "Workflow scheduler failed",
+        primaryFailure === undefined
+          ? "Workflow scheduler failed"
+          : `Workflow scheduler failed: ${primaryFailure.message}`,
         primaryFailure?.code ?? "scheduler_step_failed"
       );
       (error as Error & { details?: ErrorArtifact["details"] }).details = {
@@ -471,14 +522,30 @@ export async function runConfiguredWorkflow({
 
     let report: JsonValue | undefined;
     for (const node of deferredFinalReportNodes) {
-      const output = await nodeRunner.runNode({
-        node,
-        state,
-        context: {
-          ...nodeRuntimeContext,
-          artifactStore
-        }
-      });
+      let output: unknown;
+      try {
+        output = await nodeRunner.runNode({
+          node,
+          state,
+          context: {
+            ...nodeRuntimeContext,
+            artifactStore
+          }
+        });
+        await validateOutputBeforeCommit(node, output);
+      } catch (cause) {
+        const error = configuredWorkflowError(
+          `Workflow deferred node failed: ${errorMessage(cause)}`,
+          "scheduler_step_failed",
+          cause
+        );
+        (error as Error & { details?: Record<string, unknown> }).details = {
+          step_id: node.id,
+          cause_code: errorCode(cause),
+          cause_message: errorMessage(cause)
+        };
+        throw error;
+      }
 
       await writePlannedArtifacts({
         artifactStore,

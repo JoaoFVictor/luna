@@ -59,6 +59,7 @@ import {
   feedbackFromValidation,
   gateResultFromAgentOutput
 } from "../../agents/gate-results.js";
+import { resolveGateInput } from "./gate-input.js";
 
 type FlueAgentRunnerOptions = {
   ctx: FlueContext<Invocation>;
@@ -773,6 +774,15 @@ async function runAgentGate({
   }
 
   const promptId = `gated_agent_loop:${options.node.id}:gate:${gate.id}:${attempt}`;
+  const gateInput = await resolveGateInput(gate.input, {
+    gate: {
+      output: workerOutput,
+      validation,
+      diff_summary: diffSummary,
+      outputs: gateOutputs,
+      attempt
+    }
+  });
   const response = await runPromptWithRetry({
     options,
     session,
@@ -781,7 +791,7 @@ async function runAgentGate({
       gateAgent.description,
       promptBody({
         workflow_input: options.input,
-        gate_input: gate.input ?? {},
+        gate_input: gateInput,
         worker_output: workerOutput,
         validation,
         diff_summary: diffSummary,
@@ -799,10 +809,19 @@ async function runAgentGate({
   return await gateResultFromAgentOutput({
     id: gate.id,
     type: gate.type,
-    blockWhen: gate.block_when,
-    feedback: gate.feedback,
-    output: response.data
+    blockWhen: normalizeGateExpression(gate.block_when),
+    feedback:
+      gate.feedback === undefined
+        ? undefined
+        : normalizeGateExpression(gate.feedback),
+    output: { gate: response.data }
   });
+}
+
+function normalizeGateExpression(
+  value: string | { expression: string }
+): { expression: string } {
+  return typeof value === "string" ? { expression: value } : value;
 }
 
 export async function runFlueGatedAgentLoopStep(

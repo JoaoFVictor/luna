@@ -761,7 +761,7 @@ describe("refactor guardrails", () => {
     expect(workflowEntryPoints).toEqual(["src/workflows/luna.ts"]);
   });
 
-  it("loads the real code-review and implementation workflow graphs", async () => {
+  it("loads the real code-review and implementation workflow definitions", async () => {
     await expect(loadWorkflowDefinition(path.join(repoRoot, "workflows"), "code-review"))
       .resolves.toMatchObject({
         id: "code-review",
@@ -774,9 +774,14 @@ describe("refactor guardrails", () => {
       });
   });
 
-  it("keeps workflow graphs and fixtures on explicit artifacts only", async () => {
-    const workflowGraphs = (await listFiles("workflows")).filter((file) =>
+  it("keeps workflow yaml and fixtures on explicit artifacts only", async () => {
+    const legacyWorkflowGraphs = (await listFiles("workflows")).filter((file) =>
       file.endsWith("/graph.yaml")
+    );
+    expect(legacyWorkflowGraphs).toEqual([]);
+
+    const workflowDefinitions = (await listFiles("workflows")).filter((file) =>
+      file.endsWith("/workflow.yaml")
     );
     const artifactFixtureGraphs = (await listFiles("tests/fixtures/workflows")).filter(
       (file) => file.endsWith(".yaml")
@@ -785,11 +790,11 @@ describe("refactor guardrails", () => {
       (file) => file.endsWith(".yaml")
     );
 
-    for (const relativePath of [...workflowGraphs, ...artifactFixtureGraphs]) {
+    for (const relativePath of [...workflowDefinitions, ...artifactFixtureGraphs]) {
       expect(parsedYamlHasLegacyArtifact(await readText(relativePath))).toBe(false);
     }
 
-    for (const relativePath of [...workflowGraphs, ...reportPathFixtureGraphs]) {
+    for (const relativePath of [...workflowDefinitions, ...reportPathFixtureGraphs]) {
       expect(parsedYamlHasLegacyReportPath(await readText(relativePath))).toBe(false);
     }
   });

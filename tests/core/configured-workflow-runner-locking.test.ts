@@ -24,7 +24,8 @@ import {
   writeImplementationWorkflow,
   writePreflightWorkflow,
   writeReviewPlannerAgent,
-  writeWorkflow
+  writeWorkflow,
+  writeWorkflowSchemas
 } from "./configured-workflow-runner-test-helpers.js";
 
 async function writeLockingWorkflow(
@@ -32,6 +33,7 @@ async function writeLockingWorkflow(
   workflowId = "lock-review"
 ): Promise<void> {
   await mkdir(path.join(root, "workflows", workflowId), { recursive: true });
+  await writeWorkflowSchemas(root, workflowId);
   await writeFile(
     path.join(root, "workflows", workflowId, "workflow.yaml"),
     [
@@ -40,20 +42,18 @@ async function writeLockingWorkflow(
       "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
-      "graph: graph.yaml",
-      ""
-    ].join("\n")
-  );
-  await writeFile(
-    path.join(root, "workflows", workflowId, "graph.yaml"),
-    [
+      "capabilities:",
+      "  - runtime",
+      "  - artifacts",
       "nodes:",
       "  - id: workspace",
       "    type: built_in",
-      "    uses: prepare_worktree",
+      "    uses: runtime.prepare_worktree",
       "    artifacts:",
       "      - path: workspace.json",
-      "        source: $.steps.workspace",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.workspace\"",
       "        format: json",
       ""
     ].join("\n")
@@ -95,6 +95,7 @@ async function writePolicyLockWorkflow(root: string): Promise<void> {
   await mkdir(path.join(root, "workflows", "policy-locks"), {
     recursive: true
   });
+  await writeWorkflowSchemas(root, "policy-locks");
   await writeFile(
     path.join(root, "routing.yaml"),
     [
@@ -115,36 +116,42 @@ async function writePolicyLockWorkflow(root: string): Promise<void> {
       "mode: trusted_local_write",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
-      "graph: graph.yaml",
+      "capabilities:",
+      "  - runtime",
+      "  - artifacts",
       "execution:",
       "  max_concurrency: 3",
-      ""
-    ].join("\n")
-  );
-  await writeFile(
-    path.join(root, "workflows", "policy-locks", "graph.yaml"),
-    [
       "nodes:",
       "  - id: locked_a",
       "    type: built_in",
-      "    uses: commit_changes",
+      "    uses: runtime.commit_changes",
+      "    input:",
+      "      message: Lock A",
       "    artifacts:",
       "      - path: locked-a.json",
-      "        source: $.steps.locked_a",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.locked_a\"",
       "        format: json",
       "  - id: unlocked",
       "    type: built_in",
-      "    uses: preflight",
+      "    uses: runtime.preflight",
       "    artifacts:",
       "      - path: unlocked.json",
-      "        source: $.steps.unlocked",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.unlocked\"",
       "        format: json",
       "  - id: locked_b",
       "    type: built_in",
-      "    uses: commit_changes",
+      "    uses: runtime.commit_changes",
+      "    input:",
+      "      message: Lock B",
       "    artifacts:",
       "      - path: locked-b.json",
-      "        source: $.steps.locked_b",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.locked_b\"",
       "        format: json",
       ""
     ].join("\n")

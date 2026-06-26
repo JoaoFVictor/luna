@@ -46,6 +46,21 @@ function builtInArtifactNode(
   };
 }
 
+function artifactPlan(
+  path: string,
+  source: string,
+  format: "json" | "markdown" = "json",
+  required?: boolean
+): NonNullable<Parameters<typeof normalizeArtifactWritePlans>[1]>[number] {
+  return {
+    path,
+    publisher: "artifacts.manifest_publisher",
+    source: { expression: source },
+    format,
+    ...(required === undefined ? {} : { required })
+  };
+}
+
 function artifactStoreMock() {
   return {
     writeJson: vi.fn(async (name: string) => name),
@@ -57,12 +72,7 @@ describe("artifact write plans", () => {
   it("skips optional missing artifact sources and errors for required missing sources", async () => {
     const artifactStore = artifactStoreMock();
     const node = builtInArtifactNode("preflight", [
-      {
-        path: "optional.json",
-        source: "$.steps.preflight.optional",
-        format: "json",
-        required: false
-      }
+      artifactPlan("optional.json", "$.steps.preflight.optional", "json", false)
     ]);
 
     await writePlannedArtifacts({
@@ -75,11 +85,7 @@ describe("artifact write plans", () => {
     expect(artifactStore.writeJson).not.toHaveBeenCalled();
 
     const requiredNode = builtInArtifactNode("preflight", [
-      {
-        path: "required.json",
-        source: "$.steps.preflight.required",
-        format: "json"
-      }
+      artifactPlan("required.json", "$.steps.preflight.required")
     ]);
 
     await expect(
@@ -97,11 +103,7 @@ describe("artifact write plans", () => {
     const node = builtInArtifactNode(
       "final_report",
       [
-        {
-          path: "final-report.md",
-          source: "$.steps.final_report.markdown",
-          format: "markdown"
-        }
+        artifactPlan("final-report.md", "$.steps.final_report.markdown", "markdown")
       ],
       "final_code_review_report"
     );
@@ -119,7 +121,7 @@ describe("artifact write plans", () => {
   it("rejects non-JSON values for json artifacts", async () => {
     const artifactStore = artifactStoreMock();
     const node = builtInArtifactNode("preflight", [
-      { path: "output.json", source: "$.steps.preflight", format: "json" }
+      artifactPlan("output.json", "$.steps.preflight")
     ]);
 
     await expect(
@@ -135,7 +137,7 @@ describe("artifact write plans", () => {
   it("resolves current node output before scheduler persists it in state steps", async () => {
     const artifactStore = artifactStoreMock();
     const node = builtInArtifactNode("preflight", [
-      { path: "preflight.json", source: "$.steps.preflight", format: "json" }
+      artifactPlan("preflight.json", "$.steps.preflight")
     ]);
 
     await writePlannedArtifacts({
@@ -163,21 +165,9 @@ describe("artifact write plans", () => {
       })
     };
     const node = builtInArtifactNode("final_report", [
-      {
-        path: "summary.json",
-        source: "$.steps.final_report.summary",
-        format: "json"
-      },
-      {
-        path: "details.json",
-        source: "$.steps.final_report.details",
-        format: "json"
-      },
-      {
-        path: "final-report.md",
-        source: "$.steps.final_report.markdown",
-        format: "markdown"
-      }
+      artifactPlan("summary.json", "$.steps.final_report.summary"),
+      artifactPlan("details.json", "$.steps.final_report.details"),
+      artifactPlan("final-report.md", "$.steps.final_report.markdown", "markdown")
     ]);
 
     await writePlannedArtifacts({

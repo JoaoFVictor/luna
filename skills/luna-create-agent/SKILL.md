@@ -38,7 +38,8 @@ Reuse an existing agent when the role, output schema, and allowed capabilities
 still fit. Create a new agent when the responsibility, mode, tools, MCP access,
 or schema differs.
 
-Keep orchestration in `workflows/<id>/graph.yaml`, not in agent instructions.
+Keep orchestration in `workflows/<id>/workflow.yaml` `nodes:`, not in agent
+instructions.
 
 ## Capabilities
 

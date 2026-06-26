@@ -31,13 +31,15 @@ import {
   writeImplementationWorkflow,
   writePreflightWorkflow,
   writeReviewPlannerAgent,
-  writeWorkflow
+  writeWorkflow,
+  writeWorkflowSchemas
 } from "./configured-workflow-runner-test-helpers.js";
 
 async function writeConfigInputWorkflow(root: string): Promise<void> {
   await mkdir(path.join(root, "workflows", "config-input-review"), {
     recursive: true
   });
+  await writeWorkflowSchemas(root, "config-input-review");
   await writeFile(
     path.join(root, "workflows", "config-input-review", "workflow.yaml"),
     [
@@ -46,23 +48,22 @@ async function writeConfigInputWorkflow(root: string): Promise<void> {
       "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
-      "graph: graph.yaml",
-      ""
-    ].join("\n")
-  );
-  await writeFile(
-    path.join(root, "workflows", "config-input-review", "graph.yaml"),
-    [
+      "capabilities:",
+      "  - runtime",
+      "  - artifacts",
       "nodes:",
       "  - id: config_probe",
       "    type: built_in",
-      "    uses: preflight",
+      "    uses: runtime.preflight",
       "    artifacts:",
       "      - path: config-probe.json",
-      "        source: $.steps.config_probe",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.config_probe\"",
       "        format: json",
       "    input:",
-      "      commands: $.config.implementation.validation.commands",
+      "      commands:",
+      "        expression: \"$.config.implementation.validation.commands\"",
       ""
     ].join("\n")
   );
@@ -72,6 +73,7 @@ async function writeParallelProbeWorkflow(root: string): Promise<void> {
   await mkdir(path.join(root, "workflows", "parallel-probe"), {
     recursive: true
   });
+  await writeWorkflowSchemas(root, "parallel-probe");
   await writeFile(
     path.join(root, "routing.yaml"),
     [
@@ -91,22 +93,17 @@ async function writeParallelProbeWorkflow(root: string): Promise<void> {
       "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
-      "graph: graph.yaml",
+      "capabilities:",
+      "  - runtime",
       "execution:",
       "  max_concurrency: 2",
-      ""
-    ].join("\n")
-  );
-  await writeFile(
-    path.join(root, "workflows", "parallel-probe", "graph.yaml"),
-    [
       "nodes:",
       "  - id: node-a",
       "    type: built_in",
-      "    uses: preflight",
+      "    uses: runtime.preflight",
       "  - id: node-b",
       "    type: built_in",
-      "    uses: collect_repo_context",
+      "    uses: runtime.collect_repo_context",
       ""
     ].join("\n")
   );
@@ -116,6 +113,7 @@ async function writeTaskContextWorkflow(root: string): Promise<void> {
   await mkdir(path.join(root, "workflows", "task-context-only"), {
     recursive: true
   });
+  await writeWorkflowSchemas(root, "task-context-only");
   await writeFile(
     path.join(root, "workflows", "task-context-only", "workflow.yaml"),
     [
@@ -124,17 +122,12 @@ async function writeTaskContextWorkflow(root: string): Promise<void> {
       "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
-      "graph: graph.yaml",
-      ""
-    ].join("\n")
-  );
-  await writeFile(
-    path.join(root, "workflows", "task-context-only", "graph.yaml"),
-    [
+      "capabilities:",
+      "  - runtime",
       "nodes:",
       "  - id: task_context",
       "    type: built_in",
-      "    uses: collect_task_context",
+      "    uses: runtime.collect_task_context",
       ""
     ].join("\n")
   );
@@ -382,8 +375,8 @@ describe("configured workflow runner", () => {
       expect(result).toMatchObject({
         status: "failed",
         error: {
-          code: "workflow_config_read_failed",
-          message: "Failed to load workflow configuration: parallel-probe"
+          code: "built_in_unsupported",
+          message: "Unsupported built-in step"
         }
       });
     } finally {
@@ -725,7 +718,7 @@ describe("configured workflow runner", () => {
             outcome: expect.objectContaining({ status: "failed" }),
             data: expect.objectContaining({
               error: expect.objectContaining({
-                message: "Workflow scheduler failed"
+                message: expect.stringContaining("Workflow scheduler failed")
               })
             })
           })
@@ -823,6 +816,58 @@ describe("configured workflow runner", () => {
           }
         })
       );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("validates agent output against the workflow-declared output schema before writing artifacts", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeWorkflow(root);
+      await writeAgent(root, "review-planner");
+      await writeFile(
+        path.join(root, "workflows", "code-review", "output.schema.json"),
+        JSON.stringify({
+          type: "object",
+          additionalProperties: false,
+          required: ["flag"],
+          properties: { flag: { type: "boolean" } }
+        })
+      );
+
+      const result = await runConfiguredWorkflow({
+        invocation,
+        configRoot: root,
+        throwOnError: false,
+        dependencies: {
+          createRunIdentity: staticRunIdentity(githubRun),
+          runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) => {
+            if (uses === "preflight") {
+              return { status: "ok" };
+            }
+            if (uses === "collect_repo_context") {
+              return { files: [] };
+            }
+            return {};
+          }),
+          runAgentStep: vi.fn(async () => ({ flag: "not-boolean" }))
+        }
+      });
+
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") {
+        throw new Error("Expected failed result");
+      }
+      expect(result.error.details).toMatchObject({
+        step_id: "review_plan",
+        cause_code: "workflow_capability_config_invalid"
+      });
+      await expect(
+        pathExists(artifactPath(root, "code-review", githubRun.run_id, "review-plan.json"))
+      ).resolves.toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -112,11 +112,12 @@ function resolveObjectReference(
 }
 
 function resolveReference(reference: string, state: WorkflowState): unknown {
-  if (reference === "$.invocation") {
-    return state.invocation;
-  }
-
   for (const candidate of [
+    {
+      prefix: "$.invocation",
+      rootName: "invocation",
+      root: state.invocation
+    },
     {
       prefix: "$.config",
       rootName: "config",
@@ -186,14 +187,33 @@ export function resolveWorkflowInput(
   input: Record<string, unknown> | undefined,
   state: WorkflowState
 ): Record<string, unknown> {
-  const resolved: Record<string, unknown> = {};
+  return resolveWorkflowValue(input ?? {}, state) as Record<string, unknown>;
+}
 
-  for (const [key, value] of Object.entries(input ?? {})) {
-    resolved[key] =
-      typeof value === "string" && value.startsWith("$.")
-        ? resolveReference(value, state)
-        : value;
+function resolveWorkflowValue(value: unknown, state: WorkflowState): unknown {
+  if (typeof value === "string" && value.startsWith("$.")) {
+    return resolveReference(value, state);
   }
 
-  return resolved;
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveWorkflowValue(item, state));
+  }
+
+  if (typeof value === "object" && value !== null) {
+    if (
+      Object.keys(value).length === 1 &&
+      typeof (value as { expression?: unknown }).expression === "string"
+    ) {
+      return value;
+    }
+
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        resolveWorkflowValue(item, state)
+      ])
+    );
+  }
+
+  return value;
 }

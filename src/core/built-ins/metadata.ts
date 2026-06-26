@@ -160,6 +160,7 @@ export const builtInStepMetadataByName = Object.freeze({
   collect_repo_context: repositoryRequiredMetadata,
   validate_code_review_findings: emptyBuiltInMetadata,
   final_code_review_report: finalReportMetadata,
+  final_report: finalReportMetadata,
   prepare_implementation_worktree: prepareImplementationWorktreeMetadata,
   collect_task_context: emptyBuiltInMetadata,
   run_validation_commands: runValidationCommandsMetadata,

@@ -2,6 +2,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { collectContextBuiltIn } from "../../src/core/built-ins/context.js";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import { runGit } from "../../src/core/git/client.js";
 import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
@@ -461,10 +462,18 @@ describe("configured code review workflow end-to-end with real Git", () => {
             started_at: "2026-06-20T00:00:00.000Z"
           }),
           lockManagerFactory: locks.factory,
-          runBuiltInStep: async ({ uses, state }) => {
+          runBuiltInStep: async ({ uses, state, input, dependencies }) => {
             if (uses === "preflight") {
               await workflowOverlap.enter();
               return { status: "ok" };
+            }
+
+            if (uses === "collect_context") {
+              return await collectContextBuiltIn.run({
+                state,
+                input,
+                dependencies
+              });
             }
 
             if (uses === "prepare_implementation_worktree") {

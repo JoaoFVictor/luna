@@ -2,12 +2,18 @@ import { capabilityManifest } from "../../core/capabilities/manifest.js";
 
 const workspaceRefSchema = {
   type: "object",
-  additionalProperties: false,
-  required: ["workspace_id", "root"],
+  additionalProperties: true,
+  required: ["run_id", "path", "preserved", "reason"],
   properties: {
-    workspace_id: { type: "string" },
-    root: { type: "string" },
-    lock_id: { type: "string" }
+    run_id: { type: "string" },
+    path: { type: "string" },
+    preserved: { type: "boolean" },
+    reason: { type: "string" },
+    repository_id: { type: "string" },
+    branch: { type: "string" },
+    remote: { type: "string" },
+    base_ref: { type: "string" },
+    base_sha: { type: "string" }
   }
 } as const;
 
@@ -37,11 +43,7 @@ export const manifest = capabilityManifest({
       id: "repository-workspace.capture",
       input_schema: {
         type: "object",
-        additionalProperties: false,
-        required: ["repository_id"],
-        properties: {
-          repository_id: { type: "string" }
-        }
+        additionalProperties: false
       },
       output_schema: workspaceRefSchema,
       required_ports: ["repository-workspace.manager"]

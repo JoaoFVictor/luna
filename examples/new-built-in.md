@@ -16,13 +16,14 @@ the work only converts external input into a Luna invocation.
 ## 1. Choose The Domain File
 
 Runtime-neutral built-ins live under `src/core/built-ins/`. Provider-specific
-built-ins live under `src/core/providers/<provider>/built-ins.ts`.
+built-ins live under `src/providers/<provider>/built-ins.ts` and are wired
+through an explicit composition registry.
 
 Current domain files:
 
-- `src/core/providers/github/built-ins.ts` for GitHub PR review steps.
-- `src/core/providers/jira/built-ins.ts` for Jira task context and reports.
-- `src/core/providers/plane/built-ins.ts` for Plane task context and reports.
+- `src/providers/github/built-ins.ts` for GitHub PR review steps.
+- `src/providers/jira/built-ins.ts` for Jira task context and reports.
+- `src/providers/plane/built-ins.ts` for Plane task context and reports.
 - `src/core/built-ins/implementation.ts` for write-mode implementation steps;
   supporting write-mode services live under `src/core/write-mode/`.
 
@@ -90,12 +91,12 @@ export const finalSomethingReportBuiltIn = defineBuiltInStep({
 Do not add name checks to `src/core/configured-workflow/runner.ts`. Runner
 behavior must come from metadata.
 
-## 4. Register It In The Provider Registry
+## 4. Register It In A Composition Registry
 
-Add provider-facing steps to `src/core/providers/built-ins.ts`:
+Add provider-facing steps through the provider-owned composition root:
 
 ```ts
-import { myNewStepBuiltIn } from "./my-provider/built-ins.js";
+import { myNewStepBuiltIn } from "../../providers/my-provider/built-ins.js";
 
 export const defaultBuiltInSteps = Object.freeze([
   // existing steps...
@@ -116,7 +117,7 @@ should import the domain file that owns the step directly.
 
 ## 6. Use It From Workflow YAML
 
-Add a node to `workflows/<workflow-id>/graph.yaml`:
+Add a node to `workflows/<workflow-id>/workflow.yaml` under `nodes:`:
 
 ```yaml
 - id: my_step
@@ -169,7 +170,7 @@ Run the focused tests:
 
 ```sh
 npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-code-review.test.ts tests/core/built-ins-implementation.test.ts
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow/definition.test.ts tests/core/configured-workflow-runner.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused

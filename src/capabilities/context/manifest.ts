@@ -4,29 +4,87 @@ const contextInputSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    repository: { type: "string" },
-    context_files: {
+    agents: {
       type: "array",
       items: { type: "string" }
     },
-    agent_id: { type: "string" }
+    max_file_bytes: { type: "integer", minimum: 1 }
   }
 } as const;
 
 const contextOutputSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["instructions", "context_audit"],
+  required: ["kind", "repository", "agents"],
   properties: {
-    instructions: { type: "string" },
-    context_audit: {
+    kind: { enum: ["luna.collect_context.v1"] },
+    repository: {
       type: "object",
       additionalProperties: false,
-      required: ["files"],
+      required: ["root", "configured", "read", "missing", "skipped"],
       properties: {
-        files: {
+        root: { type: "string" },
+        configured: {
           type: "array",
           items: { type: "string" }
+        },
+        read: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: true
+          }
+        },
+        missing: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: true
+          }
+        },
+        skipped: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: true
+          }
+        }
+      }
+    },
+    agents: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "root", "configured", "read", "missing", "skipped"],
+        properties: {
+          id: { type: "string" },
+          root: { type: "string" },
+          configured: {
+            type: "array",
+            items: { type: "string" }
+          },
+          read: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true
+            }
+          },
+          missing: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true
+            }
+          },
+          skipped: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true
+            }
+          }
         }
       }
     }

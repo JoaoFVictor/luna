@@ -66,7 +66,7 @@ Run:
 
 ```sh
 npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-*.test.ts
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow/definition.test.ts tests/core/configured-workflow-runner.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused

@@ -9,7 +9,8 @@ Local tool contracts, implementations, and catalog registration live under
 `src/core/tools/`. The current Flue runtime adapter materializes those tools
 under `src/core/agent-runtime/flue/`.
 
-Do not use a tool for orchestration. Workflow order belongs in `graph.yaml`.
+Do not use a tool for orchestration. Workflow order belongs in `workflow.yaml`
+`nodes:`.
 Do not use a tool for external input normalization. That belongs in an input
 adapter.
 

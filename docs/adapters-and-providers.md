@@ -71,7 +71,7 @@ Everything goes through `run` plus a target, input adapter, or JSON invocation.
 
 ## Provider Ownership
 
-Provider-specific code belongs under `src/core/providers/<provider>/` or the
+Provider-specific code belongs under `src/providers/<provider>/` or the
 matching provider-owned input adapter.
 
 A provider owns:
@@ -152,7 +152,7 @@ type. A Flue runner should not parse a Jira URL.
 - CLI: `src/core/agent-runtime/flue/cli.ts`
 - Runtime factory: `src/core/agent-runtime/flue/workflow-factory.ts`
 - Config bootstrap: `src/core/configured-workflow/bootstrap.ts`
-- Provider built-ins: `src/core/providers/built-ins.ts`
+- Provider built-in composition: `src/core/providers/built-ins.ts`
 - Shared provider auth loader: `src/core/providers/auth.ts`
 - Repository resolution: `src/core/workflow/workspace-resolver.ts`
 
@@ -164,4 +164,3 @@ Useful tests include `tests/core/cli.test.ts`,
 `tests/core/router.test.ts`, `tests/core/invocation-helpers.test.ts`,
 `tests/core/workspace-resolver.test.ts`, `tests/core/config-loader.test.ts`,
 and provider auth/context tests under `tests/core/`.
-

@@ -22,9 +22,9 @@ import {
 import {
   selectReadyBatchWithPolicy,
   type WorkflowExecutionLocks,
+  type WorkflowExecutionNode,
   type WorkflowExecutionPlanItem
 } from "./execution-policy.js";
-import type { WorkflowNode } from "./definition.js";
 import type { SchedulerWorkflowState } from "./state.js";
 
 export type SchedulerExecution = {
@@ -39,23 +39,25 @@ export type SchedulerLockManager = {
   ): Promise<() => Promise<void>>;
 };
 
-export type WorkflowScheduleOptions = {
-  nodes: WorkflowNode[];
+export type WorkflowScheduleOptions<
+  TNode extends WorkflowExecutionNode = WorkflowExecutionNode
+> = {
+  nodes: TNode[];
   state: SchedulerWorkflowState;
   execution: SchedulerExecution;
   observability?: LunaObservability;
   summary?: ObservabilitySummary;
   lockManager?: SchedulerLockManager;
   runNode: (options: {
-    node: WorkflowNode;
+    node: TNode;
     state: SchedulerWorkflowState;
   }) => unknown | Promise<unknown>;
   writePlannedArtifacts: (
-    node: WorkflowNode,
+    node: TNode,
     output: unknown,
     state: SchedulerWorkflowState
   ) => unknown | Promise<unknown>;
-  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata;
+  builtInMetadata: (node: TNode) => BuiltInStepMetadata;
 };
 
 export type WorkflowScheduleResult = {
@@ -73,6 +75,8 @@ type SchedulerStepFailure = {
   details: {
     step_id: string;
     cause_code?: string;
+    cause_message?: string;
+    cause_details?: Record<string, unknown>;
   };
 };
 
@@ -270,6 +274,7 @@ export function schedulerStepFailed(
   cause: unknown
 ): SchedulerStepFailure {
   const causeCode = errorCode(cause);
+  const details = (cause as { details?: unknown })?.details;
 
   return {
     status: "failed",
@@ -277,12 +282,18 @@ export function schedulerStepFailed(
     message: errorMessage(cause),
     details: {
       step_id: stepId,
-      ...(causeCode === undefined ? {} : { cause_code: causeCode })
+      ...(causeCode === undefined ? {} : { cause_code: causeCode }),
+      cause_message: errorMessage(cause),
+      ...(typeof details === "object" && details !== null && !Array.isArray(details)
+        ? { cause_details: details as Record<string, unknown> }
+        : {})
     }
   };
 }
 
-export async function runWorkflowSchedule({
+export async function runWorkflowSchedule<
+  TNode extends WorkflowExecutionNode
+>({
   nodes,
   state,
   execution,
@@ -292,7 +303,7 @@ export async function runWorkflowSchedule({
   runNode,
   writePlannedArtifacts,
   builtInMetadata
-}: WorkflowScheduleOptions): Promise<WorkflowScheduleResult> {
+}: WorkflowScheduleOptions<TNode>): Promise<WorkflowScheduleResult> {
   const pending = new Map(nodes.map((node) => [node.id, node]));
   const completed = new Set<string>();
   const blocked = new Set<string>();
@@ -326,7 +337,7 @@ export async function runWorkflowSchedule({
     }
   }
 
-  async function emitStepStarted(node: WorkflowNode): Promise<void> {
+  async function emitStepStarted(node: TNode): Promise<void> {
     await emitStepEvent((activeObservability) =>
       stepStartedEvent({
         ...activeObservability.eventContext("info"),
@@ -336,7 +347,7 @@ export async function runWorkflowSchedule({
   }
 
   async function emitStepSucceeded(
-    node: WorkflowNode,
+    node: TNode,
     durationMs: number
   ): Promise<void> {
     await emitStepEvent((activeObservability) =>
@@ -353,7 +364,7 @@ export async function runWorkflowSchedule({
     durationMs,
     error
   }: {
-    node: WorkflowNode;
+    node: TNode;
     durationMs?: number;
     error: unknown;
   }): Promise<void> {
@@ -371,7 +382,7 @@ export async function runWorkflowSchedule({
   }
 
   async function emitStepSkipped(
-    node: WorkflowNode,
+    node: TNode,
     error: unknown
   ): Promise<void> {
     const errorCode = (error as { code?: unknown } | undefined)?.code;
@@ -387,8 +398,8 @@ export async function runWorkflowSchedule({
     );
   }
 
-  async function runOneNode(item: WorkflowExecutionPlanItem): Promise<{
-    node: WorkflowNode;
+  async function runOneNode(item: WorkflowExecutionPlanItem<TNode>): Promise<{
+    node: TNode;
     output: unknown;
     lifecycleOutcome?: ImplementationLifecycleOutcome;
     capturedWorkspace?: SchedulerWorkflowState["workspace"];

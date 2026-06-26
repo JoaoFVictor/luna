@@ -9,6 +9,7 @@ import {
   runValidationCommandsBuiltIn
 } from "./implementation.js";
 import { collectContextBuiltIn } from "./context.js";
+import { finalReportBuiltIn } from "./report.js";
 import { defaultChangeRequestRegistry } from "../change-request/default-registry.js";
 import { builtInError } from "./errors.js";
 import { builtInStepMetadataByName } from "./metadata.js";
@@ -32,7 +33,8 @@ export const defaultBuiltInSteps = Object.freeze([
   recordAcceptanceDecisionBuiltIn,
   commitChangesBuiltIn,
   pushBranchBuiltIn,
-  openChangeRequestBuiltIn
+  openChangeRequestBuiltIn,
+  finalReportBuiltIn
 ] as const);
 
 export function createBuiltInStepCatalog<

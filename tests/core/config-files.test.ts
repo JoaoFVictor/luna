@@ -13,12 +13,12 @@ type AgentConfig = {
 type WorkflowGraph = {
   nodes: Array<{
     id: string;
-    type: "agent" | "built_in" | "gated_agent_loop";
+    type: "agent" | "built_in" | "pattern" | "human_gate";
     uses?: string;
     agent?: string;
+    worker?: string;
     gates?: Array<{
       type: string;
-      agent?: string;
       input?: Record<string, unknown>;
     }>;
     after?: string[];
@@ -145,14 +145,13 @@ async function parseJsonFile(path: string): Promise<unknown> {
 
 function agentsWithContextInput(graph: WorkflowGraph): string[] {
   const nodeAgents = graph.nodes
-    .filter((node) => node.type === "agent" || node.type === "gated_agent_loop")
-    .filter((node) => node.input?.context === "$.steps.context")
-    .map((node) => node.agent)
+    .filter((node) => node.type === "agent" || node.type === "pattern")
+    .filter((node) => expressionValue(node.input?.context) === "$.steps.context")
+    .map((node) => node.agent ?? node.worker)
     .filter((agent): agent is string => agent !== undefined);
   const gateAgents = graph.nodes.flatMap((node) =>
     (node.gates ?? [])
-      .filter((gate) => gate.input?.context === "$.steps.context")
-      .map((gate) => gate.agent)
+      .map((gate) => gate.input?.review_agent)
       .filter((agent): agent is string => agent !== undefined)
   );
 
@@ -161,13 +160,22 @@ function agentsWithContextInput(graph: WorkflowGraph): string[] {
 
 function collectContextAgents(graph: WorkflowGraph): string[] {
   const contextNode = graph.nodes.find(
-    (node) => node.type === "built_in" && node.uses === "collect_context"
+    (node) => node.type === "built_in" && node.uses === "context.collect_context"
   );
   const agents = contextNode?.input?.agents;
 
   return Array.isArray(agents) ? agents.filter((agent): agent is string =>
     typeof agent === "string"
   ) : [];
+}
+
+function expressionValue(value: unknown): string | undefined {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const expression = (value as { expression?: unknown }).expression;
+    return typeof expression === "string" ? expression : undefined;
+  }
+
+  return typeof value === "string" ? value : undefined;
 }
 
 function formatAjvErrors(errors: ErrorObject[] | null | undefined): string {
@@ -271,13 +279,9 @@ describe("config definition files", () => {
         "config/implementation.yaml",
         "config/jira.yaml",
         "config/plane.yaml",
-        "workflows/code-review/graph.yaml",
         "workflows/code-review/workflow.yaml",
-        "workflows/example-complete-agent/graph.yaml",
         "workflows/example-complete-agent/workflow.yaml",
-        "workflows/example-minimal-agent/graph.yaml",
         "workflows/example-minimal-agent/workflow.yaml",
-        "workflows/implementation/graph.yaml",
         "workflows/implementation/workflow.yaml"
       ])
     );
@@ -663,7 +667,7 @@ describe("config definition files", () => {
 
   it("references existing agents from the code review workflow graph", async () => {
     const graph = (await parseYamlFile(
-      "workflows/code-review/graph.yaml"
+      "workflows/code-review/workflow.yaml"
     )) as WorkflowGraph;
 
     expect(graph.nodes.map((node) => node.id)).toEqual([
@@ -673,7 +677,6 @@ describe("config definition files", () => {
       "context",
       "review_plan",
       "code_review",
-      "validate_findings",
       "acceptance",
       "final_report"
     ]);
@@ -681,9 +684,9 @@ describe("config definition files", () => {
       "review_plan"
     ]);
     for (const id of ["review_plan", "code_review", "acceptance"]) {
-      expect(graph.nodes.find((node) => node.id === id)?.input).toMatchObject({
-        context: "$.steps.context"
-      });
+      expect(
+        expressionValue(graph.nodes.find((node) => node.id === id)?.input?.context)
+      ).toBe("$.steps.context");
     }
     expect(collectContextAgents(graph)).toEqual(agentsWithContextInput(graph));
 
@@ -697,17 +700,18 @@ describe("config definition files", () => {
 
   it("references existing agents from the implementation workflow graph", async () => {
     const graph = (await parseYamlFile(
-      "workflows/implementation/graph.yaml"
+      "workflows/implementation/workflow.yaml"
     )) as WorkflowGraph;
 
     expect(graph.nodes.map((node) => node.id)).toEqual([
       "preflight",
-      "task_context",
       "workspace",
+      "task_context",
       "context",
       "implementation_plan",
       "implementation",
       "implementation_validation",
+      "worktree_diff",
       "commit",
       "push",
       "change_request",
@@ -715,32 +719,11 @@ describe("config definition files", () => {
     ]);
     expect(graph.nodes.find((node) => node.id === "implementation")).toEqual(
       expect.objectContaining({
-        type: "gated_agent_loop",
-        agent: "code-implementer",
+        type: "pattern",
+        worker: "code-implementer",
         artifacts: expect.arrayContaining([
           expect.objectContaining({
-            path: "implementation-attempts.json",
-            source: "$.steps.implementation.attempts",
-            format: "json"
-          }),
-          expect.objectContaining({
-            path: "validation.json",
-            source: "$.steps.implementation.validation",
-            format: "json"
-          }),
-          expect.objectContaining({
-            path: "implementation-review.json",
-            source: "$.steps.implementation.result.review",
-            format: "json"
-          }),
-          expect.objectContaining({
-            path: "acceptance-review.json",
-            source: "$.steps.implementation.result.acceptance",
-            format: "json"
-          }),
-          expect.objectContaining({
             path: "implementation-result.json",
-            source: "$.steps.implementation.result",
             format: "json"
           })
         ])
@@ -750,40 +733,36 @@ describe("config definition files", () => {
       "implementation_plan",
       "implementation"
     ]) {
-      expect(graph.nodes.find((node) => node.id === id)?.input).toMatchObject({
-        context: "$.steps.context"
-      });
+      expect(
+        expressionValue(graph.nodes.find((node) => node.id === id)?.input?.context)
+      ).toBe("$.steps.context");
     }
     const implementationNode = graph.nodes.find(
       (node) => node.id === "implementation"
     );
     expect(
       implementationNode?.gates
-        ?.filter((gate) => gate.type === "agent")
-        .map((gate) => gate.agent)
+        ?.filter((gate) => gate.type === "quality-gates.agent_review")
+        .map((gate) => gate.input?.review_agent)
     ).toEqual(["change-reviewer", "change-acceptance-reviewer"]);
-    for (const gate of implementationNode?.gates ?? []) {
-      if (gate.type !== "agent") {
-        continue;
-      }
-      expect(gate.input).toMatchObject({ context: "$.steps.context" });
-    }
     expect(collectContextAgents(graph)).toEqual(agentsWithContextInput(graph));
 
     for (const node of graph.nodes.filter(
-      (candidate) => candidate.type === "agent" || candidate.type === "gated_agent_loop"
+      (candidate) => candidate.type === "agent" || candidate.type === "pattern"
     )) {
-      expect(node.agent, node.id).toBeDefined();
-      await expect(access(join("agents", node.agent ?? ""))).resolves.toBe(
+      const agentId = node.agent ?? node.worker;
+      expect(agentId, node.id).toBeDefined();
+      await expect(access(join("agents", agentId ?? ""))).resolves.toBe(
         undefined
       );
     }
     for (const gate of implementationNode?.gates ?? []) {
-      if (gate.type !== "agent") {
+      if (gate.type !== "quality-gates.agent_review") {
         continue;
       }
-      expect(gate.agent, gate.type).toBeDefined();
-      await expect(access(join("agents", gate.agent ?? ""))).resolves.toBe(
+      const reviewAgent = gate.input?.review_agent;
+      expect(reviewAgent, gate.type).toBeDefined();
+      await expect(access(join("agents", String(reviewAgent)))).resolves.toBe(
         undefined
       );
     }

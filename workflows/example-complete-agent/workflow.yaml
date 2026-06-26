@@ -3,7 +3,11 @@ type: workflow
 mode: trusted_local_write
 input_schema: input.schema.json
 output_schema: output.schema.json
-graph: graph.yaml
+capabilities:
+  - context
+  - agents
+  - artifacts
+  - quality-gates
 execution:
   max_concurrency: 2
   lock_timeout_ms: 120000
@@ -20,3 +24,98 @@ subagent_policy:
   allow_write: false
 requires:
   repository: true
+nodes:
+  - id: context
+    type: built_in
+    uses: context.collect_context
+    artifacts:
+      - path: context-intake.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.context"
+        format: json
+    input:
+      agents:
+        - example-complete-agent
+        - change-acceptance-reviewer
+
+  - id: example_run
+    type: pattern
+    uses: quality-gates.gated_agent_loop
+    worker: example-complete-agent
+    artifacts:
+      - path: example-result.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_run"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      repository:
+        expression: "$.repository"
+      run:
+        expression: "$.run"
+      implementation_config:
+        expression: "$.config.implementation"
+      context:
+        expression: "$.steps.context"
+      workspace:
+        expression: "$.workspace"
+      goal: Demonstrate a trusted local write gated agent loop using the configured repository context. Keep any edits minimal and explain what was exercised.
+    gates:
+      - id: validation
+        type: quality-gates.validation_commands
+        input:
+          commands:
+            - cmd: git
+              args:
+                - status
+                - --short
+          max_output_bytes: 200000
+    repair:
+      attempts: 1
+    after:
+      - context
+
+  - id: example_acceptance
+    type: agent
+    agent: change-acceptance-reviewer
+    output_schema: output.schema.json
+    retry:
+      enabled: true
+      max_attempts: 2
+      initial_delay_ms: 1000
+      max_delay_ms: 10000
+      backoff_multiplier: 2
+      jitter: full
+      retryable_error_codes:
+        - transient_transport_failure
+        - timeout
+        - provider_unavailable
+        - rate_limited
+    artifacts:
+      - path: example-acceptance.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_acceptance"
+        format: json
+      - path: example-acceptance-summary.md
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_acceptance.summary"
+        format: markdown
+        required: false
+    input:
+      invocation:
+        expression: "$.invocation"
+      repository:
+        expression: "$.repository"
+      run:
+        expression: "$.run"
+      context:
+        expression: "$.steps.context"
+      example_result:
+        expression: "$.steps.example_run"
+    after:
+      - example_run

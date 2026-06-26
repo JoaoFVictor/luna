@@ -24,11 +24,13 @@ import {
   writeImplementationWorkflow,
   writePreflightWorkflow,
   writeReviewPlannerAgent,
-  writeWorkflow
+  writeWorkflow,
+  writeWorkflowSchemas
 } from "./configured-workflow-runner-test-helpers.js";
 
 async function writeToyWorkflow(root: string): Promise<void> {
   await mkdir(path.join(root, "workflows", "toy-review"), { recursive: true });
+  await writeWorkflowSchemas(root, "toy-review");
   await writeFile(
     path.join(root, "routing.yaml"),
     [
@@ -49,31 +51,33 @@ async function writeToyWorkflow(root: string): Promise<void> {
       "mode: read_only",
       "input_schema: input.schema.json",
       "output_schema: output.schema.json",
-      "graph: graph.yaml",
-      ""
-    ].join("\n")
-  );
-  await writeFile(
-    path.join(root, "workflows", "toy-review", "graph.yaml"),
-    [
+      "capabilities:",
+      "  - runtime",
+      "  - agents",
+      "  - artifacts",
       "nodes:",
       "  - id: preflight",
       "    type: built_in",
-      "    uses: preflight",
+      "    uses: runtime.preflight",
       "    artifacts:",
       "      - path: preflight.json",
-      "        source: $.steps.preflight",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.preflight\"",
       "        format: json",
       "  - id: toy_agent",
       "    type: agent",
       "    agent: review-planner",
-      "    output_schema: review_plan",
+      "    output_schema: output.schema.json",
       "    artifacts:",
       "      - path: toy-agent.json",
-      "        source: $.steps.toy_agent",
+      "        publisher: artifacts.manifest_publisher",
+      "        source:",
+      "          expression: \"$.steps.toy_agent\"",
       "        format: json",
       "    input:",
-      "      preflight: $.steps.preflight",
+      "      preflight:",
+      "        expression: \"$.steps.preflight\"",
       "    after:",
       "      - preflight",
       ""
