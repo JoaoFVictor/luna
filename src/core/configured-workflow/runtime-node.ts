@@ -199,7 +199,6 @@ function projectBuiltInUse(uses: string): string {
     "runtime.open_change_request": "open_change_request",
     "runtime.final_implementation_report": "final_implementation_report",
     "context.collect_context": "collect_context",
-    "git.commit": "commit_changes",
     "change-request.create": "open_change_request"
   }[uses];
   if (mapped !== undefined) {

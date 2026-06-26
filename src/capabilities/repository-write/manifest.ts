@@ -16,7 +16,9 @@ export const manifest = capabilityManifest({
       "local-exec.command_read_policy",
       "local-exec.command_write_policy",
       "repository-workspace.capture_policy",
+      "git.status_read_policy",
       "git.commit_side_effect",
+      "git.push_branch_side_effect",
       "change-request.create_side_effect"
     ]
   },
@@ -25,7 +27,9 @@ export const manifest = capabilityManifest({
       "local-exec.command.read",
       "local-exec.command.write",
       "repository-workspace.capture",
+      "git.status",
       "git.commit",
+      "git.push_branch",
       "change-request.create"
     ],
     patterns: ["quality-gates.gated_agent_loop"],
@@ -33,7 +37,9 @@ export const manifest = capabilityManifest({
       "local-exec.command_read_policy",
       "local-exec.command_write_policy",
       "repository-workspace.capture_policy",
+      "git.status_read_policy",
       "git.commit_side_effect",
+      "git.push_branch_side_effect",
       "change-request.create_side_effect"
     ],
     ports: [

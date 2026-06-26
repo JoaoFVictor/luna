@@ -14,6 +14,7 @@ import { createFlueLogSink } from "./observability.js";
 import { registerConfiguredPiOAuthProviders } from "./pi-auth.js";
 import { createNodeLocalExecPorts } from "../../local-exec/node-ports.js";
 import { createGitHubRepositoryWorkspacePorts } from "../../providers/github/repository-workspace.js";
+import { createGitRepositoryPorts } from "../../../runtime/git/repository-port.js";
 
 export type { ConfiguredWorkflowResult };
 
@@ -37,6 +38,7 @@ export async function runLunaWorkflowWithFlue(
     dependencies: {
       ...agentRunner,
       builtInStepDependencies: {
+        git: createGitRepositoryPorts(),
         localExec: createNodeLocalExecPorts({
           projectRoot,
           runId: runtimeRunId,

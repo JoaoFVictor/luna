@@ -11,6 +11,9 @@ import { collectContextBuiltIn } from "../built-ins/context.js";
 import { finalReportBuiltIn } from "../built-ins/report.js";
 import {
   createBuiltInStepCatalog,
+  gitCommitBuiltIn,
+  gitPushBranchBuiltIn,
+  gitStatusBuiltIn,
   localExecReadCommandBuiltIn,
   localExecWriteCommandBuiltIn,
   openChangeRequestBuiltIn,
@@ -114,6 +117,9 @@ export const defaultBuiltInSteps = Object.freeze([
   localExecReadCommandBuiltIn,
   localExecWriteCommandBuiltIn,
   repositoryWorkspaceCaptureBuiltIn,
+  gitStatusBuiltIn,
+  gitCommitBuiltIn,
+  gitPushBranchBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   collectTaskContextBuiltIn,
   runValidationCommandsBuiltIn,

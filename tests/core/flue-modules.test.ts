@@ -51,6 +51,15 @@ describe("flue workflow entrypoint", () => {
         ])
       })
     );
+    const options = runConfiguredWorkflow.mock.calls[0]?.[0];
+    expect(options?.dependencies?.builtInStepDependencies?.git?.repository).toEqual(
+      expect.objectContaining({
+        status: expect.any(Function),
+        readCommitState: expect.any(Function),
+        commit: expect.any(Function),
+        pushBranch: expect.any(Function)
+      })
+    );
   });
 
   it("registers configured Pi OAuth providers before running workflows", async () => {

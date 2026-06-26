@@ -20,6 +20,7 @@ import type { ObservabilitySummary } from "../observability/summary.js";
 import type { WorkflowState } from "../workflow/state.js";
 import type { LocalExecCommandBuiltInPorts } from "../../capabilities/local-exec/contracts.js";
 import type { RepositoryWorkspaceBuiltInPorts } from "../../capabilities/repository-workspace/contracts.js";
+import type { GitBuiltInPorts } from "../../capabilities/git/contracts.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -78,6 +79,7 @@ export type RunBuiltInStepOptions = BuiltInStepRunOptions & {
 };
 
 export type BuiltInStepDependencies = {
+  git?: GitBuiltInPorts;
   localExec?: LocalExecCommandBuiltInPorts;
   repositoryWorkspace?: RepositoryWorkspaceBuiltInPorts;
   runPreflight?: (input: {

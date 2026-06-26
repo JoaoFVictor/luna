@@ -3,6 +3,12 @@ import {
   localExecPortsFromBuiltInOptions
 } from "../../capabilities/local-exec/built-ins.js";
 import {
+  createGitCommitBuiltIn,
+  createGitPushBranchBuiltIn,
+  createGitStatusBuiltIn,
+  gitPortsFromBuiltInOptions
+} from "../../capabilities/git/built-ins.js";
+import {
   createRepositoryWorkspaceCaptureBuiltIn,
   repositoryWorkspacePortsFromBuiltInOptions
 } from "../../capabilities/repository-workspace/built-ins.js";
@@ -43,12 +49,24 @@ export const repositoryWorkspaceCaptureBuiltIn =
   createRepositoryWorkspaceCaptureBuiltIn(
     repositoryWorkspacePortsFromBuiltInOptions
   );
+export const gitStatusBuiltIn = createGitStatusBuiltIn(
+  gitPortsFromBuiltInOptions
+);
+export const gitCommitBuiltIn = createGitCommitBuiltIn(
+  gitPortsFromBuiltInOptions
+);
+export const gitPushBranchBuiltIn = createGitPushBranchBuiltIn(
+  gitPortsFromBuiltInOptions
+);
 
 export const defaultBuiltInSteps = Object.freeze([
   collectContextBuiltIn,
   localExecReadCommandBuiltIn,
   localExecWriteCommandBuiltIn,
   repositoryWorkspaceCaptureBuiltIn,
+  gitStatusBuiltIn,
+  gitCommitBuiltIn,
+  gitPushBranchBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   runValidationCommandsBuiltIn,
   recordImplementationValidationBuiltIn,

@@ -47,6 +47,20 @@ export const repositoryWorkspaceCaptureMetadata = Object.freeze({
   requiresRepository: true
 } satisfies BuiltInStepMetadata);
 
+export const gitStatusMetadata = Object.freeze({
+  requiresRepository: true
+} satisfies BuiltInStepMetadata);
+
+export const gitCommitMetadata = Object.freeze({
+  requiresRepository: true,
+  locks: Object.freeze([repositoryLock()])
+} satisfies BuiltInStepMetadata);
+
+export const gitPushBranchMetadata = Object.freeze({
+  requiresRepository: true,
+  locks: Object.freeze([repositoryLock()])
+} satisfies BuiltInStepMetadata);
+
 export const runValidationCommandsMetadata = Object.freeze({
   implementationLifecycle: "validation",
   implementationLifecycleOutcome: (output) => {
@@ -169,6 +183,9 @@ export const builtInStepMetadataByName = Object.freeze({
   "local-exec.command.read": emptyBuiltInMetadata,
   "local-exec.command.write": emptyBuiltInMetadata,
   "repository-workspace.capture": repositoryWorkspaceCaptureMetadata,
+  "git.status": gitStatusMetadata,
+  "git.commit": gitCommitMetadata,
+  "git.push_branch": gitPushBranchMetadata,
   prepare_implementation_worktree: prepareImplementationWorktreeMetadata,
   collect_task_context: emptyBuiltInMetadata,
   run_validation_commands: runValidationCommandsMetadata,

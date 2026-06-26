@@ -175,6 +175,9 @@ describe("built-in step registry", () => {
       "local-exec.command.read",
       "local-exec.command.write",
       "repository-workspace.capture",
+      "git.status",
+      "git.commit",
+      "git.push_branch",
       "prepare_implementation_worktree",
       "collect_task_context",
       "run_validation_commands",
@@ -231,6 +234,8 @@ describe("built-in step registry", () => {
 
     expect(lockedNames).toEqual([
       "prepare_worktree",
+      "git.commit",
+      "git.push_branch",
       "prepare_implementation_worktree",
       "commit_changes",
       "push_branch",
@@ -258,6 +263,9 @@ describe("built-in step registry", () => {
       "collect_context",
       "collect_repo_context",
       "repository-workspace.capture",
+      "git.status",
+      "git.commit",
+      "git.push_branch",
       "prepare_implementation_worktree",
       "commit_changes",
       "push_branch",

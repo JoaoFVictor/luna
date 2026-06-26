@@ -287,6 +287,8 @@ Built-in steps:
 - `change-request.create`
 - `context.collect_context`
 - `git.commit`
+- `git.push_branch`
+- `git.status`
 - `local-exec.command.read`
 - `local-exec.command.write`
 - `reports.final_report`
