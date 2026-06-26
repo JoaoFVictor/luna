@@ -5,6 +5,11 @@ export type JsonSchemaLike = {
   readonly required?: readonly string[];
   readonly additionalProperties?: boolean | JsonSchemaLike;
   readonly enum?: readonly unknown[];
+  readonly const?: unknown;
+  readonly oneOf?: readonly JsonSchemaLike[];
+  readonly anyOf?: readonly JsonSchemaLike[];
+  readonly allOf?: readonly JsonSchemaLike[];
+  readonly not?: JsonSchemaLike;
   readonly description?: string;
   readonly minItems?: number;
   readonly maxItems?: number;
@@ -25,4 +30,3 @@ export type PatternRegistration = {
   readonly expand: PatternExpansionBoundary;
   readonly local_context_roots?: readonly string[];
 };
-

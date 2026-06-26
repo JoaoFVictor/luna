@@ -505,21 +505,22 @@ export function validateWorkflowNodeOutput({
 export async function validateWorkflowAgentNodeOutput({
   node,
   output,
-  workflowDirectory,
+  agentsRoot,
   declaredCapabilities,
   capabilityRegistry,
   path: outputPath
 }: {
   node: ParsedAgentNode;
   output: unknown;
-  workflowDirectory: string;
+  agentsRoot: string;
   declaredCapabilities: readonly string[];
   capabilityRegistry?: CapabilityRegistry;
   path: string;
 }): Promise<void> {
   const schema = await agentOutputSchema({
+    agentId: node.agent,
     schemaRef: node.output_schema,
-    workflowDirectory,
+    agentsRoot,
     declaredCapabilities,
     capabilityRegistry,
     path: `${outputPath}.output_schema`
@@ -531,14 +532,16 @@ export async function validateWorkflowAgentNodeOutput({
 }
 
 async function agentOutputSchema({
+  agentId,
   schemaRef,
-  workflowDirectory,
+  agentsRoot,
   declaredCapabilities,
   capabilityRegistry,
   path: schemaPath
 }: {
+  agentId: string;
   schemaRef: string;
-  workflowDirectory: string;
+  agentsRoot: string;
   declaredCapabilities: readonly string[];
   capabilityRegistry?: CapabilityRegistry;
   path: string;
@@ -554,7 +557,12 @@ async function agentOutputSchema({
     return registration?.schema ?? {};
   }
 
-  const resolved = safeWorkflowFilePath(workflowDirectory, schemaRef, schemaPath);
+  const resolved = safeAgentSchemaFilePath({
+    agentsRoot,
+    agentId,
+    relativePath: schemaRef,
+    yamlPath: schemaPath
+  });
   try {
     return JSON.parse(await readFile(resolved, "utf8")) as JsonSchemaLike;
   } catch (error) {
@@ -567,17 +575,23 @@ async function agentOutputSchema({
   }
 }
 
-function safeWorkflowFilePath(
-  directory: string,
-  relativePath: string,
-  yamlPath: string
-): string {
-  const root = path.resolve(directory);
+function safeAgentSchemaFilePath({
+  agentsRoot,
+  agentId,
+  relativePath,
+  yamlPath
+}: {
+  agentsRoot: string;
+  agentId: string;
+  relativePath: string;
+  yamlPath: string;
+}): string {
+  const root = path.resolve(agentsRoot, agentId);
   const resolved = path.resolve(root, relativePath);
   if (!isInsideRoot(root, resolved)) {
     throw new WorkflowDefinitionError(
       "workflow_path_escape",
-      `Workflow file path escapes workflow directory: ${relativePath}`,
+      `Agent output schema path escapes agent directory: ${relativePath}`,
       { path: yamlPath }
     );
   }
@@ -683,11 +697,37 @@ function matchesJsonSchema(schema: JsonSchemaLike, value: unknown): boolean {
   if (isExpressionObject(value)) {
     return true;
   }
+  if (schema.const !== undefined && schema.const !== value) {
+    return false;
+  }
   if (schema.enum !== undefined) {
     return schema.enum.some((item) => item === value);
   }
+  if (
+    schema.allOf !== undefined &&
+    !schema.allOf.every((option) => matchesJsonSchema(option, value))
+  ) {
+    return false;
+  }
+  if (
+    schema.anyOf !== undefined &&
+    !schema.anyOf.some((option) => matchesJsonSchema(option, value))
+  ) {
+    return false;
+  }
+  if (schema.oneOf !== undefined) {
+    const matchingOptions = schema.oneOf.filter((option) =>
+      matchesJsonSchema(option, value)
+    );
+    if (matchingOptions.length !== 1) {
+      return false;
+    }
+  }
+  if (schema.not !== undefined && matchesJsonSchema(schema.not, value)) {
+    return false;
+  }
   if (schema.type === undefined) {
-    return true;
+    return hasObjectKeywords(schema) ? matchesObjectSchema(schema, value) : true;
   }
   if (Array.isArray(schema.type)) {
     return schema.type.some((type) => matchesJsonSchema({ ...schema, type }, value));
@@ -721,6 +761,18 @@ function matchesJsonSchema(schema: JsonSchemaLike, value: unknown): boolean {
   if (schema.type !== "object") {
     return true;
   }
+  return matchesObjectSchema(schema, value);
+}
+
+function hasObjectKeywords(schema: JsonSchemaLike): boolean {
+  return (
+    schema.properties !== undefined ||
+    schema.required !== undefined ||
+    schema.additionalProperties !== undefined
+  );
+}
+
+function matchesObjectSchema(schema: JsonSchemaLike, value: unknown): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }

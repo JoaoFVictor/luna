@@ -171,24 +171,26 @@ Graph rules:
 
 ## 4. Supported Built-Ins
 
-- `runtime.preflight`
+- `change-request.create`
 - `context.collect_context`
+- `git.commit`
+- `local-exec.command.read`
+- `local-exec.command.write`
+- `reports.final_report`
 - `repository-workspace.capture`
 - `runtime.collect_repo_context`
-- `runtime.validate_code_review_findings`
-- `runtime.final_code_review_report`
-- `reports.final_report`
-- `runtime.prepare_worktree`
-- `runtime.prepare_implementation_worktree`
 - `runtime.collect_task_context`
-- `runtime.record_implementation_validation`
 - `runtime.collect_worktree_diff`
 - `runtime.commit_changes`
-- `runtime.push_branch`
-- `runtime.open_change_request`
+- `runtime.final_code_review_report`
 - `runtime.final_implementation_report`
-- `git.commit`
-- `change-request.create`
+- `runtime.open_change_request`
+- `runtime.preflight`
+- `runtime.prepare_implementation_worktree`
+- `runtime.prepare_worktree`
+- `runtime.push_branch`
+- `runtime.record_implementation_validation`
+- `runtime.validate_code_review_findings`
 
 Some built-ins are workflow-specific. If a workflow needs a new local
 capability, add a built-in in TypeScript and then reference it from YAML.

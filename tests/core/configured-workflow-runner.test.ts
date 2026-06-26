@@ -823,7 +823,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("validates agent output against the workflow-declared output schema before writing artifacts", async () => {
+  it("validates agent output against the agent-declared output schema before writing artifacts", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -831,7 +831,7 @@ describe("configured workflow runner", () => {
       await writeWorkflow(root);
       await writeAgent(root, "review-planner");
       await writeFile(
-        path.join(root, "workflows", "code-review", "output.schema.json"),
+        path.join(root, "agents", "review-planner", "output.schema.json"),
         JSON.stringify({
           type: "object",
           additionalProperties: false,

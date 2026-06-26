@@ -112,6 +112,8 @@ Built-in steps:
 - `change-request.create`
 - `context.collect_context`
 - `git.commit`
+- `local-exec.command.read`
+- `local-exec.command.write`
 - `reports.final_report`
 - `repository-workspace.capture`
 - `runtime.collect_repo_context`

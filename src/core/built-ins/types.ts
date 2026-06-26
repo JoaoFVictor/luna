@@ -18,6 +18,7 @@ import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
 import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
 import type { ObservabilitySummary } from "../observability/summary.js";
 import type { WorkflowState } from "../workflow/state.js";
+import type { LocalExecCommandBuiltInPorts } from "../../capabilities/local-exec/contracts.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -76,6 +77,7 @@ export type RunBuiltInStepOptions = BuiltInStepRunOptions & {
 };
 
 export type BuiltInStepDependencies = {
+  localExec?: LocalExecCommandBuiltInPorts;
   runPreflight?: (input: {
     invocation: Invocation;
     repository: RepositoryConfig;

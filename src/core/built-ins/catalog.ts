@@ -1,4 +1,8 @@
 import {
+  createLocalExecCommandBuiltIn,
+  localExecPortsFromBuiltInOptions
+} from "../../capabilities/local-exec/built-ins.js";
+import {
   collectWorktreeDiffBuiltIn,
   commitChangesBuiltIn,
   createOpenChangeRequestBuiltIn,
@@ -23,9 +27,19 @@ import type {
 export const openChangeRequestBuiltIn = createOpenChangeRequestBuiltIn(
   defaultChangeRequestRegistry
 );
+export const localExecReadCommandBuiltIn = createLocalExecCommandBuiltIn(
+  localExecPortsFromBuiltInOptions,
+  "local-exec.command.read"
+);
+export const localExecWriteCommandBuiltIn = createLocalExecCommandBuiltIn(
+  localExecPortsFromBuiltInOptions,
+  "local-exec.command.write"
+);
 
 export const defaultBuiltInSteps = Object.freeze([
   collectContextBuiltIn,
+  localExecReadCommandBuiltIn,
+  localExecWriteCommandBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   runValidationCommandsBuiltIn,
   recordImplementationValidationBuiltIn,

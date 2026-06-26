@@ -411,7 +411,7 @@ export async function runConfiguredWorkflow({
         await validateWorkflowAgentNodeOutput({
           node: canonicalNode,
           output,
-          workflowDirectory: workflow.directory,
+          agentsRoot: resolvedAgentsRoot,
           declaredCapabilities: workflow.capabilities,
           capabilityRegistry: officialCapabilityRegistry,
           path: `$.steps.${node.id}`

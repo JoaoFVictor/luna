@@ -161,6 +161,8 @@ export const builtInStepMetadataByName = Object.freeze({
   validate_code_review_findings: emptyBuiltInMetadata,
   final_code_review_report: finalReportMetadata,
   final_report: finalReportMetadata,
+  "local-exec.command.read": emptyBuiltInMetadata,
+  "local-exec.command.write": emptyBuiltInMetadata,
   prepare_implementation_worktree: prepareImplementationWorktreeMetadata,
   collect_task_context: emptyBuiltInMetadata,
   run_validation_commands: runValidationCommandsMetadata,

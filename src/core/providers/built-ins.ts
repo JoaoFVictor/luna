@@ -11,6 +11,8 @@ import { collectContextBuiltIn } from "../built-ins/context.js";
 import { finalReportBuiltIn } from "../built-ins/report.js";
 import {
   createBuiltInStepCatalog,
+  localExecReadCommandBuiltIn,
+  localExecWriteCommandBuiltIn,
   openChangeRequestBuiltIn
 } from "../built-ins/catalog.js";
 import {
@@ -108,6 +110,8 @@ export const defaultBuiltInSteps = Object.freeze([
   validateCodeReviewFindingsBuiltIn,
   finalCodeReviewReportBuiltIn,
   finalReportBuiltIn,
+  localExecReadCommandBuiltIn,
+  localExecWriteCommandBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   collectTaskContextBuiltIn,
   runValidationCommandsBuiltIn,

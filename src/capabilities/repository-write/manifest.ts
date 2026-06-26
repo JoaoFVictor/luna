@@ -13,25 +13,31 @@ export const manifest = capabilityManifest({
   ],
   presets: {
     default_policy_bundle: [
-      "local-exec.command_policy",
+      "local-exec.command_read_policy",
+      "local-exec.command_write_policy",
       "git.commit_side_effect",
       "change-request.create_side_effect"
     ]
   },
   re_exports: {
     built_ins: [
+      "local-exec.command.read",
+      "local-exec.command.write",
       "repository-workspace.capture",
       "git.commit",
       "change-request.create"
     ],
     patterns: ["quality-gates.gated_agent_loop"],
     policies: [
-      "local-exec.command_policy",
+      "local-exec.command_read_policy",
+      "local-exec.command_write_policy",
       "git.commit_side_effect",
       "change-request.create_side_effect"
     ],
     ports: [
-      "local-exec.command_runner",
+      "local-exec.command_port",
+      "local-exec.artifact_publisher",
+      "local-exec.event_sink",
       "repository-workspace.manager",
       "git.repository",
       "change-request.provider"
@@ -39,4 +45,3 @@ export const manifest = capabilityManifest({
   },
   docs: [{ title: "Repository write capability bundle" }]
 });
-
