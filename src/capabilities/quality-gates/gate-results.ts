@@ -1,5 +1,5 @@
 import jsonata from "jsonata";
-import type { GateResult } from "./gated-loop-runner.js";
+import type { GateResult } from "./gated-agent-loop.js";
 
 export type AgentGateExpression = {
   expression: string;

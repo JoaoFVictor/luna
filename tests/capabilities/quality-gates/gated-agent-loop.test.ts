@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { runGatedAgentLoopStateMachine } from "../../src/core/agents/gated-loop-runner.js";
-import { GatedAgentLoopResultSchema } from "../../src/core/agent-runtime/contracts.js";
-import type { ValidationResult } from "../../src/core/validation/runner.js";
+import { runGatedAgentLoopStateMachine } from "../../../src/capabilities/quality-gates/gated-agent-loop.js";
+import { GatedAgentLoopResultSchema } from "../../../src/core/agent-runtime/contracts.js";
+import type { ValidationResult } from "../../../src/core/validation/runner.js";
 
 const passedValidation: ValidationResult = { passed: true };
 const failedValidation: ValidationResult = { passed: false };
@@ -327,29 +327,50 @@ describe("gated agent loop runner", () => {
     expect(collectDiffSummary).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps artifact mapping keys at the top level", async () => {
+  it("keeps only final gate output mapping keys at the top level", async () => {
+    const runWorker = vi
+      .fn()
+      .mockResolvedValueOnce({ summary: "first pass" })
+      .mockResolvedValueOnce({ summary: "repair pass" });
+    const runValidation = vi
+      .fn()
+      .mockResolvedValueOnce(failedValidation)
+      .mockResolvedValueOnce(passedValidation);
+    const collectDiffSummary = vi.fn(async () => ({ files: [] }));
+    const runGates = vi
+      .fn()
+      .mockResolvedValueOnce({
+        passed: false,
+        results: [{ id: "review", type: "agent", passed: false }],
+        outputs: { review: { findings: ["old"] } }
+      })
+      .mockResolvedValueOnce({
+        passed: true,
+        results: [{ id: "review", type: "agent", passed: true }],
+        outputs: { review: { findings: [] } }
+      });
+
     const output = await runGatedAgentLoopStateMachine({
       cwd,
       prompt,
-      repairAttempts: -1,
+      repairAttempts: 1,
       dependencies: {
-        runWorker: vi.fn(),
-        runValidation: vi.fn(),
-        collectDiffSummary: vi.fn(),
-        runGates: vi.fn()
+        runWorker,
+        runValidation,
+        collectDiffSummary,
+        runGates
       }
     });
 
     expect(output).toMatchObject({
-      attempts: [],
-      attempts_exhausted: true,
-      validation: { passed: false },
-      final_validation: { passed: false },
-      gates: [],
+      status: "passed",
+      attempts_exhausted: false,
       result: {
-        status: "failed"
+        status: "passed",
+        review: { findings: [] }
       }
     });
+    expect(output.result.review).not.toEqual({ findings: ["old"] });
     expect(Object.keys(output)).toEqual(
       expect.arrayContaining([
         "attempts",
@@ -360,5 +381,53 @@ describe("gated agent loop runner", () => {
         "result"
       ])
     );
+  });
+
+  it("rejects invalid or excessive repair attempt bounds", async () => {
+    const dependencies = {
+      runWorker: vi.fn(),
+      runValidation: vi.fn(),
+      collectDiffSummary: vi.fn(),
+      runGates: vi.fn()
+    };
+
+    await expect(
+      runGatedAgentLoopStateMachine({
+        cwd,
+        prompt,
+        repairAttempts: -1,
+        dependencies
+      })
+    ).rejects.toMatchObject({ code: "gated_agent_loop_repair_attempts_invalid" });
+
+    await expect(
+      runGatedAgentLoopStateMachine({
+        cwd,
+        prompt,
+        repairAttempts: 10,
+        dependencies
+      })
+    ).rejects.toMatchObject({ code: "gated_agent_loop_max_attempts_exceeded" });
+    expect(dependencies.runWorker).not.toHaveBeenCalled();
+  });
+
+  it("rejects gate outputs that collide with reserved result artifact keys", async () => {
+    await expect(
+      runGatedAgentLoopStateMachine({
+        cwd,
+        prompt,
+        repairAttempts: 0,
+        dependencies: {
+          runWorker: vi.fn(async () => ({ summary: "implemented" })),
+          runValidation: vi.fn(async () => passedValidation),
+          collectDiffSummary: vi.fn(async () => ({ files: [] })),
+          runGates: vi.fn(async () => ({
+            passed: true,
+            results: [{ id: "review", type: "agent", passed: true }],
+            outputs: { status: "overwritten" }
+          }))
+        }
+      })
+    ).rejects.toMatchObject({ code: "gated_agent_loop_artifact_source_invalid" });
   });
 });

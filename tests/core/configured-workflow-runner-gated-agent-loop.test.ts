@@ -571,6 +571,12 @@ describe("configured workflow runner", () => {
       workflowOptions: { repairAttempts: "$.steps.preflight.repair_attempts" },
       preflight: { repair_attempts: "1" },
       code: "gated_agent_loop_repair_attempts_invalid"
+    },
+    {
+      name: "repair attempts above bound",
+      workflowOptions: { repairAttempts: "$.steps.preflight.repair_attempts" },
+      preflight: { repair_attempts: 10 },
+      code: "gated_agent_loop_repair_attempts_invalid"
     }
   ])(
     "rejects invalid resolved gated_agent_loop $name",

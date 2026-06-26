@@ -82,8 +82,8 @@ describe("trusted_host_local Flue gated agent loop retry policy", () => {
     vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/agents/gated-loop-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/agents/gated-loop-runner.js")>()),
+    vi.doMock("../../src/capabilities/quality-gates/gated-agent-loop.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/capabilities/quality-gates/gated-agent-loop.js")>()),
       runGatedAgentLoopStateMachine
     }));
 
@@ -218,8 +218,8 @@ describe("trusted_host_local Flue gated agent loop retry policy", () => {
     vi.doMock("../../src/core/agent-runtime/flue/capabilities.js", () => ({
       resolveFlueAgentCapabilities
     }));
-    vi.doMock("../../src/core/agents/gated-loop-runner.js", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("../../src/core/agents/gated-loop-runner.js")>()),
+    vi.doMock("../../src/capabilities/quality-gates/gated-agent-loop.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/capabilities/quality-gates/gated-agent-loop.js")>()),
       runGatedAgentLoopStateMachine
     }));
 

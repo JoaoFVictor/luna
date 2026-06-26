@@ -89,7 +89,7 @@ export async function importWorkflowWithRunnerMock(
 export function cleanupFlueMocks(): void {
   vi.doUnmock("../../src/core/configured-workflow/runner.js");
   vi.doUnmock("../../src/core/agent-runtime/flue/capabilities.js");
-  vi.doUnmock("../../src/core/agents/gated-loop-runner.js");
+  vi.doUnmock("../../src/capabilities/quality-gates/gated-agent-loop.js");
   vi.doUnmock("../../src/core/agent-runtime/flue/pi-auth.js");
   vi.resetModules();
   vi.restoreAllMocks();

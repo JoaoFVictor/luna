@@ -33,6 +33,7 @@ import type {
 import type { ObservabilitySummary } from "../observability/summary.js";
 import { configuredWorkflowError } from "./errors.js";
 import type { ConfiguredWorkflowNodeRunner } from "./contracts.js";
+import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "../workflow/repair-attempts.js";
 import type {
   ConfiguredWorkflowRuntimeNode
 } from "./runtime-node.js";
@@ -251,6 +252,23 @@ function validateNonnegativeInteger(
   return value;
 }
 
+function validateGatedLoopRepairAttempts(value: unknown): number {
+  const attempts = validateNonnegativeInteger(
+    value,
+    "Gated agent loop repair.attempts must resolve to a number",
+    "gated_agent_loop_repair_attempts_invalid"
+  );
+
+  if (attempts > MAX_WORKFLOW_REPAIR_ATTEMPTS) {
+    throw configuredWorkflowError(
+      `Gated agent loop repair.attempts must resolve to ${MAX_WORKFLOW_REPAIR_ATTEMPTS} or less`,
+      "gated_agent_loop_repair_attempts_invalid"
+    );
+  }
+
+  return attempts;
+}
+
 function resolveGatedAgentLoopNode(
   node: GatedAgentLoopWorkflowNode,
   state: WorkflowState
@@ -297,11 +315,7 @@ function resolveGatedAgentLoopNode(
       };
     }),
     repair: {
-      attempts: validateNonnegativeInteger(
-        repair.attempts,
-        "Gated agent loop repair.attempts must resolve to a number",
-        "gated_agent_loop_repair_attempts_invalid"
-      )
+      attempts: validateGatedLoopRepairAttempts(repair.attempts)
     }
   };
 }

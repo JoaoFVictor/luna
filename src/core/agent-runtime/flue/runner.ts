@@ -14,7 +14,7 @@ import {
   runGatedAgentLoopStateMachine,
   type GateResult,
   type RunGatedWorkerInput
-} from "../../agents/gated-loop-runner.js";
+} from "../../../capabilities/quality-gates/gated-agent-loop.js";
 import {
   contextIntakeFrom,
   prepareAgentInstructionEnvelope
@@ -63,7 +63,7 @@ import {
 import {
   feedbackFromValidation,
   gateResultFromAgentOutput
-} from "../../agents/gate-results.js";
+} from "../../../capabilities/quality-gates/gate-results.js";
 import { resolveGateInput } from "./gate-input.js";
 import { resolveFlueMcpTools } from "./mcp-capabilities.js";
 

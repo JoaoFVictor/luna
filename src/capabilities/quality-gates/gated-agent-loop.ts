@@ -1,5 +1,6 @@
-import type { GatedAgentLoopAttempt } from "../agent-runtime/contracts.js";
-import type { ValidationResult } from "../validation/runner.js";
+import type { GatedAgentLoopAttempt } from "../../core/agent-runtime/contracts.js";
+import type { ValidationResult } from "../../core/validation/runner.js";
+import { MAX_WORKFLOW_ATTEMPTS } from "../../core/workflow/repair-attempts.js";
 
 export type GatedAgentLoopPhase = "initial" | "repair";
 
@@ -70,6 +71,19 @@ export type GatedAgentLoopOutput = {
   } & Record<string, unknown>;
 };
 
+const RESERVED_RESULT_KEYS = new Set([
+  "status",
+  "agent_output",
+  "agent_error",
+  "diff_summary"
+]);
+
+function codedError(message: string, code: string): Error & { code: string } {
+  const error = new Error(message) as Error & { code: string };
+  error.code = code;
+  return error;
+}
+
 function normalizeAgentError(error: unknown): GatedAgentError {
   if (error instanceof Error) {
     const errorWithCode = error as Error & { code?: unknown };
@@ -110,20 +124,43 @@ function gatedLoopInfrastructureFailure(cause: unknown): Error & { code: string 
   return error;
 }
 
-function failedWithoutAttempt(): GatedAgentLoopOutput {
-  const finalValidation = { passed: false };
+function maxAttemptsFromRepairAttempts(repairAttempts: number): number {
+  if (
+    !Number.isSafeInteger(repairAttempts) ||
+    repairAttempts < 0
+  ) {
+    throw codedError(
+      "Gated agent loop repairAttempts must be a nonnegative integer",
+      "gated_agent_loop_repair_attempts_invalid"
+    );
+  }
 
-  return {
-    status: "failed",
-    attempts_exhausted: true,
-    attempts: [],
-    validation: finalValidation,
-    final_validation: finalValidation,
-    gates: [],
-    result: {
-      status: "failed"
+  const maxAttempts = repairAttempts + 1;
+  if (maxAttempts > MAX_WORKFLOW_ATTEMPTS) {
+    throw codedError(
+      `Gated agent loop supports at most ${MAX_WORKFLOW_ATTEMPTS} total attempts`,
+      "gated_agent_loop_max_attempts_exceeded"
+    );
+  }
+
+  return maxAttempts;
+}
+
+function gateOutputsOrEmpty(outputs: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (outputs === undefined) {
+    return {};
+  }
+
+  for (const key of Object.keys(outputs)) {
+    if (RESERVED_RESULT_KEYS.has(key)) {
+      throw codedError(
+        `Gated agent loop gate output cannot use reserved result key: ${key}`,
+        "gated_agent_loop_artifact_source_invalid"
+      );
     }
-  };
+  }
+
+  return outputs;
 }
 
 export async function runGatedAgentLoopStateMachine({
@@ -132,11 +169,7 @@ export async function runGatedAgentLoopStateMachine({
   repairAttempts,
   dependencies
 }: RunGatedAgentLoopInput): Promise<GatedAgentLoopOutput> {
-  const maxAttempts = Math.max(0, Math.floor(repairAttempts) + 1);
-
-  if (maxAttempts === 0) {
-    return failedWithoutAttempt();
-  }
+  const maxAttempts = maxAttemptsFromRepairAttempts(repairAttempts);
 
   const attempts: GatedAgentLoopAttempt[] = [];
   let previousValidation: ValidationResult | undefined;
@@ -212,7 +245,7 @@ export async function runGatedAgentLoopStateMachine({
     finalValidation = validation;
     finalDiffSummary = diffSummary;
     finalGateResults = gates.results;
-    finalGateOutputs = gates.outputs ?? {};
+    finalGateOutputs = gateOutputsOrEmpty(gates.outputs);
     previousValidation = validation;
     previousError = undefined;
     previousGates = gates.results;

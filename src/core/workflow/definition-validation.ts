@@ -31,6 +31,7 @@ import type {
   ParsedAgentNode,
   ParsedPatternNode
 } from "./definition-types.js";
+import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "./repair-attempts.js";
 
 type RegistrationKind =
   | "built_ins"
@@ -317,10 +318,14 @@ function validatePatternRepair(
   }
   const attempts = node.repair.attempts;
   if (typeof attempts === "number") {
-    if (!Number.isSafeInteger(attempts) || attempts < 1) {
+    if (
+      !Number.isSafeInteger(attempts) ||
+      attempts < 0 ||
+      attempts > MAX_WORKFLOW_REPAIR_ATTEMPTS
+    ) {
       throw new WorkflowDefinitionError(
         "workflow_schema_invalid",
-        `Pattern repair.attempts must be a positive integer for node ${node.id}.`,
+        `Pattern repair.attempts must be an integer between 0 and 9 for node ${node.id}.`,
         { path: `$.nodes[${index}].repair.attempts`, capability }
       );
     }
@@ -329,7 +334,7 @@ function validatePatternRepair(
   if (!isExpressionObject(attempts)) {
     throw new WorkflowDefinitionError(
       "workflow_schema_invalid",
-      `Pattern repair.attempts must be a positive integer or expression for node ${node.id}.`,
+      `Pattern repair.attempts must be an integer between 0 and 9 or expression for node ${node.id}.`,
       { path: `$.nodes[${index}].repair.attempts`, capability }
     );
   }
@@ -723,7 +728,12 @@ function patternConfigFor(
     writer_agent: node.worker,
     gates: (node.gates ?? []).map((gate) => gate.type),
     ...(node.repair?.attempts !== undefined
-      ? { max_iterations: node.repair.attempts }
+      ? {
+          max_iterations:
+            typeof node.repair.attempts === "number"
+              ? node.repair.attempts + 1
+              : node.repair.attempts
+        }
       : {})
   };
 }
