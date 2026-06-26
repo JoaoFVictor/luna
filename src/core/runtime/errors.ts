@@ -2,7 +2,11 @@ export type RuntimeErrorCode =
   | "runtime_checkpoint_too_large"
   | "runtime_duplicate_node_output"
   | "runtime_invalid_json"
+  | "runtime_node_attempt_invalid"
   | "runtime_node_output_error_envelope"
+  | "runtime_node_output_status_invalid"
+  | "runtime_node_status_transition_invalid"
+  | "runtime_retry_not_permitted"
   | "runtime_state_invalid"
   | "runtime_state_public_payload"
   | "runtime_state_ref_payload";

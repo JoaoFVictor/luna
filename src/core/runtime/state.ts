@@ -13,11 +13,13 @@ import { runtimeError } from "./errors.js";
 export const LUNA_RUNTIME_STATE_SCHEMA_VERSION = "2026-06";
 
 const RUN_STATUSES = [
-  "pending",
   "running",
+  "waiting_for_input",
+  "waiting_for_retry",
+  "resuming",
   "succeeded",
   "failed",
-  "interrupted",
+  "timed_out",
   "cancelled"
 ] as const;
 
@@ -26,13 +28,26 @@ export type LunaRunStatus = (typeof RUN_STATUSES)[number];
 const NODE_STATUSES = [
   "pending",
   "running",
+  "waiting_for_input",
   "succeeded",
   "failed",
-  "skipped",
-  "interrupted"
+  "skipped_inactive",
+  "skipped_dependency_failed",
+  "cancelled",
+  "timed_out"
 ] as const;
 
 export type LunaNodeStatus = (typeof NODE_STATUSES)[number];
+
+const ATTEMPT_STATUSES = [
+  "started",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "timed_out"
+] as const;
+
+export type LunaAttemptStatus = (typeof ATTEMPT_STATUSES)[number];
 
 const WORKFLOW_MODES = ["read_only", "trusted_local_write"] as const;
 
@@ -53,6 +68,15 @@ export type RuntimeNodeStatus = JsonObject & {
 
 export type RuntimeAttemptState = JsonObject & {
   count: number;
+  history: RuntimeAttemptRecord[];
+};
+
+export type RuntimeAttemptRecord = JsonObject & {
+  attempt: number;
+  status: LunaAttemptStatus;
+  started_at: string;
+  completed_at?: string;
+  error_ref?: string;
 };
 
 export type RuntimeArtifactRef = {
@@ -65,6 +89,12 @@ export type RuntimeInterruptRef = {
   id: string;
   uri: string;
   node_id?: string;
+};
+
+export type RuntimePrimaryFailure = JsonObject & {
+  node_id: string;
+  status: Extract<LunaNodeStatus, "failed" | "timed_out">;
+  error_ref?: string;
 };
 
 export type RuntimeReducerMetadata = {
@@ -84,6 +114,7 @@ export type LunaRuntimeState = {
   artifact_refs: RuntimeArtifactRef[];
   interrupt_refs: RuntimeInterruptRef[];
   event_cursor?: string;
+  primary_failure?: RuntimePrimaryFailure;
 };
 
 export type CreateInitialRuntimeStateOptions = {
@@ -115,11 +146,13 @@ const requiredStateKeys = [
 
 const allowedStateKeys = new Set<string>([
   ...requiredStateKeys,
-  "event_cursor"
+  "event_cursor",
+  "primary_failure"
 ]);
 
 const runStatuses = new Set<string>(RUN_STATUSES);
 const nodeStatuses = new Set<string>(NODE_STATUSES);
+const attemptStatuses = new Set<string>(ATTEMPT_STATUSES);
 const workflowModes = new Set<string>(WORKFLOW_MODES);
 const allowedRefKeys = new Set(["id", "uri", "node_id"]);
 
@@ -272,11 +305,71 @@ function assertAttemptsMap(value: unknown): void {
 
     if (
       typeof attempt.count !== "number" ||
-      !Number.isFinite(attempt.count)
+      !Number.isSafeInteger(attempt.count) ||
+      attempt.count < 0
     ) {
-      invalidState(`Runtime state ${path}.count must be a finite number`, {
+      invalidState(`Runtime state ${path}.count must be a non-negative integer`, {
         path: `${path}.count`
       });
+    }
+
+    if (!Array.isArray(attempt.history)) {
+      invalidState(`Runtime state ${path}.history must be an array`, {
+        path: `${path}.history`
+      });
+    }
+
+    if (attempt.history.length !== attempt.count) {
+      invalidState(`Runtime state ${path}.history length must match count`, {
+        path: `${path}.history`
+      });
+    }
+
+    let previousAttempt = 0;
+    for (const [index, record] of attempt.history.entries()) {
+      const recordPath = `${path}.history[${index}]`;
+
+      if (!isCheckpointPlainObject(record)) {
+        invalidState(`Runtime state ${recordPath} must be a plain object`, {
+          path: recordPath
+        });
+      }
+
+      if (
+        typeof record.attempt !== "number" ||
+        !Number.isSafeInteger(record.attempt) ||
+        record.attempt < 1
+      ) {
+        invalidState(
+          `Runtime state ${recordPath}.attempt must be a positive integer`,
+          { path: `${recordPath}.attempt` }
+        );
+      }
+
+      if (record.attempt <= previousAttempt) {
+        invalidState(`Runtime state ${recordPath}.attempt must increase`, {
+          path: `${recordPath}.attempt`
+        });
+      }
+      previousAttempt = record.attempt;
+
+      if (
+        typeof record.status !== "string" ||
+        !attemptStatuses.has(record.status)
+      ) {
+        invalidState(`Runtime state ${recordPath}.status is invalid`, {
+          path: `${recordPath}.status`
+        });
+      }
+
+      if (typeof record.started_at !== "string") {
+        invalidState(`Runtime state ${recordPath}.started_at must be a string`, {
+          path: `${recordPath}.started_at`
+        });
+      }
+
+      assertOptionalString(record, "completed_at", recordPath);
+      assertOptionalString(record, "error_ref", recordPath);
     }
   }
 }
@@ -351,6 +444,35 @@ function assertRefCollection(
   });
 }
 
+function assertPrimaryFailure(value: unknown): void {
+  if (value === undefined) {
+    return;
+  }
+
+  if (!isCheckpointPlainObject(value)) {
+    invalidState("Runtime state primary_failure must be a plain object", {
+      path: "$.primary_failure"
+    });
+  }
+
+  if (typeof value.node_id !== "string") {
+    invalidState("Runtime state primary_failure.node_id must be a string", {
+      path: "$.primary_failure.node_id"
+    });
+  }
+
+  if (
+    value.status !== "failed" &&
+    value.status !== "timed_out"
+  ) {
+    invalidState("Runtime state primary_failure.status is invalid", {
+      path: "$.primary_failure.status"
+    });
+  }
+
+  assertOptionalString(value, "error_ref", "$.primary_failure");
+}
+
 function isStructuredErrorEnvelope(value: JsonValue): boolean {
   if (
     value === null ||
@@ -368,6 +490,28 @@ function isStructuredErrorEnvelope(value: JsonValue): boolean {
     typeof value.error.code === "string" ||
     typeof value.error.message === "string"
   );
+}
+
+function assertNodeCanPublishOutput(
+  state: LunaRuntimeState,
+  nodeId: string
+): void {
+  const status = state.node_statuses[nodeId]?.status;
+
+  if (
+    status === "failed" ||
+    status === "skipped_inactive" ||
+    status === "skipped_dependency_failed" ||
+    status === "cancelled" ||
+    status === "timed_out" ||
+    status === "waiting_for_input"
+  ) {
+    throw runtimeError(
+      `Node output cannot be published for ${nodeId} with status ${status}`,
+      "runtime_node_output_status_invalid",
+      { details: { node_id: nodeId, status } }
+    );
+  }
 }
 
 export function createInitialRuntimeState({
@@ -388,7 +532,7 @@ export function createInitialRuntimeState({
     config,
     run,
     workflow,
-    run_status: "pending",
+    run_status: "running",
     node_statuses: {},
     steps: {},
     attempts: {},
@@ -460,6 +604,7 @@ export function validateCheckpointState(state: unknown): void {
   assertAttemptsMap(state.attempts);
   assertRefCollection(state.artifact_refs, "artifact_refs");
   assertRefCollection(state.interrupt_refs, "interrupt_refs");
+  assertPrimaryFailure(state.primary_failure);
 
   if (
     Object.prototype.hasOwnProperty.call(state, "event_cursor") &&
@@ -478,6 +623,8 @@ export function publishNodeOutput(
   nodeId: string,
   output: JsonValue
 ): LunaRuntimeState {
+  assertNodeCanPublishOutput(state, nodeId);
+
   if (Object.prototype.hasOwnProperty.call(state.steps, nodeId)) {
     throw runtimeError(
       `Node output already exists for node: ${nodeId}`,

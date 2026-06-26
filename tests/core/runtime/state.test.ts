@@ -9,7 +9,8 @@ import {
   LUNA_RUNTIME_STATE_REDUCER_METADATA,
   publishNodeOutput,
   validateCheckpointState,
-  validateCheckpointStateSize
+  validateCheckpointStateSize,
+  type LunaNodeStatus
 } from "../../../src/core/runtime/state.js";
 
 const invocation = {
@@ -54,7 +55,7 @@ describe("runtime state contract", () => {
       config,
       run,
       workflow,
-      run_status: "pending",
+      run_status: "running",
       node_statuses: {},
       steps: {},
       attempts: {},
@@ -214,6 +215,29 @@ describe("runtime state contract", () => {
     );
   });
 
+  it.each([
+    "failed",
+    "skipped_inactive",
+    "skipped_dependency_failed",
+    "cancelled",
+    "timed_out",
+    "waiting_for_input"
+  ] satisfies LunaNodeStatus[])(
+    "rejects successful output publication for %s nodes",
+    (status) => {
+      const state = {
+        ...initialState(),
+        node_statuses: {
+          review: { status }
+        }
+      };
+
+      expect(() => publishNodeOutput(state, "review", { ok: true })).toThrow(
+        expect.objectContaining({ code: "runtime_node_output_status_invalid" })
+      );
+    }
+  );
+
   it("describes append-only reducers as explicit compiler metadata", () => {
     expect(LUNA_RUNTIME_STATE_REDUCER_METADATA).toEqual({
       artifact_refs: { reducer: "append_only" },
@@ -252,7 +276,29 @@ describe("runtime state contract", () => {
     ["node status entry", { node_statuses: { review: { status: "done" } } }],
     ["steps map", { steps: [] }],
     ["attempts map", { attempts: [] }],
-    ["attempt count", { attempts: { review: { count: "1" } } }]
+    ["attempt count", { attempts: { review: { count: "1", history: [] } } }],
+    ["attempt history", { attempts: { review: { count: 1, history: [] } } }],
+    [
+      "attempt status",
+      {
+        attempts: {
+          review: {
+            count: 1,
+            history: [
+              {
+                attempt: 1,
+                status: "waiting",
+                started_at: "2026-06-25T12:00:00.000Z"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "primary failure",
+      { primary_failure: { node_id: "review", status: "skipped_inactive" } }
+    ]
   ])("rejects invalid %s in checkpoint state", (_label, patch) => {
     expect(() =>
       validateCheckpointState({
