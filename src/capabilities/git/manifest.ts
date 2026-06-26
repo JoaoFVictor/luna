@@ -64,6 +64,8 @@ export const manifest = capabilityManifest({
         }
       },
       side_effect_semantics: "write",
+      side_effect_operation_ids: ["git.commit"],
+      idempotency_scope: "attempt",
       retry_semantics: "retry_requires_adoption",
       error_codes: ["git_unknown_commit_outcome"]
     }

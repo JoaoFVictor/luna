@@ -2,6 +2,10 @@ import type {
   ArtifactManifest,
   ArtifactManifestStore
 } from "../../../core/runtime/artifacts/contracts.js";
+import {
+  artifactManifestKeyFromManifest,
+  artifactManifestKeyHash
+} from "../../../core/runtime/artifacts/contracts.js";
 import type { BackendRegistration } from "../../../core/runtime/backends/contracts.js";
 import { z } from "zod";
 
@@ -17,10 +21,12 @@ export function createMemoryArtifactManifestStore(): ArtifactManifestStore {
 
   return {
     async put(manifest) {
-      manifests.set(manifest.id, { ...manifest });
+      manifests.set(artifactManifestKeyHash(artifactManifestKeyFromManifest(manifest)), {
+        ...manifest
+      });
     },
-    async get(id) {
-      const manifest = manifests.get(id);
+    async get(key) {
+      const manifest = manifests.get(artifactManifestKeyHash(key));
 
       return manifest === undefined ? undefined : { ...manifest };
     },

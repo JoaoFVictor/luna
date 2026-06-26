@@ -8,6 +8,8 @@ export type WorkflowDefinitionErrorCode =
   | "workflow_capability_unknown"
   | "workflow_capability_id_unqualified"
   | "workflow_capability_config_invalid"
+  | "workflow_side_effect_policy_missing"
+  | "workflow_side_effect_policy_invalid"
   | "workflow_reference_unknown"
   | "workflow_cycle_detected"
   | "workflow_string_expression"

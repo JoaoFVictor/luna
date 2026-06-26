@@ -6,6 +6,10 @@ import type {
   SchemaRegistration
 } from "../capabilities/manifest.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
+import {
+  createSideEffectPolicy,
+  type SideEffectPolicy
+} from "../runtime/side-effects.js";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { isInsideRoot } from "../security/path.js";
@@ -101,6 +105,13 @@ export function validateNodesAgainstCapabilities(
           path: `$.nodes[${index}].input`,
           capability: registration.id
         });
+        validateBuiltInSideEffectPolicy(
+          node,
+          index,
+          registration,
+          declaredCapabilities,
+          registry
+        );
       }
     } else if (node.type === "agent") {
       requireDeclaredCapability("agents", declaredCapabilities, `$.nodes[${index}].type`);
@@ -122,6 +133,83 @@ export function validateNodesAgainstCapabilities(
       }
     }
   });
+}
+
+function validateBuiltInSideEffectPolicy(
+  node: Extract<ParsedWorkflowNode, { type: "built_in" }>,
+  nodeIndex: number,
+  registration: BuiltInRegistration,
+  declaredCapabilities: readonly string[],
+  registry: CapabilityRegistry | undefined
+): SideEffectPolicy | undefined {
+  if (!registration.side_effect_policy) {
+    return undefined;
+  }
+
+  const policyPath = `$.nodes[${nodeIndex}].policies`;
+  const nodePolicy = (node.policies ?? []).find(
+    (policy) => policy.uses === registration.side_effect_policy
+  );
+  if (!nodePolicy) {
+    throw new WorkflowDefinitionError(
+      "workflow_side_effect_policy_missing",
+      `Side-effecting built-in ${registration.id} must declare policy ${registration.side_effect_policy}.`,
+      { path: policyPath, capability: registration.id }
+    );
+  }
+
+  const policyRegistration = requireRegistration(
+    registration.side_effect_policy,
+    "policies",
+    declaredCapabilities,
+    registry,
+    `${policyPath}.uses`
+  ) as PolicyRegistration | undefined;
+  if (!policyRegistration) {
+    return undefined;
+  }
+
+  const operationId = nodePolicy.config?.operation_id;
+  if (typeof operationId !== "string" || operationId === "") {
+    throw new WorkflowDefinitionError(
+      "workflow_side_effect_policy_invalid",
+      `Side-effect policy ${policyRegistration.id} must configure operation_id.`,
+      { path: `${policyPath}.config.operation_id`, capability: policyRegistration.id }
+    );
+  }
+  if (!policyRegistration.retry_semantics) {
+    throw new WorkflowDefinitionError(
+      "workflow_side_effect_policy_invalid",
+      `Side-effect policy ${policyRegistration.id} must declare retry_semantics.`,
+      { path: `${policyPath}.uses`, capability: policyRegistration.id }
+    );
+  }
+  if (
+    !(policyRegistration.side_effect_operation_ids ?? []).includes(operationId)
+  ) {
+    throw new WorkflowDefinitionError(
+      "workflow_side_effect_policy_invalid",
+      `Side-effect policy ${policyRegistration.id} does not register operation_id ${operationId}.`,
+      { path: `${policyPath}.config.operation_id`, capability: policyRegistration.id }
+    );
+  }
+
+  try {
+    return createSideEffectPolicy({
+      capability_id: policyRegistration.id.split(".", 1)[0] ?? "",
+      operation_id: operationId,
+      idempotency_scope: policyRegistration.idempotency_scope ?? "attempt",
+      retry_semantics: policyRegistration.retry_semantics,
+      adoption_required:
+        policyRegistration.retry_semantics === "retry_requires_adoption"
+    });
+  } catch (cause) {
+    throw new WorkflowDefinitionError(
+      "workflow_side_effect_policy_invalid",
+      cause instanceof Error ? cause.message : "Invalid side-effect policy.",
+      { path: `${policyPath}.config.operation_id`, capability: policyRegistration.id }
+    );
+  }
 }
 
 function validatePolicies(

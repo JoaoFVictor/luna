@@ -460,6 +460,65 @@ describe("capability registry", () => {
     ).not.toThrow();
   });
 
+  it("validates registered side-effect operation ids across capabilities", () => {
+    expect(() =>
+      createCapabilityRegistry([
+        executionManifest("local-exec", {
+          policies: {
+            "local-exec.command": {
+              id: "local-exec.command",
+              config_schema: schema,
+              side_effect_semantics: "write",
+              retry_semantics: "retry_requires_adoption"
+            }
+          }
+        })
+      ])
+    ).toThrow(
+      expect.objectContaining({ code: "capability_side_effect_policy_invalid" })
+    );
+
+    expect(() =>
+      createCapabilityRegistry([
+        executionManifest("git", {
+          policies: {
+            "git.write": {
+              id: "git.write",
+              config_schema: schema,
+              side_effect_operation_ids: ["other.commit"],
+              retry_semantics: "retry_requires_adoption"
+            }
+          }
+        })
+      ])
+    ).toThrow(expect.objectContaining({ code: "capability_id_namespace" }));
+
+    expect(() =>
+      createCapabilityRegistry([
+        executionManifest("git", {
+          policies: {
+            "git.write": {
+              id: "git.write",
+              config_schema: schema,
+              side_effect_operation_ids: ["git.commit"],
+              retry_semantics: "retry_requires_adoption"
+            },
+            "git.write_again": {
+              id: "git.write_again",
+              config_schema: schema,
+              side_effect_operation_ids: ["git.commit"],
+              retry_semantics: "retry_requires_adoption"
+            }
+          }
+        })
+      ])
+    ).toThrow(
+      expect.objectContaining({
+        code: "capability_duplicate_side_effect_operation_id"
+      })
+    );
+  });
+
   it("resolves presets and re-exports only from explicit dependencies", () => {
     const dependency = capabilityManifest({
       id: "quality-gates",

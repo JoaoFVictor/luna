@@ -13,7 +13,9 @@ type RegistryErrorCode =
   | "capability_unknown_dependency"
   | "capability_dependency_cycle"
   | "capability_unresolved_reference"
-  | "capability_reference_not_declared";
+  | "capability_reference_not_declared"
+  | "capability_duplicate_side_effect_operation_id"
+  | "capability_side_effect_policy_invalid";
 
 export class CapabilityRegistryError extends Error {
   readonly code: RegistryErrorCode;
@@ -53,6 +55,7 @@ export function createCapabilityRegistry(
 
   const ordered = topologicalOrder(manifests, byId);
   validateReferences(ordered);
+  validateSideEffectOperationIds(ordered);
 
   return {
     get(id: string): CapabilityManifest {
@@ -72,6 +75,40 @@ export function createCapabilityRegistry(
       return [...ordered];
     }
   };
+}
+
+function validateSideEffectOperationIds(
+  manifests: readonly CapabilityManifest[]
+): void {
+  const operationIds = new Map<string, string>();
+
+  for (const manifest of manifests) {
+    for (const policy of Object.values(manifest.policies ?? {})) {
+      if (policy.side_effect_semantics === "write") {
+        if (
+          !policy.retry_semantics ||
+          !policy.idempotency_scope ||
+          (policy.side_effect_operation_ids ?? []).length === 0
+        ) {
+          throw new CapabilityRegistryError(
+            "capability_side_effect_policy_invalid",
+            `Write side-effect policy ${policy.id} must declare operation ids, idempotency scope, and retry semantics.`
+          );
+        }
+      }
+
+      for (const operationId of policy.side_effect_operation_ids ?? []) {
+        const existingPolicy = operationIds.get(operationId);
+        if (existingPolicy !== undefined) {
+          throw new CapabilityRegistryError(
+            "capability_duplicate_side_effect_operation_id",
+            `Side-effect operation id ${operationId} is registered by both ${existingPolicy} and ${policy.id}.`
+          );
+        }
+        operationIds.set(operationId, policy.id);
+      }
+    }
+  }
 }
 
 function validateReferences(manifests: readonly CapabilityManifest[]): void {

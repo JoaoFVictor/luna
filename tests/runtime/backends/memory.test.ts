@@ -13,14 +13,77 @@ describe("memory runtime backends", () => {
       run_id: "run-1",
       uri: "artifact://run-1/report.json",
       source_node_id: "report",
+      artifact_path: "report.json",
+      attempt: 1,
+      backend_id: "memory.artifacts",
+      backend_root: "artifacts",
       created_at: "2026-06-25T00:00:00.000Z"
     });
 
-    await expect(store.get("artifact-1")).resolves.toMatchObject({
+    await expect(
+      store.get({
+        id: "artifact-1",
+        run_id: "run-1",
+        source_node_id: "report",
+        artifact_path: "report.json",
+        attempt: 1,
+        backend_id: "memory.artifacts",
+        backend_root: "artifacts"
+      })
+    ).resolves.toMatchObject({
       id: "artifact-1",
       run_id: "run-1"
     });
     await expect(store.list("run-1")).resolves.toHaveLength(1);
+  });
+
+  it("keys artifact manifests by structured identity without slash collisions", async () => {
+    const store = createMemoryArtifactManifestStore();
+    await store.put({
+      id: "artifact-1",
+      run_id: "run-1",
+      uri: "memory://one",
+      source_node_id: "a/b",
+      artifact_path: "c",
+      attempt: 1,
+      backend_id: "memory.artifacts",
+      backend_root: "root",
+      created_at: "2026-06-25T00:00:00.000Z"
+    });
+    await store.put({
+      id: "artifact-1",
+      run_id: "run-1",
+      uri: "memory://two",
+      source_node_id: "a",
+      artifact_path: "b/c",
+      attempt: 1,
+      backend_id: "memory.artifacts",
+      backend_root: "root",
+      created_at: "2026-06-25T00:00:00.000Z"
+    });
+
+    await expect(
+      store.get({
+        id: "artifact-1",
+        run_id: "run-1",
+        source_node_id: "a/b",
+        artifact_path: "c",
+        attempt: 1,
+        backend_id: "memory.artifacts",
+        backend_root: "root"
+      })
+    ).resolves.toMatchObject({ uri: "memory://one" });
+    await expect(
+      store.get({
+        id: "artifact-1",
+        run_id: "run-1",
+        source_node_id: "a",
+        artifact_path: "b/c",
+        attempt: 1,
+        backend_id: "memory.artifacts",
+        backend_root: "root"
+      })
+    ).resolves.toMatchObject({ uri: "memory://two" });
   });
 
   it("preserves ordered events and runtime logs", async () => {

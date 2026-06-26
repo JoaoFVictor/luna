@@ -44,10 +44,11 @@ export const manifest = capabilityManifest({
       id: "local-exec.command_policy",
       config_schema: commandSchema,
       side_effect_semantics: "write",
+      side_effect_operation_ids: ["local-exec.command"],
+      idempotency_scope: "attempt",
       retry_semantics: "retry_requires_adoption",
       error_codes: ["command_rejected", "command_timed_out"]
     }
   },
   docs: [{ title: "Local command execution ports and policies" }]
 });
-

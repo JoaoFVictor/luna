@@ -118,6 +118,8 @@ const REGISTRATION_ALLOWED_FIELDS = {
     "config_schema",
     "local_context_roots",
     "side_effect_semantics",
+    "side_effect_operation_ids",
+    "idempotency_scope",
     "retry_semantics",
     "error_codes"
   ]),
@@ -242,6 +244,11 @@ export function validateCapabilityManifest<T extends CapabilityManifest>(
           "capability_id_namespace",
           `Port ${registration.id} must name owning capability ${manifest.id}.`
         );
+      }
+      if (field === "policies") {
+        for (const operationId of registration.side_effect_operation_ids ?? []) {
+          validateNamespacedId(manifest.id, operationId);
+        }
       }
     }
   }

@@ -46,6 +46,8 @@ export type PolicyRegistration = {
   readonly config_schema: JsonSchemaLike;
   readonly local_context_roots?: readonly string[];
   readonly side_effect_semantics?: "none" | "read" | "write";
+  readonly side_effect_operation_ids?: readonly string[];
+  readonly idempotency_scope?: "run" | "node" | "attempt" | "external_resource";
   readonly retry_semantics?: "replay_safe" | "retry_requires_adoption" | "retry_forbidden";
   readonly error_codes?: readonly string[];
 };

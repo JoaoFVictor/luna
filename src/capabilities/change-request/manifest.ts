@@ -66,6 +66,8 @@ export const manifest = capabilityManifest({
         }
       },
       side_effect_semantics: "write",
+      side_effect_operation_ids: ["change-request.create"],
+      idempotency_scope: "attempt",
       retry_semantics: "retry_requires_adoption",
       error_codes: ["change_request_unknown_create_outcome"]
     }
