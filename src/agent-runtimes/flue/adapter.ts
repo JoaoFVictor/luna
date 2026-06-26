@@ -11,11 +11,11 @@ import {
   validateAgentRuntimeInput
 } from "../../core/agent-runtime/validation.js";
 
-type FlueAgentRuntimeRunner = (
+export type FlueAgentRuntimeRunner = (
   input: RunAgentInput
 ) => Promise<RunAgentOutput>;
 
-type FlueAgentRuntimeAdapterOptions = {
+export type FlueAgentRuntimeAdapterOptions = {
   readonly runner?: FlueAgentRuntimeRunner;
 };
 
