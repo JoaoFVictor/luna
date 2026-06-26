@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
 import {
   createAgent,
+  defineTool,
   type FlueContext,
   type PromptModel,
-  type PromptUsage
+  type PromptUsage,
+  type ToolDefinition
 } from "@flue/runtime";
 import { local } from "@flue/runtime/node";
 import * as v from "valibot";
@@ -16,10 +18,9 @@ import {
 import {
   contextIntakeFrom,
   prepareAgentInstructionEnvelope
-} from "../../agents/instruction-stack.js";
+} from "../../../capabilities/agents/agent-definition.js";
 import type {
-  RunGatedAgentLoopStepOptions,
-  RunAgentStepOptions
+  RunGatedAgentLoopStepOptions
 } from "../../configured-workflow/runner.js";
 import type { ModelProfile } from "../../config/schemas.js";
 import {
@@ -42,6 +43,10 @@ import {
 } from "../../observability/summary.js";
 import { usageFromFlueResponse } from "./observability.js";
 import type { Invocation } from "../../router/invocation.js";
+import type {
+  RunAgentInput,
+  RunAgentOutput
+} from "../../agent-runtime/contracts.js";
 import { runValidationCommands } from "../../validation/runner.js";
 import { collectWorktreeDiff } from "../../git/diff/worktree-diff.js";
 import {
@@ -60,8 +65,9 @@ import {
   gateResultFromAgentOutput
 } from "../../agents/gate-results.js";
 import { resolveGateInput } from "./gate-input.js";
+import { resolveFlueMcpTools } from "./mcp-capabilities.js";
 
-type FlueAgentRunnerOptions = {
+type FlueGatedAgentLoopRunnerOptions = {
   ctx: FlueContext<Invocation>;
   mcpConfig?: McpConfig;
 };
@@ -70,8 +76,7 @@ type AgentInstructionEnvelope = ReturnType<
   typeof prepareAgentInstructionEnvelope
 >;
 
-export type FlueAgentRunner = {
-  runAgentStep(options: RunAgentStepOptions): Promise<unknown>;
+export type FlueGatedAgentLoopRunner = {
   runGatedAgentLoopStep(options: RunGatedAgentLoopStepOptions): Promise<unknown>;
 };
 
@@ -83,6 +88,14 @@ function codedError(message: string, code: string): Error & { code: string } {
 
 function promptBody(value: unknown): string {
   return JSON.stringify(value, null, 2);
+}
+
+function stringifyToolOutput(output: unknown): string {
+  if (typeof output === "string") {
+    return output;
+  }
+
+  return JSON.stringify(output) ?? String(output);
 }
 
 function allowlistedEnv(
@@ -97,24 +110,6 @@ function allowlistedEnv(
   }
 
   return env;
-}
-
-function workspacePath(value: unknown): string | undefined {
-  if (typeof value !== "object" || value === null || !("path" in value)) {
-    return undefined;
-  }
-
-  const pathValue = (value as { path?: unknown }).path;
-  return typeof pathValue === "string" ? pathValue : undefined;
-}
-
-function repositoryPath(value: unknown): string | undefined {
-  if (typeof value !== "object" || value === null || !("path" in value)) {
-    return undefined;
-  }
-
-  const pathValue = (value as { path?: unknown }).path;
-  return typeof pathValue === "string" ? pathValue : undefined;
 }
 
 type PromptResponseWithUsage = {
@@ -135,7 +130,7 @@ function promptErrorAttributes(error: unknown): unknown {
 }
 
 async function emitPromptEvent(
-  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions,
+  options: RunGatedAgentLoopStepOptions,
   level: "info" | "warn" | "error",
   event: string,
   data: Record<string, unknown>,
@@ -160,7 +155,7 @@ async function emitPromptEvent(
 }
 
 async function recordPromptCompletion(
-  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions,
+  options: RunGatedAgentLoopStepOptions,
   promptId: string,
   startedAtMs: number,
   response: PromptResponseWithUsage | undefined
@@ -205,7 +200,7 @@ async function recordPromptCompletion(
 }
 
 async function recordPromptFailure(
-  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions,
+  options: RunGatedAgentLoopStepOptions,
   promptId: string,
   startedAtMs: number,
   error: unknown
@@ -231,35 +226,12 @@ async function recordPromptFailure(
   }
 }
 
-function capabilityCwdFor(options: RunAgentStepOptions): string {
-  const path =
-    workspacePath(options.state.workspace) ??
-    repositoryPath(options.state.repository);
-
-  if (path !== undefined) {
-    return path;
-  }
-
-  if ((options.agent.tools ?? []).length === 0) {
-    return process.cwd();
-  }
-
-  throw codedError(
-    `Agent ${options.agent.id} declares local tools but no repository or workspace path is available`,
-    "agent_tool_cwd_missing"
-  );
-}
-
-function readOnlyRetryPolicy(options: RunAgentStepOptions): RetryPolicy {
-  return readOnlyFluePromptRetryPolicy(options.node.retry);
-}
-
 function writeModeRetryPolicy(options: RunGatedAgentLoopStepOptions): RetryPolicy {
   return writeModeFluePromptRetryPolicy(options.node.retry);
 }
 
 async function emitPromptRetryEvent(
-  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions,
+  options: RunGatedAgentLoopStepOptions,
   error: unknown,
   attempt: number,
   retryPolicy: RetryPolicy,
@@ -283,19 +255,6 @@ async function emitPromptRetryEvent(
     },
     { status: "skipped", code: errorCode }
   );
-}
-
-function agentSandboxFor(options: RunAgentStepOptions):
-  | {
-      cwd: string;
-      sandbox: ReturnType<typeof local>;
-    }
-  | {} {
-  const cwd =
-    workspacePath(options.state.workspace) ??
-    repositoryPath(options.state.repository);
-
-  return cwd === undefined ? {} : { cwd, sandbox: local({ cwd, env: {} }) };
 }
 
 type JsonSchema = {
@@ -437,6 +396,93 @@ async function resultSchema(outputSchemaPath: string): Promise<GenericSchema> {
   return schemaFromJson(JSON.parse(await readFile(outputSchemaPath, "utf8")));
 }
 
+function flueToolName(id: string): string {
+  return id.replaceAll(".", "_").replaceAll("-", "_");
+}
+
+function materializeLocalRuntimeTools(input: RunAgentInput): ToolDefinition[] {
+  const cwd = input.cwd;
+
+  return input.tools.tools
+    .filter((tool) => tool.protocol === "local")
+    .map((tool) => {
+      if (tool.local === undefined) {
+        throw codedError(
+          `Resolved local tool has no local contract: ${tool.id}`,
+          "flue_tool_materialization_failed"
+        );
+      }
+      if (cwd === undefined) {
+        throw codedError(
+          `Resolved local tool requires cwd: ${tool.id}`,
+          "flue_tool_materialization_failed"
+        );
+      }
+
+      const execute = tool.local.createHandler({ cwd });
+      return defineTool({
+        name: flueToolName(tool.id),
+        description: tool.local.description,
+        parameters: tool.local.parameters as object,
+        execute: async (toolInput) =>
+          stringifyToolOutput(await execute(toolInput))
+      });
+    });
+}
+
+export async function runFlueAgentRuntimeInput(
+  ctx: FlueContext<Invocation>,
+  input: RunAgentInput,
+  mcpConfig?: McpConfig
+): Promise<RunAgentOutput> {
+  const mcpTools =
+    input.tools.mcp_policy === undefined
+      ? undefined
+      : await resolveFlueMcpTools({
+          ids: input.tools.mcp_policy.servers.map((server) => server.id),
+          agentMode: input.agent_mode,
+          config: mcpConfig ?? { mcp_servers: [] },
+          env: process.env
+        });
+
+  try {
+    const agent = createAgent(async () => ({
+      description: input.agent_id,
+      instructions: input.instructions,
+      tools: [
+        ...materializeLocalRuntimeTools(input),
+        ...(mcpTools?.tools ?? [])
+      ],
+      ...(input.cwd === undefined
+        ? {}
+        : { cwd: input.cwd, sandbox: local({ cwd: input.cwd, env: {} }) }),
+      ...toFlueModelOptions(input.model_profile)
+    }));
+    const harness = await ctx.init(agent, { name: input.agent_id });
+    const session = await harness.session();
+    const response = await session.prompt(
+      [input.agent_id, promptBody(input.input)].join("\n\n"),
+      {
+        result: schemaFromJson(input.output_schema),
+        ...toFluePromptOptions(input.model_profile)
+      }
+    );
+
+    const usage = usageFromFlueResponse({
+      promptId: `agent:${input.node_id}`,
+      modelProfile: input.model_profile.model,
+      response
+    });
+
+    return {
+      output: response.data,
+      ...(usage === undefined ? {} : { usage })
+    };
+  } finally {
+    await mcpTools?.close();
+  }
+}
+
 type PromptSession = {
   prompt(
     text: string,
@@ -457,7 +503,7 @@ async function runPromptWithRetry({
   retryPolicy,
   promptData = {}
 }: {
-  options: RunAgentStepOptions | RunGatedAgentLoopStepOptions;
+  options: RunGatedAgentLoopStepOptions;
   session: PromptSession;
   promptId: string;
   text: string;
@@ -509,68 +555,6 @@ async function runPromptWithRetry({
   }
 
   throw codedError("Flue prompt retry exhausted", "flue_prompt_retry_exhausted");
-}
-
-export async function runFlueAgentStep(
-  ctx: FlueContext<Invocation>,
-  options: RunAgentStepOptions,
-  mcpConfig?: McpConfig
-): Promise<unknown> {
-  const capabilityCwd = capabilityCwdFor(options);
-  const instructions = await readFile(options.agent.instructionsPath, "utf8");
-  const envelope = prepareAgentInstructionEnvelope({
-    agent: {
-      id: options.agent.id,
-      mode: options.agent.mode,
-      instructions
-    },
-    taskInput: options.input
-  });
-  const capabilities = await resolveFlueAgentCapabilities({
-    agent: options.agent,
-    cwd: capabilityCwd,
-    agentsRoot: options.agentsRoot,
-    modelProfiles: options.modelProfiles,
-    workflowSubagentPolicy: options.workflowSubagentPolicy,
-    context: contextIntakeFrom(options.input.context),
-    mcpConfig,
-    observability: options.observability,
-    summary: options.summary,
-    repository: repositoryConfigFromState(options.state),
-    env: process.env
-  });
-
-  try {
-    const agent = createAgent(async () => ({
-      description: options.agent.description,
-      instructions: envelope.instructions,
-      skills: capabilities.skills,
-      tools: capabilities.tools,
-      subagents: capabilities.subagents,
-      ...agentSandboxFor(options),
-      ...toFlueModelOptions(options.model)
-    }));
-    const harness = await ctx.init(agent, { name: options.agent.id });
-    const session = await harness.session();
-    const promptId = `agent:${options.node.id}`;
-    const response = await runPromptWithRetry({
-      options,
-      session,
-      promptId,
-      text: [options.agent.description, promptBody(envelope.taskInput)].join(
-        "\n\n"
-      ),
-      promptOptions: {
-        result: await resultSchema(options.agent.outputSchemaPath),
-        ...toFluePromptOptions(options.model)
-      },
-      retryPolicy: readOnlyRetryPolicy(options)
-    });
-
-    return response.data;
-  } finally {
-    await capabilities.close();
-  }
 }
 
 function writableAgentPrompt(
@@ -967,13 +951,11 @@ export async function runFlueGatedAgentLoopStep(
   }
 }
 
-export function createFlueAgentRunner({
+export function createFlueGatedAgentLoopRunner({
   ctx,
   mcpConfig
-}: FlueAgentRunnerOptions): FlueAgentRunner {
+}: FlueGatedAgentLoopRunnerOptions): FlueGatedAgentLoopRunner {
   return {
-    runAgentStep: async (options) =>
-      await runFlueAgentStep(ctx, options, mcpConfig),
     runGatedAgentLoopStep: async (options) =>
       await runFlueGatedAgentLoopStep(ctx, options, mcpConfig)
   };

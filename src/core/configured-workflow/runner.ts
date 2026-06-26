@@ -44,9 +44,14 @@ import {
   defaultWorkflowObservabilityConfig
 } from "../workflow/definition.js";
 import {
+  resolveWorkflowAgentOutputSchema,
   validateWorkflowAgentNodeOutput,
   validateWorkflowNodeOutput
 } from "../workflow/definition-validation.js";
+import {
+  resolveEffectiveSkillReferences,
+  type ResolvedSkillReference
+} from "../skills/definition.js";
 import type { SchedulerWorkflowState } from "../workflow/state.js";
 import { resolveRepository as defaultResolveRepository } from "../workflow/workspace-resolver.js";
 import {
@@ -61,10 +66,14 @@ import {
 } from "./errors.js";
 import {
   configuredWorkflowNodeRunner,
+  type ResolveAgentOutputSchemaOptions,
+  type ResolveAgentSkillsOptions,
+  type ResolveAgentToolCatalogOptions,
   type RunGatedAgentLoopStepOptions,
-  type RunAgentStepOptions,
   type WorkflowNodeRuntimeContext
 } from "./node-runner.js";
+import type { AgentRuntimePort } from "../agent-runtime/contracts.js";
+import type { ResolvedToolCatalog } from "../tools/resolved-catalog.js";
 import {
   configuredWorkflowBootstrap,
   createRunObservability,
@@ -101,7 +110,7 @@ import {
   type ConfiguredWorkflowRuntimeNode
 } from "./runtime-node.js";
 
-export type { RunGatedAgentLoopStepOptions, RunAgentStepOptions };
+export type { RunGatedAgentLoopStepOptions };
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -116,7 +125,16 @@ export type ConfiguredWorkflowRunnerDependencies = {
     repositories: readonly RepositoryConfig[]
   ) => RepositoryConfig;
   runBuiltInStep?: (options: RunBuiltInStepOptions) => MaybePromise<unknown>;
-  runAgentStep?: (options: RunAgentStepOptions) => MaybePromise<unknown>;
+  agentRuntime?: AgentRuntimePort;
+  resolveAgentTools?: (
+    options: ResolveAgentToolCatalogOptions
+  ) => MaybePromise<ResolvedToolCatalog>;
+  resolveAgentOutputSchema?: (
+    options: ResolveAgentOutputSchemaOptions
+  ) => MaybePromise<unknown>;
+  resolveAgentSkills?: (
+    options: ResolveAgentSkillsOptions
+  ) => MaybePromise<readonly ResolvedSkillReference[]>;
   runGatedAgentLoopStep?: (
     options: RunGatedAgentLoopStepOptions
   ) => MaybePromise<unknown>;
@@ -446,10 +464,43 @@ export async function runConfiguredWorkflow({
         ? {}
         : { repositoryWorkspace: configuredRepositoryWorkspace })
     };
+    const resolveAgentOutputSchema =
+      dependencies.resolveAgentOutputSchema ??
+      (async ({ node }: ResolveAgentOutputSchemaOptions) => {
+        const canonicalNode = canonicalNodesById.get(node.id);
+        if (canonicalNode?.type !== "agent") {
+          return {};
+        }
+
+        return await resolveWorkflowAgentOutputSchema({
+          agentId: canonicalNode.agent,
+          schemaRef: canonicalNode.output_schema,
+          agentsRoot: resolvedAgentsRoot,
+          declaredCapabilities: workflow.capabilities,
+          capabilityRegistry: officialCapabilityRegistry,
+          path: `$.nodes.${node.id}.output_schema`
+        });
+      });
+    const resolveAgentSkills =
+      dependencies.resolveAgentSkills ??
+      (async ({ agent, cwd }: ResolveAgentSkillsOptions) =>
+        await resolveEffectiveSkillReferences({
+          repository:
+            repository === undefined || cwd === undefined
+              ? undefined
+              : {
+                  root: cwd,
+                  skills: repository.skills
+                },
+          agentDirectory: agent.directory,
+          agentSkills: agent.skills
+        }));
     const nodeRuntimeContext: WorkflowNodeRuntimeContext = {
       dependencies: {
         ...dependencies,
-        builtInStepDependencies: activeBuiltInStepDependencies
+        builtInStepDependencies: activeBuiltInStepDependencies,
+        resolveAgentOutputSchema,
+        resolveAgentSkills
       },
       agentsRoot: resolvedAgentsRoot,
       modelProfiles,

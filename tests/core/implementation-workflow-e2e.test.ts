@@ -10,6 +10,7 @@ import {
 import type { Invocation } from "../../src/core/router/invocation.js";
 import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
 import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
+import { testAgentRuntimeFromStep } from "./configured-workflow-runner-test-helpers.js";
 import { providerAwareWorkflowDependencies } from "./provider-aware-workflow-dependencies.js";
 
 const repoRoot = process.cwd();
@@ -304,9 +305,12 @@ describe("implementation workflow e2e", () => {
               }
             }
           },
-          runAgentStep: vi.fn(async ({ agent, input }) => {
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent, input }) => {
+            const taskInput = input as {
+              task_context: Record<string, unknown>;
+            };
             if (agent.id === "implementation-planner") {
-              expect(input.task_context).toMatchObject({
+              expect(taskInput.task_context).toMatchObject({
                 implementation_title: "Plane #42: Fix checkout validation",
                 change_request_body: "Reject invalid checkout payloads.",
                 plane: {
@@ -519,7 +523,7 @@ describe("implementation workflow e2e", () => {
                   ].join("\n")
                 )
               },
-              runAgentStep: vi.fn(async ({ agent }) => {
+              agentRuntime: testAgentRuntimeFromStep(async ({ agent }) => {
                 if (agent.id === "implementation-planner") {
                   await concurrentRuns.enter();
                   return {
@@ -756,7 +760,7 @@ describe("implementation workflow e2e", () => {
               ].join("\n")
             )
           },
-          runAgentStep: vi.fn(async ({ agent }) => {
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) => {
             calls.push(agent.id);
 
             if (agent.id === "implementation-planner") {

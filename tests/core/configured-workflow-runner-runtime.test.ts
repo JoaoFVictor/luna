@@ -16,6 +16,7 @@ import {
   pathExists,
   readJson,
   staticRunIdentity,
+  testAgentRuntimeFromStep,
   withTimeout,
   writeAgent,
   writeBaseConfig,
@@ -120,7 +121,7 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep,
-          runAgentStep
+          agentRuntime: testAgentRuntimeFromStep(runAgentStep)
         }
       });
 
@@ -180,22 +181,11 @@ describe("configured workflow runner", () => {
 
         return {};
       });
-      const policies: unknown[] = [];
-      const runAgentStep = vi.fn(
-        async ({
-          workflowSubagentPolicy
-        }: {
-          workflowSubagentPolicy: unknown;
-        }) => {
-          policies.push(workflowSubagentPolicy);
-
-          return {
-            summary: "Plan",
-            focus_areas: [],
-            files_to_review: []
-          };
-        }
-      );
+      const runAgentStep = vi.fn(async () => ({
+        summary: "Plan",
+        focus_areas: [],
+        files_to_review: []
+      }));
 
       const result = await runConfiguredWorkflow({
         invocation,
@@ -203,12 +193,12 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep,
-          runAgentStep
+          agentRuntime: testAgentRuntimeFromStep(runAgentStep)
         }
       });
 
       expect(result.status).toBe("success");
-      expect(policies).toEqual([{ allow_write: true }]);
+      expect(runAgentStep).toHaveBeenCalledTimes(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -229,11 +219,11 @@ describe("configured workflow runner", () => {
           createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" },
-          runAgentStep: async () => ({
+          agentRuntime: testAgentRuntimeFromStep(async () => ({
             summary: "Plan",
             focus_areas: [],
             files_to_review: []
-          })
+          }))
         }
       });
 
@@ -268,7 +258,7 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: vi.fn(async () => ({ status: "ok" })),
-          runAgentStep: vi.fn(async ({ input }: { input: unknown }) => ({
+          agentRuntime: testAgentRuntimeFromStep(async ({ input }) => ({
             summary: "Toy workflow executed",
             focus_areas: [],
             files_to_review: [],
@@ -322,7 +312,7 @@ describe("configured workflow runner", () => {
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? repoContext : { status: "ok" }
           ),
-          runAgentStep
+          agentRuntime: testAgentRuntimeFromStep(runAgentStep)
         }
       });
 
@@ -330,19 +320,11 @@ describe("configured workflow runner", () => {
       expect(runAgentStep).toHaveBeenCalledWith(
         expect.objectContaining({
           agent: expect.objectContaining({
-            id: "review-planner",
-            model_profile: "default"
+            id: "review-planner"
           }),
           model: {
             model: "openai-codex/gpt-5.4-mini",
             reasoning_effort: "medium"
-          },
-          agentsRoot: path.join(root, "agents"),
-          modelProfiles: {
-            default: {
-              model: "openai-codex/gpt-5.4-mini",
-              reasoning_effort: "medium"
-            }
           },
           input: {
             repo_context: repoContext
@@ -383,7 +365,7 @@ describe("configured workflow runner", () => {
             runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
               uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
             ),
-            runAgentStep: vi.fn()
+            agentRuntime: testAgentRuntimeFromStep(vi.fn())
           }
         })
       ).rejects.toMatchObject({
@@ -412,7 +394,7 @@ describe("configured workflow runner", () => {
           dependencies: {
             createRunIdentity: staticRunIdentity(githubRun),
             runBuiltInStep: vi.fn(),
-            runAgentStep: vi.fn()
+            agentRuntime: testAgentRuntimeFromStep(vi.fn())
           }
         })
       ).rejects.toMatchObject({ code: "workflow_config_read_failed" });
@@ -435,7 +417,7 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep: vi.fn(),
-          runAgentStep: vi.fn()
+          agentRuntime: testAgentRuntimeFromStep(vi.fn())
         }
       });
 
@@ -479,7 +461,7 @@ describe("configured workflow runner", () => {
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
           ),
-          runAgentStep: vi.fn(async () => ({
+          agentRuntime: testAgentRuntimeFromStep(async () => ({
             summary: "Plan",
             focus_areas: [],
             files_to_review: []
@@ -512,7 +494,7 @@ describe("configured workflow runner", () => {
           dependencies: {
             createRunIdentity: staticRunIdentity(githubRun),
             runBuiltInStep: vi.fn(),
-            runAgentStep: vi.fn()
+            agentRuntime: testAgentRuntimeFromStep(vi.fn())
           }
         })
       ).rejects.toMatchObject({ code: "router_invalid_target" });

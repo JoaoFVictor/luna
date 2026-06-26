@@ -23,6 +23,7 @@ import {
   pathExists,
   readJson,
   staticRunIdentity,
+  testAgentRuntimeFromStep,
   withTimeout,
   writeAgent,
   writeBaseConfig,
@@ -262,7 +263,7 @@ describe("configured workflow runner", () => {
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
           ),
-          runAgentStep: vi.fn(async () => ({
+          agentRuntime: testAgentRuntimeFromStep(async () => ({
             summary: "Plan",
             focus_areas: [],
             files_to_review: []
@@ -420,7 +421,7 @@ describe("configured workflow runner", () => {
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
           ),
-          runAgentStep: vi.fn(async () => ({
+          agentRuntime: testAgentRuntimeFromStep(async () => ({
             summary: "Plan",
             focus_areas: [],
             files_to_review: []
@@ -654,7 +655,7 @@ describe("configured workflow runner", () => {
           runBuiltInStep: vi.fn(async ({ uses }: { uses: string }) =>
             uses === "collect_repo_context" ? { files: [] } : { status: "ok" }
           ),
-          runAgentStep: vi.fn(async () => ({
+          agentRuntime: testAgentRuntimeFromStep(async () => ({
             summary: "Plan",
             focus_areas: [],
             files_to_review: []
@@ -855,7 +856,7 @@ describe("configured workflow runner", () => {
             }
             return {};
           }),
-          runAgentStep: vi.fn(async () => ({ flag: "not-boolean" }))
+          agentRuntime: testAgentRuntimeFromStep(async () => ({ flag: "not-boolean" }))
         }
       });
 
@@ -865,7 +866,7 @@ describe("configured workflow runner", () => {
       }
       expect(result.error.details).toMatchObject({
         step_id: "review_plan",
-        cause_code: "workflow_capability_config_invalid"
+        cause_code: "runtime_output_schema_invalid"
       });
       await expect(
         pathExists(artifactPath(root, "code-review", githubRun.run_id, "review-plan.json"))

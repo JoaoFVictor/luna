@@ -9,13 +9,20 @@ import {
   defaultProviderBuiltInStepRegistry,
   runBuiltInStep
 } from "../../providers/built-ins.js";
-import { createFlueAgentRunner } from "./runner.js";
+import {
+  createFlueGatedAgentLoopRunner,
+  runFlueAgentRuntimeInput
+} from "./runner.js";
 import { createFlueLogSink } from "./observability.js";
 import { registerConfiguredPiOAuthProviders } from "./pi-auth.js";
 import { createNodeLocalExecPorts } from "../../local-exec/node-ports.js";
 import { createGitHubRepositoryWorkspacePorts } from "../../providers/github/repository-workspace.js";
 import { createGitRepositoryPorts } from "../../../runtime/git/repository-port.js";
 import { createDefaultChangeRequestPorts } from "../../../runtime/change-request/providers.js";
+import { createFlueAgentRuntimeAdapter } from "../../../agent-runtimes/flue/adapter.js";
+import { resolveToolCatalog } from "../../tools/resolved-catalog.js";
+import { lunaToolCatalog } from "../../tools/catalog.js";
+import { officialCapabilityRegistry } from "../../../capabilities/registry.js";
 
 export type { ConfiguredWorkflowResult };
 
@@ -28,7 +35,10 @@ export async function runLunaWorkflowWithFlue(
   await registerConfiguredPiOAuthProviders({ configRoot });
   const mcpConfig = await loadMcpConfig(configRoot);
 
-  const agentRunner = createFlueAgentRunner({ ctx, mcpConfig });
+  const gatedAgentLoopRunner = createFlueGatedAgentLoopRunner({ ctx, mcpConfig });
+  const agentRuntime = createFlueAgentRuntimeAdapter({
+    runner: async (input) => await runFlueAgentRuntimeInput(ctx, input, mcpConfig)
+  });
 
   return await runConfiguredWorkflow({
     invocation: ctx.payload,
@@ -37,7 +47,17 @@ export async function runLunaWorkflowWithFlue(
     runtimeRunId,
     observabilitySinks: [createFlueLogSink(ctx.log)],
     dependencies: {
-      ...agentRunner,
+      agentRuntime,
+      resolveAgentTools: ({ agent }) =>
+        resolveToolCatalog({
+          registry: officialCapabilityRegistry,
+          local_tools: lunaToolCatalog,
+          requested_local_tool_ids: agent.tools ?? [],
+          requested_mcp_server_ids: agent.mcp_servers ?? [],
+          agent_mode: agent.mode,
+          mcp_config: mcpConfig
+        }),
+      runGatedAgentLoopStep: gatedAgentLoopRunner.runGatedAgentLoopStep,
       builtInStepDependencies: {
         git: createGitRepositoryPorts(),
         changeRequest: createDefaultChangeRequestPorts(),

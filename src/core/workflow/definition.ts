@@ -76,6 +76,10 @@ export async function loadWorkflowDefinition(
 ): Promise<WorkflowDefinition> {
   assertSafeSegment(workflowId);
   const directory = path.join(workflowsRoot, workflowId);
+  const defaultAgentsRoot =
+    path.basename(path.resolve(workflowsRoot)) === "workflows"
+      ? path.resolve(workflowsRoot, "..", "agents")
+      : path.resolve(workflowsRoot, "agents");
   const workflowYaml = await readFile(path.join(directory, "workflow.yaml"), "utf8");
 
   return await loadWorkflowDefinitionFromMetadata({
@@ -83,6 +87,7 @@ export async function loadWorkflowDefinition(
     metadata: parseWorkflowYaml(workflowYaml) as WorkflowMetadata,
     workflowId,
     workflowYaml,
+    agentsRoot: options.agentsRoot ?? defaultAgentsRoot,
     capabilityRegistry: options.capabilityRegistry,
     digestResolver: options.digestResolver
   });
@@ -94,7 +99,8 @@ export async function loadWorkflowDefinitionFromMetadata({
   workflowId,
   workflowYaml,
   capabilityRegistry,
-  digestResolver
+  digestResolver,
+  agentsRoot
 }: {
   directory: string;
   metadata: WorkflowMetadata;
@@ -102,6 +108,7 @@ export async function loadWorkflowDefinitionFromMetadata({
   workflowYaml?: string;
   capabilityRegistry?: CapabilityRegistry;
   digestResolver?: DefinitionDigestResolver;
+  agentsRoot?: string;
 }): Promise<WorkflowDefinition> {
   const raw = assertWorkflowDocument(metadata);
   const id = requireString(raw.id, "$.id");
@@ -135,7 +142,12 @@ export async function loadWorkflowDefinitionFromMetadata({
     nodeIds,
     capabilityRegistry
   );
-  await validateAgentOutputSchemas(parsedGraph.nodes, directory, capabilities, capabilityRegistry);
+  await validateAgentOutputSchemas(
+    parsedGraph.nodes,
+    agentsRoot ?? path.resolve(directory, "..", "..", "agents"),
+    capabilities,
+    capabilityRegistry
+  );
   analyzeParsedGraph(parsedGraph);
 
   const externalDefinitionDigests = await collectExternalDefinitionDigests(

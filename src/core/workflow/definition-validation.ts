@@ -6,6 +6,7 @@ import type {
   SchemaRegistration
 } from "../capabilities/manifest.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
+import { matchesJsonSchema } from "../capabilities/json-schema.js";
 import {
   createSideEffectPolicy,
   type SideEffectPolicy
@@ -251,7 +252,7 @@ export function validateJsonSchema(
   value: unknown,
   context: { path: string; capability: string }
 ): void {
-  if (!matchesJsonSchema(schema, value)) {
+  if (!matchesJsonSchema(schema, value, { isExpressionObject })) {
     throw new WorkflowDefinitionError(
       "workflow_capability_config_invalid",
       `Config at ${context.path} does not match schema for ${context.capability}.`,
@@ -452,7 +453,7 @@ function validateArtifacts(
 
 export async function validateAgentOutputSchemas(
   nodes: readonly ParsedWorkflowNode[],
-  directory: string,
+  agentsRoot: string,
   declaredCapabilities: readonly string[],
   registry: CapabilityRegistry | undefined
 ): Promise<void> {
@@ -466,7 +467,41 @@ export async function validateAgentOutputSchemas(
       requireRegistration(schemaRef, "schemas", declaredCapabilities, registry, schemaPath);
       continue;
     }
-    await assertWorkflowFileExists(directory, schemaRef, schemaPath);
+    await assertAgentSchemaFileExists({
+      agentsRoot,
+      agentId: node.agent,
+      relativePath: schemaRef,
+      yamlPath: schemaPath
+    });
+  }
+}
+
+async function assertAgentSchemaFileExists({
+  agentsRoot,
+  agentId,
+  relativePath,
+  yamlPath
+}: {
+  agentsRoot: string;
+  agentId: string;
+  relativePath: string;
+  yamlPath: string;
+}): Promise<void> {
+  const resolved = safeAgentSchemaFilePath({
+    agentsRoot,
+    agentId,
+    relativePath,
+    yamlPath
+  });
+  try {
+    await access(resolved);
+  } catch (error) {
+    void error;
+    throw new WorkflowDefinitionError(
+      "workflow_schema_missing",
+      `Workflow referenced file does not exist: ${relativePath}`,
+      { path: yamlPath }
+    );
   }
 }
 
@@ -517,7 +552,7 @@ export async function validateWorkflowAgentNodeOutput({
   capabilityRegistry?: CapabilityRegistry;
   path: string;
 }): Promise<void> {
-  const schema = await agentOutputSchema({
+  const schema = await resolveWorkflowAgentOutputSchema({
     agentId: node.agent,
     schemaRef: node.output_schema,
     agentsRoot,
@@ -531,7 +566,7 @@ export async function validateWorkflowAgentNodeOutput({
   });
 }
 
-async function agentOutputSchema({
+export async function resolveWorkflowAgentOutputSchema({
   agentId,
   schemaRef,
   agentsRoot,
@@ -693,108 +728,6 @@ function patternConfigFor(
   };
 }
 
-function matchesJsonSchema(schema: JsonSchemaLike, value: unknown): boolean {
-  if (isExpressionObject(value)) {
-    return true;
-  }
-  if (schema.const !== undefined && schema.const !== value) {
-    return false;
-  }
-  if (schema.enum !== undefined) {
-    return schema.enum.some((item) => item === value);
-  }
-  if (
-    schema.allOf !== undefined &&
-    !schema.allOf.every((option) => matchesJsonSchema(option, value))
-  ) {
-    return false;
-  }
-  if (
-    schema.anyOf !== undefined &&
-    !schema.anyOf.some((option) => matchesJsonSchema(option, value))
-  ) {
-    return false;
-  }
-  if (schema.oneOf !== undefined) {
-    const matchingOptions = schema.oneOf.filter((option) =>
-      matchesJsonSchema(option, value)
-    );
-    if (matchingOptions.length !== 1) {
-      return false;
-    }
-  }
-  if (schema.not !== undefined && matchesJsonSchema(schema.not, value)) {
-    return false;
-  }
-  if (schema.type === undefined) {
-    return hasObjectKeywords(schema) ? matchesObjectSchema(schema, value) : true;
-  }
-  if (Array.isArray(schema.type)) {
-    return schema.type.some((type) => matchesJsonSchema({ ...schema, type }, value));
-  }
-  if (schema.type === "string") {
-    return typeof value === "string";
-  }
-  if (schema.type === "number" || schema.type === "integer") {
-    return typeof value === "number" &&
-      Number.isFinite(value) &&
-      (schema.type !== "integer" || Number.isInteger(value)) &&
-      (schema.minimum === undefined || value >= schema.minimum) &&
-      (schema.maximum === undefined || value <= schema.maximum);
-  }
-  if (schema.type === "boolean") {
-    return typeof value === "boolean";
-  }
-  if (schema.type === "array") {
-    if (!Array.isArray(value)) {
-      return false;
-    }
-    if (schema.minItems !== undefined && value.length < schema.minItems) {
-      return false;
-    }
-    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
-      return false;
-    }
-    return schema.items === undefined ||
-      value.every((item) => matchesJsonSchema(schema.items as JsonSchemaLike, item));
-  }
-  if (schema.type !== "object") {
-    return true;
-  }
-  return matchesObjectSchema(schema, value);
-}
-
-function hasObjectKeywords(schema: JsonSchemaLike): boolean {
-  return (
-    schema.properties !== undefined ||
-    schema.required !== undefined ||
-    schema.additionalProperties !== undefined
-  );
-}
-
-function matchesObjectSchema(schema: JsonSchemaLike, value: unknown): boolean {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  for (const required of schema.required ?? []) {
-    if (!(required in record)) {
-      return false;
-    }
-  }
-  const properties = schema.properties ?? {};
-  if (schema.additionalProperties === false) {
-    for (const key of Object.keys(record)) {
-      if (!(key in properties)) {
-        return false;
-      }
-    }
-  }
-  return Object.entries(properties).every(([key, nested]) =>
-    !(key in record) || matchesJsonSchema(nested, record[key])
-  );
-}
-
 function walkNoStringExpressions(value: unknown, yamlPath: string): void {
   if (isExpressionObject(value)) {
     return;
@@ -813,31 +746,6 @@ function walkNoStringExpressions(value: unknown, yamlPath: string): void {
   if (typeof value === "object" && value !== null) {
     Object.entries(value as Record<string, unknown>).forEach(([key, nested]) =>
       walkNoStringExpressions(nested, `${yamlPath}.${key}`)
-    );
-  }
-}
-
-async function assertWorkflowFileExists(
-  directory: string,
-  relativePath: string,
-  yamlPath: string
-): Promise<void> {
-  const root = path.resolve(directory);
-  const resolved = path.resolve(root, relativePath);
-  if (!isInsideRoot(root, resolved)) {
-    throw new WorkflowDefinitionError(
-      "workflow_path_escape",
-      `Workflow file path escapes workflow directory: ${relativePath}`,
-      { path: yamlPath }
-    );
-  }
-  try {
-    await access(resolved);
-  } catch {
-    throw new WorkflowDefinitionError(
-      "workflow_schema_missing",
-      `Workflow referenced schema does not exist: ${relativePath}`,
-      { path: yamlPath }
     );
   }
 }

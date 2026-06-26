@@ -1,47 +1,14 @@
-import { realpath } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { loadJsonFile, loadYamlFile } from "../../core/config/loader.js";
+import { assertSafeSegment, isInsideRoot } from "../../core/security/path.js";
 import {
-  AgentCapabilityFieldsSchema,
-  assertNoDuplicateCapabilities
-} from "./capabilities.js";
-import { loadYamlFile } from "../config/loader.js";
-import { ContextConfigSchema } from "../config/schemas.js";
-import { assertSafeSegment, isInsideRoot } from "../security/path.js";
-
-const NonEmptyStringSchema = z.string().min(1);
-
-const AgentMetadataSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    description: NonEmptyStringSchema,
-    model_profile: NonEmptyStringSchema,
-    mode: z.enum(["read_only", "trusted_local_write"]),
-    instructions_file: NonEmptyStringSchema,
-    output_schema: NonEmptyStringSchema,
-    context: ContextConfigSchema.optional()
-  })
-  .extend(AgentCapabilityFieldsSchema.shape)
-  .strict();
-
-export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
-
-export type AgentDefinition = AgentMetadata & {
-  directory: string;
-  instructionsPath: string;
-  outputSchemaPath: string;
-};
-
-function agentDefinitionError(
-  message: string,
-  code: string,
-  cause?: unknown
-): Error & { code: string } {
-  const error = new Error(message, { cause }) as Error & { code: string };
-  error.code = code;
-
-  return error;
-}
+  AgentMetadataSchema,
+  agentDefinitionError,
+  assertNoDuplicateCapabilities,
+  type LoadedAgentDefinition
+} from "./agent-definition.js";
 
 async function safeAgentDirectory(
   agentsRoot: string,
@@ -121,26 +88,14 @@ async function safeAgentPath(
 export async function loadAgentDefinition(
   agentsRoot: string,
   agentId: string
-): Promise<AgentDefinition> {
+): Promise<LoadedAgentDefinition> {
   const directory = await safeAgentDirectory(agentsRoot, agentId);
   const metadata = await loadYamlFile(
     path.join(directory, "agent.yaml"),
     AgentMetadataSchema
   );
 
-  try {
-    assertNoDuplicateCapabilities(metadata);
-  } catch (cause) {
-    if ((cause as { code?: unknown }).code === "agent_capability_duplicate") {
-      throw agentDefinitionError(
-        cause instanceof Error ? cause.message : "Duplicate agent capability",
-        "agent_capability_duplicate",
-        cause
-      );
-    }
-
-    throw cause;
-  }
+  assertNoDuplicateCapabilities(metadata);
 
   if (metadata.id !== agentId) {
     throw agentDefinitionError(
@@ -149,10 +104,18 @@ export async function loadAgentDefinition(
     );
   }
 
+  const instructionsPath = await safeAgentPath(
+    directory,
+    metadata.instructions_file
+  );
+  const outputSchemaPath = await safeAgentPath(directory, metadata.output_schema);
+
   return {
     ...metadata,
     directory,
-    instructionsPath: await safeAgentPath(directory, metadata.instructions_file),
-    outputSchemaPath: await safeAgentPath(directory, metadata.output_schema)
+    instructionsPath,
+    outputSchemaPath,
+    instructions: await readFile(instructionsPath, "utf8"),
+    outputSchema: await loadJsonFile(outputSchemaPath, z.unknown())
   };
 }

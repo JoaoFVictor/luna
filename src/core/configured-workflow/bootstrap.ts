@@ -143,10 +143,12 @@ async function workflowIdFromRoute(
 async function loadConfiguredWorkflow(
   workflowsRoot: string,
   workflowId: string,
+  agentsRoot: string,
   _builtInStepRegistry: BuiltInStepRegistryView | undefined
 ): Promise<WorkflowDefinition> {
   try {
     return await loadWorkflowDefinition(workflowsRoot, workflowId, {
+      agentsRoot,
       capabilityRegistry: officialCapabilityRegistry
     });
   } catch (cause) {
@@ -298,6 +300,7 @@ async function bootstrapConfiguredWorkflowRun({
   const workflow = await loadConfiguredWorkflow(
     resolvedWorkflowsRoot,
     workflowId,
+    resolvedAgentsRoot,
     dependencies.builtInStepRegistry
   );
   const workflowObservabilityConfig =

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { collectContextIntake } from "../context/intake.js";
+import { collectContextIntake } from "../../capabilities/context/collect-context.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
 import { defineBuiltInStep } from "./registry.js";
 import { repositoryRequiredMetadata } from "./metadata.js";

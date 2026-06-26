@@ -32,21 +32,37 @@ const contextOutputSchema = {
           type: "array",
           items: {
             type: "object",
-            additionalProperties: true
+            additionalProperties: false,
+            required: ["path", "bytes", "content"],
+            properties: {
+              path: { type: "string" },
+              bytes: { type: "integer", minimum: 0 },
+              content: { type: "string" }
+            }
           }
         },
         missing: {
           type: "array",
           items: {
             type: "object",
-            additionalProperties: true
+            additionalProperties: false,
+            required: ["path"],
+            properties: {
+              path: { type: "string" }
+            }
           }
         },
         skipped: {
           type: "array",
           items: {
             type: "object",
-            additionalProperties: true
+            additionalProperties: false,
+            required: ["path", "reason"],
+            properties: {
+              path: { type: "string" },
+              reason: { enum: ["path_escape", "not_file", "too_large"] },
+              bytes: { type: "integer", minimum: 0 }
+            }
           }
         }
       }
@@ -68,21 +84,37 @@ const contextOutputSchema = {
             type: "array",
             items: {
               type: "object",
-              additionalProperties: true
+              additionalProperties: false,
+              required: ["path", "bytes", "content"],
+              properties: {
+                path: { type: "string" },
+                bytes: { type: "integer", minimum: 0 },
+                content: { type: "string" }
+              }
             }
           },
           missing: {
             type: "array",
             items: {
               type: "object",
-              additionalProperties: true
+              additionalProperties: false,
+              required: ["path"],
+              properties: {
+                path: { type: "string" }
+              }
             }
           },
           skipped: {
             type: "array",
             items: {
               type: "object",
-              additionalProperties: true
+              additionalProperties: false,
+              required: ["path", "reason"],
+              properties: {
+                path: { type: "string" },
+                reason: { enum: ["path_escape", "not_file", "too_large"] },
+                bytes: { type: "integer", minimum: 0 }
+              }
             }
           }
         }

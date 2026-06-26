@@ -4,7 +4,7 @@ import {
   type AgentProfile,
   type ToolDefinition
 } from "@flue/runtime";
-import { loadAgentDefinition } from "../../agents/definition.js";
+import { loadAgentDefinition } from "../../../capabilities/agents/agent-loader.js";
 import { flueSkillFromResolvedSkill } from "./skill-loader.js";
 import { resolveFlueTools } from "./tool-registry.js";
 import { toFlueModelOptions } from "./model-options.js";
@@ -19,8 +19,8 @@ import {
   recordRejectedCapability,
   type ObservabilitySummary
 } from "../../observability/summary.js";
-import { prepareAgentInstructionEnvelope } from "../../agents/instruction-stack.js";
-import type { ContextIntake } from "../../context/intake.js";
+import { prepareAgentInstructionEnvelope } from "../../../capabilities/agents/agent-definition.js";
+import type { ContextIntake } from "../../../capabilities/context/collect-context.js";
 import {
   type AgentSubagentReference,
   resolveSubagentPolicy,

@@ -14,6 +14,7 @@ import {
   createRealGitReviewFixture,
   type RealGitReviewFixture
 } from "../fixtures/git-repo.js";
+import { testAgentRuntimeFromStep } from "./configured-workflow-runner-test-helpers.js";
 import { providerAwareWorkflowDependencies } from "./provider-aware-workflow-dependencies.js";
 
 const repoRoot = process.cwd();
@@ -314,7 +315,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
             return await collectRepoContext(options);
           }
         },
-        runAgentStep: async ({ agent }) => {
+        agentRuntime: testAgentRuntimeFromStep(async ({ agent }) => {
           if (agent.id === "review-planner") {
             return reviewPlan;
           }
@@ -324,7 +325,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
           }
 
           return acceptance;
-        }
+        })
       })
     });
 
@@ -433,7 +434,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
             collectRepoContext: async (options) =>
               await collectRepoContext(options)
           },
-          runAgentStep: async ({ agent }) => {
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) => {
             if (agent.id === "review-planner") {
               await workflowOverlap.enter();
               return reviewPlan;
@@ -444,7 +445,7 @@ describe("configured code review workflow end-to-end with real Git", () => {
             }
 
             return acceptance;
-          }
+          })
         })
       }),
       runConfiguredWorkflow({
@@ -553,10 +554,10 @@ describe("configured code review workflow end-to-end with real Git", () => {
 
             return {};
           },
-          runAgentStep: async ({ agent }) =>
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) =>
             agent.id === "implementation-planner"
               ? { summary: "Plan", steps: ["Edit"], risks: [] }
-              : acceptedImplementationDecision,
+              : acceptedImplementationDecision),
           runGatedAgentLoopStep: async () => ({
             status: "passed",
             attempts_exhausted: false,

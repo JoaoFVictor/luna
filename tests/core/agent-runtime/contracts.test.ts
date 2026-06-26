@@ -21,6 +21,7 @@ const baseInput = {
   run,
   node_id: "review",
   agent_id: "change-reviewer",
+  agent_mode: "read_only",
   instructions: "Review the change.",
   input: { files: ["src/example.ts"] },
   output_schema: {

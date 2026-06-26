@@ -17,6 +17,7 @@ function input(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
     },
     node_id: "node-1",
     agent_id: "agent-1",
+    agent_mode: "read_only",
     instructions: "Run.",
     input: {},
     output_schema: { type: "object", additionalProperties: true },

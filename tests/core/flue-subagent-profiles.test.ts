@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { resolveFlueSubagentProfiles } from "../../src/core/agent-runtime/flue/subagent-profiles.js";
-import type { ContextIntake } from "../../src/core/context/intake.js";
+import type { ContextIntake } from "../../src/capabilities/context/collect-context.js";
 import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 

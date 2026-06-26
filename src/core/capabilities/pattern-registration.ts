@@ -13,6 +13,9 @@ export type JsonSchemaLike = {
   readonly description?: string;
   readonly minItems?: number;
   readonly maxItems?: number;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly pattern?: string;
   readonly minimum?: number;
   readonly maximum?: number;
 };

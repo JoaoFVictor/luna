@@ -160,4 +160,5 @@ export type WorkflowDefinition = {
 export type LoadWorkflowDefinitionOptions = {
   capabilityRegistry?: CapabilityRegistry;
   digestResolver?: DefinitionDigestResolver;
+  agentsRoot?: string;
 };

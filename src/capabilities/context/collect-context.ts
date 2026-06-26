@@ -1,8 +1,8 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { loadAgentDefinition } from "../agents/definition.js";
-import type { RepositoryConfig } from "../config/schemas.js";
-import { isInsideRoot } from "../security/path.js";
+import { loadAgentDefinition } from "../agents/agent-loader.js";
+import type { RepositoryConfig } from "../../core/config/schemas.js";
+import { isInsideRoot } from "../../core/security/path.js";
 
 const DEFAULT_MAX_CONTEXT_FILE_BYTES = 64 * 1024;
 

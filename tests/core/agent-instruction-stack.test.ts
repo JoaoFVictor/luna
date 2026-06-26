@@ -3,7 +3,7 @@ import {
   type AgentInstructionMode,
   contextIntakeFrom,
   prepareAgentInstructionEnvelope
-} from "../../src/core/agents/instruction-stack.js";
+} from "../../src/capabilities/agents/agent-definition.js";
 
 const repositoryContext = {
   root: "/repo",

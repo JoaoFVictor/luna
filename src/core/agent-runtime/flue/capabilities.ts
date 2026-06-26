@@ -1,5 +1,5 @@
 import type { AgentProfile, Skill, ToolDefinition } from "@flue/runtime";
-import type { AgentDefinition } from "../../agents/definition.js";
+import type { AgentDefinition } from "../../../capabilities/agents/agent-definition.js";
 import { resolveFlueMcpTools } from "./mcp-capabilities.js";
 import { flueSkillFromResolvedSkill } from "./skill-loader.js";
 import { resolveFlueSubagentProfiles } from "./subagent-profiles.js";
@@ -14,7 +14,7 @@ import {
 import { sanitizeJsonObject } from "../../observability/sanitize.js";
 import type { ObservabilitySummary } from "../../observability/summary.js";
 import type { WorkflowSubagentPolicy } from "../../agents/subagent-policy.js";
-import type { ContextIntake } from "../../context/intake.js";
+import type { ContextIntake } from "../../../capabilities/context/collect-context.js";
 import { resolveEffectiveSkillReferences } from "../../skills/definition.js";
 
 export type ResolvedFlueAgentCapabilities = {

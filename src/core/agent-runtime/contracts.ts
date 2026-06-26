@@ -54,12 +54,14 @@ export type RunAgentInput = {
   readonly run: RunHandle;
   readonly node_id: string;
   readonly agent_id: string;
+  readonly agent_mode: "read_only" | "trusted_local_write";
   readonly instructions: string;
   readonly input: unknown;
   readonly output_schema: unknown;
   readonly model_profile: ModelProfile;
   readonly tools: ResolvedToolCatalog;
   readonly context: unknown;
+  readonly cwd?: string;
   readonly runtime_requirements: readonly AgentRuntimeRequirement[];
   readonly signal: AbortSignal | undefined;
   readonly events: AgentRuntimeEventSink | undefined;

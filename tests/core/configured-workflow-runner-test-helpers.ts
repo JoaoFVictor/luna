@@ -6,6 +6,10 @@ import type {
 } from "../../src/core/router/invocation.js";
 import type { RunIdentity } from "../../src/core/invocation/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
+import type {
+  AgentRuntimePort,
+  RunAgentInput
+} from "../../src/core/agent-runtime/contracts.js";
 
 export const invocation: Invocation = {
   version: "2026-06",
@@ -124,6 +128,31 @@ export async function withTimeout<T>(
       clearTimeout(timeout);
     }
   }
+}
+
+export function testAgentRuntimeFromStep(
+  step: (options: {
+    agent: { id: string; mode: RunAgentInput["agent_mode"] };
+    model: RunAgentInput["model_profile"];
+    input: unknown;
+  }) => unknown | Promise<unknown>
+): AgentRuntimePort {
+  return {
+    describe: () => ({
+      id: "test-runtime",
+      display_name: "Test Runtime",
+      supported_tool_protocols: ["local", "mcp"],
+      supported_runtime_requirements: ["tool_calling", "mcp_tools"]
+    }),
+    validate: () => undefined,
+    runAgent: async (input) => ({
+      output: await step({
+        agent: { id: input.agent_id, mode: input.agent_mode },
+        model: input.model_profile,
+        input: input.input
+      })
+    })
+  };
 }
 
 
@@ -271,6 +300,7 @@ export async function writeWorkflow(
       ""
     ].join("\n")
   );
+  await writeReviewPlannerAgent(root);
 }
 
 

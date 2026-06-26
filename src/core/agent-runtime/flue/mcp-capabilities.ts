@@ -2,7 +2,7 @@ import {
   connectMcpServer as defaultConnectMcpServer,
   type ToolDefinition
 } from "@flue/runtime";
-import type { AgentDefinition } from "../../agents/definition.js";
+import type { AgentDefinition } from "../../../capabilities/agents/agent-definition.js";
 import type { McpConfig, McpServerConfig } from "../../config/mcp.js";
 
 type McpCapabilityErrorCode =

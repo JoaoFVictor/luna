@@ -16,6 +16,7 @@ import {
   pathExists,
   readJson,
   staticRunIdentity,
+  testAgentRuntimeFromStep,
   withTimeout,
   writeAgent,
   writeBaseConfig,
@@ -280,7 +281,7 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep,
-          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) =>
             agent.id === "change-reviewer"
               ? { summary: "Findings", findings: [] }
               : { status: "accepted", findings_to_fix: [] }
@@ -355,7 +356,7 @@ describe("configured workflow runner", () => {
 
             return {};
           }),
-          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) => {
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) => {
             if (agent.id === "change-reviewer") {
               throw reviewError;
             }
@@ -455,7 +456,7 @@ describe("configured workflow runner", () => {
 
             return { status: "ok" };
           }),
-          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) => {
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) => {
             if (agent.id === "change-reviewer") {
               throw reviewError;
             }
@@ -531,7 +532,7 @@ describe("configured workflow runner", () => {
 
             return {};
           }),
-          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) =>
             agent.id === "change-reviewer"
               ? { summary: "Findings", findings: [] }
               : { status: "accepted", findings_to_fix: [] }

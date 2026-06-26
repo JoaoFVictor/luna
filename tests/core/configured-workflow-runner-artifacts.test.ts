@@ -16,6 +16,7 @@ import {
   pathExists,
   readJson,
   staticRunIdentity,
+  testAgentRuntimeFromStep,
   withTimeout,
   writeAgent,
   writeBaseConfig,
@@ -88,7 +89,7 @@ describe("configured workflow runner", () => {
         dependencies: {
           createRunIdentity: staticRunIdentity(githubRun),
           runBuiltInStep,
-          runAgentStep,
+          agentRuntime: testAgentRuntimeFromStep(runAgentStep),
           cleanupWorktree: vi.fn(async ({ workspaceRecord }) => ({
             ...workspaceRecord,
             preserved: false,
@@ -182,7 +183,7 @@ describe("configured workflow runner", () => {
             })
           },
           runBuiltInStep,
-          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) =>
             agent.id === "change-reviewer"
               ? { summary: "Findings", findings: [] }
               : { status: "accepted", findings_to_fix: [] }
@@ -279,7 +280,7 @@ describe("configured workflow runner", () => {
             })
           },
           runBuiltInStep,
-          runAgentStep: vi.fn(async ({ agent }: { agent: { id: string } }) =>
+          agentRuntime: testAgentRuntimeFromStep(async ({ agent }) =>
             agent.id === "change-reviewer"
               ? { summary: "Findings", findings: [] }
               : { status: "accepted", findings_to_fix: [] }

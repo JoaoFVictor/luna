@@ -50,7 +50,6 @@ async function patchWorkflow(
   const file = path.join(root, workflowId, "workflow.yaml");
   await writeFile(file, edit(await readFile(file, "utf8")));
 }
-
 const strictTestSchema = {
   type: "object",
   additionalProperties: false,
@@ -59,7 +58,6 @@ const strictTestSchema = {
     flag: { type: "boolean" }
   }
 } as const;
-
 const boundedTestSchema = {
   type: "object",
   additionalProperties: false,
@@ -216,6 +214,9 @@ describe("strict workflow definition validation", () => {
         "type: agent\n    agent: reviewer\n    output_schema: output.schema.json"
       ).replace("  - artifacts\n", "  - artifacts\n  - agents\n")
     );
+    await mkdir(path.join(root, "agents", "reviewer"), { recursive: true });
+    const agentSchema = path.join(root, "agents", "reviewer", "output.schema.json");
+    await writeFile(agentSchema, JSON.stringify({ type: "object", additionalProperties: true }));
     const agentDigestA = await loadWorkflowDefinition(root, "minimum", {
       capabilityRegistry: registry(),
       digestResolver: digestResolver({ "agents/reviewer/agent.yaml": "sha256:a" })

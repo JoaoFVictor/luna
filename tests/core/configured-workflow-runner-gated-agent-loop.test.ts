@@ -467,7 +467,7 @@ describe("configured workflow runner", () => {
     }
   });
 
-  it("returns agent_step_runner_missing when an agent dependency is not configured", async () => {
+  it("returns agent_runtime_missing when an agent dependency is not configured", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-configured-runner-"));
 
     try {
@@ -492,7 +492,7 @@ describe("configured workflow runner", () => {
         code: "scheduler_step_failed",
         details: {
           step_id: "review_plan",
-          cause_code: "agent_step_runner_missing"
+          cause_code: "agent_runtime_missing"
         }
       });
     } finally {

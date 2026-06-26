@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ToolDefinition } from "@flue/runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentDefinition } from "../../src/core/agents/definition.js";
+import type { AgentDefinition } from "../../src/capabilities/agents/agent-definition.js";
 import { resolveFlueMcpTools } from "../../src/core/agent-runtime/flue/mcp-capabilities.js";
 import { resolveFlueAgentCapabilities } from "../../src/core/agent-runtime/flue/capabilities.js";
 import type { McpConfig } from "../../src/core/config/mcp.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";
-import type { ContextIntake } from "../../src/core/context/intake.js";
+import type { ContextIntake } from "../../src/capabilities/context/collect-context.js";
 import type { LunaObservability } from "../../src/core/observability/luna-observability.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
@@ -82,7 +82,9 @@ async function writeCodeImplementerFixture(): Promise<{
       tools: ["repository.status"],
       directory: agentDir,
       instructionsPath: path.join(agentDir, "instructions.md"),
-      outputSchemaPath: path.join(agentDir, "output.schema.json")
+      outputSchemaPath: path.join(agentDir, "output.schema.json"),
+      instructions: "Implement code.\n",
+      outputSchema: { type: "object", additionalProperties: true }
     }
   };
 }

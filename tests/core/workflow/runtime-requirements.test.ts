@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -56,6 +56,13 @@ async function patchMinimumAgentWorkflow(
   runtimeRequirements: readonly string[]
 ): Promise<string> {
   const root = await copyWorkflowFixture("minimum");
+  const agentRoot = path.join(root, "agents", "reviewer");
+  await mkdir(agentRoot, { recursive: true });
+  await writeFile(
+    path.join(agentRoot, "output.schema.json"),
+    JSON.stringify({ type: "object", additionalProperties: true })
+  );
+
   await patchWorkflow(root, "minimum", (yaml) =>
     yaml.replace("  - artifacts\n", "  - artifacts\n  - agents\n").replace(
       "type: built_in\n    uses: context.collect_context",
