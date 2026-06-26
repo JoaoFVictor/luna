@@ -19,7 +19,7 @@ describe("invocation envelope", () => {
     );
   });
 
-  it("rejects legacy or workflow-specific target strings", () => {
+  it("rejects workflow-specific target strings", () => {
     expect(() =>
       InvocationEnvelopeSchema.parse({
         version: "2026-06",
@@ -51,7 +51,6 @@ describe("invocation envelope", () => {
       "src/adapters/registry.ts"
     ];
     const forbiddenImports = [
-      "configured-workflow",
       "agent-runtime/pi",
       "core/router/router",
       "core/router/router-definition",

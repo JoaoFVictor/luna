@@ -111,7 +111,7 @@ describe("invocation helpers", () => {
     });
   });
 
-  it("rejects legacy or invalid invocation shapes", () => {
+  it("rejects invalid invocation shapes", () => {
     expect(() =>
       InvocationSchema.parse({
         ...validInvocation,

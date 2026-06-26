@@ -67,8 +67,8 @@ describe("agent runtime boundary", () => {
       const imports = importSpecifiers(await readFile(file, "utf8"));
       for (const specifier of imports) {
         if (
-          specifier.startsWith("@flue/") ||
-          specifier.includes("/flue") ||
+          specifier.startsWith("@earendil-works/pi-ai") ||
+          specifier.includes("/pi/") ||
           specifier.includes("agent-runtimes/")
         ) {
           violations.push(`${file}: ${specifier}`);
@@ -90,10 +90,8 @@ describe("agent runtime boundary", () => {
     expect(concreteAdapters).toEqual([]);
   });
 
-  it("keeps Flue runtime code deleted and the concrete Pi runtime outside core", async () => {
-    await expect(exists("src/core/agent-runtime/flue/runner.ts")).resolves.toBe(false);
-    await expect(exists("src/core/agent-runtime/flue/workflow-factory.ts")).resolves.toBe(false);
-    await expect(exists("src/agent-runtimes/flue/adapter.ts")).resolves.toBe(false);
+  it("keeps the concrete Pi runtime outside core", async () => {
+    await expect(exists("src/core/agent-runtime/pi/adapter.ts")).resolves.toBe(false);
     await expect(exists("src/agent-runtimes/pi/adapter.ts")).resolves.toBe(true);
   });
 });

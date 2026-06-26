@@ -55,7 +55,7 @@ Keep runtime-neutral built-ins and shared catalog helpers under
 not create another handwritten built-in name list in workflow validation or
 runner code.
 Do not add barrel exports for new domain files; import owning modules directly.
-Do not create compatibility wrappers for old built-in module paths.
+Do not create compatibility wrappers for built-in module paths.
 
 ## Testing
 

@@ -53,7 +53,7 @@ Before changing an area, read the matching project skill:
 
 - Keep routing deterministic. Do not ask an LLM which workflow to run.
 - Do not add workflow-specific CLI commands; use `run --target workflow:<id>`.
-- Do not create compatibility wrappers or deadcode for old architecture.
+- Do not create compatibility wrappers or deadcode.
 - Keep agents reusable; put orchestration in workflow YAML nodes.
 - Use `quality-gates.gated_agent_loop` pattern nodes for trusted local write
   loops. Gates are configured in `workflows/<id>/workflow.yaml` under the
@@ -70,7 +70,7 @@ Before changing an area, read the matching project skill:
   repository details, runtime SDKs, or workflow-specific behavior.
 - Keep provider responsibilities isolated. Provider-specific code belongs under
   `src/providers/<provider>/`. Do not add provider SDK, schema, auth, payload,
-  report, or change-request code under `src/providers/**`. A provider
+  report, or change-request code under `src/core/**`. A provider
   module must never import, validate, store, or mention another provider's
   schema/auth/config. Shared provider helpers may only handle neutral mechanics,
   such as reading `luna.auth.json` as unknown provider data.
@@ -92,8 +92,8 @@ Before changing an area, read the matching project skill:
   `src/providers/<provider>/` and are wired through composition roots.
 - Register local tools through `src/core/tools/catalog.ts`; runtime-specific
   materialization belongs under `src/agent-runtimes/<runtime>/`.
-- During the Luna LangGraph rebuild, keep AGENTS.md and Luna skills aligned
-  with the native YAML runner and Pi agent runtime architecture.
+- Keep AGENTS.md and Luna skills aligned with the native YAML runner and Pi
+  agent runtime architecture.
 - Run focused tests for the touched area plus `npm run typecheck`,
   `npm run typecheck:unused-src`, and `npm run lint:unused`.
 

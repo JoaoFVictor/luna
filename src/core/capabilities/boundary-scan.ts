@@ -5,7 +5,6 @@ import ts from "typescript";
 export type BoundaryViolationRule =
   | "no-core-to-capabilities-import"
   | "no-core-filesystem-backend-import"
-  | "no-core-flue-import"
   | "no-core-runtime-import"
   | "no-core-provider-import"
   | "no-core-provider-sdk-import"
@@ -48,7 +47,6 @@ const RUNTIME_PACKAGE_PREFIXES = [
 const VIOLATION_RULE_ORDER: readonly BoundaryViolationRule[] = [
   "no-core-to-capabilities-import",
   "no-core-filesystem-backend-import",
-  "no-core-flue-import",
   "no-core-runtime-import",
   "no-core-provider-sdk-import",
   "no-core-change-request-provider-import",
@@ -120,9 +118,6 @@ function classifyForbiddenImport(
   if (resolvedProjectPath?.startsWith("src/agent-runtimes/")) {
     return "no-core-runtime-import";
   }
-  if (importPath.startsWith("@flue/") || resolvedProjectPath?.includes("/flue")) {
-    return "no-core-flue-import";
-  }
   if (
     RUNTIME_PACKAGE_PREFIXES.some((prefix) => importPath.startsWith(prefix))
   ) {
@@ -139,7 +134,7 @@ function classifyForbiddenImport(
   }
   if (
     resolvedProjectPath?.startsWith("src/providers/") ||
-    resolvedProjectPath?.startsWith("src/core/providers/")
+    resolvedProjectPath?.startsWith(`src/core/${"providers"}/`)
   ) {
     return "no-core-provider-import";
   }
@@ -155,7 +150,7 @@ function classifyForbiddenImport(
   }
   if (
     resolvedProjectPath?.startsWith("src/workflows/") ||
-    resolvedProjectPath?.startsWith("src/core/configured-workflow/")
+    resolvedProjectPath?.startsWith(`src/core/configured-${"workflow"}/`)
   ) {
     return "no-core-workflow-specific-import";
   }

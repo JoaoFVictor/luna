@@ -153,7 +153,7 @@ export function lifecycleStepMapViolations(
       }
     }
 
-    if (relativePath === "src/core/configured-workflow/runner.ts") {
+    if (relativePath === "src/core/workflow/runner.ts") {
       if (
         ts.isFunctionDeclaration(node) &&
         ["nodeLifecycleOutcome", "workflowNodeStepResultFrom"].includes(
@@ -161,7 +161,7 @@ export function lifecycleStepMapViolations(
         )
       ) {
         violations.push(
-          `${relativePath}:${lineOf(node)} reintroduces runner lifecycle output inference`
+          `${relativePath}:${lineOf(node)} contains runner lifecycle output inference`
         );
       }
 
@@ -190,8 +190,7 @@ export function lifecycleStepMapViolations(
       [
         "src/core/write-mode/lifecycle.ts",
         "src/core/write-mode/workspace-lifecycle.ts",
-        "src/core/configured-workflow/runner.ts",
-        "src/core/workflow/scheduler.ts"
+        "src/core/workflow/runner.ts"
       ].includes(relativePath)
     ) {
       if (
@@ -272,7 +271,7 @@ export function lifecycleStepMapViolations(
       ].includes(node.text)
     ) {
       violations.push(
-        `${relativePath}:${lineOf(node)} reintroduces agent/loop lifecycle metadata`
+        `${relativePath}:${lineOf(node)} contains agent/loop lifecycle metadata`
       );
     }
 
@@ -286,7 +285,7 @@ export function lifecycleStepMapViolations(
       ].includes(node.text)
     ) {
       violations.push(
-        `${relativePath}:${lineOf(node)} reintroduces agent/loop lifecycle metadata`
+        `${relativePath}:${lineOf(node)} contains agent/loop lifecycle metadata`
       );
     }
 

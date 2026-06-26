@@ -158,7 +158,7 @@ describe("run lock manager", () => {
       run_id: "run-1",
       runtime_run_id: "runtime-1"
     });
-    expect(JSON.parse(content)).not.toHaveProperty("flue_run_id");
+    expect(JSON.parse(content)).not.toHaveProperty("adapter_run_id");
     await release();
   });
 

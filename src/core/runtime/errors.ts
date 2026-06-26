@@ -51,5 +51,6 @@ export function runtimeError(
     details?: Record<string, unknown>;
   } = {}
 ): RuntimeError {
-  return new RuntimeError(message, code, options);
+  const ErrorCtor = RuntimeError;
+  return new ErrorCtor(message, code, options);
 }

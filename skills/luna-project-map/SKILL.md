@@ -7,8 +7,7 @@ description: Use when first working in Luna, orienting to its architecture, deci
 
 Luna is a multi-agent workflow orchestration repo built around generic YAML
 workflows, runtime-neutral core contracts, provider-owned integrations, and
-concrete agent runtimes. Start with `AGENTS.md`; broad README/examples may lag
-until the rebuild docs task.
+concrete agent runtimes. Start with `AGENTS.md`.
 
 Runtime flow:
 
@@ -66,19 +65,18 @@ Adapters for external providers are provider-owned boundaries. They may import
 neutral core contracts and their own provider helper modules, but must not
 reach into another provider's directory.
 
-## Do Not Reintroduce Old Architecture
+## Architecture Rules
 
 - Do not add `src/workflows/<workflow>.ts`; use the generic `luna` entrypoint.
-- Do not add one-off CLI commands like `review-pr <url>`.
+- Do not add workflow-specific CLI commands.
 - Do not create handwritten built-in name lists outside the active built-in
   registry and metadata map.
 - Do not register local tools outside `src/core/tools/catalog.ts`.
 - Do not keep compatibility wrappers or deadcode.
-- Do not put Pi-specific implementation files under provider-neutral modules
-  or old `src/core/flue-*` paths.
+- Do not put Pi-specific implementation files under provider-neutral modules.
 - Do not add provider SDK, schema, auth, payload, report, or change-request code
   under `src/core/**`; use `src/providers/<provider>/`.
-- Do not add built-in barrel exports such as `built-ins/index.ts`.
+- Do not add built-in barrel exports.
 
 ## Verification
 

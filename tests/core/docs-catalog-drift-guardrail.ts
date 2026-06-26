@@ -44,9 +44,9 @@ function yamlFenceBodies(content: string): string[] {
   return [...content.matchAll(/```ya?ml\n([\s\S]*?)```/g)].map((match) => match[1]);
 }
 
-function objectHasLegacyKey(value: unknown): boolean {
+function objectHasDisallowedWorkflowKey(value: unknown): boolean {
   if (Array.isArray(value)) {
-    return value.some(objectHasLegacyKey);
+    return value.some(objectHasDisallowedWorkflowKey);
   }
   if (typeof value !== "object" || value === null) {
     return false;
@@ -60,13 +60,13 @@ function objectHasLegacyKey(value: unknown): boolean {
     artifactKey in object ||
     reportSnakeKey in object ||
     reportCamelKey in object ||
-    Object.values(object).some(objectHasLegacyKey)
+    Object.values(object).some(objectHasDisallowedWorkflowKey)
   );
 }
 
-function parsedYamlHasLegacyKey(content: string): boolean {
+function parsedYamlHasDisallowedWorkflowKey(content: string): boolean {
   return YAML.parseAllDocuments(content).some((document) =>
-    document.errors.length === 0 && objectHasLegacyKey(document.toJSON())
+    document.errors.length === 0 && objectHasDisallowedWorkflowKey(document.toJSON())
   );
 }
 
@@ -120,7 +120,7 @@ async function publicDocumentationFiles(repoRoot: string): Promise<string[]> {
   ].sort();
 }
 
-function legacyLineViolations(relativePath: string, content: string): string[] {
+function disallowedWorkflowLineViolations(relativePath: string, content: string): string[] {
   const reportSnake = `report_${"path"}`;
   const reportCamel = `report${"Path"}`;
   const stateReport = `state.${reportCamel}`;
@@ -145,69 +145,24 @@ function realWorkflowTargets(relativePath: string, content: string): string[] {
     .map((id) => `${relativePath} references workflow:${id}`);
 }
 
-const deletedPathPatterns = [
-  /src\/core\/types\.ts/,
-  /src\/tools\/repository-tools\.ts/,
-  /src\/core\/flue-[A-Za-z0-9_.-]+/,
-  /src\/core\/implementation-[A-Za-z0-9_.-]+/,
-  /built-ins\/index\.ts/
-] as const;
-
-const deletedPathWarningPattern =
-  /\b[Dd]o not\b|\bnot recommend\b|\bforbidden\b/;
-
-function isDeletedPathAllowedLine(line: string): boolean {
-  const trimmedLine = line.trim();
-  return (
-    deletedPathWarningPattern.test(trimmedLine) ||
-    trimmedLine.startsWith("rtk rg ")
+export function workflowSpecificCommandViolations(
+  relativePath: string,
+  content: string
+): string[] {
+  return content.split(/\r?\n/).flatMap((line, index) =>
+    /\bnpm\s+run\s+dev\s+--\s+(?!run\b)[a-z][a-z0-9-]*(?:\s|$)/.test(line)
+      ? [`${relativePath}:${index + 1} exposes workflow-specific command`]
+      : []
   );
-}
-
-export function realReviewPrCommandViolations(
-  relativePath: string,
-  content: string
-): string[] {
-  const lines = content.split(/\r?\n/);
-  return lines.flatMap((line, index) => {
-    if (!/(?<![A-Za-z0-9_-])review-pr\s+<url>(?![A-Za-z0-9_-])/.test(line)) {
-      return [];
-    }
-
-    const contextText = lines
-      .slice(Math.max(0, index - 3), Math.min(lines.length, index + 4))
-      .join("\n");
-    return /\bDo not add\b|\bdo not add\b|\bone-off commands\b/.test(contextText)
-      ? []
-      : [`${relativePath}:${index + 1} exposes real command review-pr <url>`];
-  });
-}
-
-export function deletedPathRecommendationViolations(
-  relativePath: string,
-  content: string
-): string[] {
-  const lines = content.split(/\r?\n/);
-
-  return lines.flatMap((line, index) => {
-    if (!deletedPathPatterns.some((pattern) => pattern.test(line))) {
-      return [];
-    }
-
-    return isDeletedPathAllowedLine(line)
-      ? []
-      : [`${relativePath}:${index + 1} recommends deleted core path`];
-  });
 }
 
 export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise<void> {
   const builtIns = await officialAuthoringBuiltIns();
   const toolIds = Object.keys(lunaToolCatalog).sort();
   const workflowIds = await workflowIdsFromDefinitions(repoRoot);
-  const legacyViolations: string[] = [];
+  const workflowShapeViolations: string[] = [];
   const workflowReferences: string[] = [];
-  const reviewPrViolations: string[] = [];
-  const deletedPathViolations: string[] = [];
+  const commandViolations: string[] = [];
 
   expect(builtIns, "runtime built-in inventory from src/core/built-ins/catalog.ts").not.toEqual([]);
   expect(toolIds, "runtime tool inventory from src/core/tools/catalog.ts").not.toEqual([]);
@@ -231,23 +186,21 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
   for (const relativePath of await publicDocumentationFiles(repoRoot)) {
     const content = await readText(repoRoot, relativePath);
     for (const yamlBody of yamlFenceBodies(content)) {
-      if (parsedYamlHasLegacyKey(yamlBody)) {
-        legacyViolations.push(`${relativePath} contains legacy artifact/report path key inside YAML fence`);
+      if (parsedYamlHasDisallowedWorkflowKey(yamlBody)) {
+        workflowShapeViolations.push(`${relativePath} contains unsupported artifact/report path key inside YAML fence`);
       }
     }
-    legacyViolations.push(...legacyLineViolations(relativePath, content));
+    workflowShapeViolations.push(...disallowedWorkflowLineViolations(relativePath, content));
     workflowReferences.push(...realWorkflowTargets(relativePath, content));
-    reviewPrViolations.push(...realReviewPrCommandViolations(relativePath, content));
-    deletedPathViolations.push(...deletedPathRecommendationViolations(relativePath, content));
+    commandViolations.push(...workflowSpecificCommandViolations(relativePath, content));
   }
 
   const referencedWorkflowIds = [...new Set(workflowReferences.map((reference) =>
     reference.match(/workflow:([a-z][a-z0-9-]*)/)?.[1]
   ))].filter((id): id is string => id !== undefined).sort();
 
-  expect(legacyViolations).toEqual([]);
-  expect(reviewPrViolations).toEqual([]);
-  expect(deletedPathViolations).toEqual([]);
+  expect(workflowShapeViolations).toEqual([]);
+  expect(commandViolations).toEqual([]);
   expect(referencedWorkflowIds).toEqual(workflowIds);
   for (const reference of workflowReferences) {
     expect(workflowIds, reference).toContain(reference.match(/workflow:([a-z][a-z0-9-]*)/)?.[1]);

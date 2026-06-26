@@ -12,11 +12,8 @@ The CLI shape should stay generic:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from my-adapter value
 ```
 
-Do not add workflow-specific commands such as:
-
-```bash
-review-pr <url>
-```
+Do not add workflow-specific commands; adapters should always enter through
+`run --from <adapter>`.
 
 ## 1. Decide The External Input
 

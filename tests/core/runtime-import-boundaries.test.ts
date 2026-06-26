@@ -3,22 +3,19 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
-const LEGACY_RUNTIME_IMPORTS = [
-  "core/configured-workflow",
-  "configured-workflow/",
-  "core/agent-runtime/flue",
-  "core/workflow/scheduler",
-  "workflow/scheduler"
+const FORBIDDEN_RUNTIME_IMPORTS = [
+  "src/agent-runtimes/",
+  "src/runtime/backends/",
+  "src/providers/"
 ];
-const SCANNED_NEW_RUNTIME_DIRECTORIES = [
+const SCANNED_RUNTIME_DIRECTORIES = [
   "src/runtime",
   "src/capabilities"
 ];
-const SCANNED_NEW_RUNTIME_FILES = [
+const SCANNED_RUNTIME_FILES = [
   "src/core/workflow/compiler.ts",
   "src/runtime/langgraph/workflow-runner.ts"
 ];
-const TASK_18_EXPIRING_WHITELIST = new Set<string>();
 
 async function listTypeScriptFiles(directory: string): Promise<string[]> {
   const entries = await readdir(path.join(ROOT, directory), {
@@ -55,25 +52,21 @@ async function existingFiles(files: string[]): Promise<string[]> {
   return checks.filter((file): file is string => file !== undefined);
 }
 
-describe("runtime rebuild import boundaries", () => {
-  it("prevents new runtime/composition/compiler/capability modules from importing legacy configured workflow or scheduler runtime", async () => {
+describe("runtime import boundaries", () => {
+  it("keeps runtime, composition, compiler, and capability modules on approved boundaries", async () => {
     const discoveredFiles = (
-      await Promise.all(SCANNED_NEW_RUNTIME_DIRECTORIES.map(listTypeScriptFiles))
+      await Promise.all(SCANNED_RUNTIME_DIRECTORIES.map(listTypeScriptFiles))
     ).flat();
     const files = [
       ...discoveredFiles,
-      ...(await existingFiles(SCANNED_NEW_RUNTIME_FILES))
+      ...(await existingFiles(SCANNED_RUNTIME_FILES))
     ];
     const violations: string[] = [];
 
     await Promise.all(
       files.map(async (file) => {
-        if (TASK_18_EXPIRING_WHITELIST.has(file)) {
-          return;
-        }
-
         const source = await readFile(path.join(ROOT, file), "utf8");
-        if (LEGACY_RUNTIME_IMPORTS.some((needle) => source.includes(needle))) {
+        if (FORBIDDEN_RUNTIME_IMPORTS.some((needle) => source.includes(needle))) {
           violations.push(file);
         }
       })

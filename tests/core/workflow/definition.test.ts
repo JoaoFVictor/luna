@@ -288,9 +288,9 @@ describe("strict workflow definition validation", () => {
     });
   });
 
-  it("rejects legacy graph keys and invalid top-level metadata", async () => {
+  it("rejects unknown graph keys and invalid top-level metadata", async () => {
     const graphRoot = await copyWorkflowFixture("minimum");
-    await patchWorkflow(graphRoot, "minimum", (yaml) => `${yaml}\ngraph: graph.yaml\n`);
+    await patchWorkflow(graphRoot, "minimum", (yaml) => `${yaml}\ngraph: workflow.yaml\n`);
     await expect(loadWorkflowDefinition(graphRoot, "minimum", {
       capabilityRegistry: registry(),
       digestResolver: digestResolver()
@@ -725,12 +725,12 @@ branches:
     });
   });
 
-  it("rejects legacy gated loop authoring and pattern nodes without explicit uses", async () => {
-    const legacyRoot = await loopWorkflowRoot();
-    await patchWorkflow(legacyRoot, "loop", (yaml) =>
+  it("rejects unsupported gated loop authoring and pattern nodes without explicit uses", async () => {
+    const unsupportedRoot = await loopWorkflowRoot();
+    await patchWorkflow(unsupportedRoot, "loop", (yaml) =>
       yaml.replace("type: pattern", "type: gated_agent_loop")
     );
-    await expect(loadWorkflowDefinition(legacyRoot, "loop", {
+    await expect(loadWorkflowDefinition(unsupportedRoot, "loop", {
       capabilityRegistry: registryWithTestCapability(),
       digestResolver: digestResolver({ "agents/writer/agent.yaml": "sha256:writer" })
     })).rejects.toMatchObject({
@@ -798,7 +798,7 @@ branches:
     });
   });
 
-  it("rejects legacy un-namespaced gate types and validates gate expressions", async () => {
+  it("rejects un-namespaced gate types and validates gate expressions", async () => {
     const agentGateRoot = await loopWorkflowRoot({
       gateType: "agent",
       capabilities: "capabilities: [quality-gates, agents, test-cap]"

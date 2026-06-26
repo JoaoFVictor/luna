@@ -82,7 +82,7 @@ function expectNormalizedEvent(event: LunaEvent): ExpectedLunaEvent {
   expect(event).not.toHaveProperty("run_id");
   expect(event).not.toHaveProperty("workflow_id");
   expect(event).not.toHaveProperty("attributes");
-  expect(event.run).not.toHaveProperty("flueRunId");
+  expect(event.run).not.toHaveProperty("adapterRunId");
   return event;
 }
 
@@ -159,21 +159,21 @@ describe("luna event contract", () => {
     ).toThrow("Invalid JSON value");
   });
 
-  it("does not promote stale Flue run aliases into generic event run ids", async () => {
-    const staleRun = {
-      id: "run-stale",
-      flueRunId: "flue-stale",
+  it("does not promote runtime-specific aliases into generic event run ids", async () => {
+    const runtimeShapedRun = {
+      id: "run-runtime-shaped",
+      adapterRunId: "adapter-specific",
       attempt: 3
     } as unknown as LunaEvent["run"];
     const constructed = runStartedEvent({
       severity: "info",
-      run: staleRun,
+      run: runtimeShapedRun,
       workflow,
       timestamp
     });
     const emitted: LunaEvent[] = [];
     const observability = createLunaObservability({
-      run: staleRun,
+      run: runtimeShapedRun,
       workflow,
       sinks: [
         {
@@ -193,7 +193,7 @@ describe("luna event contract", () => {
     );
 
     for (const event of [constructed, emitted[0]]) {
-      expect(event.run).toEqual({ id: "run-stale", attempt: 3 });
+      expect(event.run).toEqual({ id: "run-runtime-shaped", attempt: 3 });
       expect(event.run).not.toHaveProperty("runtimeRunId");
     }
   });
@@ -243,7 +243,7 @@ describe("luna event contract", () => {
     expect(summaryEvents[0]).toEqual(event);
   });
 
-  it("does not emit old underscore-style scheduler, run, or lock event names", async () => {
+  it("does not emit underscore-style scheduler, run, or lock event names", async () => {
     const combined = (
       await Promise.all(runtimeFiles.map((file) => readFile(file, "utf8")))
     ).join("\n");

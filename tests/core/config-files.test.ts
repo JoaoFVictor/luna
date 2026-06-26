@@ -28,7 +28,7 @@ type WorkflowGraph = {
 
 const yamlRoots = ["agents", "workflows", "config"];
 const jsonSchemaRoots = ["agents", "workflows"];
-const legacyReferenceScanRoots = [
+const invocationReferenceScanRoots = [
   "src",
   "tests",
   "agents",
@@ -38,7 +38,7 @@ const legacyReferenceScanRoots = [
   "README.md",
   "AGENTS.md"
 ];
-const intentionalLegacyReferenceFiles = new Set([
+const intentionalInvocationReferenceFiles = new Set([
   "tests/core/invocation-helpers.test.ts",
   "tests/core/cli.test.ts"
 ]);
@@ -228,9 +228,9 @@ function assertLineFieldsUseIntegers(
 }
 
 describe("config definition files", () => {
-  it("does not reintroduce legacy invocation target references", async () => {
-    const legacyTargets = ["github" + "_pr", "jira" + "_task"];
-    const bannedReferences = legacyTargets.flatMap((target) => [
+  it("keeps invocation target references on the current shape", async () => {
+    const unsupportedTargets = ["github" + "_pr", "jira" + "_task"];
+    const bannedReferences = unsupportedTargets.flatMap((target) => [
       `target: "${target}"`,
       `"target": "${target}"`,
       `z.literal("${target}")`
@@ -245,11 +245,11 @@ describe("config definition files", () => {
       "trusted" + "_host_local_write"
     );
 
-    const files = await listTextFiles(legacyReferenceScanRoots);
+    const files = await listTextFiles(invocationReferenceScanRoots);
     const matches: string[] = [];
 
     for (const file of files) {
-      if (intentionalLegacyReferenceFiles.has(file)) {
+      if (intentionalInvocationReferenceFiles.has(file)) {
         continue;
       }
 

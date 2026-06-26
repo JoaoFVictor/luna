@@ -135,7 +135,7 @@ describe("run identity", () => {
         run_id: previousRunId,
         runtime_run_id: previousRuntimeRunId
       });
-      expect(owner).not.toHaveProperty("flue_run_id");
+      expect(owner).not.toHaveProperty("adapter_run_id");
       expect(serializedPublicEvent.runtime_run_id).toBe(previousRuntimeRunId);
     } finally {
       await releaseLock?.();

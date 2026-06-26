@@ -386,7 +386,7 @@ describe("local-exec capability", () => {
       /src\/core\/git|src\/core\/write-mode|simple-git/,
       /change-request|changeRequest|ChangeRequest/,
       /src\/providers|src\/core\/providers|@octokit|jira\.js|node-fetch/,
-      /flue|Flue|langgraph|LangGraph|@langchain/
+      /langgraph|LangGraph|@langchain/
     ];
 
     for (const file of files) {

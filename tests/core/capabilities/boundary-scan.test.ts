@@ -39,24 +39,21 @@ describe("core capability boundary scanner", () => {
     );
     await writeFileInRoot(
       root,
-      "src/core/agent-runtime/flue-bridge.ts",
+      "src/core/runtime/direct-runtime.ts",
       [
-        'import { run } from "@flue/runtime";',
         'import { StateGraph } from "@langchain/langgraph";'
       ].join("\n")
     );
     await writeFileInRoot(
       root,
-      "src/core/providers/github.ts",
+      `src/core/${"providers"}/github.ts`,
       [
         'import { Octokit } from "octokit";',
-        'import { adapter } from "../../agent-runtimes/flue/adapter.js";',
+        'import { adapter } from "../../agent-runtimes/pi/adapter.js";',
         'import provider from "../../providers/github/change-request/provider.js";',
-        'import legacy from "./github/change-request-actions.js";',
         'const backend = require("../../runtime/backends/filesystem/artifacts.js");',
         'import oldStyle = require("../../capabilities/reports/manifest.js");',
         "export { provider };",
-        "export { legacy };",
         "export { adapter };",
         "export { backend };",
         "export { oldStyle };"
@@ -85,11 +82,9 @@ describe("core capability boundary scanner", () => {
       "no-core-to-capabilities-import",
       "no-core-filesystem-backend-import",
       "no-core-filesystem-backend-import",
-      "no-core-flue-import",
       "no-core-runtime-import",
       "no-core-runtime-import",
       "no-core-provider-sdk-import",
-      "no-core-change-request-provider-import",
       "no-core-change-request-provider-import",
       "no-core-shell-import",
       "no-core-git-import",

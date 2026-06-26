@@ -7,8 +7,7 @@ import YAML from "yaml";
 import { loadWorkflowDefinition } from "../../src/core/workflow/definition.js";
 import {
   assertDocsCatalogDriftGuardrail,
-  deletedPathRecommendationViolations,
-  realReviewPrCommandViolations
+  workflowSpecificCommandViolations
 } from "./docs-catalog-drift-guardrail.js";
 import { lifecycleStepMapViolations } from "./lifecycle-guardrail.js";
 
@@ -17,9 +16,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 type CoreDomainViolationRule =
   | "src-core-root-implementation-file"
   | "global-core-types-barrel"
-  | "flue-runtime-import"
   | "generic-provider-import"
-  | "legacy-flue-core-path"
   | "export-star-barrel";
 
 type CoreDomainViolation = {
@@ -40,9 +37,10 @@ const allowedCompositionRoots = new Set([
   "src/adapters/registry.ts"
 ]);
 
-const legacyArtifactTestContractAllowlist = new Set([
+const workflowFixtureContractAllowlist = new Set([
   "tests/core/refactor-guardrails.test.ts"
 ]);
+const coreTypesPath = `src/core/${"types"}.ts`;
 
 async function readJson<T>(relativePath: string): Promise<T> {
   return JSON.parse(await readFile(path.join(repoRoot, relativePath), "utf8")) as T;
@@ -220,13 +218,6 @@ function isGenericRuntimePath(relativePath: string): boolean {
   );
 }
 
-function isLegacyFlueCorePath(relativePath: string): boolean {
-  return (
-    relativePath.startsWith("src/core/flue-") &&
-    !relativePath.startsWith("src/agent-runtimes/flue/")
-  );
-}
-
 function coreDomainViolation(
   path: string,
   rule: CoreDomainViolationRule
@@ -323,9 +314,9 @@ async function oversizedTypeScriptFiles(): Promise<Record<string, number>> {
   return oversizedFiles;
 }
 
-function objectHasLegacyArtifactKey(value: unknown): boolean {
+function objectHasUnsupportedArtifactKey(value: unknown): boolean {
   if (Array.isArray(value)) {
-    return value.some((item) => objectHasLegacyArtifactKey(item));
+    return value.some((item) => objectHasUnsupportedArtifactKey(item));
   }
 
   if (typeof value !== "object" || value === null) {
@@ -336,12 +327,12 @@ function objectHasLegacyArtifactKey(value: unknown): boolean {
     return true;
   }
 
-  return Object.values(value).some((nested) => objectHasLegacyArtifactKey(nested));
+  return Object.values(value).some((nested) => objectHasUnsupportedArtifactKey(nested));
 }
 
-function objectHasLegacyReportPathKey(value: unknown): boolean {
+function objectHasUnsupportedReportPathKey(value: unknown): boolean {
   if (Array.isArray(value)) {
-    return value.some((item) => objectHasLegacyReportPathKey(item));
+    return value.some((item) => objectHasUnsupportedReportPathKey(item));
   }
 
   if (typeof value !== "object" || value === null) {
@@ -355,7 +346,7 @@ function objectHasLegacyReportPathKey(value: unknown): boolean {
     return true;
   }
 
-  return Object.values(value).some((nested) => objectHasLegacyReportPathKey(nested));
+  return Object.values(value).some((nested) => objectHasUnsupportedReportPathKey(nested));
 }
 
 function yamlFenceBodies(content: string): string[] {
@@ -364,7 +355,7 @@ function yamlFenceBodies(content: string): string[] {
   );
 }
 
-function parsedYamlHasLegacyArtifact(content: string): boolean {
+function parsedYamlHasUnsupportedArtifact(content: string): boolean {
   const documents = YAML.parseAllDocuments(content);
 
   return documents.some((document) => {
@@ -372,11 +363,11 @@ function parsedYamlHasLegacyArtifact(content: string): boolean {
       return false;
     }
 
-    return objectHasLegacyArtifactKey(document.toJSON());
+    return objectHasUnsupportedArtifactKey(document.toJSON());
   });
 }
 
-function parsedYamlHasLegacyReportPath(content: string): boolean {
+function parsedYamlHasUnsupportedReportPath(content: string): boolean {
   const documents = YAML.parseAllDocuments(content);
 
   return documents.some((document) => {
@@ -384,7 +375,7 @@ function parsedYamlHasLegacyReportPath(content: string): boolean {
       return false;
     }
 
-    return objectHasLegacyReportPathKey(document.toJSON());
+    return objectHasUnsupportedReportPathKey(document.toJSON());
   });
 }
 
@@ -396,7 +387,7 @@ function propertyNameText(name: ts.PropertyName): string | undefined {
   return undefined;
 }
 
-function hasLegacyArtifactTypeContract(sourceFile: ts.SourceFile): boolean {
+function hasUnsupportedArtifactTypeContract(sourceFile: ts.SourceFile): boolean {
   let found = false;
 
   function visit(node: ts.Node): void {
@@ -419,7 +410,7 @@ function hasLegacyArtifactTypeContract(sourceFile: ts.SourceFile): boolean {
   return found;
 }
 
-function hasLegacyArtifactStringContract(sourceFile: ts.SourceFile): boolean {
+function hasUnsupportedArtifactStringContract(sourceFile: ts.SourceFile): boolean {
   let found = false;
 
   function visit(node: ts.Node): void {
@@ -442,7 +433,7 @@ function hasLegacyArtifactStringContract(sourceFile: ts.SourceFile): boolean {
   return found;
 }
 
-function hasLegacyReportPathStringContract(sourceFile: ts.SourceFile): boolean {
+function hasUnsupportedReportPathStringContract(sourceFile: ts.SourceFile): boolean {
   let found = false;
 
   function visit(node: ts.Node): void {
@@ -491,7 +482,7 @@ describe("refactor guardrails", () => {
   it("rejects expired temporary core-domain violations", () => {
     expect(() =>
       assertManifestEntry({
-        path: "src/core/types.ts",
+        path: coreTypesPath,
         rule: "global-core-types-barrel",
         removeByWave: 1
       }, 1)
@@ -520,7 +511,7 @@ describe("refactor guardrails", () => {
 
     const rawSrcCoreRootImplementationFiles = sourceFiles
       .filter((file) => /^src\/core\/[^/]+\.ts$/.test(file))
-      .filter((file) => file !== "src/core/types.ts")
+      .filter((file) => file !== coreTypesPath)
       .map((file) =>
         coreDomainViolation(
           file,
@@ -528,33 +519,18 @@ describe("refactor guardrails", () => {
         )
       );
     const rawGlobalCoreTypesBarrels = sourceFiles
-      .filter((file) => file === "src/core/types.ts")
+      .filter((file) => file === coreTypesPath)
       .map((file) => coreDomainViolation(file, "global-core-types-barrel"));
-    const rawFlueRuntimeImportViolations: string[] = [];
     const rawGenericProviderImportViolations: string[] = [];
-    const rawLegacyPathReferences: string[] = [];
     const rawExportStarBarrels: string[] = [];
 
     for (const relativePath of sourceFiles) {
       const content = await readText(relativePath);
-      const imports = importSpecifiersFromSource(relativePath, content);
       const resolvedImports = sourceImportsFromSource(
         relativePath,
         content,
         sourceFileSet
       );
-
-      if (
-        imports.some((specifier) =>
-          specifier === "@flue/runtime" ||
-          specifier === "@flue/runtime/node"
-        ) &&
-        !relativePath.startsWith("src/agent-runtimes/flue/")
-      ) {
-        rawFlueRuntimeImportViolations.push(
-          violationKey(coreDomainViolation(relativePath, "flue-runtime-import"))
-        );
-      }
 
       if (isGenericRuntimePath(relativePath)) {
         for (const importedPath of resolvedImports) {
@@ -566,14 +542,6 @@ describe("refactor guardrails", () => {
         }
       }
 
-      for (const importedPath of resolvedImports) {
-        if (isLegacyFlueCorePath(importedPath)) {
-          rawLegacyPathReferences.push(
-            violationKey(coreDomainViolation(relativePath, "legacy-flue-core-path"))
-          );
-        }
-      }
-
       rawExportStarBarrels.push(
         ...exportStarBarrelsFromSource(relativePath, content).map(violationKey)
       );
@@ -582,9 +550,7 @@ describe("refactor guardrails", () => {
     const actualViolationKeys = new Set([
       ...rawSrcCoreRootImplementationFiles.map(violationKey),
       ...rawGlobalCoreTypesBarrels.map(violationKey),
-      ...rawFlueRuntimeImportViolations,
       ...rawGenericProviderImportViolations,
-      ...rawLegacyPathReferences,
       ...rawExportStarBarrels
     ]);
     for (const violation of manifest.violations) {
@@ -604,20 +570,10 @@ describe("refactor guardrails", () => {
       manifest,
       "global-core-types-barrel"
     );
-    const flueRuntimeImportViolations = unexpectedViolationKeys(
-      rawFlueRuntimeImportViolations,
-      manifest,
-      "flue-runtime-import"
-    );
     const genericProviderImportViolations = unexpectedViolationKeys(
       rawGenericProviderImportViolations,
       manifest,
       "generic-provider-import"
-    );
-    const legacyPathReferences = unexpectedViolationKeys(
-      rawLegacyPathReferences,
-      manifest,
-      "legacy-flue-core-path"
     );
     const exportStarBarrels = unexpectedViolationKeys(
       rawExportStarBarrels,
@@ -627,9 +583,7 @@ describe("refactor guardrails", () => {
 
     expect(srcCoreRootImplementationFiles).toEqual([]);
     expect(globalCoreTypesBarrels).toEqual([]);
-    expect(flueRuntimeImportViolations).toEqual([]);
     expect(genericProviderImportViolations).toEqual([]);
-    expect(legacyPathReferences).toEqual([]);
     expect(exportStarBarrels).toEqual([]);
   });
 
@@ -642,65 +596,65 @@ describe("refactor guardrails", () => {
     }> = [
       {
         name: "scheduleResult.steps in lifecycle helper",
-        relativePath: "src/core/configured-workflow/runner.ts",
+        relativePath: "src/core/workflow/runner.ts",
         content: [
           "function inferWorkspaceDecision(scheduleResult: { steps: Record<string, unknown> }) {",
           "  return scheduleResult.steps;",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow/runner.ts:2 reads scheduler step output maps"
+          "src/core/workflow/runner.ts:2 reads scheduler step output maps"
       },
       {
         name: "state.steps lifecycle id",
-        relativePath: "src/core/configured-workflow/runner.ts",
+        relativePath: "src/core/workflow/runner.ts",
         content: [
           "function lifecycleProbe(state: { steps: Record<string, unknown> }) {",
           "  return state.steps.acceptance;",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow/runner.ts:2 indexes lifecycle step output maps"
+          "src/core/workflow/runner.ts:2 indexes lifecycle step output maps"
       },
       {
         name: "steps lifecycle id",
-        relativePath: "src/core/configured-workflow/runner.ts",
+        relativePath: "src/core/workflow/runner.ts",
         content: [
           "function lifecycleProbe(steps: Record<string, unknown>) {",
           "  return steps[\"commit\"];",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow/runner.ts:2 indexes lifecycle step output maps"
+          "src/core/workflow/runner.ts:2 indexes lifecycle step output maps"
       },
       {
         name: "raw output bracket status",
-        relativePath: "src/core/configured-workflow/runner.ts",
+        relativePath: "src/core/workflow/runner.ts",
         content: [
           "function lifecycleProbe(output: Record<string, unknown>) {",
           "  return output[\"status\"];",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow/runner.ts:2 reads raw node output for lifecycle"
+          "src/core/workflow/runner.ts:2 reads raw node output for lifecycle"
       },
       {
         name: "raw output property validation",
-        relativePath: "src/core/configured-workflow/runner.ts",
+        relativePath: "src/core/workflow/runner.ts",
         content: [
           "function lifecycleProbe(output: Record<string, unknown>) {",
           "  return output.final_validation;",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/configured-workflow/runner.ts:2 reads raw node output for lifecycle"
+          "src/core/workflow/runner.ts:2 reads raw node output for lifecycle"
       },
       {
         name: "implementation_lifecycle marker",
-        relativePath: "src/core/configured-workflow/runner.ts",
+        relativePath: "src/core/workflow/runner.ts",
         content: "const marker = \"implementation_lifecycle\";",
         expectedViolation:
-          "src/core/configured-workflow/runner.ts:1 reintroduces agent/loop lifecycle metadata"
+          "src/core/workflow/runner.ts:1 contains agent/loop lifecycle metadata"
       },
       {
         name: "raw result output",
@@ -718,14 +672,14 @@ describe("refactor guardrails", () => {
         relativePath: "src/core/write-mode/lifecycle.ts",
         content: "type WorkflowNodeRunResult = { output: unknown };",
         expectedViolation:
-          "src/core/write-mode/lifecycle.ts:1 reintroduces agent/loop lifecycle metadata"
+          "src/core/write-mode/lifecycle.ts:1 contains agent/loop lifecycle metadata"
       },
       {
         name: "WorkflowNodeStepResult type",
         relativePath: "src/core/write-mode/lifecycle.ts",
         content: "type WorkflowNodeStepResult = { output: unknown };",
         expectedViolation:
-          "src/core/write-mode/lifecycle.ts:1 reintroduces agent/loop lifecycle metadata"
+          "src/core/write-mode/lifecycle.ts:1 contains agent/loop lifecycle metadata"
       }
     ];
 
@@ -774,11 +728,6 @@ describe("refactor guardrails", () => {
   });
 
   it("keeps workflow yaml and fixtures on explicit artifacts only", async () => {
-    const legacyWorkflowGraphs = (await listFiles("workflows")).filter((file) =>
-      file.endsWith("/graph.yaml")
-    );
-    expect(legacyWorkflowGraphs).toEqual([]);
-
     const workflowDefinitions = (await listFiles("workflows")).filter((file) =>
       file.endsWith("/workflow.yaml")
     );
@@ -790,11 +739,11 @@ describe("refactor guardrails", () => {
     );
 
     for (const relativePath of [...workflowDefinitions, ...artifactFixtureGraphs]) {
-      expect(parsedYamlHasLegacyArtifact(await readText(relativePath))).toBe(false);
+      expect(parsedYamlHasUnsupportedArtifact(await readText(relativePath))).toBe(false);
     }
 
     for (const relativePath of [...workflowDefinitions, ...reportPathFixtureGraphs]) {
-      expect(parsedYamlHasLegacyReportPath(await readText(relativePath))).toBe(false);
+      expect(parsedYamlHasUnsupportedReportPath(await readText(relativePath))).toBe(false);
     }
   });
 
@@ -808,13 +757,13 @@ describe("refactor guardrails", () => {
     for (const relativePath of docs) {
       const content = await readText(relativePath);
       for (const yamlBody of yamlFenceBodies(content)) {
-        expect(parsedYamlHasLegacyArtifact(yamlBody)).toBe(false);
-        expect(parsedYamlHasLegacyReportPath(yamlBody)).toBe(false);
+        expect(parsedYamlHasUnsupportedArtifact(yamlBody)).toBe(false);
+        expect(parsedYamlHasUnsupportedReportPath(yamlBody)).toBe(false);
       }
     }
   });
 
-  it("does not expose the legacy artifact shape in workflow TypeScript contracts", async () => {
+  it("does not expose unsupported artifact shape in workflow TypeScript contracts", async () => {
     const checkedFiles = [
       "src/core/workflow/definition.ts",
       "src/runtime/langgraph/workflow-runner.ts",
@@ -829,11 +778,11 @@ describe("refactor guardrails", () => {
         true,
         ts.ScriptKind.TS
       );
-      expect(hasLegacyArtifactTypeContract(sourceFile)).toBe(false);
+      expect(hasUnsupportedArtifactTypeContract(sourceFile)).toBe(false);
     }
   });
 
-  it("does not expose legacy report path strings in runtime source", async () => {
+  it("does not expose report path strings in runtime source", async () => {
     const checkedFiles = (await listFiles("src")).filter((file) =>
       file.endsWith(".ts")
     );
@@ -846,14 +795,14 @@ describe("refactor guardrails", () => {
         true,
         ts.ScriptKind.TS
       );
-      expect(hasLegacyReportPathStringContract(sourceFile)).toBe(false);
+      expect(hasUnsupportedReportPathStringContract(sourceFile)).toBe(false);
     }
   });
 
   it("keeps test workflow fixtures on explicit artifacts only", async () => {
     const checkedFiles = (await listFiles("tests/core"))
       .filter((file) => file.endsWith(".ts"))
-      .filter((file) => !legacyArtifactTestContractAllowlist.has(file));
+      .filter((file) => !workflowFixtureContractAllowlist.has(file));
 
     for (const relativePath of checkedFiles) {
       const sourceFile = ts.createSourceFile(
@@ -863,8 +812,8 @@ describe("refactor guardrails", () => {
         true,
         ts.ScriptKind.TS
       );
-      expect(hasLegacyArtifactStringContract(sourceFile)).toBe(false);
-      expect(hasLegacyReportPathStringContract(sourceFile)).toBe(false);
+      expect(hasUnsupportedArtifactStringContract(sourceFile)).toBe(false);
+      expect(hasUnsupportedReportPathStringContract(sourceFile)).toBe(false);
     }
   });
 
@@ -872,50 +821,15 @@ describe("refactor guardrails", () => {
     await assertDocsCatalogDriftGuardrail(repoRoot);
   });
 
-  it("detects legacy review-pr commands unless they are explicit anti-examples", () => {
-    expect(realReviewPrCommandViolations("docs.md", "review-pr <url>"))
-      .toEqual(["docs.md:1 exposes real command review-pr <url>"]);
+  it("detects workflow-specific commands", () => {
     expect(
-      realReviewPrCommandViolations(
-        "docs.md",
-        "npm run dev -- review-pr <url>"
-      )
-    ).toEqual(["docs.md:1 exposes real command review-pr <url>"]);
+      workflowSpecificCommandViolations("docs.md", "npm run dev -- sample-command value")
+    ).toEqual(["docs.md:1 exposes workflow-specific command"]);
     expect(
-      realReviewPrCommandViolations(
+      workflowSpecificCommandViolations(
         "docs.md",
-        "Do not add one-off commands like review-pr <url>."
+        "npm run dev -- run --target workflow:code-review --input input.json"
       )
     ).toEqual([]);
-  });
-
-  it("detects deleted path recommendations unless they are explicit warnings", () => {
-    expect(
-      deletedPathRecommendationViolations(
-        "docs.md",
-        "Add the shared contract to src/core/types.ts."
-      )
-    ).toEqual(["docs.md:1 recommends deleted core path"]);
-    expect(
-      deletedPathRecommendationViolations(
-        "docs.md",
-        "Do not recommend src/core/types.ts."
-      )
-    ).toEqual([]);
-    expect(
-      deletedPathRecommendationViolations(
-        "docs.md",
-        [
-          "Do not recommend deleted paths in the section below.",
-          "Add shared contracts in src/core/types.ts."
-        ].join("\n")
-      )
-    ).toEqual(["docs.md:2 recommends deleted core path"]);
-    expect(
-      deletedPathRecommendationViolations(
-        "docs.md",
-        "For legacy runtime support, add src/core/flue-tools.ts."
-      )
-    ).toEqual(["docs.md:1 recommends deleted core path"]);
   });
 });

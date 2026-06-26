@@ -38,7 +38,7 @@ modules, and the same rule applies to every provider pair.
 ## Files
 
 Local tools are owned by `src/core/tools/`. Do not add tool implementations
-under old `src/tools/` paths.
+under unsupported tool paths.
 
 - Define runtime-neutral tool contracts in `src/core/tools/contracts.ts`.
 - Implement domain tools under `src/core/tools/`.
@@ -52,7 +52,7 @@ runtime SDKs from `src/core/tools/**`; that belongs only at the concrete runtime
 adapter boundary.
 
 Keep Pi-specific tests and imports pointed at `src/agent-runtimes/pi/**`.
-Do not add forwarding files under old `src/core/flue-*.ts` paths.
+Do not add forwarding files for runtime-specific tool materialization.
 
 ## Testing
 
