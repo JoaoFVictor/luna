@@ -60,6 +60,15 @@ describe("flue workflow entrypoint", () => {
         pushBranch: expect.any(Function)
       })
     );
+    const changeRequestProviders =
+      options?.dependencies?.builtInStepDependencies?.changeRequest?.providers;
+    expect(changeRequestProviders?.get("github")).toEqual(
+      expect.objectContaining({
+        provider_id: "github",
+        readChangeRequest: expect.any(Function),
+        createChangeRequest: expect.any(Function)
+      })
+    );
   });
 
   it("registers configured Pi OAuth providers before running workflows", async () => {

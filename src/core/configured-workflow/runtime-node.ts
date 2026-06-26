@@ -196,10 +196,8 @@ function projectBuiltInUse(uses: string): string {
     "runtime.collect_worktree_diff": "collect_worktree_diff",
     "runtime.commit_changes": "commit_changes",
     "runtime.push_branch": "push_branch",
-    "runtime.open_change_request": "open_change_request",
     "runtime.final_implementation_report": "final_implementation_report",
-    "context.collect_context": "collect_context",
-    "change-request.create": "open_change_request"
+    "context.collect_context": "collect_context"
   }[uses];
   if (mapped !== undefined) {
     return mapped;

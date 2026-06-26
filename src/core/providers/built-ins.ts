@@ -14,9 +14,9 @@ import {
   gitCommitBuiltIn,
   gitPushBranchBuiltIn,
   gitStatusBuiltIn,
+  changeRequestCreateBuiltIn,
   localExecReadCommandBuiltIn,
   localExecWriteCommandBuiltIn,
-  openChangeRequestBuiltIn,
   repositoryWorkspaceCaptureBuiltIn
 } from "../built-ins/catalog.js";
 import {
@@ -39,8 +39,6 @@ import { defineBuiltInStep } from "../built-ins/registry.js";
 import { finalReportMetadata } from "../built-ins/metadata.js";
 import type { Invocation } from "../router/invocation.js";
 import type { BuiltInStep } from "../built-ins/types.js";
-
-export { openChangeRequestBuiltIn };
 
 type TaskProviderBuiltIns = {
   collectTaskContext: BuiltInStep<"collect_task_context">;
@@ -120,6 +118,7 @@ export const defaultBuiltInSteps = Object.freeze([
   gitStatusBuiltIn,
   gitCommitBuiltIn,
   gitPushBranchBuiltIn,
+  changeRequestCreateBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   collectTaskContextBuiltIn,
   runValidationCommandsBuiltIn,
@@ -128,7 +127,6 @@ export const defaultBuiltInSteps = Object.freeze([
   recordAcceptanceDecisionBuiltIn,
   commitChangesBuiltIn,
   pushBranchBuiltIn,
-  openChangeRequestBuiltIn,
   finalImplementationReportBuiltIn
 ] as const);
 

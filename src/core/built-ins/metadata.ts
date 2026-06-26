@@ -1,4 +1,4 @@
-import { ChangeRequestArtifactSchema } from "../change-request/contracts.js";
+import { ChangeRequestArtifactSchema } from "../../capabilities/change-request/contracts.js";
 import { AcceptanceDecisionSchema } from "../decisions/types.js";
 import { ValidationResultSchema } from "../validation/runner.js";
 import {
@@ -153,14 +153,14 @@ export const pushBranchMetadata = Object.freeze({
   locks: Object.freeze([repositoryLock()])
 } satisfies BuiltInStepMetadata);
 
-export const openChangeRequestMetadata = Object.freeze({
+export const changeRequestCreateMetadata = Object.freeze({
   implementationLifecycle: "change_request",
   requiresRepository: true,
   implementationLifecycleOutcome: (output) => {
     const result = ChangeRequestArtifactSchema.safeParse(output);
     if (!result.success) {
       throw lifecycleContractError(
-        "open_change_request must return ChangeRequestArtifact"
+        "change-request.create must return ChangeRequestArtifact"
       );
     }
 
@@ -186,6 +186,7 @@ export const builtInStepMetadataByName = Object.freeze({
   "git.status": gitStatusMetadata,
   "git.commit": gitCommitMetadata,
   "git.push_branch": gitPushBranchMetadata,
+  "change-request.create": changeRequestCreateMetadata,
   prepare_implementation_worktree: prepareImplementationWorktreeMetadata,
   collect_task_context: emptyBuiltInMetadata,
   run_validation_commands: runValidationCommandsMetadata,
@@ -194,6 +195,5 @@ export const builtInStepMetadataByName = Object.freeze({
   record_acceptance_decision: recordAcceptanceDecisionMetadata,
   commit_changes: commitChangesMetadata,
   push_branch: pushBranchMetadata,
-  open_change_request: openChangeRequestMetadata,
   final_implementation_report: finalReportMetadata
 });

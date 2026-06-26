@@ -15,6 +15,7 @@ import { registerConfiguredPiOAuthProviders } from "./pi-auth.js";
 import { createNodeLocalExecPorts } from "../../local-exec/node-ports.js";
 import { createGitHubRepositoryWorkspacePorts } from "../../providers/github/repository-workspace.js";
 import { createGitRepositoryPorts } from "../../../runtime/git/repository-port.js";
+import { createDefaultChangeRequestPorts } from "../../../runtime/change-request/providers.js";
 
 export type { ConfiguredWorkflowResult };
 
@@ -39,6 +40,7 @@ export async function runLunaWorkflowWithFlue(
       ...agentRunner,
       builtInStepDependencies: {
         git: createGitRepositoryPorts(),
+        changeRequest: createDefaultChangeRequestPorts(),
         localExec: createNodeLocalExecPorts({
           projectRoot,
           runId: runtimeRunId,

@@ -186,7 +186,6 @@ Graph rules:
 - `runtime.commit_changes`
 - `runtime.final_code_review_report`
 - `runtime.final_implementation_report`
-- `runtime.open_change_request`
 - `runtime.preflight`
 - `runtime.prepare_implementation_worktree`
 - `runtime.prepare_worktree`

@@ -137,21 +137,6 @@ export const manifest = capabilityManifest({
       output_schema: objectOutputSchema,
       required_ports: []
     },
-    "runtime.open_change_request": {
-      id: "runtime.open_change_request",
-      input_schema: {
-        type: "object",
-        additionalProperties: false,
-        required: ["title"],
-        properties: {
-          title: { type: "string" },
-          description: {},
-          source_branch: { type: "string" }
-        }
-      },
-      output_schema: objectOutputSchema,
-      required_ports: []
-    },
     "runtime.final_implementation_report": {
       id: "runtime.final_implementation_report",
       input_schema: emptyInputSchema,

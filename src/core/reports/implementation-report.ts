@@ -3,7 +3,7 @@ import {
   executionSummaryMarkdownLines,
   type ExecutionSummaryJson
 } from "./execution-summary.js";
-import type { ChangeRequestArtifact } from "../change-request/contracts.js";
+import type { ChangeRequestArtifact } from "../../capabilities/change-request/contracts.js";
 import type { Invocation, InvocationRepository } from "../router/invocation.js";
 import type { ObservabilitySummary } from "../observability/summary.js";
 import type { ValidationResult } from "../validation/runner.js";
@@ -65,7 +65,7 @@ export type ImplementationReportCommonJson<Provider extends string> = {
     Pick<CommitChangesArtifact, "branch" | "commit_sha">;
   push: ImplementationActionJson & Pick<PushBranchArtifact, "remote" | "branch">;
   change_request: ImplementationActionJson &
-    Pick<ChangeRequestArtifact, "provider" | "url">;
+    Partial<Pick<Extract<ChangeRequestArtifact, { skipped: false }>, "provider" | "url">>;
   warnings: string[];
   execution?: ExecutionSummaryJson;
 };
@@ -140,10 +140,12 @@ export function buildImplementationReportCommonJson<Provider extends string>({
     },
     change_request: {
       ...actionStatus({ artifact: input.changeRequest, success: "opened" }),
-      ...(input.changeRequest.provider === undefined
+      ...(input.changeRequest.skipped
         ? {}
-        : { provider: input.changeRequest.provider }),
-      ...(input.changeRequest.url === undefined ? {} : { url: input.changeRequest.url })
+        : {
+            provider: input.changeRequest.provider,
+            url: input.changeRequest.url
+          })
     },
     warnings: input.trustedHostLocal ? [trustedHostLocalWarning] : [],
     ...(execution === undefined ? {} : { execution })

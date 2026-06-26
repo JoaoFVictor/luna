@@ -534,8 +534,14 @@ describe("configured code review workflow end-to-end with real Git", () => {
               return { enabled: false, skipped: true, reason: "disabled" };
             }
 
-            if (uses === "open_change_request") {
-              return { enabled: false, skipped: true, reason: "disabled" };
+            if (uses === "change-request.create") {
+              return {
+                operation_id: "change-request.create",
+                enabled: false,
+                skipped: true,
+                reason: "disabled",
+                adopted: false
+              };
             }
 
             if (uses === "final_implementation_report") {

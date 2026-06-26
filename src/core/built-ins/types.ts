@@ -11,9 +11,9 @@ import type {
   PushBranchArtifact
 } from "../write-mode/types.js";
 import type {
-  ChangeRequestArtifact,
-  ChangeRequestRegistry
-} from "../change-request/contracts.js";
+  ChangeRequestBuiltInPorts,
+  ChangeRequestArtifact
+} from "../../capabilities/change-request/contracts.js";
 import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
 import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
 import type { ObservabilitySummary } from "../observability/summary.js";
@@ -80,6 +80,7 @@ export type RunBuiltInStepOptions = BuiltInStepRunOptions & {
 
 export type BuiltInStepDependencies = {
   git?: GitBuiltInPorts;
+  changeRequest?: ChangeRequestBuiltInPorts;
   localExec?: LocalExecCommandBuiltInPorts;
   repositoryWorkspace?: RepositoryWorkspaceBuiltInPorts;
   runPreflight?: (input: {
@@ -159,7 +160,6 @@ export type BuiltInStepDependencies = {
     remote: string;
     expectedRemoteUrls: readonly string[];
   }) => MaybePromise<PushBranchArtifact>;
-  changeRequestRegistry?: ChangeRequestRegistry;
   buildImplementationReportJson?: (input: {
     invocation: Invocation;
     status: string;

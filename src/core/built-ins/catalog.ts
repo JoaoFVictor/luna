@@ -9,13 +9,16 @@ import {
   gitPortsFromBuiltInOptions
 } from "../../capabilities/git/built-ins.js";
 import {
+  changeRequestPortsFromBuiltInOptions,
+  createChangeRequestCreateBuiltIn
+} from "../../capabilities/change-request/built-ins.js";
+import {
   createRepositoryWorkspaceCaptureBuiltIn,
   repositoryWorkspacePortsFromBuiltInOptions
 } from "../../capabilities/repository-workspace/built-ins.js";
 import {
   collectWorktreeDiffBuiltIn,
   commitChangesBuiltIn,
-  createOpenChangeRequestBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   pushBranchBuiltIn,
   recordAcceptanceDecisionBuiltIn,
@@ -24,7 +27,6 @@ import {
 } from "./implementation.js";
 import { collectContextBuiltIn } from "./context.js";
 import { finalReportBuiltIn } from "./report.js";
-import { defaultChangeRequestRegistry } from "../change-request/default-registry.js";
 import { builtInError } from "./errors.js";
 import { builtInStepMetadataByName } from "./metadata.js";
 import { defineBuiltInRegistry } from "./registry.js";
@@ -34,9 +36,6 @@ import type {
   RunBuiltInStepOptions
 } from "./types.js";
 
-export const openChangeRequestBuiltIn = createOpenChangeRequestBuiltIn(
-  defaultChangeRequestRegistry
-);
 export const localExecReadCommandBuiltIn = createLocalExecCommandBuiltIn(
   localExecPortsFromBuiltInOptions,
   "local-exec.command.read"
@@ -58,6 +57,9 @@ export const gitCommitBuiltIn = createGitCommitBuiltIn(
 export const gitPushBranchBuiltIn = createGitPushBranchBuiltIn(
   gitPortsFromBuiltInOptions
 );
+export const changeRequestCreateBuiltIn = createChangeRequestCreateBuiltIn(
+  changeRequestPortsFromBuiltInOptions
+);
 
 export const defaultBuiltInSteps = Object.freeze([
   collectContextBuiltIn,
@@ -67,6 +69,7 @@ export const defaultBuiltInSteps = Object.freeze([
   gitStatusBuiltIn,
   gitCommitBuiltIn,
   gitPushBranchBuiltIn,
+  changeRequestCreateBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   runValidationCommandsBuiltIn,
   recordImplementationValidationBuiltIn,
@@ -74,7 +77,6 @@ export const defaultBuiltInSteps = Object.freeze([
   recordAcceptanceDecisionBuiltIn,
   commitChangesBuiltIn,
   pushBranchBuiltIn,
-  openChangeRequestBuiltIn,
   finalReportBuiltIn
 ] as const);
 

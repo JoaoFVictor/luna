@@ -219,14 +219,26 @@ nodes:
 
   - id: change_request
     type: built_in
-    uses: runtime.open_change_request
+    uses: change-request.create
+    policies:
+      - uses: change-request.create_side_effect
+        config:
+          operation_id: change-request.create
     input:
+      enabled:
+        expression: "$.config.implementation.change_request.enabled"
+      provider_id:
+        expression: "$.config.implementation.change_request.provider"
+      repository_path:
+        expression: "$.steps.workspace.path"
       title:
         expression: "$.invocation.subject.title"
-      description:
-        expression: "$.steps.implementation"
-      source_branch:
-        expression: "$.workspace.branch"
+      source:
+        expression: "$.steps.push"
+      target_branch:
+        expression: "$.config.implementation.change_request.base_ref"
+      draft:
+        expression: "$.config.implementation.change_request.draft"
     artifacts:
       - path: change-request.json
         publisher: artifacts.manifest_publisher

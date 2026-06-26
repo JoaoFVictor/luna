@@ -1,4 +1,7 @@
-import type { ChangeRequestArtifact } from "../change-request/contracts.js";
+import {
+  ChangeRequestArtifactSchema,
+  type ChangeRequestArtifact
+} from "../../capabilities/change-request/contracts.js";
 import type { BuiltInStepRunOptions } from "./types.js";
 import type { Invocation } from "../router/invocation.js";
 import type { ValidationResult } from "../validation/runner.js";
@@ -37,6 +40,15 @@ function implementationReportStatus({
   return "completed_with_skips";
 }
 
+function changeRequestArtifactFrom(value: unknown): ChangeRequestArtifact {
+  const result = ChangeRequestArtifactSchema.safeParse(value);
+  if (!result.success) {
+    throw new Error("final_implementation_report requires ChangeRequestArtifact");
+  }
+
+  return result.data;
+}
+
 export function implementationReportInputFrom({
   state,
   input,
@@ -55,11 +67,8 @@ export function implementationReportInputFrom({
     "commit"
   );
   const push = stepValue<PushBranchArtifact>(state, resolved, "push", "push");
-  const changeRequest = stepValue<ChangeRequestArtifact>(
-    state,
-    resolved,
-    "change_request",
-    "change_request"
+  const changeRequest = changeRequestArtifactFrom(
+    stepValue<unknown>(state, resolved, "change_request", "change_request")
   );
 
   return {

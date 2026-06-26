@@ -98,7 +98,13 @@ const planeImplementationState: WorkflowState = {
     },
     commit: { enabled: false, skipped: true, reason: "disabled" },
     push: { enabled: false, skipped: true, reason: "disabled" },
-    change_request: { enabled: false, skipped: true, reason: "disabled" }
+    change_request: {
+      operation_id: "change-request.create",
+      enabled: false,
+      skipped: true,
+      reason: "disabled",
+      adopted: false
+    }
   }
 };
 
@@ -178,6 +184,7 @@ describe("built-in step registry", () => {
       "git.status",
       "git.commit",
       "git.push_branch",
+      "change-request.create",
       "prepare_implementation_worktree",
       "collect_task_context",
       "run_validation_commands",
@@ -186,7 +193,6 @@ describe("built-in step registry", () => {
       "record_acceptance_decision",
       "commit_changes",
       "push_branch",
-      "open_change_request",
       "final_implementation_report"
     ]);
     expect(isBuiltInStepName("preflight")).toBe(true);
@@ -236,10 +242,10 @@ describe("built-in step registry", () => {
       "prepare_worktree",
       "git.commit",
       "git.push_branch",
+      "change-request.create",
       "prepare_implementation_worktree",
       "commit_changes",
-      "push_branch",
-      "open_change_request"
+      "push_branch"
     ]);
 
     for (const name of lockedNames) {
@@ -266,10 +272,10 @@ describe("built-in step registry", () => {
       "git.status",
       "git.commit",
       "git.push_branch",
+      "change-request.create",
       "prepare_implementation_worktree",
       "commit_changes",
-      "push_branch",
-      "open_change_request"
+      "push_branch"
     ]);
   });
 

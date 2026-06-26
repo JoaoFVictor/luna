@@ -296,15 +296,12 @@ describe("implementation workflow e2e", () => {
               skipped: true,
               reason: "disabled"
             })),
-            changeRequestRegistry: {
-              get: vi.fn(() => ({
-                provider: "github",
-                open: vi.fn(async () => ({
-                  enabled: false,
-                  skipped: true,
-                  reason: "disabled"
-                }))
-              }))
+            changeRequest: {
+              providers: {
+                get: vi.fn(() => {
+                  throw new Error("disabled change request should not resolve provider");
+                })
+              }
             }
           },
           runAgentStep: vi.fn(async ({ agent, input }) => {
@@ -497,15 +494,12 @@ describe("implementation workflow e2e", () => {
                   skipped: true,
                   reason: "disabled"
                 })),
-                changeRequestRegistry: {
-                  get: vi.fn(() => ({
-                    provider: "github",
-                    open: vi.fn(async () => ({
-                      enabled: false,
-                      skipped: true,
-                      reason: "disabled"
-                    }))
-                  }))
+                changeRequest: {
+                  providers: {
+                    get: vi.fn(() => {
+                      throw new Error("disabled change request should not resolve provider");
+                    })
+                  }
                 },
                 buildImplementationReportJson: vi.fn((input) => ({
                   status: input.status,
@@ -734,14 +728,12 @@ describe("implementation workflow e2e", () => {
               calls.push("push_branch");
               return { enabled: false, skipped: true, reason: "disabled" };
             }),
-            changeRequestRegistry: {
-              get: vi.fn(() => ({
-                provider: "github",
-                open: vi.fn(async () => {
-                  calls.push("open_change_request");
-                  return { enabled: false, skipped: true, reason: "disabled" };
+            changeRequest: {
+              providers: {
+                get: vi.fn(() => {
+                  throw new Error("disabled change request should not resolve provider");
                 })
-              }))
+              }
             },
             buildImplementationReportJson: vi.fn((input) => {
               calls.push("final_implementation_report");
@@ -860,7 +852,6 @@ describe("implementation workflow e2e", () => {
         "collect_worktree_diff",
         "commit_changes",
         "push_branch",
-        "open_change_request",
         "final_implementation_report"
       ]);
       expect(result.workspace).toMatchObject({

@@ -8,7 +8,6 @@ import {
   recordImplementationValidationBuiltIn,
   runValidationCommandsBuiltIn
 } from "../../src/core/built-ins/implementation.js";
-import { openChangeRequestBuiltIn } from "../../src/core/providers/built-ins.js";
 import {
   collectTaskContextBuiltIn,
   finalImplementationReportBuiltIn
@@ -23,7 +22,7 @@ import type {
   ImplementationConfig,
   PushBranchArtifact
 } from "../../src/core/write-mode/types.js";
-import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
+import type { ChangeRequestArtifact } from "../../src/capabilities/change-request/contracts.js";
 import type { ImplementationWorktreeRecord } from "../../src/core/write-mode/worktree.js";
 import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";
@@ -192,10 +191,17 @@ const pushArtifact: PushBranchArtifact = {
 };
 
 const changeRequestArtifact: ChangeRequestArtifact = {
+  operation_id: "change-request.create",
   enabled: true,
   skipped: false,
   provider: "github",
-  url: "https://github.com/octo-org/hello-world/pull/42"
+  provider_id: "github",
+  external_id: "42",
+  url: "https://github.com/octo-org/hello-world/pull/42",
+  title: "Reject invalid checkout payloads.",
+  source_branch: implementationWorkspace.branch,
+  target_branch: "main",
+  adopted: false
 };
 
 const implementationConfig: ImplementationConfig["implementation"] = {
@@ -443,74 +449,6 @@ describe("implementation built-ins", () => {
     });
   });
 
-  it("runs open_change_request through injected dependencies", async () => {
-    const changeRequestProvider = {
-      provider: "github",
-      open: vi.fn(async () => changeRequestArtifact)
-    };
-    const changeRequestRegistry = {
-      get: vi.fn(() => changeRequestProvider)
-    };
-
-    await expect(
-      openChangeRequestBuiltIn.run({
-        state: implementationState({
-          steps: {
-            push: pushArtifact
-          }
-        }),
-        input: {
-          title: "ABC-123: Fix checkout validation",
-          body: "Reject invalid checkout payloads."
-        },
-        dependencies: { changeRequestRegistry }
-      })
-    ).resolves.toEqual(changeRequestArtifact);
-
-    expect(changeRequestRegistry.get).toHaveBeenCalledWith("github");
-    expect(changeRequestProvider.open).toHaveBeenCalledWith({
-      enabled: true,
-      cwd: implementationWorkspace.path,
-      push: pushArtifact,
-      branch: implementationWorkspace.branch,
-      baseRef: "main",
-      draft: true,
-      title: "ABC-123: Fix checkout validation",
-      body: "Reject invalid checkout payloads."
-    });
-  });
-
-  it("throws a coded error when the change request provider is unsupported", async () => {
-    const unsupportedImplementation: ImplementationConfig["implementation"] = {
-      ...implementationConfig,
-      change_request: {
-        enabled: true,
-        provider: "unsupported-provider",
-        draft: true,
-        base_ref: "main"
-      }
-    };
-
-    await expect(
-      openChangeRequestBuiltIn.run({
-        state: implementationState({
-          config: { implementation: unsupportedImplementation },
-          steps: {
-            push: pushArtifact
-          }
-        }),
-        input: {
-          title: "ABC-123: Fix checkout validation"
-        }
-      })
-    ).rejects.toMatchObject({
-      code: "change_request_provider_unsupported",
-      details: {
-        provider: "unsupported-provider"
-      }
-    });
-  });
-
   it("runs final_implementation_report as ready_for_change_request through injected dependencies", async () => {
     const buildImplementationReportJson = vi.fn(() => ({
       report: "json"
@@ -638,7 +576,6 @@ describe("implementation built-ins", () => {
     collectWorktreeDiffBuiltIn,
     commitChangesBuiltIn,
     pushBranchBuiltIn,
-    openChangeRequestBuiltIn,
     finalImplementationReportBuiltIn
   ])("rejects missing implementation config for $name", async (builtIn) => {
     await expect(
@@ -693,7 +630,6 @@ describe("implementation built-ins", () => {
     ["acceptance", commitChangesBuiltIn, "steps.acceptance"],
     ["diff", commitChangesBuiltIn, "steps.worktree_diff"],
     ["commit", pushBranchBuiltIn, "steps.commit"],
-    ["push", openChangeRequestBuiltIn, "steps.push"],
     ["change_request", finalImplementationReportBuiltIn, "steps.change_request"]
   ] as const)(
     "rejects missing %s when input and state.steps fallback are absent",
@@ -753,25 +689,13 @@ describe("implementation built-ins", () => {
     );
   });
 
-  it("uses state.steps fallbacks for push_branch, open_change_request, and final report", async () => {
+  it("uses state.steps fallbacks for push_branch and final report", async () => {
     const pushBranch = vi.fn(async () => pushArtifact);
-    const changeRequestProvider = {
-      provider: "github",
-      open: vi.fn(async () => changeRequestArtifact)
-    };
-    const changeRequestRegistry = {
-      get: vi.fn(() => changeRequestProvider)
-    };
     const buildImplementationReportJson = vi.fn(() => ({ report: "json" }));
 
     await pushBranchBuiltIn.run({
       state: implementationState({ steps: { commit: commitArtifact } }),
       dependencies: { pushBranch }
-    });
-    await openChangeRequestBuiltIn.run({
-      state: implementationState({ steps: { push: pushArtifact } }),
-      input: { title: "ABC-123: Fix checkout validation" },
-      dependencies: { changeRequestRegistry }
     });
     await finalImplementationReportBuiltIn.run({
       state: implementationState({
@@ -789,9 +713,6 @@ describe("implementation built-ins", () => {
     });
 
     expect(pushBranch).toHaveBeenCalledWith(expect.objectContaining({ commit: commitArtifact }));
-    expect(changeRequestProvider.open).toHaveBeenCalledWith(
-      expect.objectContaining({ push: pushArtifact })
-    );
     expect(buildImplementationReportJson).toHaveBeenCalledWith(
       expect.objectContaining({
         validation,

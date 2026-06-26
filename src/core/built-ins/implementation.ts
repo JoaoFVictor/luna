@@ -8,18 +8,13 @@ import {
   commitChanges as defaultCommitChanges,
   pushBranch as defaultPushBranch
 } from "../write-mode/git-gates.js";
-import type { ChangeRequestRegistry } from "../change-request/contracts.js";
 import type { AcceptanceDecision } from "../decisions/types.js";
 import { GatedAgentLoopResultSchema } from "../agent-runtime/contracts.js";
-import type {
-  CommitChangesArtifact,
-  PushBranchArtifact
-} from "../write-mode/types.js";
+import type { CommitChangesArtifact } from "../write-mode/types.js";
 import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
 import {
   collectWorktreeDiffMetadata,
   commitChangesMetadata,
-  openChangeRequestMetadata,
   prepareImplementationWorktreeMetadata,
   pushBranchMetadata,
   recordAcceptanceDecisionMetadata,
@@ -212,41 +207,3 @@ export const pushBranchBuiltIn = defineBuiltInStep({
     });
   }
 });
-
-export function createOpenChangeRequestBuiltIn(
-  defaultChangeRequestRegistry: ChangeRequestRegistry
-) {
-  return defineBuiltInStep({
-    name: "open_change_request",
-    metadata: openChangeRequestMetadata,
-    async run({ state, input, dependencies = {} }) {
-      const changeRequestRegistry =
-        dependencies.changeRequestRegistry ?? defaultChangeRequestRegistry;
-      const resolved = resolvedInput(input, state);
-      const implementation = requiredImplementationFrom(state);
-      const workspace = implementationWorkspaceFrom(state);
-      const changeRequestProvider = changeRequestRegistry.get(
-        implementation.change_request.provider
-      );
-
-      return await changeRequestProvider.open({
-        enabled: implementation.change_request.enabled,
-        cwd: workspace.path,
-        push: stepValue<PushBranchArtifact>(state, resolved, "push", "push"),
-        branch:
-          typeof resolved.source_branch === "string"
-            ? resolved.source_branch
-            : workspace.branch,
-        baseRef: implementation.change_request.base_ref,
-        draft: implementation.change_request.draft,
-        title: requiredInput(resolved.title as string | undefined, "title"),
-        body:
-          typeof resolved.description === "string"
-            ? resolved.description
-            : typeof resolved.body === "string"
-              ? resolved.body
-              : undefined
-      });
-    }
-  });
-}

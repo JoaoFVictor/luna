@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ChangeRequestConfigSchema } from "../change-request/contracts.js";
+import { ChangeRequestConfigSchema } from "../../capabilities/change-request/contracts.js";
 import { ValidationCommandSchema } from "../validation/runner.js";
 
 const NonEmptyStringSchema = z.string().min(1);

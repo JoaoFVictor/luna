@@ -103,7 +103,13 @@ async function runImplementationLifecycleScenario({
   root,
   commitOutput,
   pushOutput = { enabled: false, skipped: true, reason: "disabled" },
-  changeRequestOutput = { enabled: false, skipped: true, reason: "disabled" }
+  changeRequestOutput = {
+    operation_id: "change-request.create",
+    enabled: false,
+    skipped: true,
+    reason: "disabled",
+    adopted: false
+  }
 }: {
   root: string;
   commitOutput: unknown;
@@ -145,7 +151,7 @@ async function runImplementationLifecycleScenario({
       return pushOutput;
     }
 
-    if (uses === "open_change_request") {
+    if (uses === "change-request.create") {
       return changeRequestOutput;
     }
 
@@ -661,9 +667,11 @@ describe("configured workflow runner", () => {
           branch: "feature/abc-123"
         },
         changeRequestOutput: {
+          operation_id: "change-request.create",
           enabled: true,
           skipped: true,
-          reason: "pull request disabled by gate"
+          reason: "pull request disabled by gate",
+          adopted: false
         }
       },
       reason: "change_request_skipped_or_failed"

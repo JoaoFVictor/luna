@@ -13,7 +13,7 @@ import type {
   CommitChangesArtifact,
   PushBranchArtifact
 } from "../../src/core/write-mode/types.js";
-import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
+import type { ChangeRequestArtifact } from "../../src/capabilities/change-request/contracts.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
 const invocation: Invocation = {
@@ -106,10 +106,17 @@ const push: PushBranchArtifact = {
 };
 
 const changeRequest: ChangeRequestArtifact = {
+  operation_id: "change-request.create",
   enabled: true,
   skipped: false,
   provider: "github",
-  url: "https://github.com/octo-org/hello-world/pull/42"
+  provider_id: "github",
+  external_id: "42",
+  url: "https://github.com/octo-org/hello-world/pull/42",
+  title: "Reject invalid checkout payloads.",
+  source_branch: "feature/abc-123-fix-checkout-validation",
+  target_branch: "main",
+  adopted: false
 };
 
 const reportInput = {
