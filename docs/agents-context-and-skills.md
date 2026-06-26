@@ -29,7 +29,7 @@ gates, artifact plans, and how outputs feed later steps.
 The normal handoff is:
 
 ```text
-workflow node -> runWorkflowNode -> Flue agent runner -> instruction envelope -> model session -> structured output
+workflow node -> runWorkflowNode -> Pi agent runner -> instruction envelope -> model session -> structured output
 ```
 
 The workflow node chooses the agent by id. The node runner loads the agent
@@ -95,7 +95,7 @@ Use context for project facts that should be rendered directly into runtime
 instructions: repository rules, local architecture notes, agent-specific
 operating notes, and task guidance that should not become a reusable skill.
 
-Do not rely on agents or Flue to discover context implicitly. If the graph does
+Do not rely on agents or Pi to discover context implicitly. If the graph does
 not pass context into a model node, that node does not receive repository or
 agent context.
 
@@ -137,22 +137,19 @@ available to one workflow run.
 ## Capabilities
 
 Local tools are Luna-native TypeScript contracts registered in
-`src/core/tools/catalog.ts`. The current Flue adapter materializes them in
-`src/core/agent-runtime/flue/tool-registry.ts`. Tool ids can contain dots, but
-their model-facing Flue names replace dots and dashes with underscores.
+`src/core/tools/catalog.ts`. The current Pi adapter materializes local tools
+inside `src/agent-runtimes/pi/adapter.ts`. Tool ids can contain dots, but their
+model-facing Pi names replace dots and dashes with underscores.
 
 MCP servers are configured centrally in `config/mcp.yaml`. Agent config chooses
 which MCP servers it may use. Luna enforces allowed agent modes and allowed MCP
-tool names, then exposes adapted names such as `mcp__server__tool`.
+tool names. The Pi adapter currently rejects MCP tools explicitly until native
+MCP materialization is added.
 
-Subagents are agent capabilities, not workflow nodes. They are lightweight Flue
-profiles built from another agent's description, instructions, model profile,
-skills, and selected context. Read-only subagents cannot use local tools, MCP,
-or nested subagents. Trusted write subagents require workflow
-`subagent_policy.allow_write: true` plus a per-reference tool allowlist.
-
-Use a workflow node instead of a subagent when the delegated work needs its own
-artifacts, gates, MCP access, or delegation tree.
+Subagents are agent capabilities, not workflow nodes. Keep subagent policy in
+workflow YAML and keep reusable role configuration in agent definitions. Use a
+workflow node instead of a subagent when delegated work needs its own artifacts,
+gates, MCP access, or delegation tree.
 
 ## What This Layer Does
 
@@ -173,23 +170,16 @@ artifacts, gates, MCP access, or delegation tree.
 
 ## Source Map
 
-- Agent contracts: `src/core/agents/definition.ts`
-- Capability schema: `src/core/agents/capabilities.ts`
-- Instruction envelope: `src/core/agents/instruction-stack.ts`
-- Context intake: `src/core/context/intake.ts`
-- Context built-in: `src/core/built-ins/context.ts`
+- Agent contracts: `src/capabilities/agents/agent-definition.ts`
+- Agent node execution: `src/capabilities/agents/agent-node.ts`
+- Context intake: `src/core/context/`
+- Context built-in: `src/core/built-ins/`
 - Skill resolution: `src/core/skills/definition.ts`
 - Tool catalog: `src/core/tools/catalog.ts`
-- Flue capabilities: `src/core/agent-runtime/flue/capabilities.ts`
-- Flue tools: `src/core/agent-runtime/flue/tool-registry.ts`
-- MCP materialization: `src/core/agent-runtime/flue/mcp-capabilities.ts`
-- Subagents: `src/core/agent-runtime/flue/subagent-profiles.ts`
+- Pi runtime adapter: `src/agent-runtimes/pi/adapter.ts`
 
 Useful tests include `tests/core/agent-definition.test.ts`,
 `tests/core/agent-instruction-stack.test.ts`,
 `tests/core/built-ins-context.test.ts`, `tests/core/skill-definition.test.ts`,
-`tests/core/flue-agent-capabilities.test.ts`,
-`tests/core/flue-tool-registry.test.ts`,
-`tests/core/flue-mcp-capabilities.test.ts`, and
-`tests/core/flue-subagent-profiles.test.ts`.
-
+`tests/capabilities/agents/agent-node.test.ts`, and
+`tests/agent-runtimes/pi/adapter.test.ts`.

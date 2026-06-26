@@ -6,7 +6,7 @@ import {
   loadPlaneAuth,
   planeAuthForInstance,
   type PlaneLunaAuthConfig
-} from "../../src/core/providers/plane/auth.js";
+} from "../../src/providers/plane/auth.js";
 
 const planeAuthFixture: PlaneLunaAuthConfig = {
   providers: {

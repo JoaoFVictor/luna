@@ -75,7 +75,7 @@ const validInvocation = {
 const validRunIdentity = {
   run_id:
     "20260618t150405123z-code-review-github-pull-request-octo-org-hello-world-pull-request-42-a1-abcdef123456-n9x8",
-  flue_run_id: "flue-run-abcdef123456",
+  runtime_run_id: "runtime-run-abcdef123456",
   workflow_id: "code-review",
   attempt: 1,
   source: "github",

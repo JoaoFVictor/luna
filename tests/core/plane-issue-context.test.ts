@@ -3,7 +3,7 @@ import {
   planeIssueKey,
   planeIssueContextFrom,
   type PlaneIssueContext
-} from "../../src/core/providers/plane/task-context.js";
+} from "../../src/providers/plane/task-context.js";
 import type { NormalizedInvocation } from "../../src/core/router/invocation.js";
 
 const invocation: NormalizedInvocation = {

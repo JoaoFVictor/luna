@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { gateResultFromAgentOutput } from "../../../src/capabilities/quality-gates/gate-results.js";
 
-describe("flue gate results", () => {
+describe("agent review gate results", () => {
   it("blocks when a JSONata gate expression evaluates to true", async () => {
     const result = await gateResultFromAgentOutput({
       id: "review",

@@ -8,7 +8,7 @@ import {
   resumeCompiledWorkflow,
   type WorkflowAgentDefaults,
   runCompiledWorkflow
-} from "../../../src/core/workflow/runner.js";
+} from "../../../src/runtime/langgraph/workflow-runner.js";
 import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
 import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memory/checkpoints.js";
 import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";
@@ -29,6 +29,12 @@ const registry = createCapabilityRegistry([
       },
       "runtime.after": {
         id: "runtime.after",
+        input_schema: { type: "object" },
+        output_schema: { type: "object" },
+        required_ports: []
+      },
+      "runtime.workspace": {
+        id: "runtime.workspace",
         input_schema: { type: "object" },
         output_schema: { type: "object" },
         required_ports: []
@@ -95,6 +101,24 @@ const workflow: WorkflowDefinition = {
   requires: { repository: false },
   observability: { exporters: { runtime_log: { enabled: true, required: false } } },
   subagent_policy: { allow_write: false }
+};
+
+const workspaceWorkflow: WorkflowDefinition = {
+  ...workflow,
+  id: "workspace-checkpoint-test",
+  graph: {
+    nodes: [
+      { id: "capture", type: "built_in", uses: "runtime.workspace" },
+      { id: "approve", type: "human_gate", uses: "approval.human", after: ["capture"] },
+      {
+        id: "after",
+        type: "built_in",
+        uses: "runtime.after",
+        after: ["approve"],
+        input: { cwd: { expression: "$.workspace.path" } }
+      }
+    ]
+  }
 };
 
 function backends() {
@@ -225,6 +249,64 @@ describe("workflow runner checkpoint resume", () => {
     });
 
     expect(waiting.status).toBe("waiting_for_input");
+  });
+
+  it("rehydrates captured workspace context from checkpoint writes on resume", async () => {
+    const stores = backends();
+    const compiled = compileWorkflow({ workflow: workspaceWorkflow, registry });
+    const builtInMetadata = (node: { capability_id: string }) =>
+      node.capability_id === "runtime.workspace"
+        ? { capturesWorkspace: true }
+        : {};
+
+    const waiting = await runCompiledWorkflow({
+      compiled,
+      workflow: workspaceWorkflow,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-resume-workspace",
+        workflow_id: "workspace-checkpoint-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      backends: stores,
+      builtIns: {
+        "runtime.workspace": async () => ({
+          run_id: "run-resume-workspace",
+          path: "/tmp/workspace",
+          preserved: false,
+          reason: "active"
+        }),
+        "runtime.after": async () => ({ done: true })
+      },
+      builtInMetadata,
+      agentRuntime: {} as AgentRuntimePort
+    });
+    expect(waiting.status).toBe("waiting_for_input");
+
+    const resumed = await resumeCompiledWorkflow({
+      compiled,
+      workflow: workspaceWorkflow,
+      checkpoint_id: "checkpoint-run-resume-workspace-approve",
+      thread_id: "run-resume-workspace",
+      interrupt_id: "interrupt-run-resume-workspace-approve",
+      decision: { approved: true },
+      backends: stores,
+      builtIns: {
+        "runtime.workspace": async () => {
+          throw new Error("capture should not rerun");
+        },
+        "runtime.after": async ({ input }) => {
+          expect(input).toEqual({ cwd: "/tmp/workspace" });
+          return { done: true };
+        }
+      },
+      builtInMetadata,
+      agentRuntime: {} as AgentRuntimePort
+    });
+
+    expect(resumed.status).toBe("succeeded");
   });
 
   it("preserves invocation and config for downstream expression resolution after resume", async () => {

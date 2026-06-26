@@ -22,7 +22,7 @@ async function writeAgent(agentDir: string): Promise<void> {
       "runtime_requirements:",
       "  - tool_calling",
       "runtime_preferences:",
-      "  preferred_runtime: flue",
+      "  preferred_runtime: pi",
       "metadata:",
       "  owner: workflow-platform",
       "skills:",
@@ -68,7 +68,7 @@ describe("agents capability loader", () => {
           properties: { status: { enum: ["done"] } }
         },
         runtime_requirements: ["tool_calling"],
-        runtime_preferences: { preferred_runtime: "flue" },
+        runtime_preferences: { preferred_runtime: "pi" },
         metadata: { owner: "workflow-platform" },
         skills: ["../../skills/implementation-safe-git/SKILL.md"],
         tools: ["repository.status"],

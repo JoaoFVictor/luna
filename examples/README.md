@@ -15,7 +15,7 @@ point. Use `../docs/` when you need the deeper architecture behind the recipe.
 | Add a new orchestration shape | [new-workflow.md](new-workflow.md) | Workflow YAML, node types, state references, artifacts, and gates. |
 | Accept a new external input | [new-adapter.md](new-adapter.md) | Input adapter boundary and normalized invocation shape. |
 | Add deterministic workflow behavior | [new-built-in.md](new-built-in.md) | Built-in contracts, metadata, registration, and tests. |
-| Add an agent-local function | [new-tool.md](new-tool.md) | Local tool contract, catalog registration, and Flue materialization boundary. |
+| Add an agent-local function | [new-tool.md](new-tool.md) | Local tool contract, catalog registration, and runtime materialization boundary. |
 
 ## Common Runs
 
@@ -45,7 +45,6 @@ LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --fr
 
 ## Files
 
-- `configured-workflows.md`: compact reference map for extension authors.
 - `github-pr-opened.invocation.json`: normalized GitHub PR invocation example.
 - `luna-generic.invocation.json`: generic routed invocation example.
 - `review-pr.md`: GitHub PR review recipe.
@@ -55,4 +54,3 @@ LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --fr
 - `new-adapter.md`: create input adapters.
 - `new-built-in.md`: create built-ins.
 - `new-tool.md`: create local tools.
-

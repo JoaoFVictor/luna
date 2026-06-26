@@ -139,7 +139,7 @@ Artifact directories are always resolved as:
 Workflow YAML does not define a separate artifact namespace. The routed
 `workflow_id` is the only namespace.
 
-`execution.max_concurrency` controls how many safe ready nodes the scheduler
+`execution.max_concurrency` controls how many safe ready nodes the runner
 may run at once. Repository-sensitive built-ins are still serialized by local
 locks. Agent and pattern nodes must not depend on shared mutable local state;
 use workflow dependencies, artifacts, and repository locks to make parallel
@@ -353,7 +353,7 @@ LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --fr
 ## 9. Test
 
 ```bash
-npm test -- tests/core/workflow/definition.test.ts tests/core/workflow/graph-analysis.test.ts tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow/definition.test.ts tests/core/workflow/graph-analysis.test.ts tests/core/workflow/runner.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused

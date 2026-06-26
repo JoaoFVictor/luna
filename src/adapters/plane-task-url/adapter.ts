@@ -5,12 +5,12 @@ import {
   loadPlaneAuth,
   planeAuthForInstance,
   type PlaneAuth
-} from "../../core/providers/plane/auth.js";
+} from "../../providers/plane/auth.js";
 import {
   PlaneConfigSchema,
   type PlaneConfig
-} from "../../core/providers/plane/config.js";
-import { repositoryHintFromLabels } from "../../core/providers/repository-hint.js";
+} from "../../providers/plane/config.js";
+import { repositoryHintFromLabels } from "../../providers/repository-hint.js";
 import {
   InvocationSchema,
   type Invocation

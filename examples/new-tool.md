@@ -6,8 +6,8 @@ small, explicit capability such as reading git status, summarizing a diff, or
 querying a local system through controlled code.
 
 Local tool contracts, implementations, and catalog registration live under
-`src/core/tools/`. The current Flue runtime adapter materializes those tools
-under `src/core/agent-runtime/flue/`.
+`src/core/tools/`. The current Pi runtime adapter materializes those tools
+under `src/agent-runtimes/pi/`.
 
 Do not use a tool for orchestration. Workflow order belongs in `workflow.yaml`
 `nodes:`.
@@ -72,7 +72,7 @@ export const repositoryLastCommitTool: LunaToolDefinition<
 ```
 
 The id used in `agent.yaml` can contain dots, such as
-`repository.last-commit`. Luna converts it to a model-facing Flue tool name at
+`repository.last-commit`. Luna converts it to a model-facing Pi tool name at
 the runtime adapter boundary, such as `repository_last_commit`.
 
 ## 3. Register The Tool
@@ -89,11 +89,8 @@ export const lunaToolCatalog = {
 
 Use `read_only` only when the tool is safe for read-only agents. Reserve
 `trusted_local_write` for tools that are useful only inside a trusted local
-write worktree. Do not import `@flue/runtime` or call `defineTool` from
-`src/core/tools/**`; `src/core/agent-runtime/flue/tool-registry.ts` owns that
-adapter boundary.
-Other Flue runtime wiring, including capability resolution and workflow launch
-assembly, also lives under `src/core/agent-runtime/flue/**`.
+write worktree. Do not import runtime SDKs from `src/core/tools/**`;
+`src/agent-runtimes/pi/adapter.ts` owns Pi-specific tool materialization.
 
 ## 4. Attach The Tool To An Agent
 
@@ -107,20 +104,15 @@ tools:
 Workflows do not declare tools directly. A workflow selects agents; agents bring
 their own tools.
 
-## 5. Test The Registry Behavior
+## 5. Test Runtime Materialization
 
-Update `tests/core/flue-tool-registry.test.ts`:
+Update `tests/agent-runtimes/pi/adapter.test.ts` or add a focused tool catalog
+test:
 
 ```ts
-const tools = resolveFlueTools({
-  ids: ["repository.last-commit"],
-  agentMode: "trusted_local_write",
-  cwd: "/repo/worktree"
-});
-
-expect(tools.map((tool) => tool.name)).toEqual([
+expect(materializedToolName("repository.last-commit")).toBe(
   "repository_last_commit"
-]);
+);
 ```
 
 Also test execution with the underlying dependency mocked, and test mode
@@ -129,8 +121,7 @@ restrictions if the tool is not allowed in every agent mode.
 Useful commands:
 
 ```sh
-npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
-npm test -- tests/core/flue-modules.test.ts
+npm test -- tests/core/tools/resolved-catalog.test.ts tests/agent-runtimes/pi/adapter.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused
@@ -141,5 +132,4 @@ npm run lint:unused
 If the tool is meant to be reused by future agents, update:
 
 - `README.md` current inventory or agent capability notes;
-- `examples/configured-workflows.md`;
 - the agent guide if it changes the expected authoring pattern.

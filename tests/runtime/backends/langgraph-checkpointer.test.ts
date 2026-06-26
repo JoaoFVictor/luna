@@ -265,7 +265,7 @@ describe("LangGraph checkpointer adapter", () => {
     }
   });
 
-  it("rejects non-ref-only LangGraph checkpoint channel values", async () => {
+  it("stores ref-only state and discards full LangGraph channel payloads", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-langgraph-checkpointer-"));
 
     try {
@@ -273,16 +273,48 @@ describe("LangGraph checkpointer adapter", () => {
         createSqliteCheckpointStore({ filePath: sqliteCheckpointFile(root) })
       );
 
+      await checkpointer.put(
+        { configurable: { thread_id: "thread-1" } },
+        {
+          v: 4,
+          id: "checkpoint-1",
+          ts: "2026-06-25T00:00:00.000Z",
+          channel_values: {
+            state_schema_version: "2026-06",
+            run_status: "running",
+            steps: { writer: { large_payload: "not stored" } }
+          },
+          channel_versions: {},
+          versions_seen: {}
+        },
+        {
+          source: "loop",
+          step: 1,
+          parents: {}
+        },
+        {}
+      );
+
+      await expect(
+        checkpointer.getTuple({ configurable: { thread_id: "thread-1" } })
+      ).resolves.toMatchObject({
+        checkpoint: {
+          channel_values: {
+            state_schema_version: "2026-06",
+            run_status: "running"
+          }
+        }
+      });
       await expect(
         checkpointer.put(
-          { configurable: { thread_id: "thread-1" } },
+          { configurable: { thread_id: "thread-2" } },
           {
             v: 4,
-            id: "checkpoint-1",
-            ts: "2026-06-25T00:00:00.000Z",
+            id: "checkpoint-2",
+            ts: "2026-06-25T00:00:01.000Z",
             channel_values: {
               state_schema_version: "2026-06",
-              steps: { writer: { large_payload: "not allowed" } }
+              artifact_refs: [{ id: "", uri: "artifact://bad" }]
             },
             channel_versions: {},
             versions_seen: {}

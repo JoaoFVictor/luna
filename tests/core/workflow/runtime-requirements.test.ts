@@ -89,7 +89,7 @@ describe("workflow agent runtime requirements", () => {
   });
 
   it("rejects unknown runtime requirements", async () => {
-    const root = await patchMinimumAgentWorkflow(["flue_magic"]);
+    const root = await patchMinimumAgentWorkflow(["runtime_magic"]);
 
     await expect(loadWorkflowDefinition(root, "minimum", {
       capabilityRegistry: registry(),

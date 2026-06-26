@@ -3,7 +3,6 @@ import type {
 } from "../write-mode/lifecycle.js";
 import type { Invocation } from "../router/invocation.js";
 import type { RunIdentity } from "../invocation/types.js";
-import type { RuntimeConfigState } from "../configured-workflow/contracts.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
 import {
   RepositoryConfigSchema,
@@ -23,9 +22,11 @@ export type WorkflowState = {
   steps: Record<string, unknown>;
 };
 
-export type SchedulerWorkflowState = WorkflowState & {
+export type WorkflowRuntimeState = WorkflowState & {
   invocation: Invocation;
-  config: RuntimeConfigState;
+  config: {
+    implementation?: import("../write-mode/types.js").ImplementationConfig["implementation"];
+  };
   repository?: RepositoryConfig;
   run: RunIdentity;
   workflow: {

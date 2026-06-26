@@ -42,19 +42,21 @@ export async function gateResultFromAgentOutput({
   type,
   blockWhen,
   feedback,
-  output
+  output,
+  expressionRoot = output
 }: {
   id: string;
   type: string;
   blockWhen: AgentGateExpression;
   feedback?: AgentGateExpression;
   output: unknown;
+  expressionRoot?: unknown;
 }): Promise<GateResult> {
   const blocks = await evaluateJsonataExpression(
     id,
     "block_when",
     blockWhen.expression,
-    output
+    expressionRoot
   );
 
   if (typeof blocks !== "boolean") {
@@ -72,7 +74,7 @@ export async function gateResultFromAgentOutput({
           id,
           "feedback",
           feedback.expression,
-          output
+          expressionRoot
         );
 
   return {

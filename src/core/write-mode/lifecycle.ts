@@ -2,7 +2,7 @@ import type {
   BuiltInStepMetadata,
   ImplementationLifecycleOutcome
 } from "../built-ins/types.js";
-import type { SchedulerWorkflowState } from "../workflow/state.js";
+import type { WorkflowRuntimeState } from "../workflow/state.js";
 
 export type ImplementationLifecycleEvidence = {
   workspaceCreated: boolean;
@@ -252,8 +252,8 @@ export function recordWorkflowNodeLifecycle(
   return evidence;
 }
 
-export function lifecycleEvidenceFromSchedulerState(
-  state: { lifecycleEvidence?: SchedulerWorkflowState["lifecycleEvidence"] }
+export function lifecycleEvidenceFromWorkflowState(
+  state: { lifecycleEvidence?: WorkflowRuntimeState["lifecycleEvidence"] }
 ): ImplementationLifecycleEvidence {
   return state.lifecycleEvidence ?? initialImplementationLifecycleEvidence();
 }

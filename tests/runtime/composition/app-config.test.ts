@@ -30,7 +30,7 @@ describe("runtime composition app config", () => {
           options: { root: ".runs/logs" }
         }
       },
-      agent_runtime: { id: "flue", options: {} },
+      agent_runtime: { id: "pi", options: {} },
       interrupt_authorization: { id: "allow_all", options: {} },
       capability_ports: {
         artifacts: {
@@ -41,7 +41,7 @@ describe("runtime composition app config", () => {
     });
 
     expect(config.backends.checkpoints.id).toBe("sqlite.checkpoints");
-    expect(config.agent_runtime.id).toBe("flue");
+    expect(config.agent_runtime.id).toBe("pi");
     expect(config.interrupt_authorization?.id).toBe("allow_all");
     expect(config.capability_ports?.artifacts?.id).toBe(
       "artifacts.manifest_store"
@@ -58,7 +58,7 @@ describe("runtime composition app config", () => {
         checkpoints: { id: "memory.checkpoints", options: {} },
         runtime_logs: { id: "memory.runtime-log", options: {} }
       },
-      agent_runtime: { id: "flue", options: {} },
+      agent_runtime: { id: "pi", options: {} },
       interrupt_authorization: { id: "allow_all", options: {} },
       langsmith: { project: "not-required" },
       langgraph_platform: { deployment: "not-required" }

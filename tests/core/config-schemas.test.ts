@@ -64,6 +64,7 @@ describe("config zod schemas", () => {
     const config = {
       model_profiles: {
         deep: {
+          provider: "openai-codex",
           model: "openai-codex/gpt-5.4",
           reasoning_effort: "high",
           transport: "sse"
@@ -117,6 +118,18 @@ describe("config zod schemas", () => {
 
   it("accepts the planned app workspace config shape", () => {
     expect(AppConfigSchema.parse(plannedAppConfig)).toEqual(plannedAppConfig);
+  });
+
+  it("accepts an explicit agent runtime selection", () => {
+    const config = {
+      ...plannedAppConfig,
+      agent_runtime: {
+        id: "pi",
+        options: {}
+      }
+    };
+
+    expect(AppConfigSchema.parse(config)).toEqual(config);
   });
 
   it("accepts optional local lock config", () => {

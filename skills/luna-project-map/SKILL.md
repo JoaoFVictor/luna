@@ -29,8 +29,8 @@ adapter -> invocation -> deterministic router -> YAML workflow graph -> runtime 
 | Repository/agent context intake | `src/core/context/` + `collect_context` | `examples/new-agent.md`, `examples/new-workflow.md` |
 | Write-mode git/workspace services | `src/core/write-mode/` | `skills/luna-create-built-in/SKILL.md` |
 | Agent-local callable function | `src/core/tools/` + `src/core/tools/catalog.ts` | `examples/new-tool.md` |
-| Concrete agent runtime adapter | `src/agent-runtimes/<runtime>/` | Runtime runner, capabilities, CLI launch, model projection, auth bridge, observability bridge |
-| Legacy Flue adapter until Task 18 cutover | `src/core/agent-runtime/flue/**` | Existing code only; target runtime work belongs under `src/agent-runtimes/flue/` |
+| Concrete agent runtime adapter | `src/agent-runtimes/<runtime>/` | Runtime runner, tool materialization, model projection, auth bridge, observability bridge |
+| Native Pi agent runtime | `src/agent-runtimes/pi/**` | Current concrete model runtime |
 | LLM/runtime guidance | `skills/<id>/SKILL.md` | existing skills |
 
 ## Boundaries
@@ -74,10 +74,10 @@ reach into another provider's directory.
   registry and metadata map.
 - Do not register local tools outside `src/core/tools/catalog.ts`.
 - Do not keep compatibility wrappers or deadcode.
-- Do not put Flue-specific implementation files under provider-neutral modules
+- Do not put Pi-specific implementation files under provider-neutral modules
   or old `src/core/flue-*` paths.
 - Do not add provider SDK, schema, auth, payload, report, or change-request code
-  under `src/core/providers/**`.
+  under `src/core/**`; use `src/providers/<provider>/`.
 - Do not add built-in barrel exports such as `built-ins/index.ts`.
 
 ## Verification

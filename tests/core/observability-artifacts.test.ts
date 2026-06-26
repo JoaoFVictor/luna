@@ -15,7 +15,7 @@ import {
   recordPromptUsageMissing,
   recordRejectedCapability
 } from "../../src/core/observability/summary.js";
-import { usageFromFlueResponse } from "../../src/core/agent-runtime/flue/observability.js";
+import { usageFromPiResponse } from "../../src/agent-runtimes/pi/observability.js";
 
 async function initializedStore(): Promise<{
   root: string;
@@ -110,7 +110,7 @@ describe("observability artifacts", () => {
     expect((await stat(eventsPath)).mode & 0o777).toBe(0o600);
   });
 
-  it("records observability summary data and extracts Flue prompt usage records", () => {
+  it("records observability summary data and extracts Pi prompt usage records", () => {
     const summary = createObservabilitySummary({
       runId: "run-1",
       workflowId: "code-review"
@@ -122,7 +122,7 @@ describe("observability artifacts", () => {
     recordPromptOperation(summary, {
       durationMs: 25
     });
-    const usageRecord = usageFromFlueResponse({
+    const usageRecord = usageFromPiResponse({
       promptId: "prompt-1",
       modelProfile: "deep",
       response: {
@@ -233,9 +233,9 @@ describe("observability artifacts", () => {
     expect(summary.usage_missing_count).toBe(1);
   });
 
-  it("returns undefined usage when Flue response has no usage or model", () => {
+  it("returns undefined usage when Pi response has no usage or model", () => {
     expect(
-      usageFromFlueResponse({
+      usageFromPiResponse({
         promptId: "prompt-1",
         modelProfile: "deep",
         response: {}

@@ -17,8 +17,7 @@ The default `config/models.yaml` uses Pi's `openai-codex/...` provider.
 npx @earendil-works/pi-ai login openai-codex
 ```
 
-This creates `auth.json` in the Luna project directory. Luna reads it at runtime.
-Do not commit it.
+This creates `~/.config/pi-ai/auth.json`. Luna reads it at runtime.
 
 ## 3. Authenticate GitHub
 
@@ -125,9 +124,9 @@ git -C /path/to/local/repo remote -v
 
 For private repositories, make sure SSH or HTTPS git auth works outside Luna.
 
-`auth.json` is missing
+`~/.config/pi-ai/auth.json` is missing
 
-Run `npx @earendil-works/pi-ai login openai-codex` from the Luna project root.
+Run `npx @earendil-works/pi-ai login openai-codex`.
 
 `WebSocket closed 1006`
 

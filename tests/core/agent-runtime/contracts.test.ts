@@ -95,11 +95,11 @@ describe("agent runtime contracts", () => {
 
     expect(normalizeAgentRuntimeError(alreadyNormalized)).toBe(alreadyNormalized);
     const runtimeSpecific = new Error("rate limit") as Error & { code: string };
-    runtimeSpecific.code = "flue_rate_limited";
+    runtimeSpecific.code = "provider_rate_limited";
     expect(normalizeAgentRuntimeError(runtimeSpecific)).toMatchObject({
       code: "runtime_unknown_failure",
       message: "rate limit",
-      details: { original_code: "flue_rate_limited" }
+      details: { original_code: "provider_rate_limited" }
     });
     expect(normalizeAgentRuntimeError("boom")).toMatchObject({
       code: "runtime_unknown_failure",

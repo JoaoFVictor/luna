@@ -23,7 +23,7 @@ An adapter should:
 
 An adapter must not:
 
-- run Flue or workflows;
+- run Pi or workflows;
 - create worktrees;
 - write final artifacts;
 - decide workflow routing with an LLM;
@@ -68,4 +68,4 @@ npm run typecheck:unused-src
 npm run lint:unused
 ```
 
-Update README and `examples/configured-workflows.md` if the adapter is public.
+Update README if the adapter is public.

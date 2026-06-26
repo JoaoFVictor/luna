@@ -6,7 +6,7 @@ import { defaultBuiltInCatalog } from "../../../src/core/built-ins/catalog.js";
 import {
   builtInStepNames as providerBuiltInStepNames,
   runBuiltInStep as runProviderBuiltInStep
-} from "../../../src/core/providers/built-ins.js";
+} from "../../../src/providers/built-ins.js";
 import { manifest } from "../../../src/capabilities/local-exec/manifest.js";
 import {
   createLocalExecCommandBuiltIn

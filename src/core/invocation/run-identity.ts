@@ -99,7 +99,7 @@ export function createRunIdentity(
 
   return {
     run_id,
-    ...(runtimeRunId === undefined ? {} : { flue_run_id: runtimeRunId }),
+    ...(runtimeRunId === undefined ? {} : { runtime_run_id: runtimeRunId }),
     workflow_id: workflowId,
     attempt,
     source: invocation.source,

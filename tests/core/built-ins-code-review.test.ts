@@ -5,7 +5,7 @@ import {
   preflightBuiltIn,
   prepareWorktreeBuiltIn,
   validateCodeReviewFindingsBuiltIn
-} from "../../src/core/providers/github/built-ins.js";
+} from "../../src/providers/github/built-ins.js";
 import type {
   WorkspaceRecord
 } from "../../src/core/write-mode/types.js";

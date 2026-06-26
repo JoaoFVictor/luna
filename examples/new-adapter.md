@@ -131,7 +131,7 @@ The CLI resolves `--from <adapter>` through this registry.
 
 An adapter should not:
 
-- Run Flue directly.
+- Run Pi directly.
 - Create git worktrees.
 - Write final artifacts.
 - Hide how the workflow is selected.
@@ -172,5 +172,4 @@ mapping, and repository field validation.
 Update:
 
 - `README.md` current adapter inventory.
-- `examples/configured-workflows.md` current adapter inventory.
 - Any source-specific recipe that helps a new user run it.

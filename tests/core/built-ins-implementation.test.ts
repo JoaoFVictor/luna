@@ -11,7 +11,7 @@ import {
 import {
   collectTaskContextBuiltIn,
   finalImplementationReportBuiltIn
-} from "../../src/core/providers/jira/built-ins.js";
+} from "../../src/providers/jira/built-ins.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
 import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";

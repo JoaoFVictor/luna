@@ -30,8 +30,29 @@ async function lunaSkillFiles(): Promise<string[]> {
     .sort();
 }
 
+async function collectInstructionFiles(root: string): Promise<string[]> {
+  const absoluteRoot = path.join(repoRoot, root);
+  const entries = await readdir(absoluteRoot, { withFileTypes: true });
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const relativePath = path.posix.join(root, entry.name);
+      if (entry.isDirectory()) {
+        return await collectInstructionFiles(relativePath);
+      }
+
+      return /\.(?:md|ya?ml)$/.test(entry.name) ? [relativePath] : [];
+    })
+  );
+
+  return nested.flat();
+}
+
 async function instructionFiles(): Promise<string[]> {
-  return ["AGENTS.md", ...(await lunaSkillFiles())];
+  return [
+    "AGENTS.md",
+    ...(await lunaSkillFiles()),
+    ...(await collectInstructionFiles("agents"))
+  ].sort();
 }
 
 function linesWithPath(relativePath: string, content: string): InstructionLine[] {
@@ -119,16 +140,6 @@ function clausesContainingPath(
     .filter((clause) => pathPattern.test(clause));
 }
 
-function isAllowedLegacyFlueCutoverSentence(text: string): boolean {
-  return (
-    /\b(?:legacy|existing)\b/i.test(text) &&
-    /\b(?:Task 18|atomic cutover)\b/.test(text) &&
-    /\b(?:may remain|only until|Existing code only|do not add new runtime guidance)\b/i.test(
-      text
-    )
-  );
-}
-
 function staleProviderRootViolations(
   relativePath: string,
   content: string
@@ -163,7 +174,7 @@ function staleFlueAdapterPathViolations(
   content: string
 ): InstructionViolation[] {
   const lines = linesWithPath(relativePath, content);
-  const fluePathPattern = /src\/core\/agent-runtime\/flue[^\s`,.)]*/;
+  const fluePathPattern = /src\/(?:core\/agent-runtime|agent-runtimes)\/flue[^\s`,.)]*/;
 
   return lines.flatMap((line, index) => {
     if (!fluePathPattern.test(line.text)) {
@@ -175,7 +186,7 @@ function staleFlueAdapterPathViolations(
     }
 
     const pathClauses = clausesContainingPath(lines, index, fluePathPattern);
-    return pathClauses.every((clause) => isAllowedLegacyFlueCutoverSentence(clause))
+    return pathClauses.every((clause) => isNegativeBoundaryLine(clause))
       ? []
       : [
           {
@@ -254,6 +265,10 @@ describe("agent instruction boundaries", () => {
       rule: "stale Flue adapter path guidance"
     },
     {
+      content: "Use `src/agent-runtimes/flue/**` for Flue runtime adapter code.",
+      rule: "stale Flue adapter path guidance"
+    },
+    {
       content: "Use `src/core/configured-workflow/` as the runtime target.",
       rule: "configured workflow runner as target runtime guidance"
     },
@@ -308,12 +323,14 @@ describe("agent instruction boundaries", () => {
   });
 
   it.each([
+    "Provider built-ins live in `src/providers/built-ins.ts`.",
+    "Jira API helpers belong under `src/providers/jira/`.",
+    "Provider auth belongs under `src/providers/**`.",
     "Do not add provider code under `src/core/providers/**`.",
     "Never use `src/core/configured-workflow/` as a target runtime path.",
-    "`src/core/agent-runtime/flue/**`: legacy Flue adapter code may remain only until Task 18 atomic cutover.",
-    "Existing legacy Flue code under `src/core/agent-runtime/flue/**` may remain only until the Task 18 atomic cutover.",
-    "rtk rg -n \"src/core/providers/|src/core/agent-runtime/flue|src/core/configured-workflow/\" AGENTS.md skills"
-  ])("allows explicit ban, diagnostic scan, or bounded legacy wording: $content", (content) => {
+    "Do not use `src/agent-runtimes/flue/**` for runtime adapter code.",
+    "rtk rg -n \"src/core/providers/|src/agent-runtimes/flue|src/core/configured-workflow/\" AGENTS.md skills"
+  ])("allows explicit ban or diagnostic scan: $content", (content) => {
     const violations = [
       ...staleProviderRootViolations("fixture.md", content),
       ...staleFlueAdapterPathViolations("fixture.md", content),

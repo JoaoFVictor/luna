@@ -1,1 +1,1 @@
-export { runLunaWorkflowWithFlue as run } from "../core/agent-runtime/flue/workflow-factory.js";
+export { runNativeWorkflowTarget as run } from "../providers/native-workflow-runner.js";

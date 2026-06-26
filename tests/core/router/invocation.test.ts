@@ -52,7 +52,7 @@ describe("invocation envelope", () => {
     ];
     const forbiddenImports = [
       "configured-workflow",
-      "agent-runtime/flue",
+      "agent-runtime/pi",
       "core/router/router",
       "core/router/router-definition",
       "workflow-factory",

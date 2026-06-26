@@ -11,8 +11,8 @@ import {
 } from "../../src/core/config/loader.js";
 import { McpConfigSchema } from "../../src/core/config/mcp.js";
 import { resolveModelProfiles } from "../../src/core/config/models.js";
-import { JiraConfigSchema } from "../../src/core/providers/jira/config.js";
-import { PlaneConfigSchema } from "../../src/core/providers/plane/config.js";
+import { JiraConfigSchema } from "../../src/providers/jira/config.js";
+import { PlaneConfigSchema } from "../../src/providers/plane/config.js";
 import {
   AppConfigSchema,
   ModelsConfigSchema,

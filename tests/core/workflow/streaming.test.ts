@@ -4,7 +4,7 @@ import { createCapabilityRegistry } from "../../../src/core/capabilities/registr
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
 import type { WorkflowDefinition } from "../../../src/core/workflow/definition-types.js";
 import { compileWorkflow } from "../../../src/core/workflow/compiler.js";
-import { runCompiledWorkflow } from "../../../src/core/workflow/runner.js";
+import { runCompiledWorkflow } from "../../../src/runtime/langgraph/workflow-runner.js";
 import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
 import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memory/checkpoints.js";
 import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";

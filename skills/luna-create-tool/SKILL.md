@@ -1,13 +1,13 @@
 ---
 name: luna-create-tool
-description: Use when creating or modifying Luna local tools for agents, including src/core/tools contracts/catalog, agent.yaml tools entries, agent mode restrictions, repository-bound cwd behavior, and Flue adapter materialization tests.
+description: Use when creating or modifying Luna local tools for agents, including src/core/tools contracts/catalog, agent.yaml tools entries, agent mode restrictions, repository-bound cwd behavior, and Pi adapter materialization tests.
 ---
 
 # Luna Create Tool
 
 Read `examples/new-tool.md` first. Local tools are deterministic TypeScript
 functions defined in Luna's runtime-neutral tool catalog and materialized for
-Flue at the runtime adapter boundary.
+Pi at the runtime adapter boundary.
 
 ## Boundary
 
@@ -43,30 +43,27 @@ under old `src/tools/` paths.
 - Define runtime-neutral tool contracts in `src/core/tools/contracts.ts`.
 - Implement domain tools under `src/core/tools/`.
 - Register public tool IDs in `src/core/tools/catalog.ts`.
-- Materialize Flue `ToolDefinition`s only in
-  `src/agent-runtimes/flue/tool-registry.ts`.
+- Materialize Pi tools only in `src/agent-runtimes/pi/adapter.ts`.
 - Attach IDs in `agents/<id>/agent.yaml`.
 
-Tool IDs may contain dots, like `repository.status`. The Flue adapter converts
+Tool IDs may contain dots, like `repository.status`. The Pi adapter converts
 them into safe model-facing names, like `repository_status`. Do not import
-`@flue/runtime` or call `defineTool` from `src/core/tools/**`; that belongs only
-at the Flue adapter boundary.
+runtime SDKs from `src/core/tools/**`; that belongs only at the concrete runtime
+adapter boundary.
 
-Keep Flue-specific tests and imports pointed at `src/agent-runtimes/flue/**`.
-Existing legacy Flue code under `src/core/agent-runtime/flue/**` may remain
-only until the Task 18 atomic cutover.
+Keep Pi-specific tests and imports pointed at `src/agent-runtimes/pi/**`.
 Do not add forwarding files under old `src/core/flue-*.ts` paths.
 
 ## Testing
 
-Update `tests/core/flue-tool-registry.test.ts`. Cover resolution, execution,
-unknown tool ids, and agent mode restrictions.
+Update `tests/core/tools/resolved-catalog.test.ts` and
+`tests/agent-runtimes/pi/adapter.test.ts`. Cover resolution, execution, unknown
+tool ids, and agent mode restrictions.
 
 Run:
 
 ```sh
-npm test -- tests/core/flue-tool-registry.test.ts tests/core/flue-agent-capabilities.test.ts
-npm test -- tests/core/flue-modules.test.ts
+npm test -- tests/core/tools/resolved-catalog.test.ts tests/agent-runtimes/pi/adapter.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused

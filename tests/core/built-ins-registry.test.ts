@@ -3,9 +3,10 @@ import {
   defaultBuiltInSteps,
   builtInStepNames,
   defaultProviderBuiltInStepRegistry,
+  defaultProviderWorkflowBuiltIns,
   isBuiltInStepName,
   runBuiltInStep
-} from "../../src/core/providers/built-ins.js";
+} from "../../src/providers/built-ins.js";
 import {
   builtInStepNames as metadataBuiltInStepNames,
   createBuiltInStepCatalog
@@ -330,6 +331,96 @@ describe("built-in step registry", () => {
         dependencies: { runPreflight }
       })
     ).resolves.toEqual({ status: "ok" });
+  });
+
+  it("adapts workflow capability ids to provider built-ins with runtime context state", async () => {
+    const runPreflight = vi.fn(async () => ({ status: "ok" }));
+    const executors = defaultProviderWorkflowBuiltIns({ runPreflight });
+
+    await expect(
+      executors["runtime.preflight"]({
+        node: {
+          id: "preflight",
+          kind: "built_in",
+          yaml_path: "$.nodes[0]",
+          capability_id: "runtime.preflight",
+          output_schema: { type: "object" },
+          can_create_pending_interrupt: false,
+          source: {
+            id: "preflight",
+            type: "built_in",
+            uses: "runtime.preflight"
+          }
+        },
+        input: {},
+        state: {
+          state_schema_version: "2026-06",
+          invocation: {
+            version: "2026-06",
+            source: "github",
+            event: "pull_request",
+            action: "selected",
+            repository: {
+              provider: "github",
+              owner: "octo-org",
+              name: "hello-world"
+            },
+            subject: { type: "pull_request", id: "42" },
+            references: {
+              base_ref: "main",
+              base_sha: "base-sha",
+              head_sha: "head-sha"
+            },
+            payload: {
+              pull_request: { number: 42 },
+              base_repository: {
+                owner: "octo-org",
+                name: "hello-world",
+                full_name: "octo-org/hello-world"
+              },
+              head_repository: {
+                owner: "octo-org",
+                name: "hello-world",
+                full_name: "octo-org/hello-world"
+              }
+            }
+          },
+          config: {},
+          run: {
+            run_id: "run-1",
+            workflow_id: "code-review",
+            attempt: 1,
+            started_at: "2026-06-25T00:00:00.000Z"
+          },
+          workflow: { id: "code-review", mode: "read_only" },
+          run_status: "running",
+          node_statuses: {},
+          steps: {},
+          attempts: {},
+          artifact_refs: [],
+          interrupt_refs: []
+        },
+        runtimeContext: {
+          repository: {
+            id: "repo",
+            provider: "github",
+            owner: "octo-org",
+            name: "hello-world",
+            path: "/repo",
+            remote: "origin",
+            expected_remote_urls: []
+          }
+        },
+        workflow: {} as never
+      })
+    ).resolves.toEqual({ status: "ok" });
+
+    expect(runPreflight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repository: expect.objectContaining({ name: "hello-world" }),
+        workflow: { mode: "read_only" }
+      })
+    );
   });
 
   it("dispatches implementation task built-ins for Plane invocations", async () => {

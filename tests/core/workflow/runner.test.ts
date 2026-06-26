@@ -8,7 +8,8 @@ import {
   runCompiledWorkflow,
   type WorkflowAgentDefaults,
   type WorkflowBuiltInExecutor
-} from "../../../src/core/workflow/runner.js";
+} from "../../../src/runtime/langgraph/workflow-runner.js";
+import type { WorkflowLockManager } from "../../../src/core/workflow/runner-locks.js";
 import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
 import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memory/checkpoints.js";
 import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";
@@ -29,6 +30,22 @@ const registry = createCapabilityRegistry([
           additionalProperties: false,
           required: ["ok"],
           properties: { ok: { type: "boolean" } }
+        },
+        required_ports: []
+      },
+      "runtime.workspace": {
+        id: "runtime.workspace",
+        input_schema: { type: "object" },
+        output_schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["run_id", "path", "preserved", "reason"],
+          properties: {
+            run_id: { type: "string" },
+            path: { type: "string" },
+            preserved: { type: "boolean" },
+            reason: { type: "string" }
+          }
         },
         required_ports: []
       }
@@ -96,6 +113,26 @@ function agentRuntime(output: unknown): AgentRuntimePort {
   };
 }
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 const agentDefaults: WorkflowAgentDefaults = {
   instructions: "Review the workflow output.",
   model_profile: { model: "openai/gpt-5", reasoning_effort: "medium" },
@@ -103,6 +140,8 @@ const agentDefaults: WorkflowAgentDefaults = {
   context: { repository: "luna" },
   cwd: "/tmp/runner-test"
 };
+
+const okOutputSchema = { type: "object", additionalProperties: false, required: ["ok"], properties: { ok: { type: "boolean" } } };
 
 describe("workflow runner", () => {
   it("executes built-in nodes and validates final workflow output before success", async () => {
@@ -388,15 +427,14 @@ describe("workflow runner", () => {
     await expect(stores.events.list("run-mismatched-compiled")).resolves.toEqual([]);
   });
 
-  it("rejects unsupported non-linear compiled graphs before starting", async () => {
+  it("runs independent non-linear branches", async () => {
     const stores = backends();
     const definition = workflow([
       { id: "left", type: "built_in", uses: "runtime.ok" },
       { id: "right", type: "built_in", uses: "runtime.ok" }
     ]);
 
-    await expect(
-      runCompiledWorkflow({
+    const result = await runCompiledWorkflow({
         compiled: compileWorkflow({ workflow: definition, registry }),
         workflow: definition,
         invocation: {},
@@ -410,12 +448,23 @@ describe("workflow runner", () => {
         backends: stores,
         builtIns: { "runtime.ok": async () => ({ ok: true }) },
         agentRuntime: agentRuntime({})
-      })
-    ).rejects.toMatchObject({ code: "runtime_unsupported_feature" });
-    await expect(stores.events.list("run-nonlinear")).resolves.toEqual([]);
+      });
+
+    expect(result.status).toBe("succeeded");
+    if (result.status !== "succeeded") {
+      throw new Error("expected workflow to succeed");
+    }
+    expect(result.output).toEqual({
+      left: { ok: true },
+      right: { ok: true }
+    });
+    expect(result.state.steps).toEqual({
+      left: { ok: true },
+      right: { ok: true }
+    });
   });
 
-  it("rejects max_concurrency above the supported runner subset before starting", async () => {
+  it("supports max_concurrency above one", async () => {
     const stores = backends();
     const definition = {
       ...workflow([{ id: "ok", type: "built_in", uses: "runtime.ok" }]),
@@ -438,8 +487,7 @@ describe("workflow runner", () => {
         builtIns: { "runtime.ok": async () => ({ ok: true }) },
         agentRuntime: agentRuntime({})
       })
-    ).rejects.toMatchObject({ code: "runtime_unsupported_feature" });
-    await expect(stores.events.list("run-max-concurrency")).resolves.toEqual([]);
+    ).resolves.toMatchObject({ status: "succeeded" });
   });
 
   it("rejects invalid node output before publishing to steps or checkpoint", async () => {
@@ -531,6 +579,388 @@ describe("workflow runner", () => {
       path: "$.nodes[0].input.value",
       capability: "runtime.ok"
     });
+  });
+
+  it("runs independent DAG branches up to max_concurrency and joins their outputs", async () => {
+    const definition = {
+      ...workflow(
+        [
+          { id: "left", type: "built_in", uses: "runtime.ok" },
+          { id: "right", type: "built_in", uses: "runtime.ok" },
+          {
+            id: "join",
+            type: "built_in",
+            uses: "runtime.ok",
+            after: ["left", "right"],
+            input: {
+              left: { expression: "$.steps.left.ok" },
+              right: { expression: "$.steps.right.ok" }
+            }
+          }
+        ],
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["ok"],
+          properties: { ok: { type: "boolean" } }
+        }
+      ),
+      execution: { max_concurrency: 2 }
+    };
+    const started = new Set<string>();
+    let releaseBranches: (() => void) | undefined;
+    const branchesStarted = new Promise<void>((resolve) => {
+      releaseBranches = resolve;
+    });
+    let joinInput: unknown;
+    const builtIns: Record<string, WorkflowBuiltInExecutor> = {
+      "runtime.ok": vi.fn(async ({ node, input }) => {
+        started.add(node.id);
+        if (started.has("left") && started.has("right")) {
+          releaseBranches?.();
+        }
+        if (node.id === "left" || node.id === "right") {
+          await branchesStarted;
+        }
+        if (node.id === "join") {
+          joinInput = input;
+        }
+
+        return { ok: true };
+      })
+    };
+
+    const result = await withTimeout(
+      runCompiledWorkflow({
+        compiled: compileWorkflow({
+          workflow: definition,
+          registry,
+          reducers: { steps: "object_merge" }
+        }),
+        workflow: definition,
+        invocation: {},
+        config: {},
+        run: {
+          run_id: "run-parallel-branches",
+          workflow_id: "runner-test",
+          attempt: 1,
+          started_at: "2026-06-25T00:00:00.000Z"
+        },
+        backends: backends(),
+        builtIns,
+        agentRuntime: agentRuntime({})
+      }),
+      500,
+      "parallel workflow branches did not run concurrently"
+    );
+
+    expect(result.status).toBe("succeeded");
+    expect(joinInput).toEqual({ left: true, right: true });
+    expect(builtIns["runtime.ok"]).toHaveBeenCalledTimes(3);
+  });
+
+  it("drains a parallel batch before surfacing a node failure", async () => {
+    const stores = backends();
+    const definition = {
+      ...workflow([
+        { id: "fail", type: "built_in", uses: "runtime.ok" },
+        { id: "sibling", type: "built_in", uses: "runtime.ok" }
+      ]),
+      execution: { max_concurrency: 2 }
+    };
+    let releaseSibling!: () => void;
+    const siblingFinished = new Promise<void>((resolve) => {
+      releaseSibling = resolve;
+    });
+    let siblingCompleted = false;
+
+    await expect(
+      runCompiledWorkflow({
+        compiled: compileWorkflow({ workflow: definition, registry }),
+        workflow: definition,
+        invocation: {},
+        config: {},
+        run: {
+          run_id: "run-parallel-failure",
+          workflow_id: "runner-test",
+          attempt: 1,
+          started_at: "2026-06-25T00:00:00.000Z"
+        },
+        backends: stores,
+        builtIns: {
+          "runtime.ok": async ({ node }) => {
+            if (node.id === "fail") {
+              await siblingFinished;
+              throw new Error("branch failed");
+            }
+
+            siblingCompleted = true;
+            releaseSibling();
+            return { ok: true };
+          }
+        },
+        agentRuntime: agentRuntime({})
+      })
+    ).rejects.toThrow("branch failed");
+
+    expect(siblingCompleted).toBe(true);
+    const siblingWrites = stores.checkpoints.listWrites(
+      "run-parallel-failure",
+      "",
+      "node-output-run-parallel-failure-sibling"
+    );
+    await expect(siblingWrites).resolves.toEqual([
+      expect.objectContaining({
+        task_id: "sibling",
+        channel: "steps",
+        value: { ok: true }
+      })
+    ]);
+    await expect(stores.events.list("run-parallel-failure")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "node.succeeded", node_id: "sibling" })
+      ])
+    );
+  });
+
+  it("serializes workflow nodes that require the same repository lock", async () => {
+    const definition = {
+      ...workflow([
+        { id: "left", type: "built_in", uses: "runtime.ok" },
+        { id: "right", type: "built_in", uses: "runtime.ok" }
+      ]),
+      execution: { max_concurrency: 2 }
+    };
+    const acquireCalls: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    let tail = Promise.resolve();
+    const lockManager: WorkflowLockManager = {
+      async acquire(resource, mode) {
+        acquireCalls.push(`${resource}:${mode}`);
+        const previous = tail;
+        let releaseNext!: () => void;
+        tail = new Promise<void>((resolve) => { releaseNext = resolve; });
+        await previous;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+
+        return async () => {
+          active -= 1;
+          releaseNext();
+        };
+      }
+    };
+
+    const result = await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-repository-locks",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      runtimeContext: { repository: { id: "repo-1" } },
+      backends: backends(),
+      builtIns: { "runtime.ok": async () => ({ ok: true }) },
+      builtInMetadata: () => ({
+        locks: [{ resource: "repository", mode: "exclusive" }]
+      }),
+      lockManager,
+      agentRuntime: agentRuntime({})
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(maxActive).toBe(1);
+    expect(acquireCalls).toEqual(
+      Array(2).fill("repository:repo-1:exclusive")
+    );
+  });
+
+  it("runs deferred final report nodes after the main workflow graph", async () => {
+    const definition = {
+      ...workflow(
+        [
+          {
+            id: "final_report",
+            type: "built_in",
+            uses: "runtime.ok",
+            input: { main: { expression: "$.steps.main.ok" } }
+          },
+          { id: "main", type: "built_in", uses: "runtime.ok" }
+        ],
+        okOutputSchema
+      ),
+      execution: { max_concurrency: 2 }
+    };
+    const calls: Array<{ node: string; input: unknown }> = [];
+
+    const result = await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-deferred-final-report",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      backends: backends(),
+      builtIns: {
+        "runtime.ok": async ({ node, input }) => {
+          calls.push({ node: node.id, input });
+          return { ok: true };
+        }
+      },
+      builtInMetadata: (node) => node.id === "final_report"
+        ? { deferredLifecycle: "final_report" }
+        : {},
+      agentRuntime: agentRuntime({})
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(calls).toEqual([
+      { node: "main", input: {} },
+      { node: "final_report", input: { main: true } }
+    ]);
+  });
+
+  it("keeps operational context outside state while resolving repository and promoted workspace expressions", async () => {
+    const definition = workflow(
+      [
+        {
+          id: "capture",
+          type: "built_in",
+          uses: "runtime.workspace",
+          input: { repo: { expression: "$.repository.name" } }
+        },
+        {
+          id: "use_workspace",
+          type: "built_in",
+          uses: "runtime.ok",
+          after: ["capture"],
+          input: { cwd: { expression: "$.workspace.path" } }
+        }
+      ],
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["ok"],
+        properties: { ok: { type: "boolean" } }
+      }
+    );
+    const seenInputs: unknown[] = [];
+
+    const result = await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-runtime-context",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      runtimeContext: {
+        repository: { name: "luna" },
+        workspaceRoot: "/tmp/workspaces",
+        agentsRoot: "/tmp/agents"
+      },
+      backends: backends(),
+      builtIns: {
+        "runtime.workspace": ({ input, state, runtimeContext }) => {
+          seenInputs.push({
+            input,
+            stateHasRepository: Object.prototype.hasOwnProperty.call(state, "repository"),
+            workspaceRoot: runtimeContext.workspaceRoot
+          });
+
+          return {
+            run_id: "run-runtime-context",
+            path: "/tmp/workspaces/luna",
+            preserved: false,
+            reason: "active"
+          };
+        },
+        "runtime.ok": ({ input, runtimeContext }) => {
+          seenInputs.push({ input, workspace: runtimeContext.workspace });
+          return { ok: true };
+        }
+      },
+      builtInMetadata: (node) =>
+        node.capability_id === "runtime.workspace"
+          ? { capturesWorkspace: true }
+          : {},
+      agentRuntime: agentRuntime({})
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(seenInputs).toEqual([
+      {
+        input: { repo: "luna" },
+        stateHasRepository: false,
+        workspaceRoot: "/tmp/workspaces"
+      },
+      {
+        input: { cwd: "/tmp/workspaces/luna" },
+        workspace: {
+          run_id: "run-runtime-context",
+          path: "/tmp/workspaces/luna",
+          preserved: false,
+          reason: "active"
+        }
+      }
+    ]);
+    expect(result.state).not.toHaveProperty("repository");
+    expect(result.state).not.toHaveProperty("workspace");
+    expect(result.state).not.toHaveProperty("workspaceRoot");
+    expect(result.state).not.toHaveProperty("agentsRoot");
+  });
+
+  it("rejects conflicting duplicate workspace capture", async () => {
+    const definition = workflow([
+      { id: "first", type: "built_in", uses: "runtime.workspace" },
+      {
+        id: "second",
+        type: "built_in",
+        uses: "runtime.workspace",
+        after: ["first"]
+      }
+    ]);
+
+    await expect(
+      runCompiledWorkflow({
+        compiled: compileWorkflow({ workflow: definition, registry }),
+        workflow: definition,
+        invocation: {},
+        config: {},
+        run: {
+          run_id: "run-workspace-conflict",
+          workflow_id: "runner-test",
+          attempt: 1,
+          started_at: "2026-06-25T00:00:00.000Z"
+        },
+        backends: backends(),
+        builtIns: {
+          "runtime.workspace": ({ node }) => ({
+            run_id: "run-workspace-conflict",
+            path: `/tmp/${node.id}`,
+            preserved: false,
+            reason: "active"
+          })
+        },
+        builtInMetadata: (node) =>
+          node.capability_id === "runtime.workspace"
+            ? { capturesWorkspace: true }
+            : {},
+        agentRuntime: agentRuntime({})
+      })
+    ).rejects.toMatchObject({ code: "runtime_state_invalid" });
   });
 
   it("rejects final workflow output before marking the run succeeded", async () => {

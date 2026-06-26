@@ -1,7 +1,7 @@
 # Built-Ins, Tools, And Runtime
 
 This document explains deterministic workflow steps, local tools, write-mode
-services, provider-facing built-ins, and the current Flue runtime adapter.
+services, provider-facing built-ins, and the current Pi runtime adapter.
 
 ## Built-Ins
 
@@ -15,21 +15,21 @@ A built-in owns:
 - output data for later workflow nodes.
 - scheduling metadata.
 
-Built-in metadata is part of the runtime contract. It tells the scheduler
+Built-in metadata is part of the runtime contract. It tells the runner
 whether a step requires a repository, captures a workspace, needs repository
 locks, participates in implementation lifecycle evidence, or should be deferred
 until final-report time.
 
-Use metadata instead of ad hoc name checks. If scheduler behavior changes based
+Use metadata instead of ad hoc name checks. If runner behavior changes based
 on a built-in, the built-in metadata should say so.
 
 ## Runtime-Neutral And Provider-Facing Built-Ins
 
 Runtime-neutral built-ins live under `src/core/built-ins/`. They should not
-know provider auth, provider payload shapes, provider URLs, or Flue details.
+know provider auth, provider payload shapes, provider URLs, or Pi details.
 
 Provider-facing built-ins are composed through
-`src/core/providers/built-ins.ts`. That composition root can dispatch to
+`src/providers/built-ins.ts`. That composition root can dispatch to
 provider-owned code under `src/providers/<provider>/` based on
 `invocation.source`.
 
@@ -51,9 +51,8 @@ The current built-ins fall into these categories:
 - commit, push, and change-request gates.
 - final reports.
 
-The exact inventory is listed in `README.md` and
-`examples/configured-workflows.md`, and is checked against the runtime catalog
-by the docs drift guardrail.
+The exact inventory is listed in `README.md` and checked against the runtime
+catalog by the docs drift guardrail.
 
 ## Local Tools
 
@@ -61,8 +60,8 @@ Local tools are different from built-ins. A built-in is a workflow node. A
 local tool is a small function an agent can call inside its model session.
 
 Local tool contracts live in `src/core/tools/contracts.ts`. The catalog lives
-in `src/core/tools/catalog.ts`. Flue materialization lives only in
-`src/core/agent-runtime/flue/tool-registry.ts`.
+in `src/core/tools/catalog.ts`. Pi materialization lives only in
+`src/agent-runtimes/pi/adapter.ts`.
 
 A tool definition includes:
 
@@ -76,7 +75,7 @@ The current repository tools are read-only. They run from the prepared
 repository or workspace cwd and expose focused git inspection to agents.
 
 Tools do not orchestrate workflows, normalize external inputs, choose
-providers, or call Flue directly.
+providers, or call Pi directly.
 
 ## MCP Tools
 
@@ -115,21 +114,17 @@ publishing gates.
 The default change-request provider is GitHub through provider-owned actions
 and the GitHub CLI.
 
-## Flue Runtime Adapter
+## Pi Runtime Adapter
 
-The current runtime adapter lives in `src/core/agent-runtime/flue/`. It is the
-only place that should know how to materialize Luna runtime concepts into Flue.
+The current runtime adapter lives in `src/agent-runtimes/pi/`. It is the
+only place that should know how to materialize Luna runtime concepts into Pi.
 
 It owns:
 
-- the generic `luna` Flue workflow factory.
 - model profile projection.
 - Pi OAuth provider registration.
-- Flue agent sessions.
+- Pi agent sessions.
 - local tool materialization.
-- MCP materialization.
-- subagent profiles.
-- prompt retry policy.
 - usage and log bridging.
 - trusted local gated loop execution.
 
@@ -152,7 +147,7 @@ or workflow graphs.
 - Gives agents small explicit local tools.
 - Keeps provider-specific built-ins behind provider composition.
 - Keeps trusted write mutation behind deterministic services and gates.
-- Keeps Flue-specific materialization out of generic core modules.
+- Keeps Pi-specific materialization out of generic core modules.
 
 ## What This Layer Does Not Do
 
@@ -168,25 +163,21 @@ or workflow graphs.
 - Built-in catalog: `src/core/built-ins/catalog.ts`
 - Built-in metadata: `src/core/built-ins/metadata.ts`
 - Implementation built-ins: `src/core/built-ins/implementation.ts`
-- Provider built-in composition: `src/core/providers/built-ins.ts`
+- Provider built-in composition: `src/providers/built-ins.ts`
 - Provider-owned implementations: `src/providers/<provider>/`
 - Tool contracts: `src/core/tools/contracts.ts`
 - Tool catalog: `src/core/tools/catalog.ts`
 - Repository tools: `src/core/tools/repository.ts`
-- Flue tool registry: `src/core/agent-runtime/flue/tool-registry.ts`
-- Flue runner: `src/core/agent-runtime/flue/runner.ts`
-- Flue model options: `src/core/agent-runtime/flue/model-options.ts`
-- Flue observability: `src/core/agent-runtime/flue/observability.ts`
+- Pi adapter: `src/agent-runtimes/pi/adapter.ts`
+- Pi auth: `src/agent-runtimes/pi/auth.ts`
+- Pi observability: `src/agent-runtimes/pi/observability.ts`
 - Write-mode services: `src/core/write-mode/`
 - Provider change-request actions:
   `src/providers/<provider>/change-request/`
 
 Useful tests include `tests/core/built-ins-registry.test.ts`,
 `tests/core/built-ins-implementation.test.ts`,
-`tests/core/flue-tool-registry.test.ts`,
-`tests/core/flue-agent-capabilities.test.ts`,
-`tests/core/flue-gated-agent-loop-runner.test.ts`,
-`tests/core/flue-gated-agent-loop-retry.test.ts`,
-`tests/core/flue-model-options.test.ts`, `tests/core/observability.test.ts`,
+`tests/agent-runtimes/pi/adapter.test.ts`,
+`tests/core/pi-auth.test.ts`, `tests/core/observability.test.ts`,
 implementation git action tests, `tests/core/workspace-lifecycle.test.ts`,
 and `tests/core/workflow-execution-policy.test.ts`.

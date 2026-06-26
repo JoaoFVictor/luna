@@ -17,7 +17,7 @@ chat transcript.
 adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated agent loops -> artifacts
 ```
 
-Luna currently uses Flue as the agent runtime adapter. The workflow entrypoint
+Luna currently uses Pi as the agent runtime adapter. The workflow entrypoint
 stays generic: new workflows are YAML graphs, not new TypeScript workflow
 entrypoints.
 
@@ -55,10 +55,11 @@ normalized invocation.
 
 `src/core/built-ins/` contains deterministic workflow behavior and shared
 catalog helpers. Provider-facing built-ins are registered through
-`src/core/providers/built-ins.ts`.
+`src/providers/built-ins.ts`.
 
 `src/core/tools/` contains Luna-native local tool contracts and the tool
-catalog. Flue tool materialization lives under `src/core/agent-runtime/flue/`.
+catalog. Runtime-specific tool materialization lives under
+`src/agent-runtimes/<runtime>/`.
 
 `skills/` contains reusable guidance for LLMs and runtime agents.
 
@@ -138,7 +139,7 @@ Read the report:
 For the starter write-mode implementation workflow, configure Jira or Plane
 credentials, repository remote allowlists, validation commands, and optional
 publishing gates first. See [Implement a Jira task](examples/implementation-jira-task.md)
-or the Plane adapter notes in [Configured workflows](examples/configured-workflows.md).
+or the workflow authoring guides.
 
 ## Build Your Own Workflow
 
@@ -184,7 +185,6 @@ Authoring guides:
 
 - [Create a new workflow](examples/new-workflow.md)
 - [Create a new agent](examples/new-agent.md)
-- [Configured workflows reference](examples/configured-workflows.md)
 
 ## How Luna Runs
 
@@ -201,7 +201,7 @@ run artifact directory.
 
 ## Context, Artifacts, And Trust
 
-Luna does not ask agents or Flue to discover repository guidance implicitly.
+Luna does not ask agents or Pi to discover repository guidance implicitly.
 Workflows that need guidance files run `collect_context` and pass
 `context: { expression: "$.steps.context" }` explicitly to model nodes.
 
@@ -250,7 +250,8 @@ Core config lives in `config/`:
 
 Secrets are not committed:
 
-- `auth.json` is created by `npx @earendil-works/pi-ai login openai-codex`.
+- `~/.config/pi-ai/auth.json` is created by
+  `npx @earendil-works/pi-ai login openai-codex`.
 - `luna.auth.json` stores Jira credentials keyed by `config/jira.yaml`
   instance id and Plane API keys keyed by `config/plane.yaml` instance id.
 
@@ -328,7 +329,6 @@ Project skills:
 - [Examples index](examples/README.md)
 - [Run a GitHub PR review](examples/review-pr.md)
 - [Implement a Jira task](examples/implementation-jira-task.md)
-- [Configured workflows reference](examples/configured-workflows.md)
 - [Create a new workflow](examples/new-workflow.md)
 - [Create a new agent](examples/new-agent.md)
 - [Create a new input adapter](examples/new-adapter.md)
@@ -347,9 +347,9 @@ repository entry is missing.
 Run `gh auth status` and confirm the authenticated account has access to the
 repository.
 
-`auth.json` is missing
+`~/.config/pi-ai/auth.json` is missing
 
-Run `npx @earendil-works/pi-ai login openai-codex` from the Luna project root.
+Run `npx @earendil-works/pi-ai login openai-codex`.
 
 `luna.auth.json` is missing
 
@@ -373,7 +373,6 @@ npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused
 npm run build
-npm run flue:build
 ```
 
 ## Principles

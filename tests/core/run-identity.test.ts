@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRunIdentity, slugTimestamp } from "../../src/core/invocation/run-identity.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
-import { artifactRootForWorkflow } from "../../src/core/configured-workflow/bootstrap.js";
 import { RunLockManager } from "../../src/core/workflow/lock-manager.js";
 
 const fixedDate = new Date("2026-06-18T15:04:05.000Z");
@@ -52,14 +51,14 @@ describe("run identity", () => {
       attempt: 1,
       date: new Date("2026-06-18T15:04:05.123Z"),
       workflowId: "code-review",
-      runtimeRunId: "flue-run-abcdef123456",
+      runtimeRunId: "runtime-run-abcdef123456",
       nonce: "n9x8"
     });
 
     expect(identity).toEqual({
       run_id:
         "20260618t150405123z-code-review-github-pull-request-octo-org-hello-world-pull-request-313-a1-abcdef123456-n9x8",
-      flue_run_id: "flue-run-abcdef123456",
+      runtime_run_id: "runtime-run-abcdef123456",
       workflow_id: "code-review",
       attempt: 1,
       source: "github",
@@ -71,7 +70,7 @@ describe("run identity", () => {
     });
   });
 
-  it("preserves run identity, artifact, lock, and public Flue event compatibility", async () => {
+  it("keeps run identity, artifact paths, locks, and runtime ids stable", async () => {
     const previousRunId =
       "20260618t150405123z-code-review-github-pull-request-octo-org-hello-world-pull-request-313-a1-abcdef123456-n9x8";
     const previousArtifactDirectory = path.join(
@@ -84,7 +83,7 @@ describe("run identity", () => {
       "/tmp/luna-locks",
       "repository_octo-org-hello-world.lock"
     );
-    const previousFlueRunId = "flue-run-abcdef123456";
+    const previousRuntimeRunId = "runtime-run-abcdef123456";
     const locksRoot = await mkdtemp(path.join(tmpdir(), "luna-lock-compat-"));
     let releaseLock: (() => Promise<void>) | undefined;
 
@@ -93,17 +92,18 @@ describe("run identity", () => {
         attempt: 1,
         date: new Date("2026-06-18T15:04:05.123Z"),
         workflowId: "code-review",
-        runtimeRunId: previousFlueRunId,
+        runtimeRunId: previousRuntimeRunId,
         nonce: "n9x8"
       });
       const artifactDirectory = path.join(
-        artifactRootForWorkflow("/tmp/luna-artifacts", runIdentity.workflow_id),
+        "/tmp/luna-artifacts",
+        runIdentity.workflow_id,
         runIdentity.run_id
       );
       const lockManager = new RunLockManager({
         root: locksRoot,
         runId: runIdentity.run_id,
-        runtimeRunId: runIdentity.flue_run_id,
+        runtimeRunId: runIdentity.runtime_run_id,
         timeoutMs: 1000,
         staleAfterMs: 6000
       });
@@ -124,7 +124,7 @@ describe("run identity", () => {
         await readFile(path.join(actualLockDirectory, "owner.json"), "utf8")
       ) as { run_id?: string; runtime_run_id?: string };
       const serializedPublicEvent = JSON.parse(JSON.stringify(runIdentity)) as {
-        flue_run_id?: string;
+        runtime_run_id?: string;
       };
 
       expect(runIdentity.run_id).toBe(previousRunId);
@@ -133,17 +133,17 @@ describe("run identity", () => {
       expect((await stat(actualLockDirectory)).isDirectory()).toBe(true);
       expect(owner).toMatchObject({
         run_id: previousRunId,
-        runtime_run_id: previousFlueRunId
+        runtime_run_id: previousRuntimeRunId
       });
       expect(owner).not.toHaveProperty("flue_run_id");
-      expect(serializedPublicEvent.flue_run_id).toBe(previousFlueRunId);
+      expect(serializedPublicEvent.runtime_run_id).toBe(previousRuntimeRunId);
     } finally {
       await releaseLock?.();
       await rm(locksRoot, { recursive: true, force: true });
     }
   });
 
-  it("omits flue_run_id outside Flue and still creates unique path-safe ids", () => {
+  it("omits runtime_run_id outside runtime and still creates unique path-safe ids", () => {
     const identity = createRunIdentity(invocation, {
       attempt: 1,
       date: new Date("2026-06-18T15:04:05.123Z"),
@@ -151,7 +151,7 @@ describe("run identity", () => {
       nonce: "local-1"
     });
 
-    expect(identity.flue_run_id).toBeUndefined();
+    expect(identity.runtime_run_id).toBeUndefined();
     expect(identity.run_id).toContain("code-review");
     expect(identity.run_id).toContain("local-1");
     expect(identity.run_id).toMatch(/^[a-z0-9._-]+$/);
@@ -162,7 +162,7 @@ describe("run identity", () => {
       attempt: 1,
       date: fixedDate,
       workflowId: "code-review",
-      runtimeRunId: "flue-run-abcdef123456",
+      runtimeRunId: "runtime-run-abcdef123456",
       nonce: "one"
     };
 
@@ -172,7 +172,7 @@ describe("run identity", () => {
       { ...safeOptions, nonce: "ユニコード" },
       { ...safeOptions, nonce: "../bad" },
       { ...safeOptions, workflowId: "../code-review" },
-      { ...safeOptions, runtimeRunId: "flue-run/../abcdef123456" }
+      { ...safeOptions, runtimeRunId: "runtime-run/../abcdef123456" }
     ]) {
       expect(() => createRunIdentity(invocation, options)).toThrow(
         expect.objectContaining({ code: "invalid_run_id" })

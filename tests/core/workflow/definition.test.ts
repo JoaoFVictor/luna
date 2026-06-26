@@ -343,14 +343,14 @@ describe("strict workflow definition validation", () => {
 
     const observabilityRoot = await copyWorkflowFixture("minimum");
     await patchWorkflow(observabilityRoot, "minimum", (yaml) =>
-      `${yaml}\nobservability:\n  exporters:\n    flue_log:\n      enabled: false\n`
+      `${yaml}\nobservability:\n  exporters:\n    custom_runtime_log:\n      enabled: false\n`
     );
     await expect(loadWorkflowDefinition(observabilityRoot, "minimum", {
       capabilityRegistry: registry(),
       digestResolver: digestResolver()
     })).rejects.toMatchObject({
       code: "workflow_unknown_field",
-      path: "$.observability.exporters.flue_log"
+      path: "$.observability.exporters.custom_runtime_log"
     });
   });
 

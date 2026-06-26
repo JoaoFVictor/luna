@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createGitHubRepositoryWorkspacePorts } from "../../src/core/providers/github/repository-workspace.js";
+import { createGitHubRepositoryWorkspacePorts } from "../../src/providers/github/repository-workspace.js";
 
 describe("GitHub repository workspace ports", () => {
   it("keeps release token available when lock release fails", async () => {

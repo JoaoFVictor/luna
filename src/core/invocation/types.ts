@@ -6,7 +6,7 @@ const NonEmptyStringSchema = z.string().min(1);
 export const RunIdentitySchema = z
   .object({
     run_id: NonEmptyStringSchema,
-    flue_run_id: NonEmptyStringSchema.optional(),
+    runtime_run_id: NonEmptyStringSchema.optional(),
     workflow_id: NonEmptyStringSchema,
     attempt: z.number().int().positive(),
     source: NonEmptyStringSchema,

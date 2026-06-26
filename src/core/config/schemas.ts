@@ -1,7 +1,22 @@
 import { z } from "zod";
+import { assertJsonValue, type JsonValue } from "../json/value.js";
 import { SkillPathSchema } from "../skills/schemas.js";
 
 const NonEmptyStringSchema = z.string().min(1);
+
+const JsonObjectSchema = z
+  .record(z.unknown())
+  .superRefine((value, context) => {
+    try {
+      assertJsonValue(value);
+    } catch (cause) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: cause instanceof Error ? cause.message : "value must be JSON"
+      });
+    }
+  })
+  .transform((value) => value as { [key: string]: JsonValue });
 
 export const ContextConfigSchema = z
   .object({
@@ -34,6 +49,7 @@ export type RepositoriesConfig = z.infer<typeof RepositoriesConfigSchema>;
 
 export const ModelProfileSchema = z
   .object({
+    provider: NonEmptyStringSchema.optional(),
     model: NonEmptyStringSchema,
     reasoning_effort: z.enum(["low", "medium", "high"]),
     transport: z.enum(["auto", "sse", "websocket"]).optional()
@@ -93,12 +109,21 @@ export const LockConfigSchema = z
   });
 export type LockConfig = z.infer<typeof LockConfigSchema>;
 
+export const AgentRuntimeConfigSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    options: JsonObjectSchema.default({})
+  })
+  .strict();
+export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
+
 export const AppConfigSchema = z
   .object({
     workspace: WorkspaceConfigSchema,
     artifacts: ArtifactsConfigSchema,
     routing: RouterFileConfigSchema.optional(),
-    locks: LockConfigSchema.optional()
+    locks: LockConfigSchema.optional(),
+    agent_runtime: AgentRuntimeConfigSchema.optional()
   })
   .strict();
 export type AppConfig = z.infer<typeof AppConfigSchema>;

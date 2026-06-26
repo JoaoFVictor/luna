@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildImplementationReportJson as buildJiraImplementationReportJson,
   buildImplementationReportMarkdown as buildJiraImplementationReportMarkdown
-} from "../../src/core/providers/jira/report-builder.js";
+} from "../../src/providers/jira/report-builder.js";
 import {
   buildImplementationReportJson as buildPlaneImplementationReportJson,
   buildImplementationReportMarkdown as buildPlaneImplementationReportMarkdown
-} from "../../src/core/providers/plane/report-builder.js";
+} from "../../src/providers/plane/report-builder.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
 import type { ValidationResult } from "../../src/core/validation/runner.js";
 import type {

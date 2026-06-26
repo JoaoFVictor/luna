@@ -56,11 +56,10 @@ skills, dedupes the same resolved `SKILL.md`, and rejects duplicate skill
 `name` values from different files. Do not copy repository procedures into each
 agent just to share them.
 
-Flue materializes skills, tools, MCP servers, and subagent profiles through the
-runtime adapter under `src/agent-runtimes/flue/`; do not import Flue runtime
-APIs from generic agent definition or policy modules. Existing legacy Flue code
-under `src/core/agent-runtime/flue/**` may remain only until the Task 18 atomic
-cutover.
+The concrete agent runtime materializes runtime capabilities under
+`src/agent-runtimes/<runtime>/`; do not import runtime SDKs from generic agent
+definition or policy modules. The current Pi adapter supports local tools and
+rejects MCP tools explicitly until native MCP materialization exists.
 
 When context is collected, Luna renders instructions in this order: Luna
 runtime instructions, the current agent's `instructions.md`, matching
@@ -80,11 +79,11 @@ Run:
 
 ```sh
 npm test -- tests/core/agent-definition.test.ts
-npm test -- tests/core/flue-agent-capabilities.test.ts tests/core/flue-subagent-profiles.test.ts
+npm test -- tests/capabilities/agents/agent-node.test.ts tests/agent-runtimes/pi/adapter.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused
 ```
 
 If the agent is wired into a workflow, also run
-`tests/core/configured-workflow-runner.test.ts`.
+`tests/core/workflow/runner.test.ts`.

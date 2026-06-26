@@ -29,15 +29,13 @@ Review Luna changes as architecture, not just code.
   shape. Shared helpers must stay provider-agnostic.
 - Tools are registered only through `src/core/tools/catalog.ts`;
   runtime-specific materialization stays under `src/agent-runtimes/<runtime>/`.
-- Flue-specific runner, capabilities, MCP, subagent profile, Pi auth, model
-  projection, observability parsing, and workflow factory code belong under
-  `src/agent-runtimes/flue/**`.
+- Pi-specific adapter, local tool materialization, Pi auth, model projection,
+  and observability parsing belong under
+  `src/agent-runtimes/pi/**`.
 - Public docs point authors to `agents/<id>/`, `workflows/<id>/`,
   `src/adapters/<id>/`, `src/core/workflow/`, `src/core/built-ins/`,
   `src/core/tools/`, `src/providers/<provider>/`, and
   `src/agent-runtimes/<runtime>/`.
-- During the Luna LangGraph rebuild, broad README/examples cleanup is deferred
-  to the durable docs task; do not require those docs for Task 0.
 - Docs do not recommend old deleted path `src/core/types.ts`.
 - Docs do not recommend old deleted path `src/tools/repository-tools.ts`.
 - Docs do not recommend old deleted path `src/core/flue-*`.

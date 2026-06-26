@@ -59,17 +59,18 @@ function importSpecifiers(source: string): string[] {
 }
 
 describe("agent runtime boundary", () => {
-  it("keeps new core runtime modules free of Flue imports", async () => {
+  it("keeps core runtime modules free of concrete runtime imports", async () => {
     const files = await collectTypeScriptFiles("src/core/agent-runtime");
-    const newCoreFiles = files.filter(
-      (file) => !file.includes(`${path.sep}flue${path.sep}`)
-    );
     const violations: string[] = [];
 
-    for (const file of newCoreFiles) {
+    for (const file of files) {
       const imports = importSpecifiers(await readFile(file, "utf8"));
       for (const specifier of imports) {
-        if (specifier.startsWith("@flue/") || specifier.includes("/flue")) {
+        if (
+          specifier.startsWith("@flue/") ||
+          specifier.includes("/flue") ||
+          specifier.includes("agent-runtimes/")
+        ) {
           violations.push(`${file}: ${specifier}`);
         }
       }
@@ -89,10 +90,10 @@ describe("agent runtime boundary", () => {
     expect(concreteAdapters).toEqual([]);
   });
 
-  it("keeps legacy Flue in place until Task 18 and creates the new adapter boundary", async () => {
-    await expect(exists("src/core/agent-runtime/flue/runner.ts")).resolves.toBe(true);
-    await expect(exists("src/core/agent-runtime/flue/capabilities.ts")).resolves.toBe(true);
-    await expect(exists("src/core/agent-runtime/flue/workflow-factory.ts")).resolves.toBe(true);
-    await expect(exists("src/agent-runtimes/flue/adapter.ts")).resolves.toBe(true);
+  it("keeps Flue runtime code deleted and the concrete Pi runtime outside core", async () => {
+    await expect(exists("src/core/agent-runtime/flue/runner.ts")).resolves.toBe(false);
+    await expect(exists("src/core/agent-runtime/flue/workflow-factory.ts")).resolves.toBe(false);
+    await expect(exists("src/agent-runtimes/flue/adapter.ts")).resolves.toBe(false);
+    await expect(exists("src/agent-runtimes/pi/adapter.ts")).resolves.toBe(true);
   });
 });

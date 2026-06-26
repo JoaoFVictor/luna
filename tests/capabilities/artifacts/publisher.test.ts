@@ -13,10 +13,10 @@ import type {
   ArtifactTransactionRecord
 } from "../../../src/core/runtime/artifacts/transaction.js";
 import type { ArtifactManifest } from "../../../src/core/runtime/artifacts/contracts.js";
-import type { SchedulerWorkflowState } from "../../../src/core/workflow/state.js";
+import type { WorkflowRuntimeState } from "../../../src/core/workflow/state.js";
 import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
 
-function workflowState(steps: Record<string, unknown> = {}): SchedulerWorkflowState {
+function workflowState(steps: Record<string, unknown> = {}): WorkflowRuntimeState {
   return {
     invocation: {
       version: "2026-06",
@@ -28,7 +28,7 @@ function workflowState(steps: Record<string, unknown> = {}): SchedulerWorkflowSt
     run: {
       run_id: "run-1",
       workflow_id: "code-review",
-      flue_run_id: "flue-run-1",
+      runtime_run_id: "runtime-run-1",
       attempt: 1,
       source: "json",
       event: "manual",

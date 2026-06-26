@@ -213,7 +213,7 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
   expect(toolIds, "runtime tool inventory from src/core/tools/catalog.ts").not.toEqual([]);
   expect(workflowIds, "workflow id inventory from workflows/*/workflow.yaml").not.toEqual([]);
 
-  for (const relativePath of ["README.md", "examples/configured-workflows.md"]) {
+  for (const relativePath of ["README.md"]) {
     const content = await readText(repoRoot, relativePath);
     expect(markdownListAfterMarker(content, "Built-in steps:"), `${relativePath} built-in inventory`)
       .toEqual(builtIns);

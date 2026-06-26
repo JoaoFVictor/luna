@@ -88,7 +88,7 @@ export const finalSomethingReportBuiltIn = defineBuiltInStep({
 });
 ```
 
-Do not add name checks to `src/core/configured-workflow/runner.ts`. Runner
+Do not add name checks to `src/runtime/langgraph/workflow-runner.ts`. Runner
 behavior must come from metadata.
 
 ## 4. Register It In A Composition Registry
@@ -105,7 +105,7 @@ export const defaultBuiltInSteps = Object.freeze([
 ```
 
 Runtime-neutral built-ins and shared catalog helpers stay under
-`src/core/built-ins/`. The Flue workflow factory injects the provider built-in
+`src/core/built-ins/`. The native workflow factory injects the provider built-in
 registry, so YAML validation and runtime execution must see the same active
 registry.
 
@@ -161,8 +161,8 @@ describe("my domain built-ins", () => {
 For registry/catalog changes, also update
 `tests/core/built-ins-registry.test.ts`.
 
-If the built-in becomes part of Luna's public inventory, update `README.md` and
-`examples/configured-workflows.md` so workflow authors can discover it.
+If the built-in becomes part of Luna's public inventory, update `README.md` so
+workflow authors can discover it.
 
 ## 8. Verify
 
@@ -170,7 +170,7 @@ Run the focused tests:
 
 ```sh
 npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-code-review.test.ts tests/core/built-ins-implementation.test.ts
-npm test -- tests/core/workflow/definition.test.ts tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow/definition.test.ts tests/core/workflow/runner.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused

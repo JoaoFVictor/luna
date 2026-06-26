@@ -17,7 +17,8 @@ import type {
 } from "../../../core/runtime/backends/contracts.js";
 import {
   assertCheckpointJsonObject,
-  assertCheckpointJsonValue
+  assertCheckpointJsonValue,
+  type JsonValue
 } from "../../../core/runtime/json.js";
 import { assertRefOnlyCheckpointState } from "../../../core/runtime/backends/contracts.js";
 
@@ -50,9 +51,37 @@ function checkpointNsFromConfig(config: RunnableConfig): string {
 
 function refOnlyStateFromCheckpoint(checkpoint: Checkpoint): JsonObject {
   assertCheckpointJsonObject(checkpoint.channel_values, "$.channel_values");
-  assertRefOnlyCheckpointState(checkpoint.channel_values);
+  const state = checkpoint.channel_values;
+  const refOnlyState: JsonObject = {
+    state_schema_version:
+      typeof state.state_schema_version === "string"
+        ? state.state_schema_version
+        : "2026-06"
+  };
 
-  return checkpoint.channel_values;
+  copyString(state, refOnlyState, "run_status");
+  copyString(state, refOnlyState, "event_cursor");
+  copyJsonValue(state, refOnlyState, "artifact_refs");
+  copyJsonValue(state, refOnlyState, "interrupt_refs");
+  copyJsonValue(state, refOnlyState, "cursors");
+  assertRefOnlyCheckpointState(refOnlyState);
+
+  return refOnlyState;
+}
+
+function copyString(source: JsonObject, target: JsonObject, key: string): void {
+  const value = source[key];
+  if (typeof value === "string") {
+    target[key] = value;
+  }
+}
+
+function copyJsonValue(source: JsonObject, target: JsonObject, key: string): void {
+  const value = source[key];
+  if (value !== undefined) {
+    assertCheckpointJsonValue(value, `$.channel_values.${key}`);
+    target[key] = value as JsonValue;
+  }
 }
 
 function checkpointFromRecord(record: CheckpointRecord): Checkpoint {

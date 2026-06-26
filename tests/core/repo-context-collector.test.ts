@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
+import { githubPullRequestContextFrom } from "../../src/providers/github/pull-request-context.js";
 import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
 import {
   FileExcerptSchema,

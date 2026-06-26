@@ -29,11 +29,10 @@ Primary extension points:
   change-request services.
 - `src/core/tools/`: Luna-native local tool contracts and catalog.
 - `src/agent-runtimes/<runtime>/`: concrete agent runtime adapters, including
-  runner, capabilities, tool/MCP materialization, model options, auth bridges,
+  runner, capabilities, tool materialization, model options, auth bridges,
   and observability.
-- `src/core/agent-runtime/flue/**`: legacy Flue adapter code that may remain
-  only until the Task 18 atomic cutover; do not add new runtime guidance that
-  treats this as the target location.
+- `src/agent-runtimes/pi/**`: native Pi agent runtime adapter code. Keep Pi
+  details inside the adapter; do not put runtime-specific code under core.
 - `skills/`: reusable guidance for LLMs and runtime agents.
 
 ## Use The Luna Skills
@@ -71,7 +70,7 @@ Before changing an area, read the matching project skill:
   repository details, runtime SDKs, or workflow-specific behavior.
 - Keep provider responsibilities isolated. Provider-specific code belongs under
   `src/providers/<provider>/`. Do not add provider SDK, schema, auth, payload,
-  report, or change-request code under `src/core/providers/**`. A provider
+  report, or change-request code under `src/providers/**`. A provider
   module must never import, validate, store, or mention another provider's
   schema/auth/config. Shared provider helpers may only handle neutral mechanics,
   such as reading `luna.auth.json` as unknown provider data.
@@ -94,15 +93,13 @@ Before changing an area, read the matching project skill:
 - Register local tools through `src/core/tools/catalog.ts`; runtime-specific
   materialization belongs under `src/agent-runtimes/<runtime>/`.
 - During the Luna LangGraph rebuild, keep AGENTS.md and Luna skills aligned
-  with target architecture. Broad README/example updates are deferred to the
-  durable docs task.
+  with the native YAML runner and Pi agent runtime architecture.
 - Run focused tests for the touched area plus `npm run typecheck`,
   `npm run typecheck:unused-src`, and `npm run lint:unused`.
 
 ## Useful Docs
 
 - `README.md`
-- `examples/configured-workflows.md`
 - `examples/new-agent.md`
 - `examples/new-workflow.md`
 - `examples/new-adapter.md`

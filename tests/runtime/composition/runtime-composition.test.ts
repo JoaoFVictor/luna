@@ -11,7 +11,7 @@ import {
 } from "../../../src/runtime/composition/runtime-composition.js";
 
 describe("runtime composition", () => {
-  it("materializes configured concrete backends, Flue adapter, auth port, and LangGraph checkpointer", async () => {
+  it("materializes configured concrete backends, Pi adapter, auth port, and LangGraph checkpointer", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-composition-"));
     const checkpointFile = path.join(root, "checkpoints.sqlite");
 
@@ -38,7 +38,7 @@ describe("runtime composition", () => {
             options: { root: path.join(root, "runtime-log") }
           }
         },
-        agent_runtime: { id: "flue", options: {} },
+        agent_runtime: { id: "pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} },
         capability_ports: {
           artifacts: {
@@ -47,11 +47,10 @@ describe("runtime composition", () => {
           }
         }
       }, {
-        flueRunner: async () => ({ output: {}, artifacts: [] }),
         capabilityRegistry: createCapabilityRegistry([artifactsManifest])
       });
 
-      expect(composition.agentRuntime.describe().id).toBe("flue");
+      expect(composition.agentRuntime.describe().id).toBe("pi");
       await expect(
         composition.interruptAuthorization.authorizeResume(
           {
@@ -107,7 +106,7 @@ describe("runtime composition", () => {
           checkpoints: { id: "memory.checkpoints", options: {} },
           runtime_logs: { id: "memory.runtime-log", options: {} }
         },
-        agent_runtime: { id: "flue", options: {} },
+        agent_runtime: { id: "pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} }
       })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
@@ -124,7 +123,7 @@ describe("runtime composition", () => {
           checkpoints: { id: "memory.checkpoints", options: {} },
           runtime_logs: { id: "memory.runtime-log", options: {} }
         },
-        agent_runtime: { id: "flue", options: {} },
+        agent_runtime: { id: "pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} }
       })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
@@ -139,24 +138,24 @@ describe("runtime composition", () => {
           checkpoints: { id: "memory.checkpoints", options: {} },
           runtime_logs: { id: "memory.runtime-log", options: {} }
         },
-        agent_runtime: { id: "not-flue", options: {} },
+        agent_runtime: { id: "not-pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} }
       })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
   });
 
-  it("requires a concrete Flue runner when composing production runtime", () => {
+  it("validates Pi runtime options through the runtime catalog", () => {
     expect(() =>
       createRuntimeComposition({
-        mode: "production",
+        mode: "test",
         backends: {
           artifacts: { id: "memory.artifacts", options: {} },
           events: { id: "memory.events", options: {} },
           interrupts: { id: "memory.interrupts", options: {} },
-          checkpoints: { id: "sqlite.checkpoints", options: { filePath: ".runs/checkpoints.sqlite" } },
+          checkpoints: { id: "memory.checkpoints", options: {} },
           runtime_logs: { id: "memory.runtime-log", options: {} }
         },
-        agent_runtime: { id: "flue", options: {} },
+        agent_runtime: { id: "pi", options: { max_tool_iterations: 0 } },
         interrupt_authorization: { id: "allow_all", options: {} }
       })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
@@ -175,7 +174,7 @@ describe("runtime composition", () => {
           checkpoints: { id: "memory.checkpoints", options: {} },
           runtime_logs: { id: "memory.runtime-log", options: {} }
         },
-        agent_runtime: { id: "flue", options: {} },
+        agent_runtime: { id: "pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} },
         capability_ports: {
           missing: { id: "artifacts.missing", options: {} }
@@ -193,7 +192,7 @@ describe("runtime composition", () => {
           checkpoints: { id: "memory.checkpoints", options: {} },
           runtime_logs: { id: "memory.runtime-log", options: {} }
         },
-        agent_runtime: { id: "flue", options: {} },
+        agent_runtime: { id: "pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} },
         capability_ports: {
           artifacts: { id: "artifacts.manifest_store", options: {} }
@@ -214,7 +213,7 @@ describe("runtime composition", () => {
             checkpoints: { id: "memory.checkpoints", options: {} },
             runtime_logs: { id: "memory.runtime-log", options: {} }
           },
-          agent_runtime: { id: "flue", options: {} },
+          agent_runtime: { id: "pi", options: {} },
           interrupt_authorization: { id: "allow_all", options: {} }
         },
         {
@@ -222,9 +221,7 @@ describe("runtime composition", () => {
           mode: "trusted_local_write",
           graph: { nodes: [] }
         },
-        {
-          flueRunner: async () => ({ output: {}, artifacts: [] })
-        }
+        {}
       )
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
   });

@@ -1,5 +1,8 @@
 import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
-import type { AgentRuntimePort } from "../../core/agent-runtime/contracts.js";
+import {
+  AgentRuntimeError,
+  type AgentRuntimePort
+} from "../../core/agent-runtime/contracts.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { PortRegistration } from "../../core/capabilities/manifest.js";
 import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
@@ -13,15 +16,15 @@ import {
 } from "../../core/runtime/backends/contracts.js";
 import { validateBackendManifest } from "../../core/runtime/backends/contracts.js";
 import { runtimeError } from "../../core/runtime/errors.js";
+import type { JsonValue } from "../../core/json/value.js";
 import {
   allowInterruptResume,
   type InterruptResumeAuthorizationPort
 } from "../../core/runtime/interrupts/authorization.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import {
-  createFlueAgentRuntimeAdapter,
-  type FlueAgentRuntimeRunner
-} from "../../agent-runtimes/flue/adapter.js";
+  createPiAgentRuntimeAdapter
+} from "../../agent-runtimes/pi/adapter.js";
 import {
   createFilesystemArtifactManifestStore,
   filesystemArtifactManifestBackendRegistration
@@ -95,7 +98,6 @@ export type RuntimeComposition = {
 };
 
 export type RuntimeCompositionDependencies = {
-  readonly flueRunner?: FlueAgentRuntimeRunner;
   readonly capabilityRegistry?: CapabilityRegistry;
   readonly workflowDefinition?: Pick<WorkflowDefinition, "id" | "mode" | "graph">;
   readonly requiresHumanInterrupts?: boolean;
@@ -171,6 +173,24 @@ const BACKEND_FACTORIES: BackendFactoryCatalog = {
   }
 };
 
+type AgentRuntimeFactory = {
+  readonly id: string;
+  readonly create: (options: JsonObject) => AgentRuntimePort;
+};
+
+const AGENT_RUNTIME_FACTORIES: Record<string, AgentRuntimeFactory> = {
+  pi: {
+    id: "pi",
+    create: (options) =>
+      createPiAgentRuntimeAdapter({
+        maxToolIterations: optionalPositiveInteger(
+          options.max_tool_iterations,
+          "agent_runtime.options.max_tool_iterations"
+        )
+      })
+  }
+};
+
 function validateBackendOptions<TOptions extends JsonObject>(
   options: JsonObject,
   registration: BackendRegistration<TOptions>
@@ -235,19 +255,45 @@ function createAgentRuntime(
   dependencies: RuntimeCompositionDependencies
 ): AgentRuntimePort {
   const selection = config.agent_runtime;
-  if (selection.id !== "flue") {
-    throw runtimeError("Unsupported agent runtime id", "runtime_backend_invalid", {
-      details: { agent_runtime_id: selection.id, supported_agent_runtime_ids: ["flue"] }
-    });
+  if (selection.id === "unconfigured") {
+    validateEmptyOptions(selection, "agent_runtime");
+    return createUnconfiguredAgentRuntime();
   }
-  validateEmptyOptions(selection, "agent_runtime");
-  if (config.mode === "production" && dependencies.flueRunner === undefined) {
-    throw runtimeError("Production Flue runtime requires an injected runner", "runtime_backend_invalid", {
-      details: { agent_runtime_id: selection.id }
+  const factory = AGENT_RUNTIME_FACTORIES[selection.id];
+  if (factory === undefined) {
+    throw runtimeError("Unsupported agent runtime id", "runtime_backend_invalid", {
+      details: {
+        agent_runtime_id: selection.id,
+        supported_agent_runtime_ids: ["unconfigured", ...Object.keys(AGENT_RUNTIME_FACTORIES)]
+      }
     });
   }
 
-  return createFlueAgentRuntimeAdapter({ runner: dependencies.flueRunner });
+  void dependencies;
+  return factory.create(selectionOptions(selection));
+}
+
+function createUnconfiguredAgentRuntime(): AgentRuntimePort {
+  return {
+    describe: () => ({
+      id: "unconfigured",
+      display_name: "Unconfigured",
+      supported_tool_protocols: [],
+      supported_runtime_requirements: []
+    }),
+    async validate() {
+      throw new AgentRuntimeError(
+        "runtime_unknown_failure",
+        "No agent runtime has been configured"
+      );
+    },
+    async runAgent() {
+      throw new AgentRuntimeError(
+        "runtime_unknown_failure",
+        "No agent runtime has been configured"
+      );
+    }
+  };
 }
 
 function createInterruptAuthorization(
@@ -323,6 +369,19 @@ function validateEmptyOptions(selection: RuntimeSelection, label: string): void 
       details: { id: selection.id }
     });
   }
+}
+
+function optionalPositiveInteger(value: JsonValue | undefined, label: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Number.isInteger(value) || typeof value !== "number" || value <= 0) {
+    throw runtimeError(`${label} must be a positive integer`, "runtime_backend_invalid", {
+      details: { value }
+    });
+  }
+
+  return value;
 }
 
 function langGraphCheckpointerFor(

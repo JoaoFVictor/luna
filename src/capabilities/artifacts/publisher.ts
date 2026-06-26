@@ -1,6 +1,6 @@
 import { assertJsonValue } from "../../core/json/value.js";
 import type { WorkflowExpression } from "../../core/workflow/expression.js";
-import type { SchedulerWorkflowState } from "../../core/workflow/state.js";
+import type { WorkflowRuntimeState } from "../../core/workflow/state.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type {
   ArtifactCheckpointMarker,
@@ -159,7 +159,7 @@ function assertNoDuplicateArtifactPaths(
 
 export function resolveArtifactSource(
   source: string,
-  state: SchedulerWorkflowState
+  state: WorkflowRuntimeState
 ): { found: boolean; value?: unknown } {
   const [stepId, ...pathSegments] = parseArtifactSource(source);
 
@@ -314,9 +314,9 @@ export async function publishDeclaredArtifacts({
   publisher: ArtifactPublisherPort;
   node: WorkflowNodeWithArtifacts;
   output: unknown;
-  state: SchedulerWorkflowState;
+  state: WorkflowRuntimeState;
 }): Promise<ArtifactPublisherOutput> {
-  const artifactState: SchedulerWorkflowState = {
+  const artifactState: WorkflowRuntimeState = {
     ...state,
     steps: {
       ...state.steps,

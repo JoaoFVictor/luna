@@ -6,7 +6,7 @@ import {
   jiraAuthForInstance,
   loadLunaAuth,
   type JiraLunaAuthConfig
-} from "../../src/core/providers/jira/auth.js";
+} from "../../src/providers/jira/auth.js";
 
 const lunaAuthFixture: JiraLunaAuthConfig = {
   providers: {

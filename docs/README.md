@@ -11,7 +11,7 @@ Luna is built around one deterministic path:
 adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated_agent_loop -> artifacts
 ```
 
-The current model runtime is Flue, but Luna keeps that at the boundary. New
+The current model runtime is Pi, but Luna keeps that at the boundary. New
 workflow behavior should usually be YAML, configuration, agents, built-ins, or
 tools, not a new TypeScript workflow entrypoint.
 
@@ -33,9 +33,9 @@ tools, not a new TypeScript workflow entrypoint.
 | Context intake | Reading configured repository and agent files, then producing an auditable context bundle. | Loading skills, choosing agents, or scanning arbitrary repository files. |
 | Skills | Reusable runtime guidance exposed to agents as explicit capabilities. | Inline repository context or deterministic TypeScript behavior. |
 | Built-ins | Deterministic workflow steps with scheduling metadata. | Model judgment, provider-owned schema shortcuts, or hidden orchestration. |
-| Local tools | Small cwd-bound functions an agent can call during a session. | Workflow steps, external input normalization, or direct Flue policy. |
+| Local tools | Small cwd-bound functions an agent can call during a session. | Workflow steps, external input normalization, or direct Pi policy. |
 | Providers | Provider-specific auth, config, schema, task context, reports, and change-request actions. | Generic workflow contracts or another provider's schema/auth/config. |
-| Flue runtime adapter | Materializing agents, model profiles, local tools, MCP, subagents, retries, and usage logs for Flue. | Generic Luna contracts, provider ownership, or workflow policy. |
+| Pi runtime adapter | Materializing agents, model profiles, local tools, MCP, subagents, retries, and usage logs for Pi. | Generic Luna contracts, provider ownership, or workflow policy. |
 
 ## Extension Decision Guide
 
@@ -58,7 +58,7 @@ Use `src/providers/<provider>/` when the behavior is provider-specific:
 auth, source API config, provider payload parsing, task context rendering,
 reports, or change-request publishing.
 
-Use `src/core/agent-runtime/flue/` only when the Flue runtime adapter itself
+Use `src/agent-runtimes/pi/` only when the Pi runtime adapter itself
 needs to change.
 
 ## Non-Negotiable Shape
@@ -72,6 +72,6 @@ needs to change.
   intake.
 - Provider code must stay provider-owned. Generic core modules stay
   provider-agnostic except at composition roots.
-- Built-in metadata, not ad hoc name checks, drives scheduler behavior such as
+- Built-in metadata, not ad hoc name checks, drives runner behavior such as
   repository locks, workspace capture, lifecycle evidence, and deferred final
   reports.

@@ -16,11 +16,9 @@ const SCANNED_NEW_RUNTIME_DIRECTORIES = [
 ];
 const SCANNED_NEW_RUNTIME_FILES = [
   "src/core/workflow/compiler.ts",
-  "src/core/workflow/runner.ts"
+  "src/runtime/langgraph/workflow-runner.ts"
 ];
-const TASK_18_EXPIRING_WHITELIST = new Set([
-  "src/runtime/composition/target-executor.ts"
-]);
+const TASK_18_EXPIRING_WHITELIST = new Set<string>();
 
 async function listTypeScriptFiles(directory: string): Promise<string[]> {
   const entries = await readdir(path.join(ROOT, directory), {

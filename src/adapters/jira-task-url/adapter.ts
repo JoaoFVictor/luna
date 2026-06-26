@@ -5,12 +5,12 @@ import {
   jiraAuthForInstance,
   loadLunaAuth,
   type JiraAuth
-} from "../../core/providers/jira/auth.js";
+} from "../../providers/jira/auth.js";
 import {
   JiraConfigSchema,
   type JiraConfig
-} from "../../core/providers/jira/config.js";
-import { repositoryHintFromField } from "../../core/providers/repository-hint.js";
+} from "../../providers/jira/config.js";
+import { repositoryHintFromField } from "../../providers/repository-hint.js";
 import {
   InvocationSchema,
   type Invocation

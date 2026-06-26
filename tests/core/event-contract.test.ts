@@ -12,7 +12,6 @@ import {
   type LunaEvent,
   type LunaObservabilitySink
 } from "../../src/core/observability/luna-observability.js";
-import { createFlueLogSink } from "../../src/core/agent-runtime/flue/observability.js";
 import { createJsonlEventSink } from "../../src/core/observability/jsonl-sink.js";
 
 type JsonObject = { [key: string]: JsonValue };
@@ -41,13 +40,13 @@ type ExpectedLunaEvent = {
 };
 
 const runtimeFiles = [
-  "src/core/workflow/scheduler.ts",
-  "src/core/configured-workflow/runner.ts",
+  "src/runtime/langgraph/workflow-runner.ts",
+  "src/core/workflow/runner-locks.ts",
   "src/core/workflow/lock-manager.ts",
   "src/workflows/luna.ts"
 ];
 
-const run = { id: "run-1", runtimeRunId: "flue-1", attempt: 2 };
+const run = { id: "run-1", runtimeRunId: "runtime-1", attempt: 2 };
 const workflow = { id: "code-review" };
 const timestamp = "2026-06-20T12:00:00.000Z";
 
@@ -195,12 +194,11 @@ describe("luna event contract", () => {
 
     for (const event of [constructed, emitted[0]]) {
       expect(event.run).toEqual({ id: "run-stale", attempt: 3 });
-      expect(event.run).not.toHaveProperty("flueRunId");
       expect(event.run).not.toHaveProperty("runtimeRunId");
     }
   });
 
-  it("fans out the same normalized event shape to JSONL, Flue log, and summary sinks", async () => {
+  it("fans out the same normalized event shape to JSONL and summary sinks", async () => {
     const jsonlLines: JsonValue[] = [];
     const artifactStore = {
       touchArtifact: vi.fn(async () => undefined),
@@ -208,7 +206,6 @@ describe("luna event contract", () => {
         jsonlLines.push(value);
       })
     };
-    const info = vi.fn();
     const summaryEvents: LunaEvent[] = [];
     const summarySink: LunaObservabilitySink = {
       id: "summary",
@@ -228,7 +225,6 @@ describe("luna event contract", () => {
           }
         },
         await createJsonlEventSink(artifactStore as unknown as ArtifactStore),
-        createFlueLogSink({ info, warn: vi.fn(), error: vi.fn() }),
         summarySink
       ],
       now: () => new Date(timestamp)
@@ -244,16 +240,6 @@ describe("luna event contract", () => {
 
     const event = expectNormalizedEvent(memoryEvents[0]);
     expect(jsonlLines[0]).toEqual(event);
-    expect(info).toHaveBeenCalledWith(
-      "luna.step.succeeded",
-      expect.objectContaining({
-        "luna.run_id": "run-1",
-        "luna.flue_run_id": "flue-1",
-        "luna.workflow_id": "code-review",
-        "luna.step_id": "plan",
-        "luna.outcome_status": "succeeded"
-      })
-    );
     expect(summaryEvents[0]).toEqual(event);
   });
 

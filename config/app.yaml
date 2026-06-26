@@ -10,6 +10,10 @@ workspace:
 artifacts:
   # Directory where run artifacts are written.
   root: .runs
+# Agent runtime used by the native workflow runner.
+# agent_runtime:
+#   id: pi
+#   options: {}
 # Optional lock tuning. If omitted, Luna uses runtime defaults.
 # locks:
 #   root: .runs/locks

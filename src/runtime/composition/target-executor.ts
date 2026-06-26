@@ -1,3 +1,6 @@
+import path from "node:path";
+import { resolveConfigRoot } from "../../core/config/loader.js";
+import { runtimeError } from "../../core/runtime/errors.js";
 import type { Invocation, RouteTarget } from "../../core/router/invocation.js";
 
 export type TargetExecutorInput = {
@@ -9,26 +12,48 @@ export type TargetExecutor = {
   execute(input: TargetExecutorInput): Promise<number>;
 };
 
-export type FlueTargetExecutorDependencies = {
-  buildCommand: (invocation: Invocation) => Promise<{
-    command: string;
-    args: string[];
-  }>;
-  execute: (command: string, args: string[]) => Promise<number>;
+export type NativeWorkflowRunInput = TargetExecutorInput & {
+  readonly projectRoot: string;
+  readonly configRoot: string;
 };
 
-export function createFlueTargetExecutor({
-  buildCommand,
-  execute
-}: FlueTargetExecutorDependencies): TargetExecutor {
-  return {
-    async execute({ invocation, target }) {
-      const command = await buildCommand({
-        ...invocation,
-        target
-      });
+export type NativeWorkflowRunner = (
+  input: NativeWorkflowRunInput
+) => Promise<unknown>;
 
-      return await execute(command.command, command.args);
+export type LunaTargetExecutorDependencies = {
+  readonly projectRoot: string;
+  readonly configRoot: string;
+  readonly runWorkflow: NativeWorkflowRunner;
+};
+
+export function createLunaTargetExecutor({
+  projectRoot,
+  configRoot,
+  runWorkflow
+}: LunaTargetExecutorDependencies): TargetExecutor {
+  return {
+    async execute(input) {
+      if (input.target.type !== "workflow") {
+        throw runtimeError(
+          "Target executor only supports workflow targets",
+          "runtime_state_invalid",
+          { details: { target: input.target } }
+        );
+      }
+
+      await runWorkflow({ ...input, projectRoot, configRoot });
+      return 0;
     }
   };
+}
+
+export function resolveRuntimeConfigRoot(
+  projectRoot: string,
+  env: { LUNA_CONFIG_ROOT?: string } = process.env
+): string {
+  const configured = resolveConfigRoot(env);
+  return path.isAbsolute(configured)
+    ? configured
+    : path.join(projectRoot, configured);
 }

@@ -15,7 +15,7 @@ import { defaultBuiltInCatalog } from "../../../src/core/built-ins/catalog.js";
 import {
   builtInStepNames as providerBuiltInStepNames,
   runBuiltInStep as runProviderBuiltInStep
-} from "../../../src/core/providers/built-ins.js";
+} from "../../../src/providers/built-ins.js";
 
 const state = {
   invocation: {},
@@ -382,9 +382,9 @@ describe("repository-workspace capability", () => {
     }
   });
 
-  it("keeps generic configured workflow runner free of provider workspace defaults", async () => {
+  it("keeps generic workflow runner free of provider workspace defaults", async () => {
     const source = await readFile(
-      path.join(process.cwd(), "src/core/configured-workflow/runner.ts"),
+      path.join(process.cwd(), "src/runtime/langgraph/workflow-runner.ts"),
       "utf8"
     );
 

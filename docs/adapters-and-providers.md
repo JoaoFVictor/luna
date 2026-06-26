@@ -1,7 +1,7 @@
 # Adapters And Providers
 
 This document separates input adapters, provider modules, routing, and the
-current Flue runtime adapter.
+current Pi runtime adapter.
 
 ## Two Adapter Meanings
 
@@ -11,12 +11,13 @@ Input adapters live under `src/adapters/<id>/`. They turn an external input,
 such as a GitHub PR URL or Jira task URL, into Luna's normalized invocation
 shape.
 
-The runtime adapter currently lives under `src/core/agent-runtime/flue/`. It
-materializes Luna workflow nodes into Flue agents, tools, MCP tools, subagents,
-model options, usage records, and logs.
+The runtime adapter currently lives under `src/agent-runtimes/pi/`. It
+materializes Luna agent nodes into Pi model calls, local tools, usage records,
+and logs. It rejects unsupported runtime requirements, such as MCP tools, until
+the matching native materialization exists.
 
-Keep those concepts separate. A URL input adapter should not know how Flue
-materializes an agent session, and the Flue runtime adapter should not own a
+Keep those concepts separate. A URL input adapter should not know how Pi
+materializes an agent session, and the Pi runtime adapter should not own a
 provider's source API schema.
 
 ## Invocation Shape
@@ -32,7 +33,7 @@ needs them.
 
 Adapters do not:
 
-- run Flue.
+- run Pi.
 - choose workflows with an LLM.
 - create worktrees.
 - write run artifacts.
@@ -89,7 +90,7 @@ A provider does not own:
 - another provider's auth or schema.
 - generic context intake.
 - generic tool contracts.
-- the Flue runtime adapter.
+- the Pi runtime adapter.
 
 Shared provider helpers may handle neutral mechanics, such as reading
 `luna.auth.json` as unknown provider data. Provider-specific validation belongs
@@ -104,7 +105,7 @@ task sources.
 
 Core project config lives in `config/`.
 
-`auth.json` is runtime/model auth created by Pi login.
+`~/.config/pi-ai/auth.json` is runtime/model auth created by Pi login.
 
 `luna.auth.json` is Luna provider auth. Jira credentials are keyed by the
 instance id in `config/jira.yaml`; Plane API keys are keyed by the instance id
@@ -118,13 +119,14 @@ auth are separate concerns.
 Some files intentionally compose generic and provider-specific pieces:
 
 - `src/adapters/registry.ts`
-- `src/core/providers/built-ins.ts`
-- `src/core/agent-runtime/flue/workflow-factory.ts`
+- `src/providers/built-ins.ts`
+- `src/providers/native-workflow-runner.ts`
+- `src/runtime/composition/runtime-composition.ts`
 - `src/core/change-request/default-registry.ts`
 
 Composition belongs there, not in leaf modules. A generic built-in should not
 import a Jira schema. A Plane provider module should not borrow a GitHub config
-type. A Flue runner should not parse a Jira URL.
+type. A Pi adapter should not parse a Jira URL.
 
 ## What This Layer Does
 
@@ -150,11 +152,11 @@ type. A Flue runner should not parse a Jira URL.
 - Invocation envelope: `src/core/router/invocation.ts`
 - Router definition: `src/core/router/router-definition.ts`
 - Router evaluator: `src/core/router/router.ts`
-- CLI: `src/core/agent-runtime/flue/cli.ts`
-- Runtime factory: `src/core/agent-runtime/flue/workflow-factory.ts`
-- Config bootstrap: `src/core/configured-workflow/bootstrap.ts`
-- Provider built-in composition: `src/core/providers/built-ins.ts`
-- Shared provider auth loader: `src/core/providers/auth.ts`
+- CLI: `src/cli.ts`
+- Runtime composition: `src/runtime/composition/runtime-composition.ts`
+- Native workflow runner: `src/providers/native-workflow-runner.ts`
+- Provider built-in composition: `src/providers/built-ins.ts`
+- Shared provider auth loader: `src/providers/auth.ts`
 - Repository resolution: `src/core/workflow/workspace-resolver.ts`
 
 Useful tests include `tests/core/cli.test.ts`,

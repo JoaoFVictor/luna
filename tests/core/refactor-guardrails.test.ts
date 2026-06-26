@@ -37,8 +37,7 @@ type CoreDomainViolationManifest = {
 const allowedCompositionRoots = new Set([
   "src/workflows/luna.ts",
   "src/cli.ts",
-  "src/adapters/registry.ts",
-  "src/core/agent-runtime/flue/workflow-factory.ts"
+  "src/adapters/registry.ts"
 ]);
 
 const legacyArtifactTestContractAllowlist = new Set([
@@ -198,7 +197,8 @@ function unexpectedViolationKeys(
 
 function isProviderPath(relativePath: string): boolean {
   return (
-    relativePath.startsWith("src/core/providers/") ||
+    relativePath.startsWith("src/providers/") ||
+    relativePath.startsWith("src/providers/") ||
     isProviderAdapterPath(relativePath)
   );
 }
@@ -223,7 +223,7 @@ function isGenericRuntimePath(relativePath: string): boolean {
 function isLegacyFlueCorePath(relativePath: string): boolean {
   return (
     relativePath.startsWith("src/core/flue-") &&
-    !relativePath.startsWith("src/core/agent-runtime/flue/")
+    !relativePath.startsWith("src/agent-runtimes/flue/")
   );
 }
 
@@ -479,7 +479,7 @@ describe("refactor guardrails", () => {
 
   it("treats provider adapters as provider-owned import targets", () => {
     const providerOwnedTargets = [
-      "src/core/providers/github/built-ins.ts",
+      "src/providers/github/built-ins.ts",
       "src/adapters/github-pr-url/index.ts",
       "src/adapters/jira-task-url/adapter.ts",
       "src/adapters/plane-task-url/adapter.ts"
@@ -549,7 +549,7 @@ describe("refactor guardrails", () => {
           specifier === "@flue/runtime" ||
           specifier === "@flue/runtime/node"
         ) &&
-        !relativePath.startsWith("src/core/agent-runtime/flue/")
+        !relativePath.startsWith("src/agent-runtimes/flue/")
       ) {
         rawFlueRuntimeImportViolations.push(
           violationKey(coreDomainViolation(relativePath, "flue-runtime-import"))
@@ -817,8 +817,8 @@ describe("refactor guardrails", () => {
   it("does not expose the legacy artifact shape in workflow TypeScript contracts", async () => {
     const checkedFiles = [
       "src/core/workflow/definition.ts",
-      "src/core/workflow/scheduler.ts",
-      "src/core/configured-workflow/runner.ts"
+      "src/runtime/langgraph/workflow-runner.ts",
+      "src/core/workflow/runner-output.ts"
     ];
 
     for (const relativePath of checkedFiles) {

@@ -1,7 +1,7 @@
 # Workflows And Artifacts
 
 This document explains Luna's deterministic orchestration layer: YAML workflow
-graphs, scheduler state, gates, artifacts, and finalization.
+graphs, runtime state, gates, artifacts, and finalization.
 
 ## What A Workflow Is
 
@@ -27,13 +27,13 @@ TypeScript workflow files.
 The workflow runtime path is:
 
 ```text
-CLI or adapter -> Invocation -> routeInvocation -> workflow YAML -> runConfiguredWorkflow -> scheduler -> artifacts and finalization
+CLI or adapter -> Invocation -> deterministic route -> workflow YAML -> compiled workflow -> native runner -> artifacts
 ```
 
-`runConfiguredWorkflow` loads configuration, routes the invocation, loads the
-workflow definition, creates run identity and artifact writers, resolves the
-repository when required, schedules graph nodes, writes planned artifacts,
-finalizes workspace state, and runs deferred final-report nodes.
+The native Luna entrypoint loads configuration, routes the invocation, loads the
+workflow definition, creates run identity, resolves the repository when
+required, compiles the YAML graph, and executes it through
+`runCompiledWorkflow`.
 
 ## Node Types
 
@@ -54,7 +54,7 @@ the graph and implementation config.
 
 ## State And References
 
-The scheduler state contains:
+The runtime state contains:
 
 - `invocation`
 - flattened runtime `config`
@@ -73,11 +73,11 @@ Node inputs are explicit. Dynamic values must use an expression object:
 This is not arbitrary string interpolation. Prefer explicit fields over hiding
 state lookup inside prose.
 
-## Scheduler Behavior
+## Runner Behavior
 
-The scheduler validates graph shape before execution: duplicate ids, unknown
-dependencies, dependency cycles, unsafe graph paths, unknown built-ins, invalid
-artifact plans, and mode violations are rejected.
+Workflow loading and compilation validate graph shape before execution:
+duplicate ids, unknown dependencies, dependency cycles, unsafe graph paths,
+unknown built-ins, invalid artifact plans, and mode violations are rejected.
 
 During execution it:
 
@@ -86,9 +86,8 @@ During execution it:
 - prevents unsafe concurrent agent sessions and workspace capture.
 - uses repository locks for repository-sensitive steps.
 - snapshots state before node execution in development.
-- records lifecycle evidence from built-in metadata.
-- writes planned artifacts before adding the node output to `state.steps`.
-- skips dependents when a dependency fails.
+- records node outputs in runtime checkpoints.
+- runs deferred final-report nodes after the main graph has completed.
 
 `events.jsonl` is mandatory for observability. `runtime_log` is the optional
 exporter.
@@ -146,9 +145,9 @@ validation gate as the command source.
 
 ## Finalization
 
-Built-in metadata can mark a node as a deferred final report. The runner splits
-those nodes out, runs the main graph first, finalizes the workspace, and then
-runs final-report nodes with final workspace disposition available.
+Built-in metadata can mark a node as a deferred final report. The runner holds
+those nodes until the main graph has completed, then runs final-report nodes
+with the final runtime context available.
 
 `workspace.json` may be rewritten during finalization. Treat it as the final
 workspace state, not just the state at worktree creation time.
@@ -172,32 +171,27 @@ workspace state, not just the state at worktree creation time.
 - It does not let agents discover context implicitly.
 - It does not ask a model to choose workflow routing.
 - It does not use arbitrary JSONPath in artifact sources.
-- It does not treat workflow input and output schema files as the scheduler's
+- It does not treat workflow input and output schema files as the runner's
   active runtime validators.
 
 ## Source Map
 
 - Workflow definitions: `src/core/workflow/definition.ts`
-- Scheduler: `src/core/workflow/scheduler.ts`
+- Native runner: `src/runtime/langgraph/workflow-runner.ts`
 - Execution policy: `src/core/workflow/execution-policy.ts`
 - State references: `src/core/workflow/state.ts`
 - Artifact plans: `src/core/workflow/artifact-write-plan.ts`
-- Configured runner: `src/core/configured-workflow/runner.ts`
-- Node runner: `src/core/configured-workflow/node-runner.ts`
-- Bootstrap: `src/core/configured-workflow/bootstrap.ts`
-- Finalization: `src/core/configured-workflow/finalization.ts`
 - Routing definition: `src/core/router/router-definition.ts`
 - Routing evaluator: `src/core/router/router.ts`
 - Artifact store: `src/core/artifacts/store.ts`
-- Gated loop types: `src/core/agents/gated-loop-runner.ts`
+- Gated loop state machine: `src/capabilities/quality-gates/gated-agent-loop.ts`
+- Gated loop LangGraph executor: `src/runtime/langgraph/gated-agent-loop-executor.ts`
 
 Useful tests include `tests/core/workflow/definition.test.ts`,
 `tests/core/workflow/definition-output.test.ts`,
 `tests/core/workflow/graph-analysis.test.ts`,
-`tests/core/workflow-scheduler.test.ts`,
+`tests/core/workflow/runner.test.ts`,
 `tests/core/workflow-execution-policy.test.ts`,
 `tests/core/artifact-write-plan.test.ts`,
-`tests/core/configured-workflow-runner.test.ts`,
 `tests/core/router/router.test.ts`, `tests/core/workflow-state.test.ts`,
-`tests/core/gated-agent-loop-runner.test.ts`, and
-`tests/core/flue-gated-agent-loop-retry.test.ts`.
+and `tests/capabilities/quality-gates/gated-agent-loop.test.ts`.

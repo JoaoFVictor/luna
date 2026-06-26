@@ -22,7 +22,7 @@ WebSocket closures during long trusted-local prompts.
 npx @earendil-works/pi-ai login openai-codex
 ```
 
-This creates `auth.json` in the Luna project directory. Do not commit it.
+This creates `~/.config/pi-ai/auth.json`.
 
 ## 3. Configure Jira
 

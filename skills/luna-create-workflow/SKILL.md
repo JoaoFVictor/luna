@@ -128,7 +128,7 @@ Use `$.steps.context` for the output of `collect_context`.
 - Put orchestration in workflow YAML `nodes:`, not in prompts.
 - Create or reuse agents for model judgment.
 - Create built-ins for deterministic workflow capabilities.
-- Keep context intake explicit in the graph; do not make agents or Flue discover
+- Keep context intake explicit in the graph; do not make agents or Pi discover
   repository guidance implicitly.
 - Create adapters for new external input sources.
 
@@ -137,7 +137,7 @@ Use `$.steps.context` for the output of `collect_context`.
 Run:
 
 ```sh
-npm test -- tests/core/workflow/definition.test.ts tests/core/workflow/graph-analysis.test.ts tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow/definition.test.ts tests/core/workflow/graph-analysis.test.ts tests/core/workflow/runner.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused

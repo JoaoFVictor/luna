@@ -5,7 +5,7 @@ what input it receives.
 
 Agent definitions live under `agents/<id>/`. Runtime-specific materialization
 for skills, tools, MCP, and subagents belongs under
-`src/core/agent-runtime/flue/`.
+`src/agent-runtimes/pi/`.
 
 ## 1. Create The Agent Directory
 
@@ -126,7 +126,7 @@ file contents are not kept in the agent task payload. Agents receive a
 
 ## MCP Capabilities
 
-Agents can opt into configured MCP servers:
+Agents can declare configured MCP servers:
 
 ```yaml
 mcp_servers:
@@ -135,9 +135,9 @@ mcp_servers:
 
 MCP server policy lives in `config/mcp.yaml`. Secrets stay in environment
 variables. `allowed_tools` uses original MCP tool names, such as
-`get_pull_request`; Flue exposes them to the model as adapted names like
-`mcp__github__get_pull_request`. Luna filters exposed MCP tools through that
-allowlist and rejects servers that are not allowed for the agent mode.
+`get_pull_request`. Luna filters MCP tools through that allowlist and rejects
+servers that are not allowed for the agent mode. The current Pi adapter rejects
+MCP runtime requirements explicitly until native MCP materialization exists.
 
 Example `config/mcp.yaml` entry:
 
@@ -188,10 +188,9 @@ write subagents require the workflow to set `subagent_policy.allow_write: true`,
 and Luna only exposes tools named in the subagent reference's
 `policy.allow_tools`.
 
-Flue subagents cannot declare `mcp_servers` or nested `subagents` in Luna. Use a
-workflow graph node when delegated work needs MCP access, another delegation
-tree, writes outside an explicitly allowlisted trusted subagent tool, its own
-schema, artifact, or gate.
+Use a workflow graph node when delegated work needs MCP access, another
+delegation tree, writes outside an explicitly allowlisted trusted subagent
+tool, its own schema, artifact, or gate.
 
 ## 5. Use The Agent In A Workflow
 
@@ -231,7 +230,7 @@ npm test -- tests/core/agent-definition.test.ts
 If the agent is part of a real workflow, also run the workflow runner tests:
 
 ```bash
-npm test -- tests/core/configured-workflow-runner.test.ts
+npm test -- tests/core/workflow/runner.test.ts
 ```
 
 Before opening a PR, also run:
