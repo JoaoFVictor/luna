@@ -136,20 +136,48 @@ describe("memory runtime backends", () => {
     await store.create({
       id: "interrupt-1",
       run_id: "run-1",
+      thread_id: "thread-1",
+      checkpoint_id: "checkpoint-1",
       status: "pending",
       created_at: "2026-06-25T00:00:00.000Z",
       updated_at: "2026-06-25T00:00:00.000Z"
     });
-
-    await expect(store.beginResume("interrupt-1", "resume-1")).resolves.toEqual({
+    const resumeInput = {
       interrupt_id: "interrupt-1",
-      resume_attempt: "resume-1"
+      thread_id: "thread-1",
+      checkpoint_id: "checkpoint-1",
+      decision: "approve"
+    };
+
+    const claim = await store.beginResume("interrupt-1", "resume-1", resumeInput);
+    expect(claim).toEqual({
+      interrupt_id: "interrupt-1",
+      resume_attempt: "resume-1",
+      status: "claimed"
+    });
+    if (claim.status !== "claimed") {
+      throw new Error("Expected first resume to claim the interrupt.");
+    }
+    await expect(
+      store.beginResume("interrupt-1", "resume-2", {
+        ...resumeInput,
+        decision: "reject"
+      })
+    ).rejects.toMatchObject({ code: "interrupt_conflict" });
+
+    await store.completeResume("interrupt-1", claim, "resolved", {
+      interrupt_id: "interrupt-1",
+      resume_id: "resume-1",
+      input: resumeInput,
+      decision: "approve",
+      created_at: "2026-06-25T00:00:01.000Z"
     });
     await expect(
-      store.beginResume("interrupt-1", "resume-2")
-    ).rejects.toMatchObject({ code: "runtime_interrupt_resume_in_progress" });
-
-    await store.completeResume("interrupt-1", "resolved");
+      store.beginResume("interrupt-1", "resume-2", resumeInput)
+    ).resolves.toMatchObject({
+      status: "duplicate",
+      resume: { resume_id: "resume-1", decision: "approve" }
+    });
     await expect(store.get("interrupt-1")).resolves.toMatchObject({
       status: "resolved",
       resume_attempt: "resume-1"
