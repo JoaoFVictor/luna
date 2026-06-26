@@ -1,6 +1,12 @@
 export type RuntimeErrorCode =
+  | "runtime_backend_invalid"
   | "runtime_checkpoint_too_large"
+  | "runtime_checkpoint_not_ref_only"
+  | "runtime_checkpoint_schema_mismatch"
   | "runtime_duplicate_node_output"
+  | "runtime_interrupt_not_found"
+  | "runtime_interrupt_resume_in_progress"
+  | "runtime_interrupt_status_invalid"
   | "runtime_invalid_json"
   | "runtime_node_attempt_invalid"
   | "runtime_node_output_error_envelope"

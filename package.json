@@ -22,6 +22,7 @@
   "dependencies": {
     "@earendil-works/pi-ai": "^0.79.9",
     "@flue/runtime": "1.0.0-beta.1",
+    "@langchain/langgraph-checkpoint": "^1.1.3",
     "jsonata": "^2.2.1",
     "valibot": "^1.1.0",
     "yaml": "^2.8.0",
