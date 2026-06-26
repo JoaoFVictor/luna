@@ -68,6 +68,21 @@ export function checkpointJsonByteSize(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
+export function stableJson(value: JsonValue): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  }
+
+  return `{${Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+    .join(",")}}`;
+}
+
 export function assertCheckpointJsonSize(
   value: unknown,
   { maxBytes }: CheckpointSizeOptions

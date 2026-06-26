@@ -1,6 +1,6 @@
 import type { RuntimeEventStore } from "../events/contracts.js";
 import { runtimeError } from "../errors.js";
-import type { JsonValue } from "../json.js";
+import { stableJson } from "../json.js";
 import type {
   InterruptPayload,
   InterruptRecord,
@@ -65,22 +65,6 @@ function normalizeResumeInput(input: ResumeInput): ResumeInput {
     ...(input.payload === undefined ? {} : { payload: input.payload }),
     ...(input.actor === undefined ? {} : { actor: input.actor })
   };
-}
-
-function stableJson(value: JsonValue): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableJson(item)).join(",")}]`;
-  }
-
-  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
-
-  return `{${entries
-    .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
-    .join(",")}}`;
 }
 
 function resumeInputsEqual(left: ResumeInput, right: ResumeInput): boolean {

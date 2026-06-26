@@ -15,12 +15,14 @@ export type RuntimeErrorCode =
   | "runtime_invalid_json"
   | "runtime_node_attempt_invalid"
   | "runtime_node_output_error_envelope"
+  | "runtime_node_output_schema_invalid"
   | "runtime_node_output_status_invalid"
   | "runtime_node_status_transition_invalid"
   | "runtime_retry_not_permitted"
   | "runtime_state_invalid"
   | "runtime_state_public_payload"
-  | "runtime_state_ref_payload";
+  | "runtime_state_ref_payload"
+  | "runtime_unsupported_feature";
 
 export class RuntimeError extends Error {
   readonly code: RuntimeErrorCode;
