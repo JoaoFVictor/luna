@@ -42,6 +42,11 @@ export const prepareImplementationWorktreeMetadata = Object.freeze({
   locks: Object.freeze([repositoryLock()])
 } satisfies BuiltInStepMetadata);
 
+export const repositoryWorkspaceCaptureMetadata = Object.freeze({
+  capturesWorkspace: true,
+  requiresRepository: true
+} satisfies BuiltInStepMetadata);
+
 export const runValidationCommandsMetadata = Object.freeze({
   implementationLifecycle: "validation",
   implementationLifecycleOutcome: (output) => {
@@ -163,6 +168,7 @@ export const builtInStepMetadataByName = Object.freeze({
   final_report: finalReportMetadata,
   "local-exec.command.read": emptyBuiltInMetadata,
   "local-exec.command.write": emptyBuiltInMetadata,
+  "repository-workspace.capture": repositoryWorkspaceCaptureMetadata,
   prepare_implementation_worktree: prepareImplementationWorktreeMetadata,
   collect_task_context: emptyBuiltInMetadata,
   run_validation_commands: runValidationCommandsMetadata,

@@ -400,6 +400,80 @@ describe("workflow scheduler", () => {
     });
   });
 
+  it("allows repeated workspace capture when the node adopts the same workspace", async () => {
+    const workspace = {
+      run_id: "run-1",
+      path: "/tmp/luna-workspace",
+      preserved: true,
+      reason: "prepared"
+    };
+    const runNode = vi.fn(async () => workspace);
+
+    const result = await runWorkflowSchedule({
+      nodes: [
+        { id: "workspace_a", type: "built_in", uses: "repository-workspace.capture" },
+        {
+          id: "workspace_b",
+          type: "built_in",
+          uses: "repository-workspace.capture",
+          after: ["workspace_a"]
+        }
+      ],
+      state: baseState(),
+      execution: { max_concurrency: 1 },
+      runNode,
+      writePlannedArtifacts: vi.fn(async () => undefined),
+      builtInMetadata: () => ({ capturesWorkspace: true })
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.workspace).toEqual(workspace);
+    expect(runNode).toHaveBeenCalledTimes(2);
+    expect(result.steps.workspace_b).toEqual(workspace);
+  });
+
+  it("rejects repository workspace adoption when identity differs", async () => {
+    const firstWorkspace = {
+      operation_id: "repository-workspace.capture",
+      run_id: "run-1",
+      repository_id: "repo",
+      workspace_id: "repo:run-1",
+      path: "/tmp/luna-workspace",
+      preserved: true,
+      reason: "prepared"
+    };
+    const secondWorkspace = {
+      ...firstWorkspace,
+      workspace_id: "repo:other-run"
+    };
+
+    const result = await runWorkflowSchedule({
+      nodes: [
+        { id: "workspace_a", type: "built_in", uses: "repository-workspace.capture" },
+        {
+          id: "workspace_b",
+          type: "built_in",
+          uses: "repository-workspace.capture",
+          after: ["workspace_a"]
+        }
+      ],
+      state: baseState(),
+      execution: { max_concurrency: 1 },
+      runNode: async ({ node }) =>
+        node.id === "workspace_a" ? firstWorkspace : secondWorkspace,
+      writePlannedArtifacts: vi.fn(async () => undefined),
+      builtInMetadata: () => ({ capturesWorkspace: true })
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.steps.workspace_b).toMatchObject({
+      status: "failed",
+      details: {
+        cause_code: "workflow_workspace_duplicate"
+      }
+    });
+  });
+
   it("allows parallel ready nodes but serializes shared repository locks", async () => {
     const events: string[] = [];
     const releaseFirstLock = deferred();

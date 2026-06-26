@@ -13,6 +13,7 @@ import { createFlueAgentRunner } from "./runner.js";
 import { createFlueLogSink } from "./observability.js";
 import { registerConfiguredPiOAuthProviders } from "./pi-auth.js";
 import { createNodeLocalExecPorts } from "../../local-exec/node-ports.js";
+import { createGitHubRepositoryWorkspacePorts } from "../../providers/github/repository-workspace.js";
 
 export type { ConfiguredWorkflowResult };
 
@@ -43,6 +44,7 @@ export async function runLunaWorkflowWithFlue(
         })
       },
       builtInStepRegistry: defaultProviderBuiltInStepRegistry,
+      repositoryWorkspacePortFactory: createGitHubRepositoryWorkspacePorts,
       runBuiltInStep
     }
   });

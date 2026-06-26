@@ -117,6 +117,54 @@ function isWorkspaceRecord(
   );
 }
 
+function isSameWorkspaceRecord(
+  left: NonNullable<SchedulerWorkflowState["workspace"]>,
+  right: NonNullable<SchedulerWorkflowState["workspace"]>
+): boolean {
+  const leftIdentity = workspaceIdentityFrom(left);
+  const rightIdentity = workspaceIdentityFrom(right);
+
+  if (leftIdentity !== undefined || rightIdentity !== undefined) {
+    return (
+      leftIdentity !== undefined &&
+      rightIdentity !== undefined &&
+      leftIdentity === rightIdentity
+    );
+  }
+
+  return (
+    left.run_id === right.run_id &&
+    left.path === right.path &&
+    left.preserved === right.preserved &&
+    left.reason === right.reason
+  );
+}
+
+function workspaceIdentityFrom(
+  record: NonNullable<SchedulerWorkflowState["workspace"]>
+): string | undefined {
+  const identity = record as {
+    repository_id?: unknown;
+    workspace_id?: unknown;
+  };
+
+  if (
+    typeof identity.repository_id !== "string" ||
+    identity.repository_id === "" ||
+    typeof identity.workspace_id !== "string" ||
+    identity.workspace_id === ""
+  ) {
+    return undefined;
+  }
+
+  return [
+    record.run_id,
+    record.path,
+    identity.repository_id,
+    identity.workspace_id
+  ].join("\0");
+}
+
 function cloneState(state: SchedulerWorkflowState): SchedulerWorkflowState {
   return structuredClone(state) as SchedulerWorkflowState;
 }
@@ -430,7 +478,11 @@ export async function runWorkflowSchedule<
           ? output
           : undefined;
 
-      if (decision.capturesWorkspace && workspace !== undefined) {
+      if (
+        capturedWorkspace !== undefined &&
+        workspace !== undefined &&
+        !isSameWorkspaceRecord(workspace, capturedWorkspace)
+      ) {
         throw duplicateWorkspaceError(node.id);
       }
 
@@ -536,7 +588,10 @@ export async function runWorkflowSchedule<
         const { output, lifecycleOutcome, capturedWorkspace } = result.value;
 
         if (capturedWorkspace !== undefined) {
-          if (workspace !== undefined) {
+          if (
+            workspace !== undefined &&
+            !isSameWorkspaceRecord(workspace, capturedWorkspace)
+          ) {
             const failure = schedulerStepFailed(
               node.id,
               duplicateWorkspaceError(node.id)
@@ -563,8 +618,10 @@ export async function runWorkflowSchedule<
             continue;
           }
 
-          workspace = capturedWorkspace;
-          scheduleState.workspace = capturedWorkspace;
+          if (workspace === undefined) {
+            workspace = capturedWorkspace;
+            scheduleState.workspace = capturedWorkspace;
+          }
         }
 
         steps[node.id] = output;

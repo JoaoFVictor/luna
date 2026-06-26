@@ -15,6 +15,7 @@ export const manifest = capabilityManifest({
     default_policy_bundle: [
       "local-exec.command_read_policy",
       "local-exec.command_write_policy",
+      "repository-workspace.capture_policy",
       "git.commit_side_effect",
       "change-request.create_side_effect"
     ]
@@ -31,6 +32,7 @@ export const manifest = capabilityManifest({
     policies: [
       "local-exec.command_read_policy",
       "local-exec.command_write_policy",
+      "repository-workspace.capture_policy",
       "git.commit_side_effect",
       "change-request.create_side_effect"
     ],
@@ -39,6 +41,8 @@ export const manifest = capabilityManifest({
       "local-exec.artifact_publisher",
       "local-exec.event_sink",
       "repository-workspace.manager",
+      "repository-workspace.lock_manager",
+      "repository-workspace.event_sink",
       "git.repository",
       "change-request.provider"
     ]

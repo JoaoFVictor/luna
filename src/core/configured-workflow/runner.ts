@@ -93,6 +93,7 @@ import type { Invocation } from "../router/invocation.js";
 import type { RunIdentity } from "../invocation/types.js";
 import type { ErrorArtifact } from "./errors.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
+import type { RepositoryWorkspaceBuiltInPorts } from "../../capabilities/repository-workspace/contracts.js";
 import { officialCapabilityRegistry } from "../../capabilities/registry.js";
 import type { RepositoryConfig } from "../config/schemas.js";
 import {
@@ -122,6 +123,9 @@ export type ConfiguredWorkflowRunnerDependencies = {
   cleanupWorktree?: typeof defaultCleanupWorktree;
   builtInStepRegistry?: BuiltInStepRegistryView;
   builtInStepDependencies?: BuiltInStepDependencies;
+  repositoryWorkspacePortFactory?: (options: {
+    lockManager: SchedulerLockManager;
+  }) => RepositoryWorkspaceBuiltInPorts;
   lockManagerFactory?: (options: RunLockManagerOptions) => SchedulerLockManager;
   lockPortFactory?: (options: RunLockManagerOptions) => RunLockPort;
   observabilityPortFactory?: ObservabilityPortFactory;
@@ -433,8 +437,20 @@ export async function runConfiguredWorkflow({
           builtInMetadata(node, activeBuiltInStepRegistry)
       });
     const activeArtifactStore = artifactStore;
+    const configuredRepositoryWorkspace =
+      dependencies.builtInStepDependencies?.repositoryWorkspace ??
+      dependencies.repositoryWorkspacePortFactory?.({ lockManager });
+    const activeBuiltInStepDependencies: BuiltInStepDependencies = {
+      ...dependencies.builtInStepDependencies,
+      ...(configuredRepositoryWorkspace === undefined
+        ? {}
+        : { repositoryWorkspace: configuredRepositoryWorkspace })
+    };
     const nodeRuntimeContext: WorkflowNodeRuntimeContext = {
-      dependencies,
+      dependencies: {
+        ...dependencies,
+        builtInStepDependencies: activeBuiltInStepDependencies
+      },
       agentsRoot: resolvedAgentsRoot,
       modelProfiles,
       workflowSubagentPolicy: workflow.subagent_policy,

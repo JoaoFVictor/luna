@@ -13,7 +13,8 @@ import {
   createBuiltInStepCatalog,
   localExecReadCommandBuiltIn,
   localExecWriteCommandBuiltIn,
-  openChangeRequestBuiltIn
+  openChangeRequestBuiltIn,
+  repositoryWorkspaceCaptureBuiltIn
 } from "../built-ins/catalog.js";
 import {
   collectRepoContextBuiltIn,
@@ -112,6 +113,7 @@ export const defaultBuiltInSteps = Object.freeze([
   finalReportBuiltIn,
   localExecReadCommandBuiltIn,
   localExecWriteCommandBuiltIn,
+  repositoryWorkspaceCaptureBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   collectTaskContextBuiltIn,
   runValidationCommandsBuiltIn,

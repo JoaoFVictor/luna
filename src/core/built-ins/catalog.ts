@@ -3,6 +3,10 @@ import {
   localExecPortsFromBuiltInOptions
 } from "../../capabilities/local-exec/built-ins.js";
 import {
+  createRepositoryWorkspaceCaptureBuiltIn,
+  repositoryWorkspacePortsFromBuiltInOptions
+} from "../../capabilities/repository-workspace/built-ins.js";
+import {
   collectWorktreeDiffBuiltIn,
   commitChangesBuiltIn,
   createOpenChangeRequestBuiltIn,
@@ -35,11 +39,16 @@ export const localExecWriteCommandBuiltIn = createLocalExecCommandBuiltIn(
   localExecPortsFromBuiltInOptions,
   "local-exec.command.write"
 );
+export const repositoryWorkspaceCaptureBuiltIn =
+  createRepositoryWorkspaceCaptureBuiltIn(
+    repositoryWorkspacePortsFromBuiltInOptions
+  );
 
 export const defaultBuiltInSteps = Object.freeze([
   collectContextBuiltIn,
   localExecReadCommandBuiltIn,
   localExecWriteCommandBuiltIn,
+  repositoryWorkspaceCaptureBuiltIn,
   prepareImplementationWorktreeBuiltIn,
   runValidationCommandsBuiltIn,
   recordImplementationValidationBuiltIn,
