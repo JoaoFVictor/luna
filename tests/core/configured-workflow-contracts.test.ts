@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -110,6 +110,48 @@ describe("configured workflow contracts", () => {
       await expect(
         readJson(root, "missing-workflow", "run-failure", "error.json")
       ).resolves.toMatchObject({ code: "workflow_config_read_failed" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads a router file explicitly configured by app.yaml", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-contracts-"));
+
+    try {
+      await writeBaseConfig(root);
+      await writeFile(
+        path.join(root, "app.yaml"),
+        [
+          "workspace:",
+          "  strategy: git_worktree",
+          `  root: ${JSON.stringify(path.join(root, "workspaces"))}`,
+          "  preserve_on_success: false",
+          "  preserve_on_failure: true",
+          "artifacts:",
+          `  root: ${JSON.stringify(path.join(root, "artifacts"))}`,
+          "routing:",
+          "  path: alternate-routing.yaml",
+          ""
+        ].join("\n")
+      );
+      await writeFile(
+        path.join(root, "alternate-routing.yaml"),
+        [
+          "type: router",
+          "version: \"2026-06\"",
+          "rules:",
+          "  - id: alternate_route",
+          "    when:",
+          "      expression: \"true\"",
+          "    target: workflow:code-review",
+          ""
+        ].join("\n")
+      );
+
+      const configs = await loadConfigs(root);
+
+      expect(configs.routing.rules[0]?.id).toBe("alternate_route");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

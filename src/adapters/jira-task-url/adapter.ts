@@ -14,7 +14,7 @@ import { repositoryHintFromField } from "../../core/providers/repository-hint.js
 import {
   InvocationSchema,
   type Invocation
-} from "../../core/invocation/types.js";
+} from "../../core/router/invocation.js";
 import type { AdapterInput, InputAdapter } from "../types.js";
 
 type JiraInstanceConfig = JiraConfig["instances"][number];

@@ -1,44 +1,22 @@
-routes:
-  # Routes are evaluated in order. Keep the deterministic target in YAML.
-  - name: explicit-target
+type: router
+version: "2026-06"
+rules:
+  - id: explicit_target
     when:
-      # Matches invocations that already provide a target.
-      has_target: true
-      # Optional match fields:
-      # source: github
-      # event: pull_request
-      # event_in: [pull_request, issue]
-      # action: opened
-      # action_in: [selected, opened]
-    use_target_from_input: true
-    # Static workflow target when use_target_from_input is not used.
-    # target:
-    #   type: workflow
-    #   id: implementation
+      expression: "$exists($.invocation.target)"
+    target: $.invocation.target
 
-  - name: github-pr-code-review
+  - id: github_pr_code_review
     when:
-      source: github
-      event: pull_request
-      action_in: [selected, opened, synchronize, reopened]
-    target:
-      type: workflow
-      id: code-review
+      expression: "$.invocation.source = 'github' and $.invocation.event = 'pull_request' and $.invocation.action in ['selected', 'opened', 'synchronize', 'reopened']"
+    target: workflow:code-review
 
-  - name: jira-issue-implementation
+  - id: jira_issue_implementation
     when:
-      source: jira
-      event: issue
-      action: selected
-    target:
-      type: workflow
-      id: implementation
+      expression: "$.invocation.source = 'jira' and $.invocation.event = 'issue' and $.invocation.action = 'selected'"
+    target: workflow:implementation
 
-  - name: plane-issue-implementation
+  - id: plane_issue_implementation
     when:
-      source: plane
-      event: issue
-      action: selected
-    target:
-      type: workflow
-      id: implementation
+      expression: "$.invocation.source = 'plane' and $.invocation.event = 'issue' and $.invocation.action = 'selected'"
+    target: workflow:implementation

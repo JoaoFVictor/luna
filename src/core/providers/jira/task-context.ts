@@ -7,7 +7,7 @@ import {
 import type {
   InvocationRepository,
   NormalizedInvocation
-} from "../../invocation/types.js";
+} from "../../router/invocation.js";
 
 const JiraPayloadSchema = z
   .object({

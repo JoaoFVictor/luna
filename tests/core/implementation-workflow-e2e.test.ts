@@ -7,7 +7,7 @@ import {
   prepareImplementationWorktree,
   type ImplementationWorktreeRecord
 } from "../../src/core/write-mode/worktree.js";
-import type { Invocation } from "../../src/core/invocation/types.js";
+import type { Invocation } from "../../src/core/router/invocation.js";
 import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
 import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 import { providerAwareWorkflowDependencies } from "./provider-aware-workflow-dependencies.js";
@@ -108,11 +108,13 @@ async function writeTestConfig(root: string): Promise<void> {
   await writeFile(
     path.join(root, "routing.yaml"),
     [
-      "routes:",
-      "  - name: implementation",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: implementation",
       "    when:",
-      "      has_target: true",
-      "    use_target_from_input: true",
+      "      expression: \"$exists($.invocation.target)\"",
+      "    target: $.invocation.target",
       ""
     ].join("\n")
   );

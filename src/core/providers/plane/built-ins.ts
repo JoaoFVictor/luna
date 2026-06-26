@@ -7,7 +7,7 @@ import {
   planeIssueKey,
   planeIssueLocatorSummary
 } from "./task-context.js";
-import type { Invocation } from "../../invocation/types.js";
+import type { Invocation } from "../../router/invocation.js";
 import { defineBuiltInStep } from "../../built-ins/registry.js";
 import { finalReportMetadata } from "../../built-ins/metadata.js";
 import { requiredState } from "../../built-ins/state.js";

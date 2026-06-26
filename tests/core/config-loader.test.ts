@@ -18,7 +18,7 @@ import {
   ModelsConfigSchema,
   RepositoriesConfigSchema
 } from "../../src/core/config/schemas.js";
-import { RoutingConfigSchema } from "../../src/core/invocation/types.js";
+import { RouterDefinitionSchema } from "../../src/core/router/router-definition.js";
 import { ImplementationConfigSchema } from "../../src/core/write-mode/types.js";
 
 const configSchemas = {
@@ -29,7 +29,7 @@ const configSchemas = {
   "mcp.yaml": McpConfigSchema,
   "models.yaml": ModelsConfigSchema,
   "repositories.yaml": RepositoriesConfigSchema,
-  "routing.yaml": RoutingConfigSchema
+  "routing.yaml": RouterDefinitionSchema
 };
 
 describe("config loader", () => {
@@ -203,6 +203,27 @@ describe("config loader", () => {
     };
 
     expect(() => ModelsConfigSchema.parse(invalidConfig)).toThrow(ZodError);
+  });
+
+  it("allows app.yaml to point at an alternate router file", () => {
+    expect(
+      AppConfigSchema.parse({
+        workspace: {
+          strategy: "git_worktree",
+          root: "/tmp/luna-workspaces",
+          preserve_on_success: false,
+          preserve_on_failure: true
+        },
+        artifacts: {
+          root: "/tmp/luna-artifacts"
+        },
+        routing: {
+          path: "routing/custom.yaml"
+        }
+      })
+    ).toMatchObject({
+      routing: { path: "routing/custom.yaml" }
+    });
   });
 
   it("resolves generic model profile fallbacks from a provided environment map", async () => {

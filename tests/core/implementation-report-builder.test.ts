@@ -7,7 +7,7 @@ import {
   buildImplementationReportJson as buildPlaneImplementationReportJson,
   buildImplementationReportMarkdown as buildPlaneImplementationReportMarkdown
 } from "../../src/core/providers/plane/report-builder.js";
-import type { Invocation } from "../../src/core/invocation/types.js";
+import type { Invocation } from "../../src/core/router/invocation.js";
 import type { ValidationResult } from "../../src/core/validation/runner.js";
 import type {
   CommitChangesArtifact,

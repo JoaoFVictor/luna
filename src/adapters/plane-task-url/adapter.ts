@@ -14,7 +14,7 @@ import { repositoryHintFromLabels } from "../../core/providers/repository-hint.j
 import {
   InvocationSchema,
   type Invocation
-} from "../../core/invocation/types.js";
+} from "../../core/router/invocation.js";
 import type { AdapterInput, InputAdapter } from "../types.js";
 
 export type PlaneIssueRequest = {

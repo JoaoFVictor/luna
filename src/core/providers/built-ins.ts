@@ -31,7 +31,7 @@ import {
 import { builtInError } from "../built-ins/errors.js";
 import { defineBuiltInStep } from "../built-ins/registry.js";
 import { finalReportMetadata } from "../built-ins/metadata.js";
-import type { Invocation } from "../invocation/types.js";
+import type { Invocation } from "../router/invocation.js";
 import type { BuiltInStep } from "../built-ins/types.js";
 
 export { openChangeRequestBuiltIn };

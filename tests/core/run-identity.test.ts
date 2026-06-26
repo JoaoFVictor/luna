@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRunIdentity, slugTimestamp } from "../../src/core/invocation/run-identity.js";
-import type { Invocation } from "../../src/core/invocation/types.js";
+import type { Invocation } from "../../src/core/router/invocation.js";
 import { artifactRootForWorkflow } from "../../src/core/configured-workflow/bootstrap.js";
 import { RunLockManager } from "../../src/core/workflow/lock-manager.js";
 

@@ -65,6 +65,13 @@ export const ArtifactsConfigSchema = z
   .strict();
 export type ArtifactsConfig = z.infer<typeof ArtifactsConfigSchema>;
 
+export const RouterFileConfigSchema = z
+  .object({
+    path: NonEmptyStringSchema
+  })
+  .strict();
+export type RouterFileConfig = z.infer<typeof RouterFileConfigSchema>;
+
 export const LockConfigSchema = z
   .object({
     root: NonEmptyStringSchema.optional(),
@@ -90,6 +97,7 @@ export const AppConfigSchema = z
   .object({
     workspace: WorkspaceConfigSchema,
     artifacts: ArtifactsConfigSchema,
+    routing: RouterFileConfigSchema.optional(),
     locks: LockConfigSchema.optional()
   })
   .strict();

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
-import type { Invocation } from "../../src/core/invocation/types.js";
+import type { Invocation } from "../../src/core/router/invocation.js";
 import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
 import {
   acceptedDecision,
@@ -34,12 +34,13 @@ async function writeToyWorkflow(root: string): Promise<void> {
   await writeFile(
     path.join(root, "routing.yaml"),
     [
-      "routes:",
-      "  - name: toy-review",
-      "    when: {}",
-      "    target:",
-      "      type: workflow",
-      "      id: toy-review",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: toy_review",
+      "    when:",
+      "      expression: \"true\"",
+      "    target: workflow:toy-review",
       ""
     ].join("\n")
   );
@@ -514,7 +515,7 @@ describe("configured workflow runner", () => {
             runAgentStep: vi.fn()
           }
         })
-      ).rejects.toMatchObject({ code: "invalid_target" });
+      ).rejects.toMatchObject({ code: "router_invalid_target" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

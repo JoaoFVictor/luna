@@ -4,7 +4,7 @@ import {
   type ConfiguredWorkflowResult
 } from "../../configured-workflow/runner.js";
 import { loadMcpConfig } from "../../config/mcp.js";
-import type { Invocation } from "../../invocation/types.js";
+import type { Invocation } from "../../router/invocation.js";
 import {
   defaultProviderBuiltInStepRegistry,
   runBuiltInStep

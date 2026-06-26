@@ -3,7 +3,7 @@ import {
   githubPullRequestContextFrom,
   type GitHubPullRequestContext
 } from "../../src/core/providers/github/pull-request-context.js";
-import type { NormalizedInvocation } from "../../src/core/invocation/types.js";
+import type { NormalizedInvocation } from "../../src/core/router/invocation.js";
 
 const invocation: NormalizedInvocation = {
   version: "2026-06",

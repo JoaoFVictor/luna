@@ -4,7 +4,7 @@ import {
   type ExecutionSummaryJson
 } from "./execution-summary.js";
 import type { ChangeRequestArtifact } from "../change-request/contracts.js";
-import type { Invocation, InvocationRepository } from "../invocation/types.js";
+import type { Invocation, InvocationRepository } from "../router/invocation.js";
 import type { ObservabilitySummary } from "../observability/summary.js";
 import type { ValidationResult } from "../validation/runner.js";
 import type {

@@ -9,9 +9,9 @@ import type {
   WorkspaceRecord
 } from "../../src/core/write-mode/types.js";
 import type {
-  Invocation,
-  RunIdentity
-} from "../../src/core/invocation/types.js";
+  Invocation
+} from "../../src/core/router/invocation.js";
+import type { RunIdentity } from "../../src/core/invocation/types.js";
 import {
   acceptedDecision,
   artifactPath,
@@ -77,11 +77,13 @@ async function writeParallelProbeWorkflow(root: string): Promise<void> {
   await writeFile(
     path.join(root, "routing.yaml"),
     [
-      "routes:",
-      "  - name: explicit-target",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: explicit_target",
       "    when:",
-      "      has_target: true",
-      "    use_target_from_input: true",
+      "      expression: \"$exists($.invocation.target)\"",
+      "    target: $.invocation.target",
       ""
     ].join("\n")
   );

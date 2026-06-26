@@ -1,5 +1,6 @@
 import { slugify } from "../security/path.js";
-import type { Invocation, RunIdentity } from "./types.js";
+import type { Invocation } from "../router/invocation.js";
+import type { RunIdentity } from "./types.js";
 
 export type RunIdentityOptions = {
   attempt: number;

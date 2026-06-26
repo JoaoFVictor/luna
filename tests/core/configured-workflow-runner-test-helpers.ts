@@ -2,9 +2,9 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { RunIdentityOptions } from "../../src/core/invocation/run-identity.js";
 import type {
-  Invocation,
-  RunIdentity
-} from "../../src/core/invocation/types.js";
+  Invocation
+} from "../../src/core/router/invocation.js";
+import type { RunIdentity } from "../../src/core/invocation/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 
 export const invocation: Invocation = {
@@ -166,31 +166,27 @@ export async function writeBaseConfig(
     path.join(root, "routing.yaml"),
     routing === "real"
       ? [
-          "routes:",
-          "  - name: explicit-target",
+          "type: router",
+          "version: \"2026-06\"",
+          "rules:",
+          "  - id: explicit_target",
           "    when:",
-          "      has_target: true",
-          "    use_target_from_input: true",
-          "  - name: github-pr-code-review",
+          "      expression: \"$exists($.invocation.target)\"",
+          "    target: $.invocation.target",
+          "  - id: github_pr_code_review",
           "    when:",
-          "      source: github",
-          "      event: pull_request",
-          "      action_in:",
-          "        - opened",
-          "        - synchronize",
-          "        - ready_for_review",
-          "    target:",
-          "      type: workflow",
-          `      id: ${workflowId}`,
+          `      expression: "$.invocation.source = 'github' and $.invocation.event = 'pull_request' and $.invocation.action in ['opened', 'synchronize', 'ready_for_review']"`,
+          `    target: workflow:${workflowId}`,
           ""
         ].join("\n")
       : [
-          "routes:",
-          "  - name: github-pr-code-review",
-          "    when: {}",
-          "    target:",
-          "      type: workflow",
-          `      id: ${workflowId}`,
+          "type: router",
+          "version: \"2026-06\"",
+          "rules:",
+          "  - id: github_pr_code_review",
+          "    when:",
+          "      expression: \"true\"",
+          `    target: workflow:${workflowId}`,
           ""
         ].join("\n")
   );
@@ -359,11 +355,13 @@ export async function writeImplementationWorkflow(root: string): Promise<void> {
   await writeFile(
     path.join(root, "routing.yaml"),
     [
-      "routes:",
-      "  - name: implementation",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: implementation",
       "    when:",
-      "      has_target: true",
-      "    use_target_from_input: true",
+      "      expression: \"$exists($.invocation.target)\"",
+      "    target: $.invocation.target",
       ""
     ].join("\n")
   );

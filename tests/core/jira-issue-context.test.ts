@@ -3,7 +3,7 @@ import {
   jiraIssueContextFrom,
   type JiraIssueContext
 } from "../../src/core/providers/jira/task-context.js";
-import type { NormalizedInvocation } from "../../src/core/invocation/types.js";
+import type { NormalizedInvocation } from "../../src/core/router/invocation.js";
 
 const invocation: NormalizedInvocation = {
   version: "2026-06",

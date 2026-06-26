@@ -1,4 +1,4 @@
-import type { Invocation } from "../core/invocation/types.js";
+import type { Invocation } from "../core/router/invocation.js";
 
 export type AdapterInput = { kind: "cli"; value: string };
 

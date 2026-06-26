@@ -1,6 +1,6 @@
 import type { ChangeRequestArtifact } from "../change-request/contracts.js";
 import type { BuiltInStepRunOptions } from "./types.js";
-import type { Invocation } from "../invocation/types.js";
+import type { Invocation } from "../router/invocation.js";
 import type { ValidationResult } from "../validation/runner.js";
 import type {
   CommitChangesArtifact,

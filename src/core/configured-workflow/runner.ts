@@ -13,7 +13,7 @@ import type {
 } from "../built-ins/types.js";
 import { resolveConfigRoot } from "../config/loader.js";
 import { assertJsonValue, type JsonValue } from "../json/value.js";
-import { routeInvocation as defaultRouteInvocation } from "../invocation/router.js";
+import { routeInvocation as defaultRouteInvocation } from "../router/router.js";
 import {
   RunLockManager,
   type RunLockManagerOptions
@@ -89,7 +89,8 @@ import type {
   ObservabilityPortFactory,
   RunLockPort
 } from "./contracts.js";
-import type { Invocation, RunIdentity } from "../invocation/types.js";
+import type { Invocation } from "../router/invocation.js";
+import type { RunIdentity } from "../invocation/types.js";
 import type { ErrorArtifact } from "./errors.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
 import { officialCapabilityRegistry } from "../../capabilities/registry.js";

@@ -20,16 +20,18 @@ import {
   type ObservabilitySummary
 } from "../observability/summary.js";
 import { assertSafeSegment } from "../security/path.js";
-import { routeInvocation as defaultRouteInvocation } from "../invocation/router.js";
+import { routeInvocation as defaultRouteInvocation } from "../router/router.js";
 import type { RunIdentityOptions } from "../invocation/run-identity.js";
 import type { BuiltInStepRegistryView } from "../built-ins/types.js";
 import {
-  RoutingConfigSchema,
   type Invocation,
-  type RouteTarget,
-  type RoutingConfig,
-  type RunIdentity
-} from "../invocation/types.js";
+  type RouteTarget
+} from "../router/invocation.js";
+import type { RunIdentity } from "../invocation/types.js";
+import {
+  RouterDefinitionSchema,
+  type RouterDefinition
+} from "../router/router-definition.js";
 import {
   AppConfigSchema,
   ModelsConfigSchema,
@@ -66,7 +68,7 @@ export type ConfiguredWorkflowBootstrapDependencies = {
 export type ConfiguredWorkflowBootstrapConfigs = {
   app: AppConfig;
   repositories: RepositoriesConfig;
-  routing: RoutingConfig;
+  routing: RouterDefinition;
   models: ModelsConfig;
   runtimeConfig: RuntimeConfigState;
 };
@@ -82,9 +84,10 @@ export async function loadConfigs(
     path.join(configRoot, "repositories.yaml"),
     RepositoriesConfigSchema
   );
+  const routingPath = resolveRoutingConfigPath(configRoot, app);
   const routing = await loadYamlFile(
-    path.join(configRoot, "routing.yaml"),
-    RoutingConfigSchema
+    routingPath,
+    RouterDefinitionSchema
   );
   const models = await loadYamlFile(
     path.join(configRoot, "models.yaml"),
@@ -93,6 +96,21 @@ export async function loadConfigs(
   const runtimeConfig = await loadRuntimeConfig(configRoot);
 
   return { app, repositories, routing, models, runtimeConfig };
+}
+
+export function resolveRoutingConfigPath(
+  configRoot: string,
+  app: Pick<AppConfig, "routing">
+): string {
+  const configuredPath = app.routing?.path;
+
+  if (configuredPath === undefined) {
+    return path.join(configRoot, "routing.yaml");
+  }
+
+  return path.isAbsolute(configuredPath)
+    ? configuredPath
+    : path.join(configRoot, configuredPath);
 }
 
 async function loadRuntimeConfig(
@@ -111,13 +129,13 @@ async function loadRuntimeConfig(
   };
 }
 
-function workflowIdFromRoute(
+async function workflowIdFromRoute(
   invocation: Invocation,
-  routing: RoutingConfig,
+  routing: RouterDefinition,
   dependencies: Pick<ConfiguredWorkflowBootstrapDependencies, "routeInvocation">
-): string {
+): Promise<string> {
   const routeInvocation = dependencies.routeInvocation ?? defaultRouteInvocation;
-  const target: RouteTarget = routeInvocation(invocation, routing);
+  const target: RouteTarget = await routeInvocation(invocation, routing);
 
   return target.id;
 }
@@ -272,7 +290,7 @@ async function bootstrapConfiguredWorkflowRun({
     workflowsRoot,
     "workflows"
   );
-  const workflowId = workflowIdFromRoute(
+  const workflowId = await workflowIdFromRoute(
     invocation,
     activeConfigs.routing,
     dependencies

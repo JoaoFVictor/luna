@@ -14,7 +14,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveFlueCliBin } from "../../src/core/agent-runtime/flue/cli.js";
-import { InvocationSchema } from "../../src/core/invocation/types.js";
+import { InvocationSchema } from "../../src/core/router/invocation.js";
 import {
   createRealGitReviewFixture,
   type RealGitReviewFixture
@@ -158,12 +158,13 @@ async function writeSmokeConfig(
   await writeFile(
     path.join(root, "routing.yaml"),
     [
-      "routes:",
-      "  - name: github-pr-code-review",
-      "    when: {}",
-      "    target:",
-      "      type: workflow",
-      "      id: code-review",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: github_pr_code_review",
+      "    when:",
+      "      expression: \"true\"",
+      "    target: workflow:code-review",
       ""
     ].join("\n"),
     "utf8"

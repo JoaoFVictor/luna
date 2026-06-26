@@ -4,7 +4,7 @@ import {
   executionSummaryMarkdownLines,
   type ExecutionSummaryJson
 } from "../../reports/execution-summary.js";
-import type { Invocation } from "../../invocation/types.js";
+import type { Invocation } from "../../router/invocation.js";
 import type { WorkspaceRecord } from "../../write-mode/types.js";
 import type { Finding } from "../../findings/types.js";
 import type { AcceptanceDecision } from "../../decisions/types.js";

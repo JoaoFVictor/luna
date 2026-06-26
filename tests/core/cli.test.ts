@@ -4,16 +4,18 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
 import type { AdapterContext, InputAdapter } from "../../src/adapters/types.js";
-import type { Invocation } from "../../src/core/invocation/types.js";
+import type { Invocation } from "../../src/core/router/invocation.js";
 import {
   buildFlueRunCommand,
   childProcessExitCode,
   childProcessFailureExitCode,
   findProjectRoot,
   loadInvocationFromFile,
+  loadRoutingDefinition,
   main,
   parseCliArgs,
   parseWorkflowTarget,
+  resolveCliConfigRoot,
   resolveFlueCliBin
 } from "../../src/core/agent-runtime/flue/cli.js";
 
@@ -231,6 +233,86 @@ describe("flue local CLI wrapper", () => {
     await expect(findProjectRoot(nestedStart)).resolves.toBe(projectRoot);
   });
 
+  it("loads routing from the app-configured router path", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-routing-"));
+    const configRoot = path.join(projectRoot, "config");
+    await mkdir(configRoot, { recursive: true });
+    await writeFile(
+      path.join(configRoot, "app.yaml"),
+      [
+        "workspace:",
+        "  strategy: git_worktree",
+        `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
+        "  preserve_on_success: false",
+        "  preserve_on_failure: true",
+        "artifacts:",
+        `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
+        "routing:",
+        "  path: cli-routing.yaml",
+        ""
+      ].join("\n")
+    );
+    await writeFile(
+      path.join(configRoot, "cli-routing.yaml"),
+      [
+        "type: router",
+        "version: \"2026-06\"",
+        "rules:",
+        "  - id: cli_override_route",
+        "    when:",
+        "      expression: \"true\"",
+        "    target: workflow:code-review",
+        ""
+      ].join("\n")
+    );
+
+    await expect(loadRoutingDefinition(projectRoot)).resolves.toMatchObject({
+      rules: [{ id: "cli_override_route" }]
+    });
+  });
+
+  it("loads routing from LUNA_CONFIG_ROOT outside projectRoot/config", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-project-"));
+    const configRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-config-"));
+    await writeFile(
+      path.join(configRoot, "app.yaml"),
+      [
+        "workspace:",
+        "  strategy: git_worktree",
+        `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
+        "  preserve_on_success: false",
+        "  preserve_on_failure: true",
+        "artifacts:",
+        `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
+        "routing:",
+        "  path: external-routing.yaml",
+        ""
+      ].join("\n")
+    );
+    await writeFile(
+      path.join(configRoot, "external-routing.yaml"),
+      [
+        "type: router",
+        "version: \"2026-06\"",
+        "rules:",
+        "  - id: external_config_root_route",
+        "    when:",
+        "      expression: \"true\"",
+        "    target: workflow:implementation",
+        ""
+      ].join("\n")
+    );
+
+    expect(
+      resolveCliConfigRoot(projectRoot, { LUNA_CONFIG_ROOT: configRoot })
+    ).toBe(configRoot);
+    await expect(
+      loadRoutingDefinition(projectRoot, { LUNA_CONFIG_ROOT: configRoot })
+    ).resolves.toMatchObject({
+      rules: [{ id: "external_config_root_route" }]
+    });
+  });
+
   it("builds a node command that runs local Flue with the invocation payload", async () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-command-"));
     await mkdir(path.join(projectRoot, "node_modules", "@flue", "cli"), {
@@ -358,7 +440,10 @@ describe("flue local CLI wrapper", () => {
       { kind: "cli", value: "https://company.atlassian.net/browse/ABC-123" },
       adapterContext
     );
-    expect(buildCommand).toHaveBeenCalledWith(validJiraInvocation);
+    expect(buildCommand).toHaveBeenCalledWith({
+      ...validJiraInvocation,
+      target: { type: "workflow", id: "implementation" }
+    });
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
   });
 
@@ -400,7 +485,10 @@ describe("flue local CLI wrapper", () => {
       },
       adapterContext
     );
-    expect(buildCommand).toHaveBeenCalledWith(validPlaneInvocation);
+    expect(buildCommand).toHaveBeenCalledWith({
+      ...validPlaneInvocation,
+      target: { type: "workflow", id: "implementation" }
+    });
     expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
   });
 

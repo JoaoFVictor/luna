@@ -147,8 +147,9 @@ type. A Flue runner should not parse a Jira URL.
 
 - Input adapter contract: `src/adapters/types.ts`
 - Input adapter registry: `src/adapters/registry.ts`
-- Invocation schema: `src/core/invocation/types.ts`
-- Router: `src/core/invocation/router.ts`
+- Invocation envelope: `src/core/router/invocation.ts`
+- Router definition: `src/core/router/router-definition.ts`
+- Router evaluator: `src/core/router/router.ts`
 - CLI: `src/core/agent-runtime/flue/cli.ts`
 - Runtime factory: `src/core/agent-runtime/flue/workflow-factory.ts`
 - Config bootstrap: `src/core/configured-workflow/bootstrap.ts`
@@ -161,6 +162,7 @@ Useful tests include `tests/core/cli.test.ts`,
 `tests/adapters/github-pr-url-adapter.test.ts`,
 `tests/adapters/jira-task-url-adapter.test.ts`,
 `tests/adapters/plane-task-url-adapter.test.ts`,
-`tests/core/router.test.ts`, `tests/core/invocation-helpers.test.ts`,
+`tests/core/router/router.test.ts`, `tests/core/router/invocation.test.ts`,
+`tests/core/invocation-helpers.test.ts`,
 `tests/core/workspace-resolver.test.ts`, `tests/core/config-loader.test.ts`,
 and provider auth/context tests under `tests/core/`.

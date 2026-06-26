@@ -15,7 +15,7 @@ import {
 import type {
   InvocationSubject,
   NormalizedInvocation
-} from "../../invocation/types.js";
+} from "../../router/invocation.js";
 
 const PullRequestPayloadSchema = z
   .object({

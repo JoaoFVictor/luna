@@ -11,9 +11,9 @@ import {
 } from "../../src/core/invocation/helpers.js";
 import {
   InvocationSchema,
-  RunIdentitySchema,
   type NormalizedInvocation
-} from "../../src/core/invocation/types.js";
+} from "../../src/core/router/invocation.js";
+import { RunIdentitySchema } from "../../src/core/invocation/types.js";
 
 const invocation: NormalizedInvocation = {
   version: "2026-06",

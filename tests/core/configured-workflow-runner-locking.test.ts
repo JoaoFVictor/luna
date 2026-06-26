@@ -99,12 +99,13 @@ async function writePolicyLockWorkflow(root: string): Promise<void> {
   await writeFile(
     path.join(root, "routing.yaml"),
     [
-      "routes:",
-      "  - name: policy-locks",
-      "    when: {}",
-      "    target:",
-      "      type: workflow",
-      "      id: policy-locks",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: policy_locks",
+      "    when:",
+      "      expression: \"true\"",
+      "    target: workflow:policy-locks",
       ""
     ].join("\n")
   );

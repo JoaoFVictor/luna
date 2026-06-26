@@ -1,7 +1,8 @@
 import type {
   ImplementationLifecycleEvidence
 } from "../write-mode/lifecycle.js";
-import type { Invocation, RunIdentity } from "../invocation/types.js";
+import type { Invocation } from "../router/invocation.js";
+import type { RunIdentity } from "../invocation/types.js";
 import type { RuntimeConfigState } from "../configured-workflow/contracts.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
 import {

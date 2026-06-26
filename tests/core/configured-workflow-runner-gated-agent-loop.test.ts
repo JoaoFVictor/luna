@@ -204,11 +204,13 @@ async function writeGatedAgentLoopWorkflow(
   await writeFile(
     path.join(root, "routing.yaml"),
     [
-      "routes:",
-      "  - name: implementation",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: implementation",
       "    when:",
-      "      has_target: true",
-      "    use_target_from_input: true",
+      "      expression: \"$exists($.invocation.target)\"",
+      "    target: $.invocation.target",
       ""
     ].join("\n")
   );

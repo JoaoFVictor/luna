@@ -6,7 +6,7 @@ import { collectContextBuiltIn } from "../../src/core/built-ins/context.js";
 import { runConfiguredWorkflow } from "../../src/core/configured-workflow/runner.js";
 import { runGit } from "../../src/core/git/client.js";
 import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
-import type { Invocation } from "../../src/core/invocation/types.js";
+import type { Invocation } from "../../src/core/router/invocation.js";
 import type { CodeReviewFindings } from "../../src/core/findings/types.js";
 import type { ReviewPlan } from "../../src/core/code-review/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
@@ -116,12 +116,13 @@ async function writeConfigRoot({
   await writeFile(
     path.join(configRoot, "routing.yaml"),
     [
-      "routes:",
-      "  - name: code-review",
-      "    when: {}",
-      "    target:",
-      "      type: workflow",
-      "      id: code-review",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: code_review",
+      "    when:",
+      "      expression: \"true\"",
+      "    target: workflow:code-review",
       ""
     ].join("\n")
   );
@@ -144,11 +145,13 @@ async function writeExplicitTargetRouting(configRoot: string): Promise<void> {
   await writeFile(
     path.join(configRoot, "routing.yaml"),
     [
-      "routes:",
-      "  - name: explicit-target",
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: explicit_target",
       "    when:",
-      "      has_target: true",
-      "    use_target_from_input: true",
+      "      expression: \"$exists($.invocation.target)\"",
+      "    target: $.invocation.target",
       ""
     ].join("\n")
   );

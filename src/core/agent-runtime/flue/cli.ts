@@ -2,6 +2,15 @@ import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
+import { loadYamlFile, resolveConfigRoot } from "../../config/loader.js";
+import { AppConfigSchema } from "../../config/schemas.js";
+import { resolveRoutingConfigPath } from "../../configured-workflow/bootstrap.js";
+import {
+  parseWorkflowTarget as parseRouterWorkflowTarget,
+  routeInvocation
+} from "../../router/router.js";
+import { RouterDefinitionSchema, type RouterDefinition } from "../../router/router-definition.js";
+import { createFlueTargetExecutor, type TargetExecutor } from "../../../runtime/composition/target-executor.js";
 import {
   defaultAdapterContext,
   inputAdapterRegistry,
@@ -11,10 +20,9 @@ import {
 import type { AdapterContext } from "../../../adapters/types.js";
 import {
   InvocationSchema,
-  RouteTargetSchema,
   type Invocation,
   type RouteTarget
-} from "../../invocation/types.js";
+} from "../../router/invocation.js";
 
 export type CliArgs = {
   command: "run";
@@ -36,9 +44,14 @@ export type BuildFlueRunCommandOptions = {
   projectRoot?: string;
 };
 
+type CliConfigEnv = Parameters<typeof resolveConfigRoot>[0];
+
 export type MainDependencies = {
   execute?: (command: string, args: string[]) => Promise<number>;
   buildCommand?: (invocation: Invocation) => Promise<FlueRunCommand>;
+  targetExecutor?: TargetExecutor;
+  routeInvocation?: typeof routeInvocation;
+  routing?: RouterDefinition;
   adapterRegistry?: InputAdapterRegistry;
   adapterContext?: AdapterContext;
 };
@@ -148,20 +161,14 @@ export function parseCliArgs(args: string[]): CliArgs {
 }
 
 export function parseWorkflowTarget(value: string): RouteTarget {
-  const prefix = "workflow:";
-  const candidate: unknown = value.startsWith(prefix)
-    ? { type: "workflow", id: value.slice(prefix.length) }
-    : value;
-  const result = RouteTargetSchema.safeParse(candidate);
-
-  if (!result.success) {
+  try {
+    return parseRouterWorkflowTarget(value);
+  } catch {
     throw cliError(
       "invalid_target",
       `Invalid --target value "${value}". Expected workflow:<id>.`
     );
   }
-
-  return result.data;
 }
 
 export async function loadInvocationFromFile(filePath: string): Promise<Invocation> {
@@ -233,6 +240,38 @@ export async function buildFlueRunCommand(
   };
 }
 
+export function resolveCliConfigRoot(
+  projectRoot: string,
+  env: CliConfigEnv = process.env
+): string {
+  const configuredRoot = resolveConfigRoot(env);
+
+  if (
+    typeof env?.LUNA_CONFIG_ROOT === "string" &&
+    env.LUNA_CONFIG_ROOT.trim() !== ""
+  ) {
+    return configuredRoot;
+  }
+
+  return path.join(projectRoot, configuredRoot);
+}
+
+export async function loadRoutingDefinition(
+  projectRoot: string,
+  env: CliConfigEnv = process.env
+): Promise<RouterDefinition> {
+  const configRoot = resolveCliConfigRoot(projectRoot, env);
+  const app = await loadYamlFile(
+    path.join(configRoot, "app.yaml"),
+    AppConfigSchema
+  );
+
+  return await loadYamlFile(
+    resolveRoutingConfigPath(configRoot, app),
+    RouterDefinitionSchema
+  );
+}
+
 async function executeFile(command: string, args: string[]): Promise<number> {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: "inherit" });
@@ -293,6 +332,8 @@ export async function main(
 ): Promise<number> {
   const parsedArgs = parseCliArgs(args);
   const registry = deps.adapterRegistry ?? inputAdapterRegistry;
+  const projectRoot = await findProjectRoot();
+  const configRoot = resolveCliConfigRoot(projectRoot);
   let invocation: Invocation;
 
   if ("input" in parsedArgs) {
@@ -304,7 +345,7 @@ export async function main(
     }
 
     const context =
-      deps.adapterContext ?? defaultAdapterContext(await findProjectRoot());
+      deps.adapterContext ?? defaultAdapterContext(projectRoot, configRoot);
     invocation = await adapter.load(
       { kind: "cli", value: parsedArgs.value },
       context
@@ -319,8 +360,12 @@ export async function main(
   }
 
   const buildCommand = deps.buildCommand ?? buildFlueRunCommand;
-  const command = await buildCommand(invocation);
   const execute = deps.execute ?? executeFile;
+  const targetExecutor =
+    deps.targetExecutor ?? createFlueTargetExecutor({ buildCommand, execute });
+  const routing = deps.routing ?? (await loadRoutingDefinition(projectRoot));
+  const route = deps.routeInvocation ?? routeInvocation;
+  const target = await route(invocation, routing);
 
-  return await execute(command.command, command.args);
+  return await targetExecutor.execute({ invocation, target });
 }

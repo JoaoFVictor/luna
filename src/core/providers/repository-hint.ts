@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { InvocationRepository } from "../invocation/types.js";
+import type { InvocationRepository } from "../router/invocation.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 

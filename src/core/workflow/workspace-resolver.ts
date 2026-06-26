@@ -1,5 +1,5 @@
 import type { RepositoryConfig } from "../config/schemas.js";
-import type { Invocation } from "../invocation/types.js";
+import type { Invocation } from "../router/invocation.js";
 
 type RepositoryResolverError = Error & {
   code: "repository_not_configured";

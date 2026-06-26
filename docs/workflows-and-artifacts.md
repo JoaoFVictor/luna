@@ -186,7 +186,8 @@ workspace state, not just the state at worktree creation time.
 - Node runner: `src/core/configured-workflow/node-runner.ts`
 - Bootstrap: `src/core/configured-workflow/bootstrap.ts`
 - Finalization: `src/core/configured-workflow/finalization.ts`
-- Routing: `src/core/invocation/router.ts`
+- Routing definition: `src/core/router/router-definition.ts`
+- Routing evaluator: `src/core/router/router.ts`
 - Artifact store: `src/core/artifacts/store.ts`
 - Gated loop types: `src/core/agents/gated-loop-runner.ts`
 
@@ -197,6 +198,6 @@ Useful tests include `tests/core/workflow/definition.test.ts`,
 `tests/core/workflow-execution-policy.test.ts`,
 `tests/core/artifact-write-plan.test.ts`,
 `tests/core/configured-workflow-runner.test.ts`,
-`tests/core/router.test.ts`, `tests/core/workflow-state.test.ts`,
+`tests/core/router/router.test.ts`, `tests/core/workflow-state.test.ts`,
 `tests/core/gated-agent-loop-runner.test.ts`, and
 `tests/core/flue-gated-agent-loop-retry.test.ts`.
