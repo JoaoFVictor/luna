@@ -8,10 +8,15 @@ import {
 import { runPreflight as defaultRunPreflight } from "../../core/preflight/runner.js";
 import type { Invocation } from "../../core/router/invocation.js";
 import type { RepoContext } from "../../core/git/diff/types.js";
-import type { WorkspaceRecord } from "../../core/write-mode/types.js";
+import type {
+  ImplementationConfig,
+  WorkspaceRecord
+} from "../../core/write-mode/types.js";
+import type { RepositoryConfig } from "../../core/config/schemas.js";
 import type {
   CodeReviewFindings
 } from "../../core/findings/types.js";
+import type { Finding } from "../../core/findings/types.js";
 import type { AcceptanceDecision } from "../../core/decisions/types.js";
 import { defineBuiltInStep } from "../../core/built-ins/registry.js";
 import {
@@ -33,6 +38,36 @@ import {
 } from "../../core/built-ins/state.js";
 import { builtInError } from "../../core/built-ins/errors.js";
 import { githubPullRequestContextFrom } from "./pull-request-context.js";
+import type {
+  BuiltInStepDependencies,
+  MaybePromise
+} from "../../core/built-ins/types.js";
+
+type GitHubBuiltInDependencies = BuiltInStepDependencies & {
+  runPreflight?: (input: {
+    invocation: Invocation;
+    repository: RepositoryConfig;
+    workflow?: { mode: "read_only" | "trusted_local_write" };
+    implementation?: ImplementationConfig["implementation"];
+  }) => MaybePromise<unknown>;
+  prepareWorktree?: (input: {
+    invocation: Invocation;
+    repository: RepositoryConfig;
+    workspaceRoot: string;
+    runId: string;
+  }) => MaybePromise<WorkspaceRecord>;
+  collectRepoContext?: (input: {
+    repository: RepositoryConfig;
+    baseSha: string;
+    headSha: string;
+  }) => MaybePromise<RepoContext>;
+  validateFindingEvidence?: (
+    repoContext: RepoContext,
+    findings: readonly Finding[]
+  ) => Finding[];
+  buildFinalReportJson?: (input: Parameters<typeof defaultBuildFinalReportJson>[0]) => unknown;
+  buildFinalReportMarkdown?: (input: Parameters<typeof defaultBuildFinalReportMarkdown>[0]) => string;
+};
 
 function githubPullRequestInvocationFrom(state: { invocation?: unknown }): Invocation {
   const invocation = requiredState(
@@ -52,8 +87,11 @@ function githubPullRequestInvocationFrom(state: { invocation?: unknown }): Invoc
   return invocation;
 }
 
-export const preflightBuiltIn = defineBuiltInStep({
-  name: "preflight",
+export const preflightBuiltIn = defineBuiltInStep<
+  "runtime.preflight",
+  GitHubBuiltInDependencies
+>({
+  name: "runtime.preflight",
   metadata: repositoryRequiredMetadata,
   async run({ state, dependencies = {} }) {
     const runPreflight = dependencies.runPreflight ?? defaultRunPreflight;
@@ -71,8 +109,11 @@ export const preflightBuiltIn = defineBuiltInStep({
   }
 });
 
-export const prepareWorktreeBuiltIn = defineBuiltInStep({
-  name: "prepare_worktree",
+export const prepareWorktreeBuiltIn = defineBuiltInStep<
+  "runtime.prepare_worktree",
+  GitHubBuiltInDependencies
+>({
+  name: "runtime.prepare_worktree",
   metadata: prepareWorktreeMetadata,
   async run({ state, dependencies = {} }) {
     const prepareWorktree = dependencies.prepareWorktree ?? defaultPrepareWorktree;
@@ -86,8 +127,11 @@ export const prepareWorktreeBuiltIn = defineBuiltInStep({
   }
 });
 
-export const collectRepoContextBuiltIn = defineBuiltInStep({
-  name: "collect_repo_context",
+export const collectRepoContextBuiltIn = defineBuiltInStep<
+  "runtime.collect_repo_context",
+  GitHubBuiltInDependencies
+>({
+  name: "runtime.collect_repo_context",
   metadata: repositoryRequiredMetadata,
   async run({ state, dependencies = {} }) {
     const collectRepoContext =
@@ -107,8 +151,11 @@ export const collectRepoContextBuiltIn = defineBuiltInStep({
   }
 });
 
-export const validateCodeReviewFindingsBuiltIn = defineBuiltInStep({
-  name: "validate_code_review_findings",
+export const validateCodeReviewFindingsBuiltIn = defineBuiltInStep<
+  "runtime.validate_code_review_findings",
+  GitHubBuiltInDependencies
+>({
+  name: "runtime.validate_code_review_findings",
   async run({ state, input, dependencies = {} }) {
     const validateFindingEvidence =
       dependencies.validateFindingEvidence ?? defaultValidateFindingEvidence;
@@ -132,8 +179,11 @@ export const validateCodeReviewFindingsBuiltIn = defineBuiltInStep({
   }
 });
 
-export const finalCodeReviewReportBuiltIn = defineBuiltInStep({
-  name: "final_code_review_report",
+export const finalCodeReviewReportBuiltIn = defineBuiltInStep<
+  "runtime.final_code_review_report",
+  GitHubBuiltInDependencies
+>({
+  name: "runtime.final_code_review_report",
   metadata: finalReportMetadata,
   async run({ state, input, dependencies = {}, observabilitySummary }) {
     const buildFinalReportJson =

@@ -6,6 +6,7 @@ import {
 } from "../built-ins/metadata.js";
 import type {
   BuiltInStep,
+  BuiltInStepDependencies,
   BuiltInStepRunOptions
 } from "../built-ins/types.js";
 import type { RepositoryWorkspaceRecord } from "../repository-workspace/contracts.js";
@@ -24,6 +25,10 @@ import type {
 export type GitBuiltInPortResolver =
   | GitBuiltInPorts
   | ((options: BuiltInStepRunOptions) => GitBuiltInPorts);
+
+type GitBuiltInDependencies = BuiltInStepDependencies & {
+  readonly git?: GitBuiltInPorts;
+};
 
 type GitStatusBuiltInInput = {
   readonly operation_id: "git.status";
@@ -62,17 +67,15 @@ function resolvePorts(
 
 export function gitPortsFromBuiltInOptions({
   dependencies = {}
-}: BuiltInStepRunOptions): GitBuiltInPorts {
-  const { git } = dependencies;
-
-  if (git === undefined) {
+}: BuiltInStepRunOptions<GitBuiltInDependencies>): GitBuiltInPorts {
+  if (dependencies.git === undefined) {
     throw gitError(
       "Git ports are not configured for this runtime.",
       "git_port_unavailable"
     );
   }
 
-  return git;
+  return dependencies.git;
 }
 
 function workspaceFrom(state: { workspace?: unknown }): RepositoryWorkspaceRecord {

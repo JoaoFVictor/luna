@@ -2,6 +2,7 @@ import { defineBuiltInStep } from "../built-ins/registry.js";
 import { changeRequestCreateMetadata } from "../built-ins/metadata.js";
 import type {
   BuiltInStep,
+  BuiltInStepDependencies,
   BuiltInStepRunOptions
 } from "../built-ins/types.js";
 import type {
@@ -16,6 +17,10 @@ import type {
 export type ChangeRequestBuiltInPortResolver =
   | ChangeRequestBuiltInPorts
   | ((options: BuiltInStepRunOptions) => ChangeRequestBuiltInPorts);
+
+type ChangeRequestBuiltInDependencies = BuiltInStepDependencies & {
+  readonly changeRequest?: ChangeRequestBuiltInPorts;
+};
 
 function changeRequestError(
   message: string,
@@ -35,17 +40,15 @@ function resolvePorts(
 
 export function changeRequestPortsFromBuiltInOptions({
   dependencies = {}
-}: BuiltInStepRunOptions): ChangeRequestBuiltInPorts {
-  const { changeRequest } = dependencies;
-
-  if (changeRequest === undefined) {
+}: BuiltInStepRunOptions<ChangeRequestBuiltInDependencies>): ChangeRequestBuiltInPorts {
+  if (dependencies.changeRequest === undefined) {
     throw changeRequestError(
       "Change request ports are not configured for this runtime.",
       "change_request_port_unavailable"
     );
   }
 
-  return changeRequest;
+  return dependencies.changeRequest;
 }
 
 function readEnabled(

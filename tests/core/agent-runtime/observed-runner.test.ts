@@ -112,9 +112,6 @@ describe("observed agent runner", () => {
               {
                 id: "playwright",
                 transport: "stdio",
-                command: "npx",
-                args: ["-y", "@playwright/mcp@latest"],
-                env_vars: [],
                 allowed_tools: ["browser_navigate"],
                 timeout_ms: 60_000
               }

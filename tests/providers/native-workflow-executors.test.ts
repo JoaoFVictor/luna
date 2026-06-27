@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { officialCapabilityRegistry } from "../../src/capabilities/registry.js";
+import { createCapabilityRegistry } from "../../src/core/capabilities/registry.js";
+import { capabilityManifest } from "../../src/core/capabilities/manifest.js";
 import type { ChangeRequestProviderPort } from "../../src/core/change-request/contracts.js";
 import type { AppConfig } from "../../src/core/config/schemas.js";
-import { buildNativeWorkflowExecutors } from "../../src/platform/native/native-workflow-executors.js";
+import {
+  assertNativeWorkflowExecutorCoverage,
+  buildNativeWorkflowExecutors
+} from "../../src/platform/native/native-workflow-executors.js";
 
 const app: AppConfig = {
   workspace: {
@@ -14,6 +20,68 @@ const app: AppConfig = {
 };
 
 describe("native workflow executors", () => {
+  it("keeps official executable capability manifests covered by native executors", () => {
+    const executors = buildNativeWorkflowExecutors({
+      app,
+      projectRoot: "/repo",
+      run: {
+        run_id: "run-1",
+        workflow_id: "workflow-1",
+        attempt: 1,
+        started_at: "2026-06-27T00:00:00.000Z"
+      }
+    });
+
+    expect(() =>
+      assertNativeWorkflowExecutorCoverage({
+        builtIns: executors.builtIns,
+        patternExecutors: executors.patternExecutors,
+        capabilityRegistry: officialCapabilityRegistry
+      })
+    ).not.toThrow();
+  });
+
+  it("rejects native executor catalogs that do not cover declared executable capabilities", () => {
+    const registry = createCapabilityRegistry([
+      capabilityManifest({
+        id: "example",
+        kind: "execution",
+        version: "2026.06.27",
+        built_ins: {
+          "example.missing": {
+            id: "example.missing",
+            input_schema: {},
+            output_schema: {},
+            required_ports: []
+          }
+        },
+        patterns: {
+          "example.pattern": {
+            id: "example.pattern",
+            declaring_node_type: "pattern",
+            input_schema: {},
+            output_schema: {},
+            expand: { type: "declaring_node_subgraph" }
+          }
+        }
+      })
+    ]);
+
+    expect(() =>
+      assertNativeWorkflowExecutorCoverage({
+        builtIns: {},
+        patternExecutors: {},
+        capabilityRegistry: registry
+      })
+    ).toThrowError(expect.objectContaining({
+      code: "runtime_backend_invalid",
+      details: {
+        missing_built_ins: ["example.missing"],
+        missing_patterns: ["example.pattern"]
+      }
+    }));
+  });
+
   it("uses injected change-request provider factories instead of a hardcoded provider", async () => {
     const provider: ChangeRequestProviderPort = {
       provider_id: "example",

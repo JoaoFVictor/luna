@@ -29,6 +29,7 @@ export type NativeWorkflowTargetDependencies = {
     NativeLunaPlatformRegistrations,
     | "agentRuntimeFactories"
     | "workflowRuntimeFactories"
+    | "workflowBuiltIns"
     | "capabilityRegistry"
     | "capabilityManifests"
   >;
@@ -72,7 +73,9 @@ export async function runNativeWorkflowTarget(
     app,
     projectRoot: input.projectRoot,
     run,
-    changeRequestProviderFactories: dependencies.changeRequestProviderFactories
+    changeRequestProviderFactories: dependencies.changeRequestProviderFactories,
+    workflowBuiltIns: platform.workflowBuiltIns,
+    capabilityRegistry: platform.capabilityRegistry
   });
   const workflowRuntimeInput = {
     compiled: nativeWorkflow.compiled,

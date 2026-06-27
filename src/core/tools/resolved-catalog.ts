@@ -36,8 +36,7 @@ type ToolCatalogErrorCode =
   | "tool_catalog_tool_not_registered"
   | "tool_catalog_protocol_mismatch"
   | "tool_catalog_local_contract_missing"
-  | "tool_catalog_local_mode_not_allowed"
-  | "tool_catalog_runtime_requirement_unsupported";
+  | "tool_catalog_local_mode_not_allowed";
 
 class ToolCatalogError extends Error {
   readonly code: ToolCatalogErrorCode;
@@ -93,23 +92,10 @@ function addRequirements(
   requirements: readonly string[] | undefined
 ): void {
   for (const requirement of requirements ?? []) {
-    if (!isAgentRuntimeRequirement(requirement)) {
-      throw new ToolCatalogError(
-        "tool_catalog_runtime_requirement_unsupported",
-        `Unsupported runtime requirement on tool registration: ${requirement}`
-      );
-    }
-
     if (!target.includes(requirement)) {
       target.push(requirement);
     }
   }
-}
-
-function isAgentRuntimeRequirement(
-  value: string
-): value is AgentRuntimeRequirement {
-  return value === "tool_calling" || value === "mcp_tools";
 }
 
 function runtimeRequirementsFor(

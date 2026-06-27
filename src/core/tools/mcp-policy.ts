@@ -14,9 +14,6 @@ export type ResolvedMcpPolicyServer = {
   readonly transport: McpServerConfig["transport"];
   readonly allowed_tools: readonly string[];
   readonly timeout_ms: number;
-  readonly command?: string;
-  readonly args?: readonly string[];
-  readonly env_vars?: readonly string[];
 };
 
 export type ResolvedMcpPolicy = {
@@ -83,20 +80,11 @@ export function resolveMcpPolicy({
     const server = findServer(config, serverId);
     assertAgentModeAllowed(server, agent_mode);
 
-    const stdio = server.transport === "stdio"
-      ? {
-          command: server.command,
-          args: server.args,
-          env_vars: server.env_vars
-        }
-      : {};
-
     servers.push({
       id: server.id,
       transport: server.transport,
       allowed_tools: server.allowed_tools,
-      timeout_ms: server.timeout_ms,
-      ...stdio
+      timeout_ms: server.timeout_ms
     });
 
     for (const toolName of server.allowed_tools) {

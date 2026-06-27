@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRuntimePort } from "../../src/core/agent-runtime/contracts.js";
+import { defineBuiltInStep } from "../../src/core/built-ins/registry.js";
 import { capabilityManifest } from "../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../src/core/capabilities/registry.js";
 import { createInitialRuntimeState } from "../../src/core/runtime/state.js";
@@ -116,7 +117,7 @@ describe("native workflow runner", () => {
     }
   });
 
-  it("loads and compiles workflows against the injected platform capability registry", async () => {
+  it("runs custom executable capabilities supplied by the injected platform", async () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-native-platform-"));
     const configRoot = path.join(projectRoot, "config");
     const workflowRoot = path.join(projectRoot, "workflows", "custom-capability");
@@ -221,6 +222,14 @@ describe("native workflow runner", () => {
             platform: {
               capabilityRegistry: createCapabilityRegistry([customManifest]),
               capabilityManifests: [customManifest],
+              workflowBuiltIns: {
+                afterContext: [
+                  defineBuiltInStep({
+                    name: "custom.ok",
+                    run: () => ({ ok: true })
+                  })
+                ]
+              },
               agentRuntimeFactories: {
                 "custom.agent-runtime": {
                   id: "custom.agent-runtime",
@@ -247,18 +256,9 @@ describe("native workflow runner", () => {
         )
       ).resolves.toBeUndefined();
 
-      expect(runWorkflow).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workflow: expect.objectContaining({ id: "custom-capability" }),
-          compiled: expect.objectContaining({
-            nodes: [
-              expect.objectContaining({
-                id: "ok",
-                capability_id: "custom.ok"
-              })
-            ]
-          })
-        })
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
+      expect(runWorkflow.mock.calls[0]?.[0].builtIns["custom.ok"]).toEqual(
+        expect.any(Function)
       );
     } finally {
       await rm(projectRoot, { recursive: true, force: true });

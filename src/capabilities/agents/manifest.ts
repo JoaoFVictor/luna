@@ -1,5 +1,7 @@
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
 
+const runtimeRequirementSchema = { type: "string", minLength: 1 } as const;
+
 const agentInputSchema = {
   type: "object",
   additionalProperties: false,
@@ -44,7 +46,7 @@ const agentInputSchema = {
         tools: { type: "array", items: { type: "object" } },
         runtime_requirements: {
           type: "array",
-          items: { enum: ["tool_calling", "mcp_tools"] }
+          items: runtimeRequirementSchema
         }
       }
     },
@@ -54,7 +56,7 @@ const agentInputSchema = {
     events: { description: "Opaque event sink for in-memory runtime ports." },
     runtime_requirements: {
       type: "array",
-      items: { enum: ["tool_calling", "mcp_tools"] }
+      items: runtimeRequirementSchema
     }
   }
 } as const;
@@ -95,7 +97,7 @@ const agentDefinitionSchema = {
     context: { type: "object" },
     runtime_requirements: {
       type: "array",
-      items: { enum: ["tool_calling", "mcp_tools"] }
+      items: runtimeRequirementSchema
     },
     runtime_preferences: { type: "object" },
     metadata: { type: "object" }

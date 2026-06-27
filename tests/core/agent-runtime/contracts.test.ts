@@ -70,11 +70,12 @@ describe("agent runtime contracts", () => {
     await expect(port.runAgent(baseInput)).resolves.toEqual(output);
   });
 
-  it("keeps runtime requirements and normalized error codes explicit", () => {
-    expect(AgentRuntimeRequirementSchema.options).toEqual([
-      "tool_calling",
-      "mcp_tools"
-    ]);
+  it("keeps runtime requirements extensible and normalized error codes explicit", () => {
+    expect(AgentRuntimeRequirementSchema.parse("tool_calling")).toBe("tool_calling");
+    expect(AgentRuntimeRequirementSchema.parse("browser_automation")).toBe(
+      "browser_automation"
+    );
+    expect(() => AgentRuntimeRequirementSchema.parse("")).toThrow();
     expect(RuntimeErrorCodeSchema.options).toEqual([
       "runtime_unsupported_feature",
       "runtime_auth_failed",

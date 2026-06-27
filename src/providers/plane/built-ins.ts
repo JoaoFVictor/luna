@@ -8,11 +8,13 @@ import {
   planeIssueLocatorSummary
 } from "./task-context.js";
 import type { Invocation } from "../../core/router/invocation.js";
-import { defineBuiltInStep } from "../../core/built-ins/registry.js";
-import { finalReportMetadata } from "../../core/built-ins/metadata.js";
 import { requiredState } from "../../core/built-ins/state.js";
 import { builtInError } from "../../core/built-ins/errors.js";
-import { implementationReportInputFrom } from "../../core/built-ins/implementation-report.js";
+import {
+  implementationReportInputFrom,
+  implementationReportRenderersFrom
+} from "../../core/built-ins/implementation-report.js";
+import type { BuiltInStepRunOptions } from "../../core/built-ins/types.js";
 
 function planeIssueInvocationFrom(state: { invocation?: unknown }): Invocation {
   const invocation = requiredState(
@@ -32,57 +34,54 @@ function planeIssueInvocationFrom(state: { invocation?: unknown }): Invocation {
   return invocation;
 }
 
-export const collectTaskContextBuiltIn = defineBuiltInStep({
-  name: "collect_task_context",
-  run({ state }) {
-    const task = planeIssueContextFrom(planeIssueInvocationFrom(state));
-    const key = planeIssueKey(task);
-    const title = `Plane #${key}: ${task.title ?? key}`;
+export function collectTaskContext({ state }: BuiltInStepRunOptions): unknown {
+  const task = planeIssueContextFrom(planeIssueInvocationFrom(state));
+  const key = planeIssueKey(task);
+  const title = `Plane #${key}: ${task.title ?? key}`;
 
-    return {
-      implementation_title: title,
-      implementation_subject: {
-        key,
-        title: task.title
-      },
-      change_request_body: task.description,
-      plane: {
-        issue_id: task.issueId,
-        ...(task.sequenceId === undefined ? {} : { sequence_id: task.sequenceId }),
-        workspace_slug: task.workspaceSlug,
-        ...planeIssueLocatorSummary(task),
-        summary: task.title ?? "",
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        labels: task.labels
-      },
-      ...(task.repository === undefined ? {} : { repository: task.repository })
-    };
-  }
-});
+  return {
+    implementation_title: title,
+    implementation_subject: {
+      key,
+      title: task.title
+    },
+    change_request_body: task.description,
+    plane: {
+      issue_id: task.issueId,
+      ...(task.sequenceId === undefined ? {} : { sequence_id: task.sequenceId }),
+      workspace_slug: task.workspaceSlug,
+      ...planeIssueLocatorSummary(task),
+      summary: task.title ?? "",
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      labels: task.labels
+    },
+    ...(task.repository === undefined ? {} : { repository: task.repository })
+  };
+}
 
-export const finalImplementationReportBuiltIn = defineBuiltInStep({
-  name: "final_implementation_report",
-  metadata: finalReportMetadata,
-  run({ state, input, dependencies = {}, observabilitySummary }) {
-    const buildImplementationReportJson =
-      dependencies.buildImplementationReportJson ??
-      defaultBuildImplementationReportJson;
-    const buildImplementationReportMarkdown =
-      dependencies.buildImplementationReportMarkdown ??
-      defaultBuildImplementationReportMarkdown;
-    const reportInput = implementationReportInputFrom({
-      state,
-      input,
-      dependencies,
-      observabilitySummary,
-      invocation: planeIssueInvocationFrom(state)
-    });
+export function finalImplementationReport({
+  state,
+  input,
+  dependencies = {},
+  observabilitySummary
+}: BuiltInStepRunOptions): unknown {
+  const renderers = implementationReportRenderersFrom({
+    dependencies,
+    defaultBuildJson: defaultBuildImplementationReportJson,
+    defaultBuildMarkdown: defaultBuildImplementationReportMarkdown
+  });
+  const reportInput = implementationReportInputFrom({
+    state,
+    input,
+    dependencies,
+    observabilitySummary,
+    invocation: planeIssueInvocationFrom(state)
+  });
 
-    return {
-      json: buildImplementationReportJson(reportInput),
-      markdown: buildImplementationReportMarkdown(reportInput)
-    };
-  }
-});
+  return {
+    json: renderers.buildJson(reportInput),
+    markdown: renderers.buildMarkdown(reportInput)
+  };
+}

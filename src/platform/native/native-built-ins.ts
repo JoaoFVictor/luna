@@ -27,7 +27,10 @@ import {
   createProviderBuiltIns,
   defineTaskProviderBuiltIns
 } from "../../providers/built-ins.js";
-import { nativePlatformExtensions } from "./native-platform-extensions.js";
+import {
+  nativePlatformExtensions,
+  type NativeWorkflowBuiltIns
+} from "./native-platform-extensions.js";
 
 const providerWorkflowBuiltInsBeforeContext = nativePlatformExtensions.flatMap(
   (extension) => extension.workflowBuiltIns?.beforeContext ?? []
@@ -49,33 +52,43 @@ const collectTaskContextBuiltIn =
 const finalImplementationReportBuiltIn =
   createFinalImplementationReportBuiltIn(taskProviderBuiltIns);
 
-export const nativeProviderBuiltIns = createProviderBuiltIns({
-  dependencies: { collectContextIntake },
-  steps: [
-    ...providerWorkflowBuiltInsBeforeContext,
-    collectContextBuiltIn,
-    ...providerWorkflowBuiltInsAfterContext,
-    finalReportBuiltIn,
-    localExecReadCommandBuiltIn,
-    localExecWriteCommandBuiltIn,
-    repositoryWorkspaceCaptureBuiltIn,
-    gitStatusBuiltIn,
-    gitCommitBuiltIn,
-    gitPushBranchBuiltIn,
-    changeRequestCreateBuiltIn,
-    prepareImplementationWorktreeBuiltIn,
-    collectTaskContextBuiltIn,
-    runValidationCommandsBuiltIn,
-    recordImplementationValidationBuiltIn,
-    collectWorktreeDiffBuiltIn,
-    recordAcceptanceDecisionBuiltIn,
-    prepareCommitBuiltIn,
-    recordCommitLifecycleBuiltIn,
-    preparePushBuiltIn,
-    recordPushLifecycleBuiltIn,
-    finalImplementationReportBuiltIn
-  ]
-});
+export function createNativeProviderBuiltIns({
+  workflowBuiltIns = {}
+}: {
+  readonly workflowBuiltIns?: NativeWorkflowBuiltIns;
+} = {}) {
+  return createProviderBuiltIns({
+    dependencies: { collectContextIntake },
+    steps: [
+      ...providerWorkflowBuiltInsBeforeContext,
+      ...(workflowBuiltIns.beforeContext ?? []),
+      collectContextBuiltIn,
+      ...providerWorkflowBuiltInsAfterContext,
+      ...(workflowBuiltIns.afterContext ?? []),
+      finalReportBuiltIn,
+      localExecReadCommandBuiltIn,
+      localExecWriteCommandBuiltIn,
+      repositoryWorkspaceCaptureBuiltIn,
+      gitStatusBuiltIn,
+      gitCommitBuiltIn,
+      gitPushBranchBuiltIn,
+      changeRequestCreateBuiltIn,
+      prepareImplementationWorktreeBuiltIn,
+      collectTaskContextBuiltIn,
+      runValidationCommandsBuiltIn,
+      recordImplementationValidationBuiltIn,
+      collectWorktreeDiffBuiltIn,
+      recordAcceptanceDecisionBuiltIn,
+      prepareCommitBuiltIn,
+      recordCommitLifecycleBuiltIn,
+      preparePushBuiltIn,
+      recordPushLifecycleBuiltIn,
+      finalImplementationReportBuiltIn
+    ]
+  });
+}
+
+export const nativeProviderBuiltIns = createNativeProviderBuiltIns();
 
 export const builtInStepNames = nativeProviderBuiltIns.builtInStepNames;
 export const defaultBuiltInSteps = nativeProviderBuiltIns.builtInSteps;

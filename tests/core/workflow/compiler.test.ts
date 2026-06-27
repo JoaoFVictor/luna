@@ -10,7 +10,10 @@ import {
   compileWorkflow,
   type CompiledWorkflow
 } from "../../../src/core/workflow/compiler.js";
-import { LUNA_RUNTIME_STATE_SCHEMA_VERSION } from "../../../src/core/runtime/state.js";
+import {
+  LUNA_RUNTIME_STATE_CHANNELS,
+  LUNA_RUNTIME_STATE_SCHEMA_VERSION
+} from "../../../src/core/runtime/state.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -152,13 +155,18 @@ describe("workflow compiler", () => {
       "report->__end__"
     ]);
     expect(compiled.state.channels).toMatchObject({
+      node_statuses: { reducer: "object_merge" },
       steps: { reducer: "object_merge" },
-      events: { reducer: "append_only" },
-      artifacts: { reducer: "append_only" },
-      interrupts: { reducer: "append_only" }
+      attempts: { reducer: "object_merge" },
+      artifact_refs: { reducer: "append_only" },
+      interrupt_refs: { reducer: "append_only" }
     });
+    expect(compiled.state.channels).not.toHaveProperty("events");
+    expect(compiled.state.channels).not.toHaveProperty("artifacts");
+    expect(compiled.state.channels).not.toHaveProperty("interrupts");
     expect(compiled.state_schema_version).toBe(LUNA_RUNTIME_STATE_SCHEMA_VERSION);
     expect(compiled.state.channels).toEqual(LUNA_COMPILED_WORKFLOW_STATE_CHANNELS);
+    expect(compiled.state.channels).toEqual(LUNA_RUNTIME_STATE_CHANNELS);
   });
 
   it("compiles fan-out branches and requires a registered reducer before fan-in merge", () => {

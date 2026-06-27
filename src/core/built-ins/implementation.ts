@@ -6,10 +6,14 @@ import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../git/diff/w
 import type { AcceptanceDecision } from "../decisions/types.js";
 import { GatedAgentLoopResultSchema } from "../agent-runtime/contracts.js";
 import type {
+  ImplementationConfig,
   CommitChangesArtifact,
   PushBranchArtifact
 } from "../write-mode/types.js";
 import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
+import type { RepositoryConfig } from "../config/schemas.js";
+import type { ValidationResult } from "../validation/runner.js";
+import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
 import type {
   GitCommitResult,
   GitCommitSkippedResult,
@@ -40,10 +44,31 @@ import {
   workspaceFrom,
   workspaceRootFrom
 } from "./state.js";
+import type { BuiltInStepDependencies, MaybePromise } from "./types.js";
 
 type ImplementationSubject = {
   key: string;
   title?: string;
+};
+
+type ImplementationBuiltInDependencies = BuiltInStepDependencies & {
+  prepareImplementationWorktree?: (input: {
+    subject: ImplementationSubject;
+    repository: RepositoryConfig;
+    workspaceRoot: string;
+    runId: string;
+    baseRef: string;
+    branchPattern: string;
+  }) => MaybePromise<ImplementationWorktreeRecord>;
+  runValidationCommands?: (input: {
+    cwd: string;
+    commands: ImplementationConfig["implementation"]["validation"]["commands"];
+    maxOutputBytes: number;
+  }) => MaybePromise<ValidationResult>;
+  collectWorktreeDiff?: (input: {
+    cwd: string;
+    maxDiffBytes: number;
+  }) => MaybePromise<WorktreeDiff>;
 };
 
 function lifecycleContractError(message: string): Error {
@@ -176,8 +201,11 @@ function isGitPushResult(value: unknown): value is GitPushBranchResult {
   );
 }
 
-export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
-  name: "prepare_implementation_worktree",
+export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep<
+  "runtime.prepare_implementation_worktree",
+  ImplementationBuiltInDependencies
+>({
+  name: "runtime.prepare_implementation_worktree",
   metadata: prepareImplementationWorktreeMetadata,
   async run({ state, input, dependencies = {} }) {
     const prepareImplementationWorktree =
@@ -197,8 +225,11 @@ export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
   }
 });
 
-export const runValidationCommandsBuiltIn = defineBuiltInStep({
-  name: "run_validation_commands",
+export const runValidationCommandsBuiltIn = defineBuiltInStep<
+  "runtime.run_validation_commands",
+  ImplementationBuiltInDependencies
+>({
+  name: "runtime.run_validation_commands",
   metadata: runValidationCommandsMetadata,
   async run({ state, dependencies = {} }) {
     const runValidationCommands =
@@ -214,7 +245,7 @@ export const runValidationCommandsBuiltIn = defineBuiltInStep({
 });
 
 export const recordImplementationValidationBuiltIn = defineBuiltInStep({
-  name: "record_implementation_validation",
+  name: "runtime.record_implementation_validation",
   metadata: recordImplementationValidationMetadata,
   run({ state, input }) {
     const resolved = resolvedInput(input, state);
@@ -233,8 +264,11 @@ export const recordImplementationValidationBuiltIn = defineBuiltInStep({
   }
 });
 
-export const collectWorktreeDiffBuiltIn = defineBuiltInStep({
-  name: "collect_worktree_diff",
+export const collectWorktreeDiffBuiltIn = defineBuiltInStep<
+  "runtime.collect_worktree_diff",
+  ImplementationBuiltInDependencies
+>({
+  name: "runtime.collect_worktree_diff",
   metadata: collectWorktreeDiffMetadata,
   async run({ state, dependencies = {} }) {
     const collectWorktreeDiff =
@@ -249,7 +283,7 @@ export const collectWorktreeDiffBuiltIn = defineBuiltInStep({
 });
 
 export const recordAcceptanceDecisionBuiltIn = defineBuiltInStep({
-  name: "record_acceptance_decision",
+  name: "runtime.record_acceptance_decision",
   metadata: recordAcceptanceDecisionMetadata,
   run({ state, input }) {
     const resolved = resolvedInput(input, state);
@@ -258,7 +292,7 @@ export const recordAcceptanceDecisionBuiltIn = defineBuiltInStep({
 });
 
 export const prepareCommitBuiltIn = defineBuiltInStep({
-  name: "prepare_commit",
+  name: "runtime.prepare_commit",
   run({ state, input }) {
     const resolved = resolvedInput(input, state);
     const implementation = requiredImplementationFrom(state);
@@ -311,7 +345,7 @@ export const prepareCommitBuiltIn = defineBuiltInStep({
 });
 
 export const recordCommitLifecycleBuiltIn = defineBuiltInStep({
-  name: "record_commit_lifecycle",
+  name: "runtime.record_commit_lifecycle",
   metadata: recordCommitLifecycleMetadata,
   run({ input }) {
     const commit = requiredInput(input?.commit, "commit");
@@ -338,7 +372,7 @@ export const recordCommitLifecycleBuiltIn = defineBuiltInStep({
 });
 
 export const preparePushBuiltIn = defineBuiltInStep({
-  name: "prepare_push",
+  name: "runtime.prepare_push",
   run({ state, input }) {
     const resolved = resolvedInput(input, state);
     const implementation = requiredImplementationFrom(state);
@@ -374,7 +408,7 @@ export const preparePushBuiltIn = defineBuiltInStep({
 });
 
 export const recordPushLifecycleBuiltIn = defineBuiltInStep({
-  name: "record_push_lifecycle",
+  name: "runtime.record_push_lifecycle",
   metadata: recordPushLifecycleMetadata,
   run({ input }) {
     const push = requiredInput(input?.push, "push");

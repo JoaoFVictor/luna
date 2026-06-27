@@ -2,11 +2,12 @@ import { createBuiltInStepCatalog } from "../core/built-ins/catalog.js";
 import { builtInError } from "../core/built-ins/errors.js";
 import { defineBuiltInStep } from "../core/built-ins/registry.js";
 import { finalReportMetadata } from "../core/built-ins/metadata.js";
-import { workflowCapabilityBuiltInAliasEntries } from "../core/built-ins/workflow-aliases.js";
 import type { Invocation } from "../core/router/invocation.js";
 import type {
   BuiltInStep,
-  BuiltInStepDependencies
+  BuiltInStepDependencies,
+  BuiltInStepRunOptions,
+  MaybePromise
 } from "../core/built-ins/types.js";
 import type {
   WorkflowBuiltInExecutor,
@@ -15,8 +16,8 @@ import type { WorkflowRuntimeContext } from "../core/workflow/runtime-context.js
 import type { LunaRuntimeState } from "../core/runtime/state.js";
 
 export type TaskProviderBuiltIns = {
-  collectTaskContext: BuiltInStep<"collect_task_context">;
-  finalImplementationReport: BuiltInStep<"final_implementation_report">;
+  collectTaskContext(options: BuiltInStepRunOptions): MaybePromise<unknown>;
+  finalImplementationReport(options: BuiltInStepRunOptions): MaybePromise<unknown>;
 };
 
 export type TaskProviderBuiltInEntry = {
@@ -60,15 +61,15 @@ export function defineTaskProviderBuiltIns(
 
 export function createCollectTaskContextBuiltIn(
   taskProviderBuiltIns: Readonly<Record<string, TaskProviderBuiltIns>>
-): BuiltInStep<"collect_task_context"> {
+): BuiltInStep<"runtime.collect_task_context"> {
   return defineBuiltInStep({
-    name: "collect_task_context",
+    name: "runtime.collect_task_context",
     run(options) {
       const source = invocationSourceFrom(options.state);
       const provider = taskProviderBuiltIns[source];
 
       if (provider !== undefined) {
-        return provider.collectTaskContext.run(options);
+        return provider.collectTaskContext(options);
       }
 
       throw builtInError(
@@ -81,16 +82,16 @@ export function createCollectTaskContextBuiltIn(
 
 export function createFinalImplementationReportBuiltIn(
   taskProviderBuiltIns: Readonly<Record<string, TaskProviderBuiltIns>>
-): BuiltInStep<"final_implementation_report"> {
+): BuiltInStep<"runtime.final_implementation_report"> {
   return defineBuiltInStep({
-    name: "final_implementation_report",
+    name: "runtime.final_implementation_report",
     metadata: finalReportMetadata,
     run(options) {
       const source = invocationSourceFrom(options.state);
       const provider = taskProviderBuiltIns[source];
 
       if (provider !== undefined) {
-        return provider.finalImplementationReport.run(options);
+        return provider.finalImplementationReport(options);
       }
 
       throw builtInError(
@@ -118,12 +119,9 @@ export function createProviderBuiltIns({
       ...dependencies,
       ...extraDependencies
     };
-  const entries: Array<[string, WorkflowBuiltInExecutor]> = [];
+    const entries: Array<[string, WorkflowBuiltInExecutor]> = [];
     for (const name of catalog.names) {
       entries.push([name, workflowExecutorFor(catalog, name, resolvedDependencies)]);
-    }
-    for (const [capabilityId, name] of workflowCapabilityBuiltInAliasEntries()) {
-      entries.push([capabilityId, workflowExecutorFor(catalog, name, resolvedDependencies)]);
     }
 
     return Object.fromEntries(entries);

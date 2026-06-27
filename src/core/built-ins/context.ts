@@ -4,6 +4,17 @@ import { defineBuiltInStep } from "./registry.js";
 import { repositoryRequiredMetadata } from "./metadata.js";
 import { repositoryFrom, requiredState } from "./state.js";
 import { builtInError } from "./errors.js";
+import type {
+  CollectContextIntakeInput,
+  ContextIntake
+} from "../context/collect-context-contracts.js";
+import type { BuiltInStepDependencies, MaybePromise } from "./types.js";
+
+type ContextBuiltInDependencies = BuiltInStepDependencies & {
+  collectContextIntake?: (
+    input: CollectContextIntakeInput
+  ) => MaybePromise<ContextIntake>;
+};
 
 const CollectContextInputSchema = z
   .object({
@@ -19,8 +30,11 @@ function workspacePathFrom(state: {
   return typeof workspace?.path === "string" ? workspace.path : undefined;
 }
 
-export const collectContextBuiltIn = defineBuiltInStep({
-  name: "collect_context",
+export const collectContextBuiltIn = defineBuiltInStep<
+  "context.collect_context",
+  ContextBuiltInDependencies
+>({
+  name: "context.collect_context",
   metadata: repositoryRequiredMetadata,
   async run({ state, input, dependencies = {} }) {
     if (dependencies.collectContextIntake === undefined) {

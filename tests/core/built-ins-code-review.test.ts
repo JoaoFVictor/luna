@@ -186,7 +186,7 @@ describe("code review built-ins", () => {
       })
     ).resolves.toEqual({ status: "ok" });
 
-    expect(preflightBuiltIn.name).toBe("preflight");
+    expect(preflightBuiltIn.name).toBe("runtime.preflight");
     expect(runPreflight).toHaveBeenCalledWith({
       invocation,
       repository,
@@ -205,7 +205,7 @@ describe("code review built-ins", () => {
       })
     ).resolves.toEqual(workspace);
 
-    expect(prepareWorktreeBuiltIn.name).toBe("prepare_worktree");
+    expect(prepareWorktreeBuiltIn.name).toBe("runtime.prepare_worktree");
     expect(prepareWorktreeBuiltIn.metadata).toEqual({
       capturesWorkspace: true,
       requiresRepository: true,

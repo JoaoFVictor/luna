@@ -5,9 +5,9 @@ import type { AdapterContext, InputAdapter } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
-export type InputAdapterRegistry = {
-  get(id: string): InputAdapter | undefined;
-  require(id: string): InputAdapter;
+export type InputAdapterRegistry<Adapter extends InputAdapter = InputAdapter> = {
+  get(id: string): Adapter | undefined;
+  require(id: string): Adapter;
   ids(): string[];
 };
 
@@ -39,10 +39,10 @@ export function unknownAdapterError(
   );
 }
 
-export function defineInputAdapters(
-  adapters: readonly InputAdapter[]
-): InputAdapterRegistry {
-  const adapterById = new Map<string, InputAdapter>();
+export function defineInputAdapters<const Adapter extends InputAdapter>(
+  adapters: readonly Adapter[]
+): InputAdapterRegistry<Adapter> {
+  const adapterById = new Map<string, Adapter>();
   const ids: string[] = [];
 
   for (const adapter of adapters) {
@@ -57,7 +57,7 @@ export function defineInputAdapters(
     ids.push(adapter.id);
   }
 
-  const registry: InputAdapterRegistry = {
+  const registry: InputAdapterRegistry<Adapter> = {
     get(id) {
       return adapterById.get(id);
     },

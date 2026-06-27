@@ -87,6 +87,41 @@ describe("resolved tool catalog", () => {
     expect(catalog.tools[0]).toHaveProperty("local", localTool);
   });
 
+  it("accepts capability-declared runtime requirements without a core enum change", () => {
+    const registryWithRuntimeRequirement = createCapabilityRegistry([
+      capabilityManifest({
+        id: "browser",
+        kind: "execution",
+        version: "2026.06.26",
+        tools: {
+          "browser.screenshot": {
+            id: "browser.screenshot",
+            protocol: "local",
+            input_schema: schema,
+            output_schema: schema,
+            runtime_requirements: ["browser_automation"]
+          }
+        }
+      })
+    ]);
+    const browserTool = {
+      ...localTool,
+      id: "browser.screenshot"
+    } satisfies AnyLunaToolDefinition;
+
+    const catalog = resolveToolCatalog({
+      registry: registryWithRuntimeRequirement,
+      local_tools: { [browserTool.id]: browserTool },
+      requested_local_tool_ids: ["browser.screenshot"],
+      requested_mcp_server_ids: [],
+      agent_mode: "read_only",
+      mcp_config: { mcp_servers: [] }
+    });
+
+    expect(catalog.runtime_requirements).toEqual(["browser_automation"]);
+    expect(catalog.tools[0]?.runtime_requirements).toEqual(["browser_automation"]);
+  });
+
   it("adds only MCP tools allowed by explicit MCP server policy", () => {
     const catalog = resolveToolCatalog({
       registry,

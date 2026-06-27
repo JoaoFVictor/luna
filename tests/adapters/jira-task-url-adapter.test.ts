@@ -56,7 +56,7 @@ async function writeContextFiles() {
   );
 
   await writeFile(
-    join(projectRoot, "luna.auth.json"),
+    join(configRoot, "luna.auth.json"),
     JSON.stringify({
       providers: {
         jira: {

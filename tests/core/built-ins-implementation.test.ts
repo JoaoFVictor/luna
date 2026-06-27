@@ -11,8 +11,8 @@ import {
   runValidationCommandsBuiltIn
 } from "../../src/core/built-ins/implementation.js";
 import {
-  collectTaskContextBuiltIn,
-  finalImplementationReportBuiltIn
+  collectTaskContext as collectJiraTaskContext,
+  finalImplementationReport as finalJiraImplementationReport
 } from "../../src/providers/jira/built-ins.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
 import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
@@ -29,6 +29,8 @@ import type { ImplementationWorktreeRecord } from "../../src/core/write-mode/wor
 import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";
 import type { WorkflowState } from "../../src/core/workflow/state.js";
+import type { ImplementationReportInput } from "../../src/core/reports/implementation-report.js";
+import { implementationReportRenderersFrom } from "../../src/core/built-ins/implementation-report.js";
 
 const githubInvocation: Invocation = {
   version: "2026-06",
@@ -257,15 +259,63 @@ function implementationState(overrides: Partial<WorkflowState> = {}): WorkflowSt
 }
 
 async function runBuiltIn(
-  builtIn: {
-    run(options: BuiltInStepRunOptions): unknown;
-  },
+  builtIn:
+    | { run(options: BuiltInStepRunOptions): unknown }
+    | ((options: BuiltInStepRunOptions) => unknown),
   options: BuiltInStepRunOptions
 ): Promise<unknown> {
-  return await Promise.resolve().then(() => builtIn.run(options));
+  return await Promise.resolve().then(() =>
+    typeof builtIn === "function" ? builtIn(options) : builtIn.run(options)
+  );
 }
 
 describe("implementation built-ins", () => {
+  it("resolves implementation report renderers from optional dependencies with typed fallbacks", () => {
+    const defaultBuildJson = vi.fn(() => ({ report: "default-json" }));
+    const defaultBuildMarkdown = vi.fn(() => "# Default\n");
+    const buildImplementationReportJson = vi.fn(() => ({ report: "custom-json" }));
+    const buildImplementationReportMarkdown = vi.fn(() => "# Custom\n");
+    const reportInput: ImplementationReportInput = {
+      invocation: jiraInvocation,
+      status: "ready_for_change_request",
+      branch: implementationWorkspace.branch,
+      worktree: {
+        path: implementationWorkspace.path,
+        preserved: implementationWorkspace.preserved,
+        reason: implementationWorkspace.reason
+      },
+      validation,
+      commit: commitArtifact,
+      push: pushArtifact,
+      changeRequest: changeRequestArtifact,
+      trustedHostLocal: true
+    };
+
+    const custom = implementationReportRenderersFrom({
+      dependencies: {
+        buildImplementationReportJson,
+        buildImplementationReportMarkdown
+      },
+      defaultBuildJson,
+      defaultBuildMarkdown
+    });
+
+    expect(custom.buildJson(reportInput)).toEqual({ report: "custom-json" });
+    expect(custom.buildMarkdown(reportInput)).toBe("# Custom\n");
+
+    const fallback = implementationReportRenderersFrom({
+      dependencies: {
+        buildImplementationReportJson: "not-a-function",
+        buildImplementationReportMarkdown: false
+      },
+      defaultBuildJson,
+      defaultBuildMarkdown
+    });
+
+    expect(fallback.buildJson(reportInput)).toEqual({ report: "default-json" });
+    expect(fallback.buildMarkdown(reportInput)).toBe("# Default\n");
+  });
+
   it("runs prepare_implementation_worktree through injected dependencies", async () => {
     const prepareImplementationWorktree = vi.fn(async () => implementationWorkspace);
 
@@ -303,7 +353,7 @@ describe("implementation built-ins", () => {
 
   it("collects minimum Jira task context without external calls", async () => {
     await expect(
-      runBuiltIn(collectTaskContextBuiltIn, { state: implementationState() })
+      runBuiltIn(collectJiraTaskContext, { state: implementationState() })
     ).resolves.toEqual({
       implementation_title: "ABC-123: Fix checkout validation",
       implementation_subject: {
@@ -554,7 +604,7 @@ describe("implementation built-ins", () => {
     const buildImplementationReportMarkdown = vi.fn(() => "# Report\n");
 
     await expect(
-      runBuiltIn(finalImplementationReportBuiltIn, {
+      runBuiltIn(finalJiraImplementationReport, {
         state: implementationState({
           steps: {
             implementation: { final_validation: validation },
@@ -588,9 +638,6 @@ describe("implementation built-ins", () => {
       changeRequest: changeRequestArtifact,
       trustedHostLocal: true
     };
-    expect(finalImplementationReportBuiltIn.metadata).toEqual({
-      deferredLifecycle: "final_report"
-    });
     expect(buildImplementationReportJson).toHaveBeenCalledWith(reportInput);
     expect(buildImplementationReportMarkdown).toHaveBeenCalledWith(reportInput);
   });
@@ -601,7 +648,7 @@ describe("implementation built-ins", () => {
     }));
     const buildImplementationReportMarkdown = vi.fn(() => "# Report\n");
 
-    await finalImplementationReportBuiltIn.run({
+    await runBuiltIn(finalJiraImplementationReport, {
       state: implementationState({
         steps: {
           implementation: { final_validation: failedValidation },
@@ -627,7 +674,7 @@ describe("implementation built-ins", () => {
     }));
     const buildImplementationReportMarkdown = vi.fn(() => "# Report\n");
 
-    await finalImplementationReportBuiltIn.run({
+    await runBuiltIn(finalJiraImplementationReport, {
       state: implementationState({
         steps: {
           implementation: { final_validation: validation },
@@ -648,8 +695,8 @@ describe("implementation built-ins", () => {
   });
 
   it.each([
-    collectTaskContextBuiltIn,
-    finalImplementationReportBuiltIn
+    collectJiraTaskContext,
+    finalJiraImplementationReport
   ])("rejects GitHub invocation for Jira-only built-in $name", async (builtIn) => {
     await expect(
       runBuiltIn(builtIn, {
@@ -674,7 +721,7 @@ describe("implementation built-ins", () => {
     collectWorktreeDiffBuiltIn,
     prepareCommitBuiltIn,
     preparePushBuiltIn,
-    finalImplementationReportBuiltIn
+    finalJiraImplementationReport
   ])("rejects missing implementation config for $name", async (builtIn) => {
     await expect(
       runBuiltIn(builtIn, {
@@ -699,7 +746,7 @@ describe("implementation built-ins", () => {
   it.each([
     ["branch", prepareCommitBuiltIn, "workspace.branch"],
     ["remote", preparePushBuiltIn, "workspace.remote"],
-    ["base_sha", finalImplementationReportBuiltIn, "workspace.base_sha"]
+    ["base_sha", finalJiraImplementationReport, "workspace.base_sha"]
   ] as const)("rejects missing workspace.%s", async (field, builtIn, expectedMessage) => {
     const brokenWorkspace = { ...implementationWorkspace };
     delete brokenWorkspace[field];
@@ -728,7 +775,7 @@ describe("implementation built-ins", () => {
     ["acceptance", prepareCommitBuiltIn, "steps.acceptance"],
     ["diff", prepareCommitBuiltIn, "steps.worktree_diff"],
     ["commit", preparePushBuiltIn, "steps.commit_lifecycle"],
-    ["change_request", finalImplementationReportBuiltIn, "steps.change_request"]
+    ["change_request", finalJiraImplementationReport, "steps.change_request"]
   ] as const)(
     "rejects missing %s when input and state.steps fallback are absent",
     async (_missing, builtIn, expectedMessage) => {
@@ -784,7 +831,7 @@ describe("implementation built-ins", () => {
         state: implementationState({ steps: { commit_lifecycle: commitArtifact } })
       })
     ).toMatchObject({ operation_id: "git.push_branch" });
-    await finalImplementationReportBuiltIn.run({
+    await runBuiltIn(finalJiraImplementationReport, {
       state: implementationState({
         steps: {
           implementation: { final_validation: validation },

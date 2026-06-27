@@ -19,6 +19,7 @@ import {
   nativeAgentRuntimeFactories,
   nativeWorkflowRuntimeFactories
 } from "./native-runtime-factories.js";
+import type { NativeWorkflowBuiltIns } from "./native-platform-extensions.js";
 
 export type NativeLunaPlatformRegistrations = {
   readonly inputAdapterRegistry: InputAdapterRegistry;
@@ -27,6 +28,7 @@ export type NativeLunaPlatformRegistrations = {
     string,
     WorkflowRuntimeFactory<RunWorkflowInput, ResumeWorkflowInput, WorkflowRunResult>
   >>;
+  readonly workflowBuiltIns?: NativeWorkflowBuiltIns;
   readonly capabilityRegistry: CapabilityRegistry;
   readonly capabilityManifests: readonly CapabilityManifest[];
 };

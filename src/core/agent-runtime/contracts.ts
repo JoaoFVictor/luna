@@ -6,10 +6,7 @@ import { ValidationResultSchema } from "../validation/runner.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
-export const AgentRuntimeRequirementSchema = z.enum([
-  "tool_calling",
-  "mcp_tools"
-]);
+export const AgentRuntimeRequirementSchema = NonEmptyStringSchema;
 export type AgentRuntimeRequirement = z.infer<
   typeof AgentRuntimeRequirementSchema
 >;

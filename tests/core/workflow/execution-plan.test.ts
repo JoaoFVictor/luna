@@ -33,10 +33,11 @@ function compiledWorkflow(): CompiledWorkflow {
     ],
     state: {
       channels: {
+        node_statuses: { reducer: "object_merge" },
         steps: { reducer: "object_merge" },
-        events: { reducer: "append_only" },
-        artifacts: { reducer: "append_only" },
-        interrupts: { reducer: "append_only" }
+        attempts: { reducer: "object_merge" },
+        artifact_refs: { reducer: "append_only" },
+        interrupt_refs: { reducer: "append_only" }
       }
     }
   };

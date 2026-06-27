@@ -109,9 +109,28 @@ export const manifest = capabilityManifest({
       output_schema: objectOutputSchema,
       required_ports: []
     },
+    "runtime.run_validation_commands": {
+      id: "runtime.run_validation_commands",
+      input_schema: emptyInputSchema,
+      output_schema: objectOutputSchema,
+      required_ports: []
+    },
     "runtime.collect_worktree_diff": {
       id: "runtime.collect_worktree_diff",
       input_schema: emptyInputSchema,
+      output_schema: objectOutputSchema,
+      required_ports: []
+    },
+    "runtime.record_acceptance_decision": {
+      id: "runtime.record_acceptance_decision",
+      input_schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["acceptance"],
+        properties: {
+          acceptance: {}
+        }
+      },
       output_schema: objectOutputSchema,
       required_ports: []
     },

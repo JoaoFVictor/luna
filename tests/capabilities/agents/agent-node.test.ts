@@ -302,7 +302,7 @@ describe("agents capability agent node", () => {
     ).rejects.toMatchObject({ code: "agent_skills_missing_skill" });
   });
 
-  it("rejects invalid node runtime requirements before calling the runtime", async () => {
+  it("rejects unsupported node runtime requirements before running the agent", async () => {
     const port = runtime({ status: "done" });
 
     await expect(
@@ -324,7 +324,7 @@ describe("agents capability agent node", () => {
         tools: emptyTools(),
         runtime_requirements: ["provider_magic"] as never
       })
-    ).rejects.toMatchObject({ code: "agent_runtime_requirements_invalid" });
+    ).rejects.toMatchObject({ code: "runtime_unsupported_feature" });
     expect(port.validate).not.toHaveBeenCalled();
     expect(port.runAgent).not.toHaveBeenCalled();
   });

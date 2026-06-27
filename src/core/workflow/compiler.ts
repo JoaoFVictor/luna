@@ -13,7 +13,10 @@ import type {
   WorkflowDefinition,
   WorkflowNode
 } from "./definition-types.js";
-import { LUNA_RUNTIME_STATE_SCHEMA_VERSION } from "../runtime/state.js";
+import {
+  LUNA_RUNTIME_STATE_CHANNELS,
+  LUNA_RUNTIME_STATE_SCHEMA_VERSION
+} from "../runtime/state.js";
 
 export type WorkflowCompilerErrorCode =
   | "workflow_capability_unknown"
@@ -50,12 +53,8 @@ export type CompiledWorkflowStateChannel = {
   readonly reducer: WorkflowReducer;
 };
 
-export const LUNA_COMPILED_WORKFLOW_STATE_CHANNELS = {
-  steps: { reducer: "object_merge" },
-  events: { reducer: "append_only" },
-  artifacts: { reducer: "append_only" },
-  interrupts: { reducer: "append_only" }
-} as const satisfies Record<string, CompiledWorkflowStateChannel>;
+export const LUNA_COMPILED_WORKFLOW_STATE_CHANNELS =
+  LUNA_RUNTIME_STATE_CHANNELS satisfies Record<string, CompiledWorkflowStateChannel>;
 
 export type CompileWorkflowInput = {
   readonly workflow: WorkflowDefinition;

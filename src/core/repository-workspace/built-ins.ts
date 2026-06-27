@@ -4,6 +4,7 @@ import {
 } from "../built-ins/metadata.js";
 import type {
   BuiltInStep,
+  BuiltInStepDependencies,
   BuiltInStepRunOptions
 } from "../built-ins/types.js";
 import type {
@@ -18,6 +19,10 @@ import type {
 export type RepositoryWorkspaceBuiltInPortResolver =
   | RepositoryWorkspaceBuiltInPorts
   | ((options: BuiltInStepRunOptions) => RepositoryWorkspaceBuiltInPorts);
+
+type RepositoryWorkspaceBuiltInDependencies = BuiltInStepDependencies & {
+  readonly repositoryWorkspace?: RepositoryWorkspaceBuiltInPorts;
+};
 
 type CaptureBuiltInInput = {
   readonly operation_id: "repository-workspace.capture";
@@ -43,17 +48,15 @@ function resolvePorts(
 
 export function repositoryWorkspacePortsFromBuiltInOptions({
   dependencies = {}
-}: BuiltInStepRunOptions): RepositoryWorkspaceBuiltInPorts {
-  const { repositoryWorkspace } = dependencies;
-
-  if (repositoryWorkspace === undefined) {
+}: BuiltInStepRunOptions<RepositoryWorkspaceBuiltInDependencies>): RepositoryWorkspaceBuiltInPorts {
+  if (dependencies.repositoryWorkspace === undefined) {
     throw repositoryWorkspaceError(
       "Repository workspace ports are not configured for this runtime.",
       "repository_workspace_port_unavailable"
     );
   }
 
-  return repositoryWorkspace;
+  return dependencies.repositoryWorkspace;
 }
 
 function runIdFrom(state: { run?: unknown }): string {

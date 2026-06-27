@@ -88,15 +88,17 @@ describe("workflow agent runtime requirements", () => {
     });
   });
 
-  it("rejects unknown runtime requirements", async () => {
+  it("preserves custom runtime requirements for runtime capability negotiation", async () => {
     const root = await patchMinimumAgentWorkflow(["runtime_magic"]);
 
-    await expect(loadWorkflowDefinition(root, "minimum", {
+    const workflow = await loadWorkflowDefinition(root, "minimum", {
       capabilityRegistry: registry(),
       digestResolver: digestResolver({ "agents/reviewer/agent.yaml": "sha256:reviewer" })
-    })).rejects.toMatchObject({
-      code: "workflow_schema_invalid",
-      path: "$.nodes[0].runtime_requirements[0]"
+    });
+
+    expect(workflow.graph.nodes[0]).toMatchObject({
+      type: "agent",
+      runtime_requirements: ["runtime_magic"]
     });
   });
 });

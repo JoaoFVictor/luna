@@ -240,6 +240,9 @@ describe("runtime state contract", () => {
 
   it("describes append-only reducers as explicit compiler metadata", () => {
     expect(LUNA_RUNTIME_STATE_REDUCER_METADATA).toEqual({
+      node_statuses: { reducer: "object_merge" },
+      steps: { reducer: "object_merge" },
+      attempts: { reducer: "object_merge" },
       artifact_refs: { reducer: "append_only" },
       interrupt_refs: { reducer: "append_only" }
     });

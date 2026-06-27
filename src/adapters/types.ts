@@ -15,3 +15,7 @@ export type InputAdapter = {
   description: string;
   load(input: AdapterInput, context: AdapterContext): Promise<Invocation>;
 };
+
+export type RegisteredInputAdapter = InputAdapter & {
+  source: string;
+};

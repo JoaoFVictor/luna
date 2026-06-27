@@ -304,9 +304,11 @@ Built-in steps:
 - `runtime.prepare_implementation_worktree`
 - `runtime.prepare_push`
 - `runtime.prepare_worktree`
+- `runtime.record_acceptance_decision`
 - `runtime.record_commit_lifecycle`
 - `runtime.record_implementation_validation`
 - `runtime.record_push_lifecycle`
+- `runtime.run_validation_commands`
 - `runtime.validate_code_review_findings`
 
 Local tools:

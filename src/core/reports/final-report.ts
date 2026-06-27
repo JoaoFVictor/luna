@@ -115,7 +115,7 @@ export function renderFinalReport(
 }
 
 export const finalReportBuiltIn = defineBuiltInStep({
-  name: "final_report",
+  name: "reports.final_report",
   metadata: finalReportMetadata,
   async run({ input, observabilitySummary }) {
     return renderFinalReport(input ?? {}, observabilitySummary);

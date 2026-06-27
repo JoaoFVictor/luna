@@ -66,7 +66,7 @@ describe("MCP policy", () => {
     expect(policy.runtime_requirements).toEqual([]);
   });
 
-  it("preserves stdio server launch policy for requested MCP servers", () => {
+  it("keeps MCP server policy free of stdio materialization details", () => {
     const policy = resolveMcpPolicy({
       requested_server_ids: ["playwright"],
       agent_mode: "read_only",
@@ -77,13 +77,13 @@ describe("MCP policy", () => {
       {
         id: "playwright",
         transport: "stdio",
-        command: "npx",
-        args: ["-y", "@playwright/mcp@latest"],
-        env_vars: [],
         allowed_tools: ["browser_navigate"],
         timeout_ms: 60_000
       }
     ]);
+    expect(policy.servers[0]).not.toHaveProperty("command");
+    expect(policy.servers[0]).not.toHaveProperty("args");
+    expect(policy.servers[0]).not.toHaveProperty("env_vars");
     expect(policy.tools).toEqual([
       {
         id: "playwright.browser_navigate",

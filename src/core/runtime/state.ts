@@ -98,7 +98,7 @@ export type RuntimePrimaryFailure = JsonObject & {
 };
 
 export type RuntimeReducerMetadata = {
-  reducer: "append_only";
+  reducer: "append_only" | "object_merge";
 };
 
 export type LunaRuntimeState = {
@@ -117,6 +117,14 @@ export type LunaRuntimeState = {
   primary_failure?: RuntimePrimaryFailure;
 };
 
+export const LUNA_RUNTIME_STATE_CHANNELS = {
+  node_statuses: { reducer: "object_merge" },
+  steps: { reducer: "object_merge" },
+  attempts: { reducer: "object_merge" },
+  artifact_refs: { reducer: "append_only" },
+  interrupt_refs: { reducer: "append_only" }
+} as const satisfies Record<string, RuntimeReducerMetadata>;
+
 export type CreateInitialRuntimeStateOptions = {
   invocation: JsonValue;
   config: JsonValue;
@@ -125,10 +133,7 @@ export type CreateInitialRuntimeStateOptions = {
   event_cursor?: string;
 };
 
-export const LUNA_RUNTIME_STATE_REDUCER_METADATA = {
-  artifact_refs: { reducer: "append_only" },
-  interrupt_refs: { reducer: "append_only" }
-} as const satisfies Record<string, RuntimeReducerMetadata>;
+export const LUNA_RUNTIME_STATE_REDUCER_METADATA = LUNA_RUNTIME_STATE_CHANNELS;
 
 const requiredStateKeys = [
   "state_schema_version",

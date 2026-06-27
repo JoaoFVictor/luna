@@ -190,7 +190,7 @@ async function loadJiraIssueUrlInvocation(
     JiraConfigSchema
   );
   const instance = findJiraInstance(jira, parsed);
-  const auth = jiraAuthForInstance(await loadLunaAuth(context.projectRoot), instance.id);
+  const auth = jiraAuthForInstance(await loadLunaAuth(context.configRoot), instance.id);
   const issueResponse = await defaultFetchIssue({
     instance,
     auth,

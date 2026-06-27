@@ -22,15 +22,15 @@ const lunaAuthFixture: JiraLunaAuthConfig = {
 };
 
 describe("Luna Jira auth", () => {
-  it("loads Jira auth from luna.auth.json", async () => {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-auth-"));
+  it("loads Jira auth from luna.auth.json in the config root", async () => {
+    const configRoot = await mkdtemp(path.join(tmpdir(), "luna-auth-"));
     await writeFile(
-      path.join(projectRoot, "luna.auth.json"),
+      path.join(configRoot, "luna.auth.json"),
       JSON.stringify(lunaAuthFixture),
       "utf8"
     );
 
-    await expect(loadLunaAuth(projectRoot)).resolves.toEqual(lunaAuthFixture);
+    await expect(loadLunaAuth(configRoot)).resolves.toEqual(lunaAuthFixture);
   });
 
   it("throws luna_auth_missing when luna.auth.json is missing", async () => {

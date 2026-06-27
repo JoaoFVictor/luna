@@ -18,6 +18,47 @@ import {
   stepValue
 } from "./state.js";
 
+export type ImplementationReportRenderer = (input: ImplementationReportInput) => unknown;
+export type ImplementationReportMarkdownRenderer = (
+  input: ImplementationReportInput
+) => string;
+
+function isImplementationReportRenderer(
+  value: unknown
+): value is ImplementationReportRenderer {
+  return typeof value === "function";
+}
+
+function isImplementationReportMarkdownRenderer(
+  value: unknown
+): value is ImplementationReportMarkdownRenderer {
+  return typeof value === "function";
+}
+
+export function implementationReportRenderersFrom({
+  dependencies = {},
+  defaultBuildJson,
+  defaultBuildMarkdown
+}: {
+  dependencies?: Record<string, unknown>;
+  defaultBuildJson: ImplementationReportRenderer;
+  defaultBuildMarkdown: ImplementationReportMarkdownRenderer;
+}): {
+  buildJson: ImplementationReportRenderer;
+  buildMarkdown: ImplementationReportMarkdownRenderer;
+} {
+  return {
+    buildJson: isImplementationReportRenderer(dependencies.buildImplementationReportJson)
+      ? dependencies.buildImplementationReportJson
+      : defaultBuildJson,
+    buildMarkdown: isImplementationReportMarkdownRenderer(
+      dependencies.buildImplementationReportMarkdown
+    )
+      ? dependencies.buildImplementationReportMarkdown
+      : defaultBuildMarkdown
+  };
+}
+
 function implementationReportStatus({
   validation,
   commit,

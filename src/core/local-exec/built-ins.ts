@@ -1,6 +1,7 @@
 import { defineBuiltInStep } from "../built-ins/registry.js";
 import type {
   BuiltInStep,
+  BuiltInStepDependencies,
   BuiltInStepRunOptions
 } from "../built-ins/types.js";
 import type {
@@ -20,6 +21,10 @@ const DEFAULT_STATE_OUTPUT_LIMIT_BYTES = 64 * 1024;
 export type LocalExecCommandBuiltInPortResolver =
   | LocalExecCommandBuiltInPorts
   | ((options: BuiltInStepRunOptions) => LocalExecCommandBuiltInPorts);
+
+type LocalExecCommandBuiltInDependencies = BuiltInStepDependencies & {
+  readonly localExec?: LocalExecCommandBuiltInPorts;
+};
 
 type LocalExecCommandInput = LocalCommandInput & {
   readonly operation_id: LocalExecOperationId;
@@ -141,17 +146,15 @@ function resolvePorts(
 
 export function localExecPortsFromBuiltInOptions({
   dependencies = {}
-}: BuiltInStepRunOptions): LocalExecCommandBuiltInPorts {
-  const { localExec } = dependencies;
-
-  if (localExec === undefined) {
+}: BuiltInStepRunOptions<LocalExecCommandBuiltInDependencies>): LocalExecCommandBuiltInPorts {
+  if (dependencies.localExec === undefined) {
     throw localExecError(
       "Local-exec ports are not configured for this runtime.",
       "local_exec_port_unavailable"
     );
   }
 
-  return localExec;
+  return dependencies.localExec;
 }
 
 function byteLength(value: string): number {
