@@ -113,6 +113,25 @@ async function writeGatedLoopWorkflow(
 }
 
 describe("quality-gates workflow definition", () => {
+  it("publishes the gated agent loop authoring schema used by workflow YAML", () => {
+    const pattern = qualityGates.patterns?.["quality-gates.gated_agent_loop"];
+
+    expect(pattern?.input_schema).toMatchObject({
+      required: ["worker", "gates"],
+      properties: {
+        worker: { type: "string" },
+        gates: { type: "array" },
+        repair: { type: "object" }
+      }
+    });
+    expect(pattern?.input_schema).not.toMatchObject({
+      properties: {
+        writer_agent: expect.anything(),
+        max_iterations: expect.anything()
+      }
+    });
+  });
+
   it("requires gated agent loop artifact sources to read from the declaring node", async () => {
     const root = await copyMinimumWorkflow();
     await writeGatedLoopWorkflow(root, gatedLoopNode({

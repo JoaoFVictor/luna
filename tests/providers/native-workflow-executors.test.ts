@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChangeRequestProviderPort } from "../../src/core/change-request/contracts.js";
 import type { AppConfig } from "../../src/core/config/schemas.js";
-import { buildNativeWorkflowExecutors } from "../../src/providers/native-workflow-executors.js";
+import { buildNativeWorkflowExecutors } from "../../src/platform/native/native-workflow-executors.js";
 
 const app: AppConfig = {
   workspace: {

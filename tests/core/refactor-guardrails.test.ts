@@ -209,11 +209,29 @@ function isProviderAdapterPath(relativePath: string): boolean {
   );
 }
 
+function isProviderOwnedSourcePath(relativePath: string): boolean {
+  if (!relativePath.startsWith("src/providers/") || !relativePath.endsWith(".ts")) {
+    return false;
+  }
+
+  const providerPath = relativePath.slice("src/providers/".length);
+  if (providerPath.startsWith("native-")) {
+    return false;
+  }
+
+  return true;
+}
+
+function isNativePlatformPath(relativePath: string): boolean {
+  return relativePath.startsWith("src/platform/native/");
+}
+
 function isGenericRuntimePath(relativePath: string): boolean {
   return (
     relativePath.startsWith("src/") &&
     relativePath.endsWith(".ts") &&
     !isProviderPath(relativePath) &&
+    !isNativePlatformPath(relativePath) &&
     !allowedCompositionRoots.has(relativePath)
   );
 }
@@ -477,6 +495,14 @@ describe("refactor guardrails", () => {
     ];
 
     expect(providerOwnedTargets.filter(isProviderPath)).toEqual(providerOwnedTargets);
+  });
+
+  it("keeps native platform composition out of provider-owned modules", async () => {
+    const misplacedNativePlatformFiles = (await listFiles("src/providers"))
+      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => !isProviderOwnedSourcePath(file));
+
+    expect(misplacedNativePlatformFiles).toEqual([]);
   });
 
   it("rejects expired temporary core-domain violations", () => {

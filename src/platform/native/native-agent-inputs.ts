@@ -1,21 +1,21 @@
 import path from "node:path";
-import { loadAgentDefinition } from "../capabilities/agents/agent-loader.js";
+import { loadAgentDefinition } from "../../capabilities/agents/agent-loader.js";
 import {
   gatedAgentGateKey,
   gatedAgentWorkerKey
-} from "../capabilities/quality-gates/gated-agent-loop-keys.js";
-import { loadYamlFile } from "../core/config/loader.js";
-import { loadMcpConfig } from "../core/config/mcp.js";
-import { resolveModelProfiles } from "../core/config/models.js";
-import type { CapabilityRegistry } from "../core/capabilities/registry.js";
+} from "../../capabilities/quality-gates/gated-agent-loop-keys.js";
+import { loadYamlFile } from "../../core/config/loader.js";
+import { loadMcpConfig } from "../../core/config/mcp.js";
+import { resolveModelProfiles } from "../../core/config/models.js";
+import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
 import {
   ModelsConfigSchema,
   type RepositoryConfig
-} from "../core/config/schemas.js";
-import { lunaToolCatalog } from "../core/tools/catalog.js";
-import { resolveToolCatalog } from "../core/tools/resolved-catalog.js";
-import type { WorkflowDefinition } from "../core/workflow/definition-types.js";
-import type { WorkflowAgentInputMap } from "../core/workflow/execution-contracts.js";
+} from "../../core/config/schemas.js";
+import { lunaToolCatalog } from "../../core/tools/catalog.js";
+import { resolveToolCatalog } from "../../core/tools/resolved-catalog.js";
+import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
+import type { WorkflowAgentInputMap } from "../../core/workflow/execution-contracts.js";
 import { nativeLunaPlatformRegistrations } from "./native-platform-registrations.js";
 
 export async function buildNativeWorkflowAgentInputs({

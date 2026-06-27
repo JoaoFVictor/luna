@@ -1,19 +1,19 @@
 import {
   officialCapabilityManifests,
   officialCapabilityRegistry
-} from "../capabilities/registry.js";
-import type { InputAdapterRegistry } from "../adapters/registry.js";
-import type { CapabilityRegistry } from "../core/capabilities/registry.js";
-import type { CapabilityManifest } from "../core/capabilities/manifest.js";
+} from "../../capabilities/registry.js";
+import type { InputAdapterRegistry } from "../../adapters/registry.js";
+import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
+import type { CapabilityManifest } from "../../core/capabilities/manifest.js";
 import type {
   ResumeWorkflowInput,
   RunWorkflowInput,
   WorkflowRunResult
-} from "../core/workflow/execution-contracts.js";
-import type { WorkflowRuntimeFactory } from "../core/workflow/runner-port.js";
+} from "../../core/workflow/execution-contracts.js";
+import type { WorkflowRuntimeFactory } from "../../core/workflow/runner-port.js";
 import type {
   AgentRuntimeFactory
-} from "../runtime/composition/runtime-composition.js";
+} from "../../runtime/composition/runtime-composition.js";
 import { nativeInputAdapterRegistry } from "./native-input-adapters.js";
 import {
   nativeAgentRuntimeFactories,

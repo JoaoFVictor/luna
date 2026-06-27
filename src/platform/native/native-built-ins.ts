@@ -1,4 +1,4 @@
-import { collectContextIntake } from "../capabilities/context/collect-context.js";
+import { collectContextIntake } from "../../capabilities/context/collect-context.js";
 import {
   collectWorktreeDiffBuiltIn,
   prepareCommitBuiltIn,
@@ -9,8 +9,8 @@ import {
   recordImplementationValidationBuiltIn,
   recordPushLifecycleBuiltIn,
   runValidationCommandsBuiltIn
-} from "../core/built-ins/implementation.js";
-import { collectContextBuiltIn } from "../core/built-ins/context.js";
+} from "../../core/built-ins/implementation.js";
+import { collectContextBuiltIn } from "../../core/built-ins/context.js";
 import {
   changeRequestCreateBuiltIn,
   gitCommitBuiltIn,
@@ -19,46 +19,30 @@ import {
   localExecReadCommandBuiltIn,
   localExecWriteCommandBuiltIn,
   repositoryWorkspaceCaptureBuiltIn
-} from "../core/built-ins/catalog.js";
-import { finalReportBuiltIn } from "../core/reports/final-report.js";
-import {
-  collectRepoContextBuiltIn,
-  finalCodeReviewReportBuiltIn,
-  prepareWorktreeBuiltIn,
-  preflightBuiltIn,
-  validateCodeReviewFindingsBuiltIn
-} from "./github/built-ins.js";
-import {
-  collectTaskContextBuiltIn as collectJiraTaskContextBuiltIn,
-  finalImplementationReportBuiltIn as finalJiraImplementationReportBuiltIn
-} from "./jira/built-ins.js";
-import {
-  collectTaskContextBuiltIn as collectPlaneTaskContextBuiltIn,
-  finalImplementationReportBuiltIn as finalPlaneImplementationReportBuiltIn
-} from "./plane/built-ins.js";
+} from "../../core/built-ins/catalog.js";
+import { finalReportBuiltIn } from "../../core/reports/final-report.js";
 import {
   createCollectTaskContextBuiltIn,
   createFinalImplementationReportBuiltIn,
   createProviderBuiltIns,
   defineTaskProviderBuiltIns
-} from "./built-ins.js";
+} from "../../providers/built-ins.js";
+import { nativePlatformExtensions } from "./native-platform-extensions.js";
 
-const taskProviderBuiltIns = defineTaskProviderBuiltIns([
-  {
-    source: "jira",
-    builtIns: {
-      collectTaskContext: collectJiraTaskContextBuiltIn,
-      finalImplementationReport: finalJiraImplementationReportBuiltIn
-    }
-  },
-  {
-    source: "plane",
-    builtIns: {
-      collectTaskContext: collectPlaneTaskContextBuiltIn,
-      finalImplementationReport: finalPlaneImplementationReportBuiltIn
-    }
-  }
-]);
+const providerWorkflowBuiltInsBeforeContext = nativePlatformExtensions.flatMap(
+  (extension) => extension.workflowBuiltIns?.beforeContext ?? []
+);
+const providerWorkflowBuiltInsAfterContext = nativePlatformExtensions.flatMap(
+  (extension) => extension.workflowBuiltIns?.afterContext ?? []
+);
+
+const taskProviderBuiltIns = defineTaskProviderBuiltIns(
+  nativePlatformExtensions.flatMap((extension) =>
+    extension.taskBuiltIns === undefined
+      ? []
+      : [{ source: extension.id, builtIns: extension.taskBuiltIns }]
+  )
+);
 
 const collectTaskContextBuiltIn =
   createCollectTaskContextBuiltIn(taskProviderBuiltIns);
@@ -68,12 +52,9 @@ const finalImplementationReportBuiltIn =
 export const nativeProviderBuiltIns = createProviderBuiltIns({
   dependencies: { collectContextIntake },
   steps: [
-    preflightBuiltIn,
-    prepareWorktreeBuiltIn,
+    ...providerWorkflowBuiltInsBeforeContext,
     collectContextBuiltIn,
-    collectRepoContextBuiltIn,
-    validateCodeReviewFindingsBuiltIn,
-    finalCodeReviewReportBuiltIn,
+    ...providerWorkflowBuiltInsAfterContext,
     finalReportBuiltIn,
     localExecReadCommandBuiltIn,
     localExecWriteCommandBuiltIn,

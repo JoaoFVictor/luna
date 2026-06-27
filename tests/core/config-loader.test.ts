@@ -20,6 +20,7 @@ import {
 } from "../../src/core/config/schemas.js";
 import { RouterDefinitionSchema } from "../../src/core/router/router-definition.js";
 import { ImplementationConfigSchema } from "../../src/core/write-mode/types.js";
+import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "../../src/core/workflow/repair-attempts.js";
 
 const configSchemas = {
   "app.yaml": AppConfigSchema,
@@ -33,6 +34,30 @@ const configSchemas = {
 };
 
 describe("config loader", () => {
+  it("rejects implementation repair attempts above the workflow policy limit", () => {
+    expect(() =>
+      ImplementationConfigSchema.parse({
+        implementation: {
+          branch_pattern: "feature/{slug}",
+          commit: { enabled: true },
+          push: { enabled: true, remote: "origin" },
+          change_request: {
+            enabled: false,
+            provider: "github",
+            draft: true,
+            base_ref: "main"
+          },
+          sandbox: { type: "trusted_host_local", env_allowlist: [] },
+          validation: {
+            repair_attempts: MAX_WORKFLOW_REPAIR_ATTEMPTS + 1,
+            max_output_bytes: 200000,
+            commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }]
+          }
+        }
+      })
+    ).toThrow(ZodError);
+  });
+
   it("loads YAML config and validates it against a Zod schema", async () => {
     const root = await mkdtemp(join(tmpdir(), "luna-config-"));
     const filePath = join(root, "sample.yaml");

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "../workflow/repair-attempts.js";
 import { ChangeRequestConfigSchema } from "../change-request/contracts.js";
 import { ValidationCommandSchema } from "../validation/runner.js";
 
@@ -60,7 +61,11 @@ export const ImplementationConfigSchema = z
           .strict(),
         validation: z
           .object({
-            repair_attempts: z.number().int().nonnegative(),
+            repair_attempts: z
+              .number()
+              .int()
+              .nonnegative()
+              .max(MAX_WORKFLOW_REPAIR_ATTEMPTS),
             max_output_bytes: z.number().int().positive(),
             commands: z.array(ValidationCommandSchema)
           })

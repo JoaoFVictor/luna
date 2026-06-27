@@ -24,7 +24,7 @@ import type { AdapterContext } from "./adapters/types.js";
 import {
   nativeLunaPlatform,
   type LunaPlatform
-} from "./providers/native-platform.js";
+} from "./platform/native/native-platform.js";
 import {
   InvocationSchema,
   type Invocation,

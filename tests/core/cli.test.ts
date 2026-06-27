@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
 import type { AdapterContext, InputAdapter } from "../../src/adapters/types.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
-import type { LunaPlatform } from "../../src/providers/native-platform.js";
+import type { LunaPlatform } from "../../src/platform/native/native-platform.js";
 import {
   findProjectRoot,
   loadInvocationFromFile,

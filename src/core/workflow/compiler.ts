@@ -13,6 +13,7 @@ import type {
   WorkflowDefinition,
   WorkflowNode
 } from "./definition-types.js";
+import { LUNA_RUNTIME_STATE_SCHEMA_VERSION } from "../runtime/state.js";
 
 export type WorkflowCompilerErrorCode =
   | "workflow_capability_unknown"
@@ -44,6 +45,17 @@ export type WorkflowReducer = "object_merge" | "append_only";
 export type WorkflowCompilerReducers = {
   readonly steps?: Extract<WorkflowReducer, "object_merge">;
 };
+
+export type CompiledWorkflowStateChannel = {
+  readonly reducer: WorkflowReducer;
+};
+
+export const LUNA_COMPILED_WORKFLOW_STATE_CHANNELS = {
+  steps: { reducer: "object_merge" },
+  events: { reducer: "append_only" },
+  artifacts: { reducer: "append_only" },
+  interrupts: { reducer: "append_only" }
+} as const satisfies Record<string, CompiledWorkflowStateChannel>;
 
 export type CompileWorkflowInput = {
   readonly workflow: WorkflowDefinition;
@@ -79,12 +91,7 @@ export type CompiledWorkflow = {
   readonly nodes: CompiledWorkflowNode[];
   readonly edges: CompiledWorkflowEdge[];
   readonly state: {
-    readonly channels: {
-      readonly steps: { readonly reducer: "object_merge" };
-      readonly events: { readonly reducer: "append_only" };
-      readonly artifacts: { readonly reducer: "append_only" };
-      readonly interrupts: { readonly reducer: "append_only" };
-    };
+    readonly channels: Record<string, CompiledWorkflowStateChannel>;
   };
 };
 
@@ -98,7 +105,6 @@ type RegistrationIndexes = {
 
 const START = "__start__";
 const END = "__end__";
-const STATE_SCHEMA_VERSION = "2026-06";
 
 export function compileWorkflow(input: CompileWorkflowInput): CompiledWorkflow {
   const { workflow, registry } = input;
@@ -118,16 +124,11 @@ export function compileWorkflow(input: CompileWorkflowInput): CompiledWorkflow {
   return {
     workflow_id: workflow.id,
     workflow_revision: workflow.revision,
-    state_schema_version: STATE_SCHEMA_VERSION,
+    state_schema_version: LUNA_RUNTIME_STATE_SCHEMA_VERSION,
     nodes: compiledNodes,
     edges: compileEdges(workflow.graph.nodes),
     state: {
-      channels: {
-        steps: { reducer: "object_merge" },
-        events: { reducer: "append_only" },
-        artifacts: { reducer: "append_only" },
-        interrupts: { reducer: "append_only" }
-      }
+      channels: LUNA_COMPILED_WORKFLOW_STATE_CHANNELS
     }
   };
 }

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { nativeInputAdapterRegistry } from "../../../src/providers/native-input-adapters.js";
+import { nativeInputAdapterRegistry } from "../../../src/platform/native/native-input-adapters.js";
 import {
   InvocationEnvelopeSchema,
   type InvocationEnvelope

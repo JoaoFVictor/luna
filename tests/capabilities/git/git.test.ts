@@ -13,7 +13,7 @@ import { defaultBuiltInCatalog } from "../../../src/core/built-ins/catalog.js";
 import {
   builtInStepNames as providerBuiltInStepNames,
   runBuiltInStep as runProviderBuiltInStep
-} from "../../../src/providers/native-built-ins.js";
+} from "../../../src/platform/native/native-built-ins.js";
 import type { BuiltInStepDependencies } from "../../../src/core/built-ins/types.js";
 import type {
   GitCommitState,

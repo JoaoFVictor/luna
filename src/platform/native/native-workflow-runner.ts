@@ -1,14 +1,14 @@
 import path from "node:path";
-import { createObservabilitySummary } from "../core/observability/summary.js";
-import type { JsonValue } from "../core/runtime/json.js";
+import { createObservabilitySummary } from "../../core/observability/summary.js";
+import type { JsonValue } from "../../core/runtime/json.js";
 import {
   createRuntimeCompositionForWorkflow
-} from "../runtime/composition/runtime-composition.js";
-import type { ChangeRequestProviderFactory } from "../core/change-request/contracts.js";
-import type { RunWorkflowInput } from "../core/workflow/execution-contracts.js";
+} from "../../runtime/composition/runtime-composition.js";
+import type { ChangeRequestProviderFactory } from "../../core/change-request/contracts.js";
+import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
 import type {
   NativeWorkflowRunInput
-} from "../runtime/composition/target-executor.js";
+} from "../../runtime/composition/target-executor.js";
 import { buildNativeWorkflowAgentInputs } from "./native-agent-inputs.js";
 import {
   loadNativeRunContext,

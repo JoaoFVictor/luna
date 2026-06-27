@@ -1,4 +1,4 @@
-import type { NativeWorkflowRunner } from "../runtime/composition/target-executor.js";
+import type { NativeWorkflowRunner } from "../../runtime/composition/target-executor.js";
 import {
   nativeLunaPlatformRegistrations,
   type NativeLunaPlatformRegistrations

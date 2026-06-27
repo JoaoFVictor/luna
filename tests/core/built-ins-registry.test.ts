@@ -6,7 +6,7 @@ import {
   defaultProviderWorkflowBuiltIns,
   isBuiltInStepName,
   runBuiltInStep
-} from "../../src/providers/native-built-ins.js";
+} from "../../src/platform/native/native-built-ins.js";
 import { defineTaskProviderBuiltIns } from "../../src/providers/built-ins.js";
 import {
   builtInStepNames as metadataBuiltInStepNames,

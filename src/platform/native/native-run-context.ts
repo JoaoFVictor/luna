@@ -1,27 +1,27 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { loadAgentDefinition } from "../capabilities/agents/agent-loader.js";
-import { capabilityManifest } from "../core/capabilities/manifest.js";
-import type { JsonSchemaLike } from "../core/capabilities/pattern-registration.js";
-import { createCapabilityRegistry } from "../core/capabilities/registry.js";
-import { loadYamlFile } from "../core/config/loader.js";
+import { loadAgentDefinition } from "../../capabilities/agents/agent-loader.js";
+import { capabilityManifest } from "../../core/capabilities/manifest.js";
+import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
+import { createCapabilityRegistry } from "../../core/capabilities/registry.js";
+import { loadYamlFile } from "../../core/config/loader.js";
 import {
   AppConfigSchema,
   RepositoriesConfigSchema,
   type AppConfig,
   type RepositoryConfig
-} from "../core/config/schemas.js";
-import { ImplementationConfigSchema } from "../core/write-mode/types.js";
-import { createRunIdentity } from "../core/invocation/run-identity.js";
-import type { JsonValue } from "../core/runtime/json.js";
-import { compileWorkflow, type CompiledWorkflow } from "../core/workflow/compiler.js";
-import { loadWorkflowDefinition } from "../core/workflow/definition.js";
-import type { WorkflowDefinition } from "../core/workflow/definition-types.js";
-import { resolveRepository } from "../core/workflow/workspace-resolver.js";
-import type { RuntimeCompositionConfig } from "../runtime/composition/app-config.js";
+} from "../../core/config/schemas.js";
+import { ImplementationConfigSchema } from "../../core/write-mode/types.js";
+import { createRunIdentity } from "../../core/invocation/run-identity.js";
+import type { JsonValue } from "../../core/runtime/json.js";
+import { compileWorkflow, type CompiledWorkflow } from "../../core/workflow/compiler.js";
+import { loadWorkflowDefinition } from "../../core/workflow/definition.js";
+import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
+import { resolveRepository } from "../../core/workflow/workspace-resolver.js";
+import type { RuntimeCompositionConfig } from "../../runtime/composition/app-config.js";
 import type {
   NativeWorkflowRunInput
-} from "../runtime/composition/target-executor.js";
+} from "../../runtime/composition/target-executor.js";
 import {
   nativeLunaPlatformRegistrations,
   type NativeLunaPlatformRegistrations

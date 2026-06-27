@@ -7,8 +7,8 @@ import { capabilityManifest } from "../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../src/core/capabilities/registry.js";
 import { createInitialRuntimeState } from "../../src/core/runtime/state.js";
 import type { RunWorkflowInput } from "../../src/core/workflow/execution-contracts.js";
-import { nativeLunaPlatformRegistrations } from "../../src/providers/native-platform-registrations.js";
-import { runNativeWorkflowTarget } from "../../src/providers/native-workflow-runner.js";
+import { nativeLunaPlatformRegistrations } from "../../src/platform/native/native-platform-registrations.js";
+import { runNativeWorkflowTarget } from "../../src/platform/native/native-workflow-runner.js";
 
 describe("native workflow runner", () => {
   it("validates runtime composition before preparing the selected agent runtime", async () => {

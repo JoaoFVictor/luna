@@ -1,25 +1,27 @@
 import path from "node:path";
-import { createChangeRequestProviderRegistry } from "../capabilities/change-request/provider-registry.js";
-import type { ChangeRequestProviderFactory } from "../core/change-request/contracts.js";
-import { qualityGatePatternExecutors } from "../capabilities/quality-gates/workflow-pattern-executor.js";
-import { builtInStepNameForWorkflowCapability } from "../core/built-ins/workflow-aliases.js";
-import type { AppConfig } from "../core/config/schemas.js";
-import type { RunHandle } from "../core/runtime/run-handle.js";
-import { RunLockManager } from "../core/workflow/lock-manager.js";
-import { createGitRepositoryPorts } from "../runtime/git/repository-port.js";
-import { createGitHubChangeRequestProviderFactory } from "./github/change-request/factory.js";
+import { createChangeRequestProviderRegistry } from "../../capabilities/change-request/provider-registry.js";
+import type { ChangeRequestProviderFactory } from "../../core/change-request/contracts.js";
+import { qualityGatePatternExecutors } from "../../capabilities/quality-gates/workflow-pattern-executor.js";
+import { builtInStepNameForWorkflowCapability } from "../../core/built-ins/workflow-aliases.js";
+import type { AppConfig } from "../../core/config/schemas.js";
+import type { RunHandle } from "../../core/runtime/run-handle.js";
+import { RunLockManager } from "../../core/workflow/lock-manager.js";
+import { createGitRepositoryPorts } from "../../runtime/git/repository-port.js";
 import {
   defaultProviderBuiltInStepRegistry,
   defaultProviderWorkflowBuiltIns
 } from "./native-built-ins.js";
+import { nativePlatformExtensions } from "./native-platform-extensions.js";
+
+const nativeChangeRequestProviderFactories = nativePlatformExtensions.flatMap(
+  (extension) => extension.changeRequestProviderFactories ?? []
+);
 
 export function buildNativeWorkflowExecutors({
   app,
   projectRoot,
   run,
-  changeRequestProviderFactories = [
-    createGitHubChangeRequestProviderFactory({})
-  ]
+  changeRequestProviderFactories = nativeChangeRequestProviderFactories
 }: {
   readonly app: AppConfig;
   readonly projectRoot: string;

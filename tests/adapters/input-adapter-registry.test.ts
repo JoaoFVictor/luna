@@ -5,7 +5,7 @@ import {
   executeJson,
   unknownAdapterError
 } from "../../src/adapters/registry.js";
-import { nativeInputAdapterRegistry } from "../../src/providers/native-input-adapters.js";
+import { nativeInputAdapterRegistry } from "../../src/platform/native/native-input-adapters.js";
 import type { InputAdapter } from "../../src/adapters/types.js";
 
 function adapter(id: string): InputAdapter {

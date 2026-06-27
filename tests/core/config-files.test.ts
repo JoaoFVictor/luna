@@ -5,7 +5,7 @@ import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import { officialCapabilityRegistry } from "../../src/capabilities/registry.js";
 import { loadWorkflowDefinition } from "../../src/core/workflow/definition.js";
-import { compileNativeWorkflow } from "../../src/providers/native-workflow-runner.js";
+import { compileNativeWorkflow } from "../../src/platform/native/native-workflow-runner.js";
 
 type AgentConfig = {
   id: string;

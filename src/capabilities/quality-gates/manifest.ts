@@ -39,15 +39,33 @@ export const manifest = capabilityManifest({
       input_schema: {
         type: "object",
         additionalProperties: false,
-        required: ["writer_agent", "gates"],
+        required: ["worker", "gates"],
         properties: {
-          writer_agent: { type: "string" },
+          worker: { type: "string" },
           gates: {
             type: "array",
             minItems: 1,
-            items: { type: "string" }
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "type"],
+              properties: {
+                id: { type: "string" },
+                type: { type: "string" },
+                input: { type: "object" },
+                decision: {},
+                block_when: { type: "object" },
+                feedback: { type: "object" }
+              }
+            }
           },
-          max_iterations: { type: "number", minimum: 1 }
+          repair: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              attempts: {}
+            }
+          }
         }
       },
       output_schema: {

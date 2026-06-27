@@ -280,13 +280,13 @@ function validatePatternNode(
     assertLocalExpressionRoots(pattern.local_context_roots, pattern.id);
     validatePatternRepair(node, index, pattern.id, nodeIds, pattern.local_context_roots);
     validateExpressionBearingValue(
-      patternConfigFor(node),
+      patternAuthoringConfigFor(node),
       `$.nodes[${index}]`,
       pattern.id,
       nodeIds,
       pattern.local_context_roots
     );
-    validateJsonSchema(pattern.input_schema, patternConfigFor(node), {
+    validateJsonSchema(pattern.input_schema, patternAuthoringConfigFor(node), {
       path: `$.nodes[${index}]`,
       capability: pattern.id
     });
@@ -721,19 +721,17 @@ function isNamespacedCapabilityId(id: string): boolean {
   return /^[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/.test(id);
 }
 
-function patternConfigFor(
+function patternAuthoringConfigFor(
   node: ParsedPatternNode
 ): Record<string, unknown> {
   return {
-    writer_agent: node.worker,
-    gates: (node.gates ?? []).map((gate) => gate.type),
+    worker: node.worker,
+    gates: (node.gates ?? []).map((gate) => ({
+      id: gate.id,
+      type: gate.type
+    })),
     ...(node.repair?.attempts !== undefined
-      ? {
-          max_iterations:
-            typeof node.repair.attempts === "number"
-              ? node.repair.attempts + 1
-              : node.repair.attempts
-        }
+      ? { repair: { attempts: node.repair.attempts } }
       : {})
   };
 }
