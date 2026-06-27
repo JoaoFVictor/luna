@@ -285,6 +285,7 @@ describe("gated agent loop LangGraph executor", () => {
         repair: { attempts: 0 }
       }
     ]);
+    const runtimeBackends = backends();
 
     const result = await runCompiledWorkflow({
       compiled: compileWorkflow({ workflow: definition, registry }),
@@ -298,7 +299,7 @@ describe("gated agent loop LangGraph executor", () => {
         started_at: "2026-06-25T00:00:00.000Z"
       },
       runtimeContext: { workspace: { path: workspacePath } },
-      backends: backends(),
+      backends: runtimeBackends,
       builtIns: {},
       agentRuntime: runtime,
       observabilitySummary: summary,
@@ -400,6 +401,34 @@ describe("gated agent loop LangGraph executor", () => {
         total: 30
       }
     });
+    await expect(runtimeBackends.events.list("run-gated-loop")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "agent_call.started",
+          node_id: gatedAgentWorkerKey("implementation"),
+          data: expect.objectContaining({
+            agent_id: "code-implementer",
+            runtime_id: "test-agent-runtime"
+          })
+        }),
+        expect.objectContaining({
+          type: "agent_call.succeeded",
+          node_id: gatedAgentGateKey("implementation", "review"),
+          data: expect.objectContaining({
+            agent_id: "change-reviewer",
+            tokens: expect.objectContaining({ total: 5 })
+          })
+        }),
+        expect.objectContaining({
+          type: "agent_call.succeeded",
+          node_id: gatedAgentGateKey("implementation", "acceptance"),
+          data: expect.objectContaining({
+            agent_id: "change-acceptance-reviewer",
+            tokens: expect.objectContaining({ total: 10 })
+          })
+        })
+      ])
+    );
   });
 
   it("blocks the loop when a non-empty diff gate sees no repository changes", async () => {

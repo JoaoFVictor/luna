@@ -146,6 +146,7 @@ describe("LangGraph workflow runner artifacts", () => {
       }
     ]);
     const published: unknown[] = [];
+    const runtimeBackends = backends();
     const result = await runCompiledWorkflow({
       compiled: compileWorkflow({ workflow: definition, registry }),
       workflow: definition,
@@ -157,7 +158,7 @@ describe("LangGraph workflow runner artifacts", () => {
         attempt: 1,
         started_at: "2026-06-25T00:00:00.000Z"
       },
-      backends: backends(),
+      backends: runtimeBackends,
       builtIns: { "runtime.ok": async () => ({ ok: true }) },
       agentRuntime: agentRuntime(),
       artifactPublisher: {
@@ -237,6 +238,7 @@ describe("LangGraph workflow runner artifacts", () => {
         properties: { reviewed: { type: "boolean" } }
       }
     );
+    const runtimeBackends = backends();
 
     const result = await runCompiledWorkflow({
       compiled: compileWorkflow({ workflow: definition, registry }),
@@ -249,7 +251,7 @@ describe("LangGraph workflow runner artifacts", () => {
         attempt: 1,
         started_at: "2026-06-25T00:00:00.000Z"
       },
-      backends: backends(),
+      backends: runtimeBackends,
       builtIns: {},
       agentRuntime: runtime,
       observabilitySummary: summary,
@@ -297,6 +299,39 @@ describe("LangGraph workflow runner artifacts", () => {
           prompt_operations: 1
         })
       })
+    );
+    await expect(runtimeBackends.events.list("run-observed-agent")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "agent_call.started",
+          node_id: "review",
+          data: expect.objectContaining({
+            agent_id: "reviewer",
+            model_profile: "openai/gpt-5",
+            runtime_id: "test-agent-runtime"
+          })
+        }),
+        expect.objectContaining({
+          type: "agent_call.succeeded",
+          node_id: "review",
+          data: expect.objectContaining({
+            agent_id: "reviewer",
+            duration_ms: expect.any(Number),
+            tokens: expect.objectContaining({
+              input: 11,
+              output: 7,
+              total: 18
+            }),
+            cost: expect.objectContaining({
+              total: 0.37
+            }),
+            runtime_metadata: expect.objectContaining({
+              provider: "test-provider",
+              model: "test-model"
+            })
+          })
+        })
+      ])
     );
   });
 });

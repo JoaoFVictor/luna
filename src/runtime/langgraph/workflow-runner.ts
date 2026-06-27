@@ -68,6 +68,10 @@ import {
   langGraphEdges,
   policyNode
 } from "./workflow-edges.js";
+import {
+  appendWorkflowEvent as appendEvent,
+  workflowAgentEventEmitter
+} from "./workflow-events.js";
 import type {
   ResumeCompiledWorkflowInput,
   RunCompiledWorkflowInput,
@@ -613,7 +617,8 @@ async function executeNode(
     const result = await runObservedAgent({
       runtime: input.agentRuntime,
       input: agentInput,
-      observabilitySummary: input.observabilitySummary
+      observabilitySummary: input.observabilitySummary,
+      emitEvent: workflowAgentEventEmitter(input)
     });
     return result.output;
   }
@@ -768,22 +773,6 @@ function runtimeRequirementsForDefaults(
       ...projectedInput.tools.runtime_requirements
     ])
   ] as AgentRuntimeRequirement[];
-}
-
-async function appendEvent(
-  input: Pick<RunCompiledWorkflowInput, "backends" | "run">,
-  type: string,
-  nodeId?: string,
-  interruptIdValue?: string
-): Promise<void> {
-  await input.backends.events.append({
-    id: `${input.run.run_id}:${type}:${nodeId ?? "run"}:${Date.now()}`,
-    run_id: input.run.run_id,
-    type,
-    timestamp: new Date().toISOString(),
-    ...(nodeId === undefined ? {} : { node_id: nodeId }),
-    ...(interruptIdValue === undefined ? {} : { interrupt_id: interruptIdValue })
-  });
 }
 
 function interruptId(runId: string, nodeId: string): string {

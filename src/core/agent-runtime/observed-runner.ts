@@ -11,52 +11,74 @@ import {
   type LunaUsageRecord,
   type ObservabilitySummary
 } from "../observability/summary.js";
+import {
+  agentFailedEvent,
+  agentStartedEvent,
+  agentSucceededEvent,
+  type ObservedAgentEvent
+} from "./observed-agent-events.js";
 
 export async function runObservedAgent({
   runtime,
   input,
   observabilitySummary,
+  emitEvent,
   now = () => Date.now()
 }: {
   readonly runtime: AgentRuntimePort;
   readonly input: RunAgentInput;
   readonly observabilitySummary?: ObservabilitySummary;
+  readonly emitEvent?: (event: ObservedAgentEvent) => Promise<void> | void;
   readonly now?: () => number;
 }): Promise<RunAgentOutput> {
   const startedAt = now();
-  try {
-    const result = await runtime.runAgent(input);
-    recordAgentObservation({
-      input,
-      result,
-      observabilitySummary,
-      durationMs: Math.max(0, now() - startedAt)
-    });
+  const runtimeId = runtime.describe().id;
+  await emitEvent?.(agentStartedEvent({ input, runtimeId }));
 
-    return result;
+  let result: RunAgentOutput;
+  try {
+    result = await runtime.runAgent(input);
   } catch (cause) {
+    const durationMs = Math.max(0, now() - startedAt);
     recordPromptOperation(observabilitySummary, {
-      durationMs: Math.max(0, now() - startedAt)
+      durationMs
     });
     recordPromptUsageMissing(observabilitySummary);
+    await emitEvent?.(agentFailedEvent({ input, runtimeId, durationMs, cause }));
     throw cause;
   }
+
+  const durationMs = Math.max(0, now() - startedAt);
+  const usage = usageRecordFromRuntimeResult({ input, result });
+  recordAgentObservation({
+    observabilitySummary,
+    usage,
+    durationMs
+  });
+  await emitEvent?.(
+    agentSucceededEvent({
+      input,
+      runtimeId,
+      durationMs,
+      usage,
+      runtimeMetadata: result.runtime_metadata
+    })
+  );
+
+  return result;
 }
 
 function recordAgentObservation({
-  input,
-  result,
   observabilitySummary,
+  usage,
   durationMs
 }: {
-  readonly input: RunAgentInput;
-  readonly result: RunAgentOutput;
   readonly observabilitySummary?: ObservabilitySummary;
+  readonly usage: LunaUsageRecord | undefined;
   readonly durationMs: number;
 }): void {
   recordPromptOperation(observabilitySummary, { durationMs });
 
-  const usage = usageRecordFromRuntimeResult({ input, result });
   if (usage === undefined) {
     recordPromptUsageMissing(observabilitySummary);
     return;

@@ -32,6 +32,7 @@ import {
   VALIDATION_GATE
 } from "./gated-agent-deterministic-gates.js";
 import { gatedAgentGateKey, gatedAgentWorkerKey } from "./gated-agent-loop-keys.js";
+import { workflowAgentEventEmitter } from "./workflow-events.js";
 
 const GATED_AGENT_LOOP_CAPABILITY = "quality-gates.gated_agent_loop";
 const AGENT_REVIEW_GATE = "quality-gates.agent_review";
@@ -405,7 +406,8 @@ async function runPatternAgent({
   const result = await runObservedAgent({
     runtime: input.agentRuntime,
     input: runtimeInput,
-    observabilitySummary: input.observabilitySummary
+    observabilitySummary: input.observabilitySummary,
+    emitEvent: workflowAgentEventEmitter(input)
   });
   const outputSchema = requireJsonSchema(defaults.output_schema, nodeId, agentId);
   if (!matchesJsonSchema(outputSchema, result.output)) {
