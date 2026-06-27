@@ -1,1 +1,3 @@
-export { runNativeWorkflowTarget as run } from "../providers/native-workflow-runner.js";
+import { nativeLunaPlatform } from "../providers/native-platform.js";
+
+export const run = nativeLunaPlatform.runWorkflow;

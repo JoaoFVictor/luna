@@ -1,20 +1,11 @@
 import path from "node:path";
-import { officialCapabilityRegistry } from "../capabilities/registry.js";
 import { createObservabilitySummary } from "../core/observability/summary.js";
 import type { JsonValue } from "../core/runtime/json.js";
 import {
   createRuntimeCompositionForWorkflow
 } from "../runtime/composition/runtime-composition.js";
-import type {
-  AgentRuntimeFactory
-} from "../runtime/composition/runtime-composition.js";
 import type { ChangeRequestProviderFactory } from "../core/change-request/contracts.js";
-import type {
-  ResumeWorkflowInput,
-  RunWorkflowInput,
-  WorkflowRunResult
-} from "../core/workflow/execution-contracts.js";
-import type { WorkflowRuntimeFactory } from "../core/workflow/runner-port.js";
+import type { RunWorkflowInput } from "../core/workflow/execution-contracts.js";
 import type {
   NativeWorkflowRunInput
 } from "../runtime/composition/target-executor.js";
@@ -26,19 +17,21 @@ import {
 } from "./native-run-context.js";
 import { buildNativeWorkflowExecutors } from "./native-workflow-executors.js";
 import {
-  nativeAgentRuntimeFactories,
-  nativeWorkflowRuntimeFactories
-} from "./native-runtime-factories.js";
+  nativeLunaPlatformRegistrations,
+  type NativeLunaPlatformRegistrations
+} from "./native-platform-registrations.js";
 
 export { compileNativeWorkflow } from "./native-run-context.js";
 export type { NativeCompiledWorkflow } from "./native-run-context.js";
 
 export type NativeWorkflowTargetDependencies = {
-  readonly workflowRuntimeFactories?: Readonly<Record<
-    string,
-    WorkflowRuntimeFactory<RunWorkflowInput, ResumeWorkflowInput, WorkflowRunResult>
-  >>;
-  readonly agentRuntimeFactories?: Readonly<Record<string, AgentRuntimeFactory>>;
+  readonly platform?: Pick<
+    NativeLunaPlatformRegistrations,
+    | "agentRuntimeFactories"
+    | "workflowRuntimeFactories"
+    | "capabilityRegistry"
+    | "capabilityManifests"
+  >;
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
 };
 
@@ -46,6 +39,7 @@ export async function runNativeWorkflowTarget(
   input: NativeWorkflowRunInput,
   dependencies: NativeWorkflowTargetDependencies = {}
 ): Promise<void> {
+  const platform = dependencies.platform ?? nativeLunaPlatformRegistrations;
   const {
     app,
     agentsRoot,
@@ -54,27 +48,17 @@ export async function runNativeWorkflowTarget(
     repository,
     run,
     runtimeConfig
-  } = await loadNativeRunContext(input);
-
-  const agentRuntimeFactories = {
-    ...nativeAgentRuntimeFactories,
-    ...(dependencies.agentRuntimeFactories ?? {})
-  };
-  const workflowRuntimeFactories = {
-    ...nativeWorkflowRuntimeFactories,
-    ...(dependencies.workflowRuntimeFactories ?? {})
-  };
-
+  } = await loadNativeRunContext(input, { platform });
   const composition = createRuntimeCompositionForWorkflow(
     runtimeConfig,
     nativeWorkflow.workflow,
     {
-      capabilityRegistry: officialCapabilityRegistry,
-      workflowRuntimeFactories,
-      agentRuntimeFactories
+      capabilityRegistry: platform.capabilityRegistry,
+      workflowRuntimeFactories: platform.workflowRuntimeFactories,
+      agentRuntimeFactories: platform.agentRuntimeFactories
     }
   );
-  await agentRuntimeFactories[runtimeConfig.agent_runtime.id]?.prepare?.({
+  await platform.agentRuntimeFactories[runtimeConfig.agent_runtime.id]?.prepare?.({
     configRoot: input.configRoot,
     workflow,
     options: runtimeConfig.agent_runtime.options,
@@ -113,7 +97,8 @@ export async function runNativeWorkflowTarget(
       workflow: nativeWorkflow.workflow,
       agentsRoot,
       repository,
-      configRoot: input.configRoot
+      configRoot: input.configRoot,
+      capabilityRegistry: platform.capabilityRegistry
     })
   } satisfies RunWorkflowInput;
 

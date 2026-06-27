@@ -1,6 +1,5 @@
 import path from "node:path";
 import { loadAgentDefinition } from "../capabilities/agents/agent-loader.js";
-import { officialCapabilityRegistry } from "../capabilities/registry.js";
 import {
   gatedAgentGateKey,
   gatedAgentWorkerKey
@@ -8,6 +7,7 @@ import {
 import { loadYamlFile } from "../core/config/loader.js";
 import { loadMcpConfig } from "../core/config/mcp.js";
 import { resolveModelProfiles } from "../core/config/models.js";
+import type { CapabilityRegistry } from "../core/capabilities/registry.js";
 import {
   ModelsConfigSchema,
   type RepositoryConfig
@@ -16,24 +16,32 @@ import { lunaToolCatalog } from "../core/tools/catalog.js";
 import { resolveToolCatalog } from "../core/tools/resolved-catalog.js";
 import type { WorkflowDefinition } from "../core/workflow/definition-types.js";
 import type { WorkflowAgentInputMap } from "../core/workflow/execution-contracts.js";
+import { nativeLunaPlatformRegistrations } from "./native-platform-registrations.js";
 
 export async function buildNativeWorkflowAgentInputs({
   workflow,
   agentsRoot,
   repository,
-  configRoot
+  configRoot,
+  capabilityRegistry = nativeLunaPlatformRegistrations.capabilityRegistry
 }: {
   readonly workflow: WorkflowDefinition;
   readonly agentsRoot: string;
   readonly repository?: RepositoryConfig;
   readonly configRoot: string;
+  readonly capabilityRegistry?: CapabilityRegistry;
 }): Promise<WorkflowAgentInputMap> {
+  const specs = workflowAgentSpecs(workflow);
+  if (specs.length === 0) {
+    return {};
+  }
+
   const models = resolveModelProfiles(
     await loadYamlFile(path.join(configRoot, "models.yaml"), ModelsConfigSchema)
   );
   const mcpConfig = await loadMcpConfig(configRoot);
   const entries = await Promise.all(
-    workflowAgentSpecs(workflow).map(async ({ key, agentId }) => {
+    specs.map(async ({ key, agentId }) => {
       const agent = await loadAgentDefinition(agentsRoot, agentId);
       const modelProfile = models[agent.model_profile];
       if (modelProfile === undefined) {
@@ -56,7 +64,7 @@ export async function buildNativeWorkflowAgentInputs({
           },
           model_profile: modelProfile,
           tools: resolveToolCatalog({
-            registry: officialCapabilityRegistry,
+            registry: capabilityRegistry,
             local_tools: lunaToolCatalog,
             requested_local_tool_ids: agent.tools ?? [],
             requested_mcp_server_ids: agent.mcp_servers ?? [],

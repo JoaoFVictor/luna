@@ -16,14 +16,15 @@ import {
   resolveRuntimeConfigRoot,
   type TargetExecutor
 } from "./runtime/composition/target-executor.js";
-import { runNativeWorkflowTarget } from "./providers/native-workflow-runner.js";
 import {
   defaultAdapterContext,
-  unknownAdapterError,
-  type InputAdapterRegistry
+  unknownAdapterError
 } from "./adapters/registry.js";
-import { nativeInputAdapterRegistry } from "./providers/native-input-adapters.js";
 import type { AdapterContext } from "./adapters/types.js";
+import {
+  nativeLunaPlatform,
+  type LunaPlatform
+} from "./providers/native-platform.js";
 import {
   InvocationSchema,
   type Invocation,
@@ -45,8 +46,8 @@ export type MainDependencies = {
   targetExecutor?: TargetExecutor;
   routeInvocation?: typeof routeInvocation;
   routing?: RouterDefinition;
-  adapterRegistry?: InputAdapterRegistry;
   adapterContext?: AdapterContext;
+  platform?: Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow">;
   projectRoot?: string;
   env?: { LUNA_CONFIG_ROOT?: string };
 };
@@ -200,7 +201,8 @@ export async function main(
   deps: MainDependencies = {}
 ): Promise<number> {
   const parsedArgs = parseCliArgs(args);
-  const registry = deps.adapterRegistry ?? nativeInputAdapterRegistry;
+  const platform = deps.platform ?? nativeLunaPlatform;
+  const registry = platform.inputAdapterRegistry;
   const projectRoot = deps.projectRoot ?? (await findProjectRoot());
   const configRoot = resolveCliConfigRoot(projectRoot, deps.env);
   let invocation: Invocation;
@@ -233,7 +235,7 @@ export async function main(
     createLunaTargetExecutor({
       projectRoot,
       configRoot,
-      runWorkflow: runNativeWorkflowTarget
+      runWorkflow: platform.runWorkflow
     });
 
   return await targetExecutor.execute({ invocation, target });

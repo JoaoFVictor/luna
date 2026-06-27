@@ -1,10 +1,6 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { loadAgentDefinition } from "../capabilities/agents/agent-loader.js";
-import {
-  officialCapabilityManifests,
-  officialCapabilityRegistry
-} from "../capabilities/registry.js";
 import { capabilityManifest } from "../core/capabilities/manifest.js";
 import type { JsonSchemaLike } from "../core/capabilities/pattern-registration.js";
 import { createCapabilityRegistry } from "../core/capabilities/registry.js";
@@ -26,6 +22,10 @@ import type { RuntimeCompositionConfig } from "../runtime/composition/app-config
 import type {
   NativeWorkflowRunInput
 } from "../runtime/composition/target-executor.js";
+import {
+  nativeLunaPlatformRegistrations,
+  type NativeLunaPlatformRegistrations
+} from "./native-platform-registrations.js";
 
 export type NativeCompiledWorkflow = {
   readonly workflow: WorkflowDefinition;
@@ -42,12 +42,23 @@ export type NativeRunContext = {
   readonly runtimeConfig: RuntimeCompositionConfig;
 };
 
-export async function loadNativeRunContext({
-  invocation,
-  target,
-  projectRoot,
-  configRoot
-}: NativeWorkflowRunInput): Promise<NativeRunContext> {
+export type NativeRunContextDependencies = {
+  readonly platform?: Pick<
+    NativeLunaPlatformRegistrations,
+    "capabilityRegistry" | "capabilityManifests"
+  >;
+};
+
+export async function loadNativeRunContext(
+  {
+    invocation,
+    target,
+    projectRoot,
+    configRoot
+  }: NativeWorkflowRunInput,
+  dependencies: NativeRunContextDependencies = {}
+): Promise<NativeRunContext> {
+  const platform = dependencies.platform ?? nativeLunaPlatformRegistrations;
   const app = await loadYamlFile(path.join(configRoot, "app.yaml"), AppConfigSchema);
   const repositories = await loadYamlFile(
     path.join(configRoot, "repositories.yaml"),
@@ -57,9 +68,13 @@ export async function loadNativeRunContext({
   const workflow = await loadWorkflowDefinition(
     path.join(projectRoot, "workflows"),
     target.id,
-    { agentsRoot, capabilityRegistry: officialCapabilityRegistry }
+    { agentsRoot, capabilityRegistry: platform.capabilityRegistry }
   );
-  const nativeWorkflow = await compileNativeWorkflow({ workflow, agentsRoot });
+  const nativeWorkflow = await compileNativeWorkflow({
+    workflow,
+    agentsRoot,
+    platform
+  });
   const repository = workflow.requires.repository
     ? resolveRepository(invocation, repositories.repositories)
     : undefined;
@@ -86,10 +101,15 @@ export async function loadNativeRunContext({
 
 export async function compileNativeWorkflow({
   workflow,
-  agentsRoot
+  agentsRoot,
+  platform = nativeLunaPlatformRegistrations
 }: {
   readonly workflow: WorkflowDefinition;
   readonly agentsRoot: string;
+  readonly platform?: Pick<
+    NativeLunaPlatformRegistrations,
+    "capabilityRegistry" | "capabilityManifests"
+  >;
 }): Promise<NativeCompiledWorkflow> {
   const schemaRegistrations: Record<
     string,
@@ -123,9 +143,9 @@ export async function compileNativeWorkflow({
   };
   const registry =
     Object.keys(schemaRegistrations).length === 0
-      ? officialCapabilityRegistry
+      ? platform.capabilityRegistry
       : createCapabilityRegistry([
-          ...officialCapabilityManifests,
+          ...platform.capabilityManifests,
           capabilityManifest({
             id: "workflow-agent-schemas",
             kind: "execution",

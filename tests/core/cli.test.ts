@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
 import type { AdapterContext, InputAdapter } from "../../src/adapters/types.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
+import type { LunaPlatform } from "../../src/providers/native-platform.js";
 import {
   findProjectRoot,
   loadInvocationFromFile,
@@ -254,7 +255,10 @@ describe("Luna CLI", () => {
         ],
         {
           targetExecutor,
-          adapterRegistry: registryWith(adapter),
+          platform: {
+            inputAdapterRegistry: registryWith(adapter),
+            runWorkflow: vi.fn(async () => undefined)
+          },
           adapterContext
         }
       )
@@ -270,6 +274,59 @@ describe("Luna CLI", () => {
         target: { type: "workflow", id: "code-review" }
       },
       target: { type: "workflow", id: "code-review" }
+    });
+  });
+
+  it("uses the injected platform as the default adapter registry and workflow runner", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-platform-"));
+    const configRoot = path.join(projectRoot, "config");
+    const load = vi.fn(async () => validInvocation);
+    const adapter: InputAdapter = {
+      id: "custom-url",
+      description: "Custom URL",
+      load
+    };
+    const platform = {
+      inputAdapterRegistry: registryWith(adapter),
+      runWorkflow: vi.fn(async () => undefined)
+    } satisfies Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow">;
+
+    await expect(
+      main(
+        [
+          "run",
+          "--from",
+          "custom-url",
+          "https://example.test/task/1"
+        ],
+        {
+          platform,
+          projectRoot,
+          env: { LUNA_CONFIG_ROOT: configRoot },
+          routing: {
+            type: "router",
+            version: "2026-06",
+            rules: [
+              {
+                id: "platform_route",
+                when: { expression: "true" },
+                target: "workflow:implementation"
+              }
+            ]
+          }
+        }
+      )
+    ).resolves.toBe(0);
+
+    expect(load).toHaveBeenCalledWith(
+      { kind: "cli", value: "https://example.test/task/1" },
+      expect.objectContaining({ projectRoot, configRoot })
+    );
+    expect(platform.runWorkflow).toHaveBeenCalledWith({
+      projectRoot,
+      configRoot,
+      invocation: validInvocation,
+      target: { type: "workflow", id: "implementation" }
     });
   });
 });
