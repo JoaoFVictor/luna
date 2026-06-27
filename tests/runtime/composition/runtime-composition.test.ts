@@ -2,12 +2,15 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
+import type { RuntimeEventStore } from "../../../src/core/runtime/events/contracts.js";
 import { manifest as artifactsManifest } from "../../../src/capabilities/artifacts/manifest.js";
 import { piAgentRuntimeFactory } from "../../../src/agent-runtimes/pi/factory.js";
 import {
   createRuntimeCompositionForWorkflow,
   createRuntimeComposition,
+  defaultRuntimeBackendFactoryCatalog,
   runtimeBackendManifests
 } from "../../../src/runtime/composition/runtime-composition.js";
 
@@ -147,6 +150,66 @@ describe("runtime composition", () => {
         interrupt_authorization: { id: "allow_all", options: {} }
       }, { agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
+  });
+
+  it("accepts an injected backend factory catalog for runtime extensions", async () => {
+    const customEvents: RuntimeEventStore = {
+      async append(input) {
+        return { ...input, sequence: input.sequence ?? 1 };
+      },
+      async list() {
+        return [{
+          id: "custom-event-1",
+          run_id: "custom-run",
+          type: "custom.event",
+          timestamp: "2026-06-27T00:00:00.000Z",
+          sequence: 1
+        }];
+      },
+      async query() {
+        return [];
+      }
+    };
+    const backendFactories = defaultRuntimeBackendFactoryCatalog();
+
+    const composition = createRuntimeComposition({
+      mode: "test",
+      backends: {
+        artifacts: { id: "memory.artifacts", options: {} },
+        events: { id: "custom.events", options: { label: "custom" } },
+        interrupts: { id: "memory.interrupts", options: {} },
+        checkpoints: { id: "memory.checkpoints", options: {} },
+        runtime_logs: { id: "memory.runtime-log", options: {} }
+      },
+      agent_runtime: { id: "pi", options: {} },
+      interrupt_authorization: { id: "allow_all", options: {} }
+    }, {
+      agentRuntimeFactories: piRuntimeFactories,
+      backendFactories: {
+        ...backendFactories,
+        events: {
+          ...backendFactories.events,
+          "custom.events": {
+            registration: {
+              id: "custom.events",
+              kind: "event",
+              optionsSchema: z.object({ label: z.literal("custom") }).strict()
+            },
+            create: () => customEvents
+          }
+        }
+      }
+    });
+
+    await expect(composition.backends.events.list("ignored")).resolves.toEqual([
+      {
+        id: "custom-event-1",
+        run_id: "custom-run",
+        type: "custom.event",
+        timestamp: "2026-06-27T00:00:00.000Z",
+        sequence: 1
+      }
+    ]);
   });
 
   it("fails unsupported backend and runtime ids before creating a run", () => {

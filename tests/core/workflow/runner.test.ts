@@ -451,7 +451,7 @@ describe("workflow runner", () => {
     ).resolves.toMatchObject({ status: "succeeded" });
   });
 
-  it("rejects invalid node output before publishing to steps or checkpoint", async () => {
+  it("rejects invalid node output before publishing to steps and checkpoints terminal failure", async () => {
     const stores = backends();
     const definition = workflow([
       { id: "bad", type: "built_in", uses: "runtime.ok" }
@@ -474,7 +474,13 @@ describe("workflow runner", () => {
         agentRuntime: agentRuntime({})
       })
     ).rejects.toMatchObject({ code: "runtime_node_output_schema_invalid" });
-    await expect(stores.checkpoints.load("run-3")).resolves.toBeUndefined();
+    await expect(
+      stores.checkpoints.listWrites("run-3", "", "node-output-run-3-bad")
+    ).resolves.toEqual([]);
+    await expect(stores.checkpoints.load("run-3")).resolves.toMatchObject({
+      checkpoint_id: "terminal-run-3-failed",
+      state: { state_schema_version: "2026-06", run_status: "failed" }
+    });
   });
 
   it("resolves runtime expressions before executing built-ins", async () => {

@@ -1,29 +1,12 @@
-import {
-  StateGraph
-} from "@langchain/langgraph";
-import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
-import type {
-  AgentRuntimePort,
-  AgentRuntimeRequirement
-} from "../../core/agent-runtime/contracts.js";
-import {
-  runAgentNode
-} from "../../capabilities/agents/agent-node.js";
-import {
-  requireAgentProjection,
-  resolveAgentSkills
-} from "../../capabilities/agents/agent-envelope.js";
-import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
+import type { AgentRuntimePort } from "../../core/agent-runtime/contracts.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import {
-  assertCheckpointJsonValue,
   stableJson,
-  type JsonObject,
   type JsonValue
 } from "../../core/runtime/json.js";
-import type { RunHandle } from "../../core/runtime/run-handle.js";
+import type { WorkflowRuntimeRunner } from "../../core/workflow/runner-port.js";
 import {
   LUNA_RUNTIME_STATE_SCHEMA_VERSION,
   createInitialRuntimeState,
@@ -31,21 +14,16 @@ import {
   type LunaRuntimeState
 } from "../../core/runtime/state.js";
 import {
-  markNodeWaitingForInput,
   startNodeAttempt,
   succeedNode
 } from "../../core/runtime/lifecycle.js";
-import {
-  createInterrupt,
-  resumeInterrupt
-} from "../../core/runtime/interrupts/resume.js";
+import { resumeInterrupt } from "../../core/runtime/interrupts/resume.js";
 import {
   selectReadyBatchWithPolicy,
   splitDeferredFinalReportNodesByPolicy,
   type ExecutionPolicyDecision
 } from "../../core/workflow/execution-policy.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
-import { resolveNodeInput } from "../../core/workflow/runner-input.js";
 import { finalWorkflowOutput } from "../../core/workflow/runner-output.js";
 import {
   withWorkflowLocks
@@ -62,27 +40,35 @@ import type {
   CompiledWorkflowNode
 } from "../../core/workflow/compiler.js";
 import {
-  WorkflowStateAnnotation,
-  type WorkflowGraphState,
   type WorkflowGraphUpdate
 } from "./workflow-state.js";
 import { publishArtifactsForNode } from "./workflow-artifacts.js";
 import {
   builtInMetadataForPolicyNode,
-  groupLangGraphEdges,
-  langGraphEdges,
   policyNode
 } from "./workflow-edges.js";
+import { appendWorkflowEvent as appendEvent } from "./workflow-events.js";
 import {
-  appendWorkflowEvent as appendEvent,
-  workflowAgentEventEmitter
-} from "./workflow-events.js";
+  runtimeRequirementsForDefaults,
+  runtimeRequirementsForNode
+} from "./workflow-agent-bridge.js";
+import {
+  saveNodeOutputWrite,
+  saveTerminalCheckpoint,
+  terminalCheckpointSnapshot
+} from "./workflow-checkpoints.js";
+import { compileLangGraphWorkflow } from "./workflow-graph.js";
+import {
+  checkpointId,
+  interruptId,
+  resumeContextFromMetadata,
+  waitForHumanInput
+} from "./workflow-interrupts.js";
+import { executeNode } from "./workflow-node-executor.js";
 import type {
   ResumeCompiledWorkflowInput,
   RunCompiledWorkflowInput,
-  WorkflowAgentDefaults,
   WorkflowAgentInputMap,
-  WorkflowPatternExecutor,
   WorkflowRunResult
 } from "./workflow-runner-types.js";
 
@@ -98,22 +84,16 @@ export type {
   WorkflowRunResult
 } from "./workflow-runner-types.js";
 
-type DynamicStateGraph = {
-  addNode(
-    key: string,
-    action: (state: WorkflowGraphState) => Promise<WorkflowGraphUpdate>
-  ): void;
-  addEdge(from: string | string[], to: string): void;
-  compile(options: {
-    readonly name: string;
-    readonly checkpointer?: BaseCheckpointSaver;
-  }): {
-    invoke(
-      state: LunaRuntimeState,
-      options: { readonly configurable: { readonly thread_id: string } }
-    ): Promise<WorkflowGraphState>;
+export function createLangGraphWorkflowRuntimeRunner(): WorkflowRuntimeRunner<
+  RunCompiledWorkflowInput,
+  ResumeCompiledWorkflowInput,
+  WorkflowRunResult
+> {
+  return {
+    run: runCompiledWorkflow,
+    resume: resumeCompiledWorkflow
   };
-};
+}
 
 class WorkflowWaitingForInput extends Error {
   readonly result: Extract<WorkflowRunResult, { status: "waiting_for_input" }>;
@@ -382,8 +362,14 @@ async function runFromNodeIndex(
     input,
     nodes,
     startIndex,
-    runtimeContext,
-    deferredFinalReportIds
+    deferredFinalReportIds,
+    runNode: async (node, state) =>
+      await runLangGraphNode({
+        input,
+        state: state as LunaRuntimeState,
+        runtimeContext,
+        node
+      })
   });
 
   let state: LunaRuntimeState;
@@ -396,6 +382,15 @@ async function runFromNodeIndex(
       return cause.result;
     }
 
+    try {
+      const latestCheckpoint = await input.backends.checkpoints.load(input.run.run_id);
+      await saveTerminalCheckpoint({
+        input,
+        state: terminalCheckpointSnapshot(latestCheckpoint?.state ?? initialState, "failed")
+      });
+    } catch {
+      // Preserve the original workflow failure; the run.failed event remains authoritative.
+    }
     await appendEvent(input, "run.failed");
     await writeSummaryBestEffort(input.artifactPublisher, input.observabilitySummary);
     throw cause;
@@ -409,49 +404,13 @@ async function runFromNodeIndex(
   }
 
   const succeededState = { ...state, run_status: "succeeded" as const };
+  await saveTerminalCheckpoint({
+    input,
+    state: terminalCheckpointSnapshot(succeededState, "succeeded")
+  });
   await appendEvent(input, "run.succeeded");
   await writeSummaryBestEffort(input.artifactPublisher, input.observabilitySummary);
   return { status: "succeeded", output, state: succeededState };
-}
-
-function compileLangGraphWorkflow({
-  input,
-  nodes,
-  startIndex,
-  runtimeContext,
-  deferredFinalReportIds
-}: {
-  readonly input: RunCompiledWorkflowInput;
-  readonly nodes: readonly CompiledWorkflowNode[];
-  readonly startIndex: number;
-  readonly runtimeContext: WorkflowRuntimeContext;
-  readonly deferredFinalReportIds: ReadonlySet<string>;
-}) {
-  const graph = new StateGraph(WorkflowStateAnnotation) as unknown as DynamicStateGraph;
-
-  for (const node of nodes) {
-    graph.addNode(node.id, async (state: WorkflowGraphState) =>
-      await runLangGraphNode({
-        input,
-        state: state as LunaRuntimeState,
-        runtimeContext,
-        node
-      })
-    );
-  }
-
-  for (const edge of groupLangGraphEdges(
-    langGraphEdges(input, nodes, startIndex, deferredFinalReportIds)
-  )) {
-    graph.addEdge(edge.from, edge.to);
-  }
-
-  return graph.compile({
-    name: input.workflow.id,
-    ...(input.langGraphCheckpointer === undefined
-      ? {}
-      : { checkpointer: input.langGraphCheckpointer })
-  });
 }
 
 async function runLangGraphNode({
@@ -499,18 +458,7 @@ async function runLangGraphNode({
   }
 
   assertOutputMatchesSchema(node, output);
-  assertCheckpointJsonValue(output as JsonValue);
-  await input.backends.checkpoints.saveWrites([
-    {
-      thread_id: input.run.run_id,
-      checkpoint_ns: "",
-      checkpoint_id: `node-output-${input.run.run_id}-${node.id}`,
-      task_id: node.id,
-      index: 0,
-      channel: "steps",
-      value: output as JsonValue
-    }
-  ]);
+  await saveNodeOutputWrite({ input, node, output: output as JsonValue });
 
   const published = publishNodeOutput(started, node.id, output as JsonValue);
   const artifactRefs = await publishArtifactsForNode(input, node, output, started);
@@ -558,238 +506,6 @@ function executionPolicyDecisionForCompiledNode(
   }).items[0].decision;
 }
 
-async function executeNode(
-  input: RunCompiledWorkflowInput,
-  state: LunaRuntimeState,
-  runtimeContext: WorkflowRuntimeContext,
-  node: CompiledWorkflowNode
-): Promise<unknown> {
-  if (node.kind === "built_in" || node.kind === "pattern") {
-    const nodeInput = await resolveNodeInput(node, state, runtimeContext, input);
-    if (node.kind === "pattern") {
-      return await executePatternNode({
-        workflowInput: input,
-        executor: input.patternExecutors?.[node.capability_id],
-        node,
-        input: nodeInput,
-        state,
-        runtimeContext,
-        workflow: input.workflow,
-        observabilitySummary: input.observabilitySummary
-      });
-    }
-
-    const executor = input.builtIns[node.capability_id];
-    if (executor === undefined) {
-      throw runtimeError("No executor registered for workflow node", "runtime_state_invalid", {
-        details: { node_id: node.id, capability_id: node.capability_id }
-      });
-    }
-
-    return await executor({
-      node,
-      input: nodeInput,
-      state,
-      runtimeContext,
-      workflow: input.workflow,
-      observabilitySummary: input.observabilitySummary
-    });
-  }
-
-  if (node.kind === "agent") {
-    const source = node.source;
-    if (source.type !== "agent") {
-      throw runtimeError("Compiled agent node source is invalid", "runtime_state_invalid", {
-        details: { node_id: node.id }
-      });
-    }
-
-    const defaults = requireAgentDefaults(input, node);
-    const requirements = runtimeRequirementsForNode(node, defaults);
-    const result = await runAgentNode({
-      runtime: input.agentRuntime,
-      run: input.run,
-      node_id: node.id,
-      agent: requireAgentProjection({
-        defaults,
-        agentId: source.agent
-      }),
-      input: requireWorkflowAgentTaskInput(
-        {
-          input: await resolveNodeInput(node, state, runtimeContext, input),
-          nodeId: node.id,
-          message: "Agent node input must resolve to a JSON object"
-        }
-      ),
-      output_schema: node.output_schema,
-      model_profile: defaults.model_profile,
-      tools: defaults.tools,
-      skills: await resolveAgentSkills({
-        skillSources: defaults.skill_sources,
-        workspace: runtimeContext.workspace
-      }),
-      ...(defaults.cwd === undefined ? {} : { cwd: defaults.cwd }),
-      runtime_requirements: requirements,
-      signal: defaults.signal,
-      events: defaults.events,
-      observabilitySummary: input.observabilitySummary,
-      emitEvent: workflowAgentEventEmitter(input)
-    });
-    return result.output;
-  }
-
-  throw runtimeError("Unsupported compiled node kind", "runtime_state_invalid", {
-    details: { node_id: node.id, kind: node.kind }
-  });
-}
-
-async function executePatternNode({
-  executor,
-  workflowInput,
-  node,
-  input,
-  state,
-  runtimeContext,
-  workflow,
-  observabilitySummary
-}: {
-  readonly executor: WorkflowPatternExecutor | undefined;
-  readonly workflowInput: RunCompiledWorkflowInput;
-  readonly node: CompiledWorkflowNode;
-  readonly input: unknown;
-  readonly state: LunaRuntimeState;
-  readonly runtimeContext: WorkflowRuntimeContext;
-  readonly workflow: WorkflowDefinition;
-  readonly observabilitySummary?: RunCompiledWorkflowInput["observabilitySummary"];
-}): Promise<unknown> {
-  if (executor === undefined) {
-    throw runtimeError("No executor registered for workflow pattern node", "runtime_state_invalid", {
-      details: { node_id: node.id, capability_id: node.capability_id }
-    });
-  }
-
-  return await executor({
-    workflowInput,
-    node,
-    input,
-    state,
-    runtimeContext,
-    workflow,
-    observabilitySummary
-  });
-}
-
-async function waitForHumanInput(
-  input: RunCompiledWorkflowInput,
-  state: LunaRuntimeState,
-  node: CompiledWorkflowNode
-): Promise<LunaRuntimeState> {
-  const id = interruptId(input.run.run_id, node.id);
-  const checkpoint_id = checkpointId(input.run.run_id, node.id);
-  const waiting = markNodeWaitingForInput(state, node.id);
-  await input.backends.checkpoints.saveWrites(
-    Object.entries(state.steps).map(([nodeId, value], index) => ({
-      thread_id: input.run.run_id,
-      checkpoint_ns: "",
-      checkpoint_id,
-      task_id: nodeId,
-      index,
-      channel: "steps",
-      value
-    }))
-  );
-  await input.backends.checkpoints.save({
-    thread_id: input.run.run_id,
-    checkpoint_id,
-    state_schema_version: LUNA_RUNTIME_STATE_SCHEMA_VERSION,
-    state: {
-      state_schema_version: LUNA_RUNTIME_STATE_SCHEMA_VERSION,
-      run_status: "waiting_for_input",
-      interrupt_refs: [{ id, uri: `interrupt://${input.run.run_id}/${node.id}`, node_id: node.id }]
-    },
-    metadata: {
-      workflow_revision: input.workflow.revision,
-      resume_node_id: node.id,
-      resume_context: checkpointResumeContext(input)
-    }
-  });
-  await createInterrupt(
-    {
-      interrupt_id: id,
-      run: input.run,
-      checkpoint_id,
-      node_id: node.id,
-      kind: node.capability_id,
-      prompt: "",
-      decisions: [],
-      created_at: new Date().toISOString()
-    },
-    {
-      threadId: input.run.run_id,
-      interruptStore: input.backends.interrupts,
-      eventStore: input.backends.events
-    }
-  );
-
-  return {
-    ...waiting,
-    interrupt_refs: [{ id, uri: `interrupt://${input.run.run_id}/${node.id}`, node_id: node.id }]
-  };
-}
-
-function requireAgentDefaults(
-  input: RunCompiledWorkflowInput,
-  node: CompiledWorkflowNode
-): WorkflowAgentDefaults {
-  const defaults = input.agentInputs?.[node.id];
-  if (defaults === undefined) {
-    throw runtimeError("Agent node requires projected runtime input", "runtime_state_invalid", {
-      details: { node_id: node.id, agent_id: node.source.type === "agent" ? node.source.agent : undefined }
-    });
-  }
-
-  return defaults;
-}
-
-function checkpointResumeContext(input: RunCompiledWorkflowInput): JsonObject {
-  const context = {
-    invocation: input.invocation,
-    config: input.config,
-    run: input.run as unknown as JsonValue
-  };
-  assertCheckpointJsonValue(context);
-
-  return context;
-}
-
-function resumeContextFromMetadata(metadata: JsonObject): {
-  readonly invocation: JsonValue;
-  readonly config: JsonValue;
-  readonly run: RunHandle;
-} {
-  const context = metadata.resume_context;
-  if (typeof context !== "object" || context === null || Array.isArray(context)) {
-    throw runtimeError("Checkpoint is missing resume context", "runtime_checkpoint_schema_mismatch");
-  }
-
-  const invocation = context.invocation;
-  const config = context.config;
-  const run = context.run;
-  if (
-    typeof run !== "object" ||
-    run === null ||
-    Array.isArray(run) ||
-    typeof run.run_id !== "string" ||
-    typeof run.workflow_id !== "string" ||
-    typeof run.attempt !== "number" ||
-    typeof run.started_at !== "string"
-  ) {
-    throw runtimeError("Checkpoint resume run handle is invalid", "runtime_checkpoint_schema_mismatch");
-  }
-
-  return { invocation, config, run: run as unknown as RunHandle };
-}
-
 function assertOutputMatchesSchema(
   node: CompiledWorkflowNode,
   output: unknown
@@ -799,37 +515,4 @@ function assertOutputMatchesSchema(
       details: { node_id: node.id, yaml_path: node.yaml_path, capability: node.capability_id }
     });
   }
-}
-
-function runtimeRequirementsForNode(
-  node: CompiledWorkflowNode,
-  projectedInput?: WorkflowAgentDefaults
-): AgentRuntimeRequirement[] {
-  const sourceRequirements =
-    node.source.type === "agent"
-      ? ((node.source.runtime_requirements ?? []) as AgentRuntimeRequirement[])
-      : [];
-  const agentRequirements = projectedInput?.runtime_requirements ?? [];
-  const toolRequirements = projectedInput?.tools.runtime_requirements ?? [];
-
-  return [...new Set([...sourceRequirements, ...agentRequirements, ...toolRequirements])];
-}
-
-function runtimeRequirementsForDefaults(
-  projectedInput: WorkflowAgentDefaults
-): AgentRuntimeRequirement[] {
-  return [
-    ...new Set([
-      ...(projectedInput.runtime_requirements ?? []),
-      ...projectedInput.tools.runtime_requirements
-    ])
-  ] as AgentRuntimeRequirement[];
-}
-
-function interruptId(runId: string, nodeId: string): string {
-  return `interrupt-${runId}-${nodeId}`;
-}
-
-function checkpointId(runId: string, nodeId: string): string {
-  return `checkpoint-${runId}-${nodeId}`;
 }

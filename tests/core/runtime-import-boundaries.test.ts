@@ -14,6 +14,7 @@ const SCANNED_RUNTIME_DIRECTORIES = [
 ];
 const SCANNED_RUNTIME_FILES = [
   "src/core/workflow/compiler.ts",
+  "src/core/workflow/runner-port.ts",
   "src/runtime/langgraph/workflow-runner.ts"
 ];
 

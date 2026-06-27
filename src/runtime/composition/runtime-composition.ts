@@ -76,17 +76,17 @@ import {
 } from "./app-config.js";
 import { assertRuntimeDurabilityPolicy } from "./durability.js";
 
-type BackendFactory<TOutput> = {
+export type RuntimeBackendFactory<TOutput> = {
   readonly registration: BackendRegistration;
   readonly create: (options: JsonObject) => TOutput;
 };
 
-type BackendFactoryCatalog = {
-  readonly artifacts: Record<string, BackendFactory<RuntimeBackends["artifacts"]>>;
-  readonly events: Record<string, BackendFactory<RuntimeBackends["events"]>>;
-  readonly interrupts: Record<string, BackendFactory<RuntimeBackends["interrupts"]>>;
-  readonly checkpoints: Record<string, BackendFactory<RuntimeBackends["checkpoints"]>>;
-  readonly runtime_logs: Record<string, BackendFactory<RuntimeBackends["runtimeLogs"]>>;
+export type RuntimeBackendFactoryCatalog = {
+  readonly artifacts: Record<string, RuntimeBackendFactory<RuntimeBackends["artifacts"]>>;
+  readonly events: Record<string, RuntimeBackendFactory<RuntimeBackends["events"]>>;
+  readonly interrupts: Record<string, RuntimeBackendFactory<RuntimeBackends["interrupts"]>>;
+  readonly checkpoints: Record<string, RuntimeBackendFactory<RuntimeBackends["checkpoints"]>>;
+  readonly runtime_logs: Record<string, RuntimeBackendFactory<RuntimeBackends["runtimeLogs"]>>;
 };
 
 export type RuntimeComposition = {
@@ -109,6 +109,7 @@ export type RuntimeCompositionDependencies = {
   readonly requiresHumanInterrupts?: boolean;
   readonly hasExternalSideEffects?: boolean;
   readonly agentRuntimeFactories?: Readonly<Record<string, AgentRuntimeFactory>>;
+  readonly backendFactories?: RuntimeBackendFactoryCatalog;
 };
 
 export type RuntimeCapabilityPort = {
@@ -119,66 +120,68 @@ export type RuntimeCapabilityPort = {
   readonly lifecycle: readonly ("validate" | "open" | "close")[];
 };
 
-const BACKEND_FACTORIES: BackendFactoryCatalog = {
-  artifacts: {
-    [memoryArtifactManifestBackendRegistration.id]: {
-      registration: memoryArtifactManifestBackendRegistration,
-      create: () => createMemoryArtifactManifestStore()
+export function defaultRuntimeBackendFactoryCatalog(): RuntimeBackendFactoryCatalog {
+  return {
+    artifacts: {
+      [memoryArtifactManifestBackendRegistration.id]: {
+        registration: memoryArtifactManifestBackendRegistration,
+        create: () => createMemoryArtifactManifestStore()
+      },
+      [filesystemArtifactManifestBackendRegistration.id]: {
+        registration: filesystemArtifactManifestBackendRegistration,
+        create: (options) =>
+          createFilesystemArtifactManifestStore(
+            validateBackendOptions(options, filesystemArtifactManifestBackendRegistration)
+          )
+      }
     },
-    [filesystemArtifactManifestBackendRegistration.id]: {
-      registration: filesystemArtifactManifestBackendRegistration,
-      create: (options) =>
-        createFilesystemArtifactManifestStore(
-          validateBackendOptions(options, filesystemArtifactManifestBackendRegistration)
-        )
-    }
-  },
-  events: {
-    [memoryEventBackendRegistration.id]: {
-      registration: memoryEventBackendRegistration,
-      create: () => createMemoryEventStore()
+    events: {
+      [memoryEventBackendRegistration.id]: {
+        registration: memoryEventBackendRegistration,
+        create: () => createMemoryEventStore()
+      },
+      [filesystemEventBackendRegistration.id]: {
+        registration: filesystemEventBackendRegistration,
+        create: (options) =>
+          createFilesystemEventStore(
+            validateBackendOptions(options, filesystemEventBackendRegistration)
+          )
+      }
     },
-    [filesystemEventBackendRegistration.id]: {
-      registration: filesystemEventBackendRegistration,
-      create: (options) =>
-        createFilesystemEventStore(
-          validateBackendOptions(options, filesystemEventBackendRegistration)
-        )
-    }
-  },
-  interrupts: {
-    [memoryInterruptBackendRegistration.id]: {
-      registration: memoryInterruptBackendRegistration,
-      create: () => createMemoryInterruptStore()
-    }
-  },
-  checkpoints: {
-    [memoryCheckpointBackendRegistration.id]: {
-      registration: memoryCheckpointBackendRegistration,
-      create: () => createMemoryCheckpointStore()
+    interrupts: {
+      [memoryInterruptBackendRegistration.id]: {
+        registration: memoryInterruptBackendRegistration,
+        create: () => createMemoryInterruptStore()
+      }
     },
-    [sqliteCheckpointBackendRegistration.id]: {
-      registration: sqliteCheckpointBackendRegistration,
-      create: (options) =>
-        createSqliteCheckpointStore(
-          validateBackendOptions(options, sqliteCheckpointBackendRegistration)
-        )
-    }
-  },
-  runtime_logs: {
-    [memoryRuntimeLogBackendRegistration.id]: {
-      registration: memoryRuntimeLogBackendRegistration,
-      create: () => createMemoryRuntimeLogStore()
+    checkpoints: {
+      [memoryCheckpointBackendRegistration.id]: {
+        registration: memoryCheckpointBackendRegistration,
+        create: () => createMemoryCheckpointStore()
+      },
+      [sqliteCheckpointBackendRegistration.id]: {
+        registration: sqliteCheckpointBackendRegistration,
+        create: (options) =>
+          createSqliteCheckpointStore(
+            validateBackendOptions(options, sqliteCheckpointBackendRegistration)
+          )
+      }
     },
-    [filesystemRuntimeLogBackendRegistration.id]: {
-      registration: filesystemRuntimeLogBackendRegistration,
-      create: (options) =>
-        createFilesystemRuntimeLogStore(
-          validateBackendOptions(options, filesystemRuntimeLogBackendRegistration)
-        )
+    runtime_logs: {
+      [memoryRuntimeLogBackendRegistration.id]: {
+        registration: memoryRuntimeLogBackendRegistration,
+        create: () => createMemoryRuntimeLogStore()
+      },
+      [filesystemRuntimeLogBackendRegistration.id]: {
+        registration: filesystemRuntimeLogBackendRegistration,
+        create: (options) =>
+          createFilesystemRuntimeLogStore(
+            validateBackendOptions(options, filesystemRuntimeLogBackendRegistration)
+          )
+      }
     }
-  }
-};
+  };
+}
 
 export type AgentRuntimeFactory = {
   readonly id: string;
@@ -207,10 +210,10 @@ function backendManifest(
 }
 
 function selectedBackend<TOutput>(
-  group: keyof BackendFactoryCatalog,
+  group: keyof RuntimeBackendFactoryCatalog,
   expectedKind: BackendKind,
   selection: RuntimeSelection,
-  factories: Record<string, BackendFactory<TOutput>>
+  factories: Record<string, RuntimeBackendFactory<TOutput>>
 ): {
   readonly output: TOutput;
   readonly manifest: BackendManifest;
@@ -375,37 +378,39 @@ function langGraphCheckpointerFor(
 }
 
 export function runtimeBackendManifests(
-  backends: RuntimeBackendsConfig
+  backends: RuntimeBackendsConfig,
+  backendFactories: RuntimeBackendFactoryCatalog = defaultRuntimeBackendFactoryCatalog()
 ): BackendManifest[] {
   return [
     backendManifest(
       backends.artifacts,
-      requireBackendFactory("artifacts", backends.artifacts).registration
+      requireBackendFactory("artifacts", backends.artifacts, backendFactories).registration
     ),
     backendManifest(
       backends.events,
-      requireBackendFactory("events", backends.events).registration
+      requireBackendFactory("events", backends.events, backendFactories).registration
     ),
     backendManifest(
       backends.interrupts,
-      requireBackendFactory("interrupts", backends.interrupts).registration
+      requireBackendFactory("interrupts", backends.interrupts, backendFactories).registration
     ),
     backendManifest(
       backends.checkpoints,
-      requireBackendFactory("checkpoints", backends.checkpoints).registration
+      requireBackendFactory("checkpoints", backends.checkpoints, backendFactories).registration
     ),
     backendManifest(
       backends.runtime_logs,
-      requireBackendFactory("runtime_logs", backends.runtime_logs).registration
+      requireBackendFactory("runtime_logs", backends.runtime_logs, backendFactories).registration
     )
   ];
 }
 
 function requireBackendFactory(
-  group: keyof BackendFactoryCatalog,
-  selection: RuntimeSelection
-): BackendFactory<unknown> {
-  const factories = BACKEND_FACTORIES[group] as Record<string, BackendFactory<unknown>>;
+  group: keyof RuntimeBackendFactoryCatalog,
+  selection: RuntimeSelection,
+  backendFactories: RuntimeBackendFactoryCatalog
+): RuntimeBackendFactory<unknown> {
+  const factories = backendFactories[group] as Record<string, RuntimeBackendFactory<unknown>>;
   const factory = factories[selection.id];
   if (factory === undefined) {
     throw runtimeError("Unsupported runtime backend id", "runtime_backend_invalid", {
@@ -426,6 +431,8 @@ export function createRuntimeComposition(
   dependencies: RuntimeCompositionDependencies = {}
 ): RuntimeComposition {
   const config = parseRuntimeCompositionConfig(rawConfig);
+  const backendFactories =
+    dependencies.backendFactories ?? defaultRuntimeBackendFactoryCatalog();
   assertRuntimeDurabilityPolicy({
     mode: config.mode,
     checkpointBackendId: config.backends.checkpoints.id,
@@ -439,31 +446,31 @@ export function createRuntimeComposition(
     "artifacts",
     "artifact_manifest",
     config.backends.artifacts,
-    BACKEND_FACTORIES.artifacts
+    backendFactories.artifacts
   );
   const events = selectedBackend(
     "events",
     "event",
     config.backends.events,
-    BACKEND_FACTORIES.events
+    backendFactories.events
   );
   const interrupts = selectedBackend(
     "interrupts",
     "interrupt",
     config.backends.interrupts,
-    BACKEND_FACTORIES.interrupts
+    backendFactories.interrupts
   );
   const checkpoints = selectedBackend(
     "checkpoints",
     "checkpoint",
     config.backends.checkpoints,
-    BACKEND_FACTORIES.checkpoints
+    backendFactories.checkpoints
   );
   const runtimeLogs = selectedBackend(
     "runtime_logs",
     "runtime_log",
     config.backends.runtime_logs,
-    BACKEND_FACTORIES.runtime_logs
+    backendFactories.runtime_logs
   );
   const langGraphCheckpointer = langGraphCheckpointerFor(
     config.backends.checkpoints,

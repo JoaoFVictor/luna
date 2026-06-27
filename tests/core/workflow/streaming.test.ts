@@ -129,5 +129,8 @@ describe("workflow runner event streaming", () => {
       "node.failed",
       "run.failed"
     ]);
+    await expect(backends.checkpoints.load("run-failed-events")).resolves.toMatchObject({
+      state: { state_schema_version: "2026-06", run_status: "failed" }
+    });
   });
 });

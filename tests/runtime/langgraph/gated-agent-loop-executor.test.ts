@@ -221,7 +221,7 @@ describe("gated agent loop LangGraph executor", () => {
     await expect(
       checkpointStore.load("run-with-langgraph-checkpointer")
     ).resolves.toMatchObject({
-      state: { state_schema_version: "2026-06" }
+      state: { state_schema_version: "2026-06", run_status: "succeeded" }
     });
   });
 
