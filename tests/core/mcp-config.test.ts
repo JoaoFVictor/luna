@@ -49,6 +49,47 @@ describe("MCP config", () => {
     });
   });
 
+  it("loads stdio MCP servers from command configuration", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-mcp-config-"));
+    await mkdir(root, { recursive: true });
+    await writeFile(
+      path.join(root, "mcp.yaml"),
+      [
+        "mcp_servers:",
+        "  - id: playwright",
+        "    transport: stdio",
+        "    command: npx",
+        "    args:",
+        "      - -y",
+        "      - '@playwright/mcp@latest'",
+        "    env_vars:",
+        "      - PLAYWRIGHT_BASE_URL",
+        "    allowed_tools:",
+        "      - browser_navigate",
+        "      - browser_start_video",
+        "    allowed_agent_modes:",
+        "      - read_only",
+        "    timeout_ms: 60000"
+      ].join("\n"),
+      "utf8"
+    );
+
+    await expect(loadMcpConfig(root)).resolves.toEqual({
+      mcp_servers: [
+        {
+          id: "playwright",
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "@playwright/mcp@latest"],
+          env_vars: ["PLAYWRIGHT_BASE_URL"],
+          allowed_tools: ["browser_navigate", "browser_start_video"],
+          allowed_agent_modes: ["read_only"],
+          timeout_ms: 60000
+        }
+      ]
+    });
+  });
+
   it("returns an empty MCP server list when mcp.yaml is absent", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-mcp-config-"));
 

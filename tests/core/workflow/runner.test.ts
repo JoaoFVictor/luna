@@ -134,10 +134,13 @@ async function withTimeout<T>(
 }
 
 const agentDefaults: WorkflowAgentDefaults = {
-  instructions: "Review the workflow output.",
+  agent: {
+    id: "reviewer",
+    mode: "read_only",
+    instructions: "Review the workflow output."
+  },
   model_profile: { model: "openai/gpt-5", reasoning_effort: "medium" },
   tools: { tools: [], runtime_requirements: [] },
-  context: { repository: "luna" },
   cwd: "/tmp/runner-test"
 };
 
@@ -181,60 +184,6 @@ describe("workflow runner", () => {
     expect(result.output).toEqual({ ok: true });
   });
 
-  it("executes agent nodes through AgentRuntimePort", async () => {
-    const runtime = agentRuntime({ reviewed: true });
-    const definition = workflow([
-      {
-        id: "review",
-        type: "agent",
-        agent: "reviewer",
-        output_schema: "agents.output"
-      }
-    ]);
-
-    const result = await runCompiledWorkflow({
-      compiled: compileWorkflow({ workflow: definition, registry }),
-      workflow: definition,
-      invocation: {},
-      config: {},
-      run: {
-        run_id: "run-2",
-        workflow_id: "runner-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: backends(),
-      builtIns: {},
-      agentRuntime: runtime,
-      agentInputs: {
-        review: {
-          ...agentDefaults,
-          tools: { tools: [], runtime_requirements: ["mcp_tools"] }
-        }
-      }
-    });
-
-    expect(result.status).toBe("succeeded");
-    if (result.status !== "succeeded") {
-      throw new Error("expected workflow to succeed");
-    }
-    expect(runtime.runAgent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        node_id: "review",
-        agent_id: "reviewer",
-        instructions: "Review the workflow output.",
-        model_profile: { model: "openai/gpt-5", reasoning_effort: "medium" },
-        tools: { tools: [], runtime_requirements: ["mcp_tools"] },
-        context: { repository: "luna" },
-        cwd: "/tmp/runner-test",
-        runtime_requirements: ["mcp_tools"]
-      })
-    );
-    expect(runtime.validate).toHaveBeenCalledWith(
-      expect.objectContaining({ node_id: "review", agent_id: "reviewer" })
-    );
-  });
-
   it("projects agent runtime input per node", async () => {
     const runtime = agentRuntime({ reviewed: true });
     const definition = workflow([
@@ -270,15 +219,21 @@ describe("workflow runner", () => {
       agentInputs: {
         review: {
           ...agentDefaults,
-          instructions: "Review the implementation.",
-          model_profile: { model: "openai/gpt-5", reasoning_effort: "high" },
-          context: { role: "reviewer" }
+          agent: {
+            id: "change-reviewer",
+            mode: "read_only",
+            instructions: "Review the implementation."
+          },
+          model_profile: { model: "openai/gpt-5", reasoning_effort: "high" }
         },
         acceptance: {
           ...agentDefaults,
-          instructions: "Check acceptance criteria.",
-          model_profile: { model: "openai/gpt-5-mini", reasoning_effort: "low" },
-          context: { role: "acceptance" }
+          agent: {
+            id: "change-acceptance-reviewer",
+            mode: "read_only",
+            instructions: "Check acceptance criteria."
+          },
+          model_profile: { model: "openai/gpt-5-mini", reasoning_effort: "low" }
         }
       }
     });
@@ -288,20 +243,26 @@ describe("workflow runner", () => {
       expect.objectContaining({
         node_id: "review",
         agent_id: "change-reviewer",
-        instructions: "Review the implementation.",
         model_profile: { model: "openai/gpt-5", reasoning_effort: "high" },
-        context: { role: "reviewer" }
+        input: {},
+        context: undefined
       })
+    );
+    expect(vi.mocked(runtime.runAgent).mock.calls[0]?.[0].instructions).toContain(
+      "Review the implementation."
     );
     expect(runtime.runAgent).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         node_id: "acceptance",
         agent_id: "change-acceptance-reviewer",
-        instructions: "Check acceptance criteria.",
         model_profile: { model: "openai/gpt-5-mini", reasoning_effort: "low" },
-        context: { role: "acceptance" }
+        input: {},
+        context: undefined
       })
+    );
+    expect(vi.mocked(runtime.runAgent).mock.calls[1]?.[0].instructions).toContain(
+      "Check acceptance criteria."
     );
   });
 

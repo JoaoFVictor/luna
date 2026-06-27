@@ -185,7 +185,7 @@ workspace state, not just the state at worktree creation time.
 - Routing evaluator: `src/core/router/router.ts`
 - Artifact store: `src/core/artifacts/store.ts`
 - Gated loop state machine: `src/capabilities/quality-gates/gated-agent-loop.ts`
-- Gated loop LangGraph executor: `src/runtime/langgraph/gated-agent-loop-executor.ts`
+- Gated loop workflow pattern executor: `src/capabilities/quality-gates/workflow-pattern-executor.ts`
 
 Useful tests include `tests/core/workflow/definition.test.ts`,
 `tests/core/workflow/definition-output.test.ts`,

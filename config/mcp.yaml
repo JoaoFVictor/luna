@@ -1,15 +1,12 @@
 mcp_servers: []
 # mcp_servers:
 #   - id: example-mcp
-#     # MCP transport: streamable-http or sse.
-#     transport: streamable-http
-#     # Environment variable that contains the MCP server URL.
-#     url_env: EXAMPLE_MCP_URL
-#     # Optional headers. Each value is read from an environment variable.
-#     headers:
-#       Authorization:
-#         env: EXAMPLE_MCP_TOKEN
-#         prefix: "Bearer "
+#     # MCP transport: stdio, streamable-http, or sse.
+#     transport: stdio
+#     command: npx
+#     args:
+#       - -y
+#       - "@example/mcp@latest"
 #     # Tool ids this server may expose to agents.
 #     allowed_tools:
 #       - example.tool

@@ -4,10 +4,16 @@ import {
 import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import type {
   AgentRuntimePort,
-  AgentRuntimeRequirement,
-  RunAgentInput
+  AgentRuntimeRequirement
 } from "../../core/agent-runtime/contracts.js";
-import { runObservedAgent } from "../../core/agent-runtime/observed-runner.js";
+import {
+  runAgentNode
+} from "../../capabilities/agents/agent-node.js";
+import {
+  requireAgentProjection,
+  resolveAgentSkills
+} from "../../capabilities/agents/agent-envelope.js";
+import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
 import { runtimeError } from "../../core/runtime/errors.js";
@@ -60,7 +66,6 @@ import {
   type WorkflowGraphState,
   type WorkflowGraphUpdate
 } from "./workflow-state.js";
-import { executeGatedAgentLoopNode } from "./gated-agent-loop-executor.js";
 import { publishArtifactsForNode } from "./workflow-artifacts.js";
 import {
   builtInMetadataForPolicyNode,
@@ -77,6 +82,7 @@ import type {
   RunCompiledWorkflowInput,
   WorkflowAgentDefaults,
   WorkflowAgentInputMap,
+  WorkflowPatternExecutor,
   WorkflowRunResult
 } from "./workflow-runner-types.js";
 
@@ -88,6 +94,7 @@ export type {
   WorkflowAgentInputMap,
   WorkflowBuiltInExecutor,
   WorkflowBuiltInMetadataResolver,
+  WorkflowPatternExecutor,
   WorkflowRunResult
 } from "./workflow-runner-types.js";
 
@@ -559,13 +566,16 @@ async function executeNode(
 ): Promise<unknown> {
   if (node.kind === "built_in" || node.kind === "pattern") {
     const nodeInput = await resolveNodeInput(node, state, runtimeContext, input);
-    if (node.kind === "pattern" && node.capability_id === "quality-gates.gated_agent_loop") {
-      return await executeGatedAgentLoopNode({
-        input,
+    if (node.kind === "pattern") {
+      return await executePatternNode({
+        workflowInput: input,
+        executor: input.patternExecutors?.[node.capability_id],
+        node,
+        input: nodeInput,
         state,
         runtimeContext,
-        node,
-        nodeInput
+        workflow: input.workflow,
+        observabilitySummary: input.observabilitySummary
       });
     }
 
@@ -596,27 +606,32 @@ async function executeNode(
 
     const defaults = requireAgentDefaults(input, node);
     const requirements = runtimeRequirementsForNode(node, defaults);
-    const agentInput: RunAgentInput = {
+    const result = await runAgentNode({
+      runtime: input.agentRuntime,
       run: input.run,
       node_id: node.id,
-      agent_id: source.agent,
-      agent_mode: input.workflow.mode,
-      instructions: defaults.instructions,
-      input: await resolveNodeInput(node, state, runtimeContext, input),
+      agent: requireAgentProjection({
+        defaults,
+        agentId: source.agent
+      }),
+      input: requireWorkflowAgentTaskInput(
+        {
+          input: await resolveNodeInput(node, state, runtimeContext, input),
+          nodeId: node.id,
+          message: "Agent node input must resolve to a JSON object"
+        }
+      ),
       output_schema: node.output_schema,
       model_profile: defaults.model_profile,
       tools: defaults.tools,
-      context: defaults.context,
+      skills: await resolveAgentSkills({
+        skillSources: defaults.skill_sources,
+        workspace: runtimeContext.workspace
+      }),
       ...(defaults.cwd === undefined ? {} : { cwd: defaults.cwd }),
       runtime_requirements: requirements,
       signal: defaults.signal,
-      events: defaults.events
-    };
-
-    await input.agentRuntime.validate(agentInput);
-    const result = await runObservedAgent({
-      runtime: input.agentRuntime,
-      input: agentInput,
+      events: defaults.events,
       observabilitySummary: input.observabilitySummary,
       emitEvent: workflowAgentEventEmitter(input)
     });
@@ -625,6 +640,42 @@ async function executeNode(
 
   throw runtimeError("Unsupported compiled node kind", "runtime_state_invalid", {
     details: { node_id: node.id, kind: node.kind }
+  });
+}
+
+async function executePatternNode({
+  executor,
+  workflowInput,
+  node,
+  input,
+  state,
+  runtimeContext,
+  workflow,
+  observabilitySummary
+}: {
+  readonly executor: WorkflowPatternExecutor | undefined;
+  readonly workflowInput: RunCompiledWorkflowInput;
+  readonly node: CompiledWorkflowNode;
+  readonly input: unknown;
+  readonly state: LunaRuntimeState;
+  readonly runtimeContext: WorkflowRuntimeContext;
+  readonly workflow: WorkflowDefinition;
+  readonly observabilitySummary?: RunCompiledWorkflowInput["observabilitySummary"];
+}): Promise<unknown> {
+  if (executor === undefined) {
+    throw runtimeError("No executor registered for workflow pattern node", "runtime_state_invalid", {
+      details: { node_id: node.id, capability_id: node.capability_id }
+    });
+  }
+
+  return await executor({
+    workflowInput,
+    node,
+    input,
+    state,
+    runtimeContext,
+    workflow,
+    observabilitySummary
   });
 }
 

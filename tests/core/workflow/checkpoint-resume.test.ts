@@ -145,10 +145,13 @@ function agentRuntime(output: unknown): AgentRuntimePort {
 }
 
 const agentDefaults: WorkflowAgentDefaults = {
-  instructions: "Review after approval.",
+  agent: {
+    id: "reviewer",
+    mode: "read_only",
+    instructions: "Review after approval."
+  },
   model_profile: { model: "openai/gpt-5", reasoning_effort: "medium" },
-  tools: { tools: [], runtime_requirements: [] },
-  context: {}
+  tools: { tools: [], runtime_requirements: [] }
 };
 
 describe("workflow runner checkpoint resume", () => {

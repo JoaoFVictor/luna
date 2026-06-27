@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   AgentRuntimeRequirement,
+  AgentInstructionsAudit,
   RunAgentInput
 } from "../../core/agent-runtime/contracts.js";
 import { AgentRuntimeRequirementSchema } from "../../core/agent-runtime/contracts.js";
@@ -142,6 +143,9 @@ export type AgentDefinitionProjection = {
   readonly id: string;
   readonly mode: AgentInstructionMode;
   readonly instructions: string;
+  readonly tools?: readonly string[];
+  readonly mcp_servers?: readonly string[];
+  readonly skills?: readonly string[];
   readonly runtime_requirements?: readonly AgentRuntimeRequirement[];
 };
 
@@ -270,10 +274,20 @@ function addSection(
 
 export function prepareAgentInstructionEnvelope(
   input: AgentInstructionInput
-): { instructions: string; taskInput: Record<string, unknown> } {
+): {
+  instructions: string;
+  taskInput: Record<string, unknown>;
+  instructionsAudit: AgentInstructionsAudit;
+} {
   const taskInput = { ...input.taskInput };
   const context = contextIntakeFrom(taskInput.context);
   const sections: string[] = [];
+  const instructionsAudit: AgentInstructionsAudit = {
+    skills: (input.skills ?? []).map((skill) => ({
+      name: skill.name,
+      requested_path: skill.requestedPath
+    }))
+  };
 
   addSection(
     sections,
@@ -319,7 +333,8 @@ export function prepareAgentInstructionEnvelope(
 
   return {
     instructions: sections.join("\n\n"),
-    taskInput
+    taskInput,
+    instructionsAudit
   };
 }
 
@@ -357,6 +372,7 @@ export function projectAgentRunInput(
     agent_id: options.agent.id,
     agent_mode: options.agent.mode,
     instructions: envelope.instructions,
+    instructions_audit: envelope.instructionsAudit,
     input: envelope.taskInput,
     output_schema: options.output_schema,
     model_profile: options.model_profile,

@@ -77,14 +77,14 @@ function input(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
 }
 
 describe("Pi agent runtime adapter", () => {
-  it("describes a native local-tool runtime", () => {
+  it("describes a native runtime with local tools and MCP policy support", () => {
     const adapter = createPiAgentRuntimeAdapter();
 
     expect(adapter.describe()).toEqual({
       id: "pi",
       display_name: "Pi AI",
       supported_tool_protocols: ["local"],
-      supported_runtime_requirements: ["tool_calling"]
+      supported_runtime_requirements: ["tool_calling", "mcp_tools"]
     });
   });
 
@@ -265,41 +265,52 @@ describe("Pi agent runtime adapter", () => {
     );
   });
 
-  it("rejects MCP tool catalogs instead of pretending native support exists", async () => {
+  it("accepts dynamic MCP policy without materializing unsupported MCP handlers", async () => {
+    const complete = vi.fn(
+      async (
+        _model: Model<string>,
+        context: Context,
+        _options?: Record<string, unknown>
+      ) => {
+        expect(context).not.toHaveProperty("tools");
+
+        return message([{ type: "text", text: "{\"summary\":\"ok\"}" }]);
+      }
+    );
     const adapter = createPiAgentRuntimeAdapter({
-      complete: vi.fn(async () => message([])),
+      complete,
       getModel: vi.fn(() => fakeModel)
     });
+    const tools: ResolvedToolCatalog = {
+      tools: [],
+      runtime_requirements: ["tool_calling", "mcp_tools"],
+      mcp_policy: {
+        servers: [
+          {
+            id: "playwright",
+            transport: "stdio",
+            command: "npx",
+            args: ["-y", "@playwright/mcp@latest"],
+            env_vars: [],
+            allowed_tools: ["browser_navigate"],
+            timeout_ms: 60_000
+          }
+        ],
+        tools: [
+          {
+            id: "playwright.browser_navigate",
+            protocol: "mcp",
+            server_id: "playwright",
+            tool_name: "browser_navigate"
+          }
+        ],
+        runtime_requirements: ["tool_calling", "mcp_tools"]
+      }
+    };
 
     await expect(
-      adapter.validate(
-        input({
-          tools: {
-            tools: [
-              {
-                id: "github.get_pull_request",
-                protocol: "mcp",
-                input_schema: {},
-                output_schema: {},
-                runtime_requirements: ["tool_calling", "mcp_tools"],
-                source: "mcp_policy",
-                mcp: {
-                  id: "github.get_pull_request",
-                  protocol: "mcp",
-                  server_id: "github",
-                  tool_name: "get_pull_request"
-                }
-              }
-            ],
-            runtime_requirements: ["tool_calling", "mcp_tools"]
-          },
-          runtime_requirements: ["tool_calling", "mcp_tools"]
-        })
-      )
-    ).rejects.toMatchObject({
-      code: "runtime_unsupported_feature",
-      details: { unsupported_requirement: "mcp_tools" }
-    });
+      adapter.runAgent(input({ tools, runtime_requirements: ["tool_calling", "mcp_tools"] }))
+    ).resolves.toMatchObject({ output: { summary: "ok" } });
   });
 
   it("requires provider/model or an explicit provider field", async () => {

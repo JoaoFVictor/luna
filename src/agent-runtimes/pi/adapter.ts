@@ -40,7 +40,7 @@ const PI_DESCRIPTOR: AgentRuntimeDescriptor = {
   id: "pi",
   display_name: "Pi AI",
   supported_tool_protocols: ["local"],
-  supported_runtime_requirements: ["tool_calling"]
+  supported_runtime_requirements: ["tool_calling", "mcp_tools"]
 };
 
 const DEFAULT_MAX_TOOL_ITERATIONS = 8;

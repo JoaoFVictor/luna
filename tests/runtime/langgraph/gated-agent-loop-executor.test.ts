@@ -23,7 +23,8 @@ import { createLangGraphCheckpointer } from "../../../src/runtime/backends/sqlit
 import {
   gatedAgentGateKey,
   gatedAgentWorkerKey
-} from "../../../src/runtime/langgraph/gated-agent-loop-keys.js";
+} from "../../../src/capabilities/quality-gates/gated-agent-loop-keys.js";
+import { qualityGatePatternExecutors } from "../../../src/capabilities/quality-gates/workflow-pattern-executor.js";
 import {
   runCompiledWorkflow,
   type WorkflowAgentDefaults
@@ -109,12 +110,17 @@ const registry = createCapabilityRegistry([
   })
 ]);
 
-const agentDefaults: WorkflowAgentDefaults = {
-  instructions: "Review the workflow output.",
-  model_profile: { model: "openai/gpt-5", reasoning_effort: "medium" },
-  tools: { tools: [], runtime_requirements: [] },
-  context: { repository: "luna" }
-};
+function agentDefaults(agentId: string): WorkflowAgentDefaults {
+  return {
+    agent: {
+      id: agentId,
+      mode: "trusted_local_write",
+      instructions: "Review the workflow output."
+    },
+    model_profile: { model: "openai/gpt-5", reasoning_effort: "medium" },
+    tools: { tools: [], runtime_requirements: [] }
+  };
+}
 
 function workflow(nodes: WorkflowNode[]): WorkflowDefinition {
   return {
@@ -301,16 +307,17 @@ describe("gated agent loop LangGraph executor", () => {
       runtimeContext: { workspace: { path: workspacePath } },
       backends: runtimeBackends,
       builtIns: {},
+      patternExecutors: qualityGatePatternExecutors,
       agentRuntime: runtime,
       observabilitySummary: summary,
       agentInputs: {
         [gatedAgentWorkerKey("implementation")]: {
-          ...agentDefaults,
+          ...agentDefaults("code-implementer"),
           cwd: wrongDefaultCwd,
           output_schema: { type: "object", additionalProperties: true }
         },
         [gatedAgentGateKey("implementation", "review")]: {
-          ...agentDefaults,
+          ...agentDefaults("change-reviewer"),
           output_schema: {
             type: "object",
             additionalProperties: false,
@@ -322,7 +329,7 @@ describe("gated agent loop LangGraph executor", () => {
           }
         },
         [gatedAgentGateKey("implementation", "acceptance")]: {
-          ...agentDefaults,
+          ...agentDefaults("change-acceptance-reviewer"),
           output_schema: {
             type: "object",
             additionalProperties: false,
@@ -478,14 +485,15 @@ describe("gated agent loop LangGraph executor", () => {
       runtimeContext: { workspace: { path: workspacePath } },
       backends: backends(),
       builtIns: {},
+      patternExecutors: qualityGatePatternExecutors,
       agentRuntime: runtime,
       agentInputs: {
         [gatedAgentWorkerKey("implementation")]: {
-          ...agentDefaults,
+          ...agentDefaults("code-implementer"),
           output_schema: { type: "object", additionalProperties: true }
         },
         [gatedAgentGateKey("implementation", "review")]: {
-          ...agentDefaults,
+          ...agentDefaults("change-reviewer"),
           output_schema: {
             type: "object",
             additionalProperties: false,

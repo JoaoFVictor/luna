@@ -20,16 +20,12 @@ import {
 } from "../../core/runtime/backends/contracts.js";
 import { validateBackendManifest } from "../../core/runtime/backends/contracts.js";
 import { runtimeError } from "../../core/runtime/errors.js";
-import type { JsonValue } from "../../core/json/value.js";
 import {
   allowInterruptResume,
   type InterruptResumeAuthorizationPort
 } from "../../core/runtime/interrupts/authorization.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";
-import {
-  createPiAgentRuntimeAdapter
-} from "../../agent-runtimes/pi/adapter.js";
 import {
   createFilesystemArtifactContentStore,
   createFilesystemArtifactManifestStore,
@@ -112,6 +108,7 @@ export type RuntimeCompositionDependencies = {
   readonly workflowDefinition?: Pick<WorkflowDefinition, "id" | "mode" | "graph">;
   readonly requiresHumanInterrupts?: boolean;
   readonly hasExternalSideEffects?: boolean;
+  readonly agentRuntimeFactories?: Readonly<Record<string, AgentRuntimeFactory>>;
 };
 
 export type RuntimeCapabilityPort = {
@@ -183,26 +180,9 @@ const BACKEND_FACTORIES: BackendFactoryCatalog = {
   }
 };
 
-type AgentRuntimeFactory = {
+export type AgentRuntimeFactory = {
   readonly id: string;
   readonly create: (options: JsonObject) => AgentRuntimePort;
-};
-
-const AGENT_RUNTIME_FACTORIES: Record<string, AgentRuntimeFactory> = {
-  pi: {
-    id: "pi",
-    create: (options) =>
-      createPiAgentRuntimeAdapter({
-        maxToolIterations: optionalPositiveInteger(
-          options.max_tool_iterations,
-          "agent_runtime.options.max_tool_iterations"
-        ),
-        requestTimeoutMs: optionalPositiveInteger(
-          options.request_timeout_ms,
-          "agent_runtime.options.request_timeout_ms"
-        )
-      })
-  }
 };
 
 function validateBackendOptions<TOptions extends JsonObject>(
@@ -273,17 +253,17 @@ function createAgentRuntime(
     validateEmptyOptions(selection, "agent_runtime");
     return createUnconfiguredAgentRuntime();
   }
-  const factory = AGENT_RUNTIME_FACTORIES[selection.id];
+  const factories = dependencies.agentRuntimeFactories ?? {};
+  const factory = factories[selection.id];
   if (factory === undefined) {
     throw runtimeError("Unsupported agent runtime id", "runtime_backend_invalid", {
       details: {
         agent_runtime_id: selection.id,
-        supported_agent_runtime_ids: ["unconfigured", ...Object.keys(AGENT_RUNTIME_FACTORIES)]
+        supported_agent_runtime_ids: ["unconfigured", ...Object.keys(factories)]
       }
     });
   }
 
-  void dependencies;
   return factory.create(selectionOptions(selection));
 }
 
@@ -383,19 +363,6 @@ function validateEmptyOptions(selection: RuntimeSelection, label: string): void 
       details: { id: selection.id }
     });
   }
-}
-
-function optionalPositiveInteger(value: JsonValue | undefined, label: string): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!Number.isInteger(value) || typeof value !== "number" || value <= 0) {
-    throw runtimeError(`${label} must be a positive integer`, "runtime_backend_invalid", {
-      details: { value }
-    });
-  }
-
-  return value;
 }
 
 function langGraphCheckpointerFor(

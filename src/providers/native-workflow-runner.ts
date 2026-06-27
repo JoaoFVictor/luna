@@ -41,9 +41,11 @@ import {
 import {
   gatedAgentGateKey,
   gatedAgentWorkerKey
-} from "../runtime/langgraph/gated-agent-loop-keys.js";
+} from "../capabilities/quality-gates/gated-agent-loop-keys.js";
+import { qualityGatePatternExecutors } from "../capabilities/quality-gates/workflow-pattern-executor.js";
 import { resolveRepository } from "../core/workflow/workspace-resolver.js";
 import { registerConfiguredPiOAuthProviders } from "../agent-runtimes/pi/auth.js";
+import { piAgentRuntimeFactory } from "../agent-runtimes/pi/factory.js";
 import {
   createRuntimeCompositionForWorkflow
 } from "../runtime/composition/runtime-composition.js";
@@ -91,7 +93,10 @@ export async function runNativeWorkflowTarget({
   const composition = createRuntimeCompositionForWorkflow(
     runtimeConfig,
     nativeWorkflow.workflow,
-    { capabilityRegistry: officialCapabilityRegistry }
+    {
+      capabilityRegistry: officialCapabilityRegistry,
+      agentRuntimeFactories: { [piAgentRuntimeFactory.id]: piAgentRuntimeFactory }
+    }
   );
   const observabilitySummary = createObservabilitySummary({
     runId: run.run_id,
@@ -121,6 +126,7 @@ export async function runNativeWorkflowTarget({
         ])
       }
     }),
+    patternExecutors: qualityGatePatternExecutors,
     builtInMetadata: (node) => {
       const name = builtInStepNameForWorkflowCapability(node.capability_id);
       return defaultProviderBuiltInStepRegistry.has(name)
@@ -292,7 +298,15 @@ async function workflowAgentInputs({
       return [
         key,
         {
-          instructions: agent.instructions,
+          agent: {
+            id: agent.id,
+            mode: agent.mode,
+            instructions: agent.instructions,
+            tools: agent.tools,
+            mcp_servers: agent.mcp_servers,
+            skills: agent.skills,
+            runtime_requirements: agent.runtime_requirements
+          },
           model_profile: modelProfile,
           tools: resolveToolCatalog({
             registry: officialCapabilityRegistry,
@@ -302,8 +316,17 @@ async function workflowAgentInputs({
             agent_mode: agent.mode,
             mcp_config: mcpConfig
           }),
+          skill_sources: {
+            repository: repository === undefined
+              ? undefined
+              : {
+                  root: repository.path,
+                  skills: repository.skills
+                },
+            agentDirectory: agent.directory,
+            agentSkills: agent.skills
+          },
           runtime_requirements: agent.runtime_requirements ?? [],
-          context: {},
           output_schema: agent.outputSchema,
           cwd: repository?.path
         }

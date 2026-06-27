@@ -37,7 +37,6 @@ type ToolCatalogErrorCode =
   | "tool_catalog_protocol_mismatch"
   | "tool_catalog_local_contract_missing"
   | "tool_catalog_local_mode_not_allowed"
-  | "tool_catalog_mcp_tool_not_registered"
   | "tool_catalog_runtime_requirement_unsupported";
 
 class ToolCatalogError extends Error {
@@ -168,12 +167,15 @@ function resolveMcpTool({
 }: {
   readonly policyTool: ResolvedMcpPolicyTool;
   readonly registered: ReadonlyMap<string, ToolRegistration>;
-}): ResolvedTool {
+}): ResolvedTool | undefined {
   const registration = registered.get(policyTool.id);
-  if (registration === undefined || registration.protocol !== "mcp") {
+  if (registration === undefined) {
+    return undefined;
+  }
+  if (registration.protocol !== "mcp") {
     throw new ToolCatalogError(
-      "tool_catalog_mcp_tool_not_registered",
-      `MCP policy allowed ${policyTool.id}, but no matching MCP tool is registered`
+      "tool_catalog_protocol_mismatch",
+      `MCP policy allowed ${policyTool.id}, but it is registered as ${registration.protocol}`
     );
   }
 
@@ -226,6 +228,9 @@ export function resolveToolCatalog({
 
   for (const policyTool of mcpPolicy.tools) {
     const tool = resolveMcpTool({ policyTool, registered });
+    if (tool === undefined) {
+      continue;
+    }
     resolvedTools.push(tool);
     addRequirements(runtimeRequirements, tool.runtime_requirements);
   }

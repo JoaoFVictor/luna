@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import { manifest as artifactsManifest } from "../../../src/capabilities/artifacts/manifest.js";
+import { piAgentRuntimeFactory } from "../../../src/agent-runtimes/pi/factory.js";
 import {
   createRuntimeCompositionForWorkflow,
   createRuntimeComposition,
@@ -11,6 +12,10 @@ import {
 } from "../../../src/runtime/composition/runtime-composition.js";
 
 describe("runtime composition", () => {
+  const piRuntimeFactories = {
+    [piAgentRuntimeFactory.id]: piAgentRuntimeFactory
+  };
+
   it("materializes configured concrete backends, Pi adapter, auth port, and LangGraph checkpointer", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-composition-"));
     const checkpointFile = path.join(root, "checkpoints.sqlite");
@@ -47,7 +52,8 @@ describe("runtime composition", () => {
           }
         }
       }, {
-        capabilityRegistry: createCapabilityRegistry([artifactsManifest])
+        capabilityRegistry: createCapabilityRegistry([artifactsManifest]),
+        agentRuntimeFactories: piRuntimeFactories
       });
 
       expect(composition.agentRuntime.describe().id).toBe("pi");
@@ -139,7 +145,7 @@ describe("runtime composition", () => {
         },
         agent_runtime: { id: "pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} }
-      })
+      }, { agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
   });
 
@@ -156,7 +162,7 @@ describe("runtime composition", () => {
         },
         agent_runtime: { id: "pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} }
-      })
+      }, { agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
 
     expect(() =>
@@ -171,7 +177,7 @@ describe("runtime composition", () => {
         },
         agent_runtime: { id: "not-pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} }
-      })
+      }, { agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
   });
 
@@ -188,7 +194,7 @@ describe("runtime composition", () => {
         },
         agent_runtime: { id: "pi", options: { max_tool_iterations: 0 } },
         interrupt_authorization: { id: "allow_all", options: {} }
-      })
+      }, { agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
 
     expect(() =>
@@ -203,7 +209,7 @@ describe("runtime composition", () => {
         },
         agent_runtime: { id: "pi", options: { request_timeout_ms: 0 } },
         interrupt_authorization: { id: "allow_all", options: {} }
-      })
+      }, { agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
   });
 
@@ -225,7 +231,7 @@ describe("runtime composition", () => {
         capability_ports: {
           missing: { id: "artifacts.missing", options: {} }
         }
-      }, { capabilityRegistry: registry })
+      }, { capabilityRegistry: registry, agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
 
     expect(() =>
@@ -243,7 +249,7 @@ describe("runtime composition", () => {
         capability_ports: {
           artifacts: { id: "artifacts.manifest_store", options: {} }
         }
-      }, { capabilityRegistry: registry })
+      }, { capabilityRegistry: registry, agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
   });
 

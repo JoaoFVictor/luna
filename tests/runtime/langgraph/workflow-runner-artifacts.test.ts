@@ -107,10 +107,13 @@ function agentRuntime(): AgentRuntimePort {
 }
 
 const agentDefaults: WorkflowAgentDefaults = {
-  instructions: "Review the workflow output.",
+  agent: {
+    id: "reviewer",
+    mode: "read_only",
+    instructions: "Review the workflow output."
+  },
   model_profile: { model: "openai/gpt-5", reasoning_effort: "medium" },
   tools: { tools: [], runtime_requirements: [] },
-  context: { repository: "luna" },
   cwd: "/tmp/runner-test"
 };
 

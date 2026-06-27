@@ -115,7 +115,37 @@ describe("resolved tool catalog", () => {
     expect(catalog.runtime_requirements).toEqual(["tool_calling", "mcp_tools"]);
   });
 
-  it("rejects local tools without local contracts and MCP tools without allowlist policy", () => {
+  it("keeps dynamic MCP policy separate from materialized tool contracts", () => {
+    const catalog = resolveToolCatalog({
+      registry: createCapabilityRegistry([]),
+      local_tools: {},
+      requested_local_tool_ids: [],
+      requested_mcp_server_ids: ["linear"],
+      agent_mode: "read_only",
+      mcp_config: {
+        mcp_servers: [
+          {
+            id: "linear",
+            transport: "streamable-http",
+            url_env: "LUNA_MCP_LINEAR_URL",
+            headers: {},
+            allowed_tools: ["get_issue", "list_comments"],
+            allowed_agent_modes: ["read_only"],
+            timeout_ms: 30_000
+          }
+        ]
+      }
+    });
+
+    expect(catalog.tools).toEqual([]);
+    expect(catalog.mcp_policy?.tools).toEqual([
+      expect.objectContaining({ id: "linear.get_issue", tool_name: "get_issue" }),
+      expect.objectContaining({ id: "linear.list_comments", tool_name: "list_comments" })
+    ]);
+    expect(catalog.runtime_requirements).toEqual(["tool_calling", "mcp_tools"]);
+  });
+
+  it("rejects local tools without local contracts and trusts MCP allowlist policy", () => {
     expect(() =>
       resolveToolCatalog({
         registry,
@@ -159,7 +189,7 @@ describe("resolved tool catalog", () => {
           ]
         }
       })
-    ).toThrow(expect.objectContaining({ code: "tool_catalog_mcp_tool_not_registered" }));
+    ).not.toThrow();
   });
 
   it("resolves Luna's official local tool catalog through official capabilities", () => {

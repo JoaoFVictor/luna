@@ -60,12 +60,20 @@ export type AgentRuntimeEventSink = {
   }): Promise<void> | void;
 };
 
+export type AgentInstructionsAudit = {
+  readonly skills?: readonly {
+    readonly name: string;
+    readonly requested_path: string;
+  }[];
+};
+
 export type RunAgentInput = {
   readonly run: RunHandle;
   readonly node_id: string;
   readonly agent_id: string;
   readonly agent_mode: "read_only" | "trusted_local_write";
   readonly instructions: string;
+  readonly instructions_audit?: AgentInstructionsAudit;
   readonly input: unknown;
   readonly output_schema: unknown;
   readonly model_profile: ModelProfile;

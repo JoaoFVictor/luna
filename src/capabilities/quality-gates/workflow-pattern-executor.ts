@@ -1,10 +1,16 @@
 import { z } from "zod";
 import type {
-  AgentRuntimeRequirement,
-  RunAgentInput
+  AgentRuntimeRequirement
 } from "../../core/agent-runtime/contracts.js";
-import { runObservedAgent } from "../../core/agent-runtime/observed-runner.js";
-import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
+import {
+  runAgentNode
+} from "../agents/agent-node.js";
+import {
+  requireAgentProjection,
+  resolveAgentSkills,
+  workspacePath
+} from "../agents/agent-envelope.js";
+import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
 import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
 import type { ParsedWorkflowGate } from "../../core/workflow/definition-types.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
@@ -24,19 +30,27 @@ import {
   type RunGatedWorkerInput,
   type RunGatesInput,
   type RunGatesOutput
-} from "../../capabilities/quality-gates/gated-agent-loop.js";
-import { gateResultFromAgentOutput } from "../../capabilities/quality-gates/gate-results.js";
-import type { RunCompiledWorkflowInput, WorkflowAgentDefaults } from "./workflow-runner.js";
+} from "./gated-agent-loop.js";
+import { gateResultFromAgentOutput } from "./gate-results.js";
+import type {
+  RunCompiledWorkflowInput,
+  WorkflowAgentDefaults,
+  WorkflowPatternExecutor
+} from "../../runtime/langgraph/workflow-runner.js";
 import {
   deterministicGateResult,
   VALIDATION_GATE
-} from "./gated-agent-deterministic-gates.js";
+} from "./deterministic-gates.js";
 import { gatedAgentGateKey, gatedAgentWorkerKey } from "./gated-agent-loop-keys.js";
-import { workflowAgentEventEmitter } from "./workflow-events.js";
+import { workflowAgentEventEmitter } from "../../runtime/langgraph/workflow-events.js";
 
 const GATED_AGENT_LOOP_CAPABILITY = "quality-gates.gated_agent_loop";
 const AGENT_REVIEW_GATE = "quality-gates.agent_review";
 const DEFAULT_DIFF_BYTES = 65_536;
+
+export const qualityGatePatternExecutors = Object.freeze({
+  [GATED_AGENT_LOOP_CAPABILITY]: executeGatedAgentLoopPattern
+} satisfies Record<string, WorkflowPatternExecutor>);
 
 const ValidationCommandsInputSchema = z
   .object({
@@ -45,18 +59,18 @@ const ValidationCommandsInputSchema = z
   })
   .strict();
 
-export async function executeGatedAgentLoopNode({
-  input,
+export async function executeGatedAgentLoopPattern({
+  workflowInput: input,
   state,
   runtimeContext,
   node,
-  nodeInput
+  input: patternInput
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly workflowInput: RunCompiledWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
-  readonly nodeInput: unknown;
+  readonly input: unknown;
 }): Promise<unknown> {
   const source = requireGatedAgentLoopSource(node);
   const cwd = workspacePath(runtimeContext.workspace) ?? requireAgentDefaults(
@@ -81,7 +95,7 @@ export async function executeGatedAgentLoopNode({
 
   return await runGatedAgentLoopStateMachine({
     cwd,
-    prompt: nodeInput,
+    prompt: patternInput,
     repairAttempts: await repairAttemptsForNode({
       input,
       state,
@@ -95,7 +109,7 @@ export async function executeGatedAgentLoopNode({
           nodeId: gatedAgentWorkerKey(node.id),
           agentId: source.worker,
           agentInput: workerInput,
-          workflowMode: input.workflow.mode,
+          runtimeContext,
           cwd
         }),
       runValidation: async () =>
@@ -309,7 +323,7 @@ async function runPatternGates({
       nodeId: gatedAgentGateKey(node.id, gate.id),
       agentId: reviewAgent,
       agentInput: resolvedGateInput,
-      workflowMode: input.workflow.mode,
+      runtimeContext,
       cwd
     });
 
@@ -368,14 +382,14 @@ async function runPatternAgent({
   nodeId,
   agentId,
   agentInput,
-  workflowMode,
+  runtimeContext,
   cwd
 }: {
   readonly input: RunCompiledWorkflowInput;
   readonly nodeId: string;
   readonly agentId: string;
   readonly agentInput: RunGatedWorkerInput | unknown;
-  readonly workflowMode: "read_only" | "trusted_local_write";
+  readonly runtimeContext: WorkflowRuntimeContext;
   readonly cwd: string;
 }): Promise<unknown> {
   const defaults = requireAgentDefaults(input, nodeId, nodeId, agentId);
@@ -385,51 +399,37 @@ async function runPatternAgent({
     });
   }
 
-  const runtimeInput: RunAgentInput = {
+  const outputSchema = requireJsonSchema(defaults.output_schema, nodeId, agentId);
+  const result = await runAgentNode({
+    runtime: input.agentRuntime,
     run: input.run,
     node_id: nodeId,
-    agent_id: agentId,
-    agent_mode: workflowMode,
-    instructions: defaults.instructions,
-    input: agentInput,
-    output_schema: defaults.output_schema,
+    agent: requireAgentProjection({
+      defaults,
+      agentId
+    }),
+    input: requireWorkflowAgentTaskInput({
+      input: agentInput,
+      nodeId,
+      agentId,
+      message: "Pattern agent input must resolve to a JSON object"
+    }),
+    output_schema: outputSchema,
     model_profile: defaults.model_profile,
     tools: defaults.tools,
-    context: defaults.context,
+    skills: await resolveAgentSkills({
+      skillSources: defaults.skill_sources,
+      workspace: runtimeContext.workspace
+    }),
     cwd,
     runtime_requirements: runtimeRequirementsForDefaults(defaults),
     signal: defaults.signal,
-    events: defaults.events
-  };
-
-  await input.agentRuntime.validate(runtimeInput);
-  const result = await runObservedAgent({
-    runtime: input.agentRuntime,
-    input: runtimeInput,
+    events: defaults.events,
     observabilitySummary: input.observabilitySummary,
     emitEvent: workflowAgentEventEmitter(input)
   });
-  const outputSchema = requireJsonSchema(defaults.output_schema, nodeId, agentId);
-  if (!matchesJsonSchema(outputSchema, result.output)) {
-    throw runtimeError("Pattern agent output failed schema validation", "runtime_node_output_schema_invalid", {
-      details: { node_id: nodeId, agent_id: agentId }
-    });
-  }
 
   return result.output;
-}
-
-function workspacePath(workspace: unknown): string | undefined {
-  if (
-    typeof workspace === "object" &&
-    workspace !== null &&
-    !Array.isArray(workspace) &&
-    typeof (workspace as { path?: unknown }).path === "string"
-  ) {
-    return (workspace as { path: string }).path;
-  }
-
-  return undefined;
 }
 
 function requireJsonSchema(

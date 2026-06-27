@@ -14,6 +14,16 @@ const config: McpConfig = {
       allowed_tools: ["get_pull_request"],
       allowed_agent_modes: ["read_only"],
       timeout_ms: 30_000
+    },
+    {
+      id: "playwright",
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "@playwright/mcp@latest"],
+      env_vars: [],
+      allowed_tools: ["browser_navigate"],
+      allowed_agent_modes: ["read_only"],
+      timeout_ms: 60_000
     }
   ]
 };
@@ -54,6 +64,34 @@ describe("MCP policy", () => {
 
     expect(policy.tools).toEqual([]);
     expect(policy.runtime_requirements).toEqual([]);
+  });
+
+  it("preserves stdio server launch policy for requested MCP servers", () => {
+    const policy = resolveMcpPolicy({
+      requested_server_ids: ["playwright"],
+      agent_mode: "read_only",
+      config
+    });
+
+    expect(policy.servers).toEqual([
+      {
+        id: "playwright",
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "@playwright/mcp@latest"],
+        env_vars: [],
+        allowed_tools: ["browser_navigate"],
+        timeout_ms: 60_000
+      }
+    ]);
+    expect(policy.tools).toEqual([
+      {
+        id: "playwright.browser_navigate",
+        protocol: "mcp",
+        server_id: "playwright",
+        tool_name: "browser_navigate"
+      }
+    ]);
   });
 
   it("rejects unknown servers and disallowed agent modes", () => {

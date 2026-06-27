@@ -9,6 +9,8 @@ import type { BuiltInStepMetadata } from "../../core/built-ins/types.js";
 import type { ModelProfile } from "../../core/config/schemas.js";
 import type { RuntimeBackends } from "../../core/runtime/backends/contracts.js";
 import type { ArtifactPublisherPort } from "../../capabilities/artifacts/publisher.js";
+import type { AgentDefinitionProjection } from "../../capabilities/agents/agent-definition.js";
+import type { AgentSkillSources } from "../../capabilities/agents/agent-envelope.js";
 import type { JsonValue } from "../../core/runtime/json.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
@@ -31,12 +33,22 @@ export type WorkflowBuiltInMetadataResolver = (
   node: CompiledWorkflowNode
 ) => BuiltInStepMetadata;
 
+export type WorkflowPatternExecutor = (input: {
+  readonly workflowInput: RunCompiledWorkflowInput;
+  readonly node: CompiledWorkflowNode;
+  readonly input: unknown;
+  readonly state: LunaRuntimeState;
+  readonly runtimeContext: WorkflowRuntimeContext;
+  readonly workflow: WorkflowDefinition;
+  readonly observabilitySummary?: ObservabilitySummary;
+}) => Promise<unknown> | unknown;
+
 export type WorkflowAgentDefaults = {
-  readonly instructions: string;
+  readonly agent: AgentDefinitionProjection;
   readonly model_profile: ModelProfile;
   readonly tools: ResolvedToolCatalog;
+  readonly skill_sources?: AgentSkillSources;
   readonly runtime_requirements?: readonly AgentRuntimeRequirement[];
-  readonly context: unknown;
   readonly output_schema?: unknown;
   readonly cwd?: string;
   readonly signal?: AbortSignal;
@@ -54,6 +66,7 @@ export type RunCompiledWorkflowInput = {
   readonly runtimeContext?: WorkflowRuntimeContext;
   readonly backends: RuntimeBackends;
   readonly builtIns: Record<string, WorkflowBuiltInExecutor>;
+  readonly patternExecutors?: Record<string, WorkflowPatternExecutor>;
   readonly builtInMetadata?: WorkflowBuiltInMetadataResolver;
   readonly lockManager?: WorkflowLockManager;
   readonly agentRuntime: AgentRuntimePort;

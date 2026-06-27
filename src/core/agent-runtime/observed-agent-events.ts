@@ -78,11 +78,25 @@ export function agentFailedEvent({
 }
 
 function baseAgentEventData(input: RunAgentInput, runtimeId: string): Record<string, unknown> {
+  const mcpPolicy = input.tools.mcp_policy;
+
   return {
     agent_id: input.agent_id,
     agent_mode: input.agent_mode,
     runtime_id: runtimeId,
-    model_profile: input.model_profile.model
+    model_profile: input.model_profile.model,
+    ...(input.instructions_audit?.skills === undefined ||
+    input.instructions_audit.skills.length === 0
+      ? {}
+      : { skills: input.instructions_audit.skills }),
+    tools: {
+      local_tool_ids: input.tools.tools
+        .filter((tool) => tool.protocol === "local")
+        .map((tool) => tool.id),
+      mcp_server_ids: mcpPolicy?.servers.map((server) => server.id) ?? [],
+      mcp_tool_ids: mcpPolicy?.tools.map((tool) => tool.id) ?? [],
+      runtime_requirements: input.tools.runtime_requirements
+    }
   };
 }
 
