@@ -1,9 +1,9 @@
-import { defineBuiltInStep } from "../../core/built-ins/registry.js";
-import { changeRequestCreateMetadata } from "../../core/built-ins/metadata.js";
+import { defineBuiltInStep } from "../built-ins/registry.js";
+import { changeRequestCreateMetadata } from "../built-ins/metadata.js";
 import type {
   BuiltInStep,
   BuiltInStepRunOptions
-} from "../../core/built-ins/types.js";
+} from "../built-ins/types.js";
 import type {
   ChangeRequestBuiltInPorts,
   ChangeRequestCreateInput,

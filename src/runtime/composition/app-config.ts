@@ -44,12 +44,19 @@ export const RuntimeCompositionConfigSchema = z
   .object({
     mode: RuntimeModeSchema.default("production"),
     backends: RuntimeBackendsConfigSchema,
+    workflow_runtime: RuntimeSelectionSchema.default({
+      id: "unconfigured",
+      options: {}
+    }),
     agent_runtime: RuntimeSelectionSchema,
     interrupt_authorization: RuntimeSelectionSchema,
     capability_ports: z.record(RuntimeSelectionSchema).optional()
   })
   .strict();
 export type RuntimeCompositionConfig = z.infer<
+  typeof RuntimeCompositionConfigSchema
+>;
+export type RuntimeCompositionConfigInput = z.input<
   typeof RuntimeCompositionConfigSchema
 >;
 

@@ -4,8 +4,10 @@ import type {
 import { runAgentNode } from "../../capabilities/agents/agent-node.js";
 import {
   requireAgentProjection,
-  resolveAgentSkills
+  resolveAgentSkills,
+  type AgentSkillSources
 } from "../../capabilities/agents/agent-envelope.js";
+import type { AgentDefinitionProjection } from "../../capabilities/agents/agent-definition.js";
 import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
@@ -17,6 +19,14 @@ import type {
   RunCompiledWorkflowInput,
   WorkflowAgentDefaults
 } from "./workflow-runner-types.js";
+
+type LangGraphWorkflowAgentDefaults = Omit<
+  WorkflowAgentDefaults,
+  "agent" | "skill_sources"
+> & {
+  readonly agent: AgentDefinitionProjection;
+  readonly skill_sources?: AgentSkillSources;
+};
 
 export async function executeAgentNode({
   input,
@@ -98,7 +108,7 @@ export function runtimeRequirementsForDefaults(
 function requireAgentDefaults(
   input: RunCompiledWorkflowInput,
   node: CompiledWorkflowNode
-): WorkflowAgentDefaults {
+): LangGraphWorkflowAgentDefaults {
   const defaults = input.agentInputs?.[node.id];
   if (defaults === undefined) {
     throw runtimeError("Agent node requires projected runtime input", "runtime_state_invalid", {
@@ -106,5 +116,5 @@ function requireAgentDefaults(
     });
   }
 
-  return defaults;
+  return defaults as LangGraphWorkflowAgentDefaults;
 }

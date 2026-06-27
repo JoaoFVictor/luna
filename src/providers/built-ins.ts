@@ -1,41 +1,4 @@
-import {
-  collectWorktreeDiffBuiltIn,
-  prepareCommitBuiltIn,
-  prepareImplementationWorktreeBuiltIn,
-  preparePushBuiltIn,
-  recordAcceptanceDecisionBuiltIn,
-  recordCommitLifecycleBuiltIn,
-  recordImplementationValidationBuiltIn,
-  recordPushLifecycleBuiltIn,
-  runValidationCommandsBuiltIn
-} from "../core/built-ins/implementation.js";
-import { collectContextBuiltIn } from "../core/built-ins/context.js";
-import { finalReportBuiltIn } from "../capabilities/reports/final-report.js";
-import {
-  createBuiltInStepCatalog,
-  gitCommitBuiltIn,
-  gitPushBranchBuiltIn,
-  gitStatusBuiltIn,
-  changeRequestCreateBuiltIn,
-  localExecReadCommandBuiltIn,
-  localExecWriteCommandBuiltIn,
-  repositoryWorkspaceCaptureBuiltIn
-} from "../core/built-ins/catalog.js";
-import {
-  collectRepoContextBuiltIn,
-  finalCodeReviewReportBuiltIn,
-  prepareWorktreeBuiltIn,
-  preflightBuiltIn,
-  validateCodeReviewFindingsBuiltIn
-} from "./github/built-ins.js";
-import {
-  collectTaskContextBuiltIn as collectJiraTaskContextBuiltIn,
-  finalImplementationReportBuiltIn as finalJiraImplementationReportBuiltIn
-} from "./jira/built-ins.js";
-import {
-  collectTaskContextBuiltIn as collectPlaneTaskContextBuiltIn,
-  finalImplementationReportBuiltIn as finalPlaneImplementationReportBuiltIn
-} from "./plane/built-ins.js";
+import { createBuiltInStepCatalog } from "../core/built-ins/catalog.js";
 import { builtInError } from "../core/built-ins/errors.js";
 import { defineBuiltInStep } from "../core/built-ins/registry.js";
 import { finalReportMetadata } from "../core/built-ins/metadata.js";
@@ -47,25 +10,21 @@ import type {
 } from "../core/built-ins/types.js";
 import type {
   WorkflowBuiltInExecutor,
-  WorkflowRuntimeContext
-} from "../runtime/langgraph/workflow-runner.js";
+} from "../core/workflow/execution-contracts.js";
+import type { WorkflowRuntimeContext } from "../core/workflow/runtime-context.js";
 import type { LunaRuntimeState } from "../core/runtime/state.js";
 
-type TaskProviderBuiltIns = {
+export type TaskProviderBuiltIns = {
   collectTaskContext: BuiltInStep<"collect_task_context">;
   finalImplementationReport: BuiltInStep<"final_implementation_report">;
 };
 
-const taskProviderBuiltIns: Record<string, TaskProviderBuiltIns> = {
-  jira: {
-    collectTaskContext: collectJiraTaskContextBuiltIn,
-    finalImplementationReport: finalJiraImplementationReportBuiltIn
-  },
-  plane: {
-    collectTaskContext: collectPlaneTaskContextBuiltIn,
-    finalImplementationReport: finalPlaneImplementationReportBuiltIn
-  }
+export type TaskProviderBuiltInEntry = {
+  readonly source: string;
+  readonly builtIns: TaskProviderBuiltIns;
 };
+
+export type ProviderBuiltInCatalog = ReturnType<typeof createProviderBuiltIns>;
 
 function invocationSourceFrom(state: { invocation?: unknown }): string {
   const source = (state.invocation as Partial<Invocation> | undefined)?.source;
@@ -80,99 +39,113 @@ function invocationSourceFrom(state: { invocation?: unknown }): string {
   return source;
 }
 
-export const collectTaskContextBuiltIn = defineBuiltInStep({
-  name: "collect_task_context",
-  run(options) {
-    const source = invocationSourceFrom(options.state);
-    const provider = taskProviderBuiltIns[source];
+export function defineTaskProviderBuiltIns(
+  entries: readonly TaskProviderBuiltInEntry[]
+): Readonly<Record<string, TaskProviderBuiltIns>> {
+  const providers: Record<string, TaskProviderBuiltIns> = {};
 
-    if (provider !== undefined) {
-      return provider.collectTaskContext.run(options);
+  for (const entry of entries) {
+    if (providers[entry.source] !== undefined) {
+      throw builtInError(
+        `Duplicate task provider built-ins for source: ${entry.source}`,
+        "built_in_duplicate"
+      );
     }
 
-    throw builtInError(
-      `Built-in step does not support task context for source: ${source}`,
-      "built_in_unsupported"
-    );
+    providers[entry.source] = entry.builtIns;
   }
-});
 
-export const finalImplementationReportBuiltIn = defineBuiltInStep({
-  name: "final_implementation_report",
-  metadata: finalReportMetadata,
-  run(options) {
-    const source = invocationSourceFrom(options.state);
-    const provider = taskProviderBuiltIns[source];
+  return providers;
+}
 
-    if (provider !== undefined) {
-      return provider.finalImplementationReport.run(options);
+export function createCollectTaskContextBuiltIn(
+  taskProviderBuiltIns: Readonly<Record<string, TaskProviderBuiltIns>>
+): BuiltInStep<"collect_task_context"> {
+  return defineBuiltInStep({
+    name: "collect_task_context",
+    run(options) {
+      const source = invocationSourceFrom(options.state);
+      const provider = taskProviderBuiltIns[source];
+
+      if (provider !== undefined) {
+        return provider.collectTaskContext.run(options);
+      }
+
+      throw builtInError(
+        `Built-in step does not support task context for source: ${source}`,
+        "built_in_unsupported"
+      );
     }
+  });
+}
 
-    throw builtInError(
-      `Built-in step does not support implementation reports for source: ${source}`,
-      "built_in_unsupported"
-    );
-  }
-});
+export function createFinalImplementationReportBuiltIn(
+  taskProviderBuiltIns: Readonly<Record<string, TaskProviderBuiltIns>>
+): BuiltInStep<"final_implementation_report"> {
+  return defineBuiltInStep({
+    name: "final_implementation_report",
+    metadata: finalReportMetadata,
+    run(options) {
+      const source = invocationSourceFrom(options.state);
+      const provider = taskProviderBuiltIns[source];
 
-export const defaultBuiltInSteps = Object.freeze([
-  preflightBuiltIn,
-  prepareWorktreeBuiltIn,
-  collectContextBuiltIn,
-  collectRepoContextBuiltIn,
-  validateCodeReviewFindingsBuiltIn,
-  finalCodeReviewReportBuiltIn,
-  finalReportBuiltIn,
-  localExecReadCommandBuiltIn,
-  localExecWriteCommandBuiltIn,
-  repositoryWorkspaceCaptureBuiltIn,
-  gitStatusBuiltIn,
-  gitCommitBuiltIn,
-  gitPushBranchBuiltIn,
-  changeRequestCreateBuiltIn,
-  prepareImplementationWorktreeBuiltIn,
-  collectTaskContextBuiltIn,
-  runValidationCommandsBuiltIn,
-  recordImplementationValidationBuiltIn,
-  collectWorktreeDiffBuiltIn,
-  recordAcceptanceDecisionBuiltIn,
-  prepareCommitBuiltIn,
-  recordCommitLifecycleBuiltIn,
-  preparePushBuiltIn,
-  recordPushLifecycleBuiltIn,
-  finalImplementationReportBuiltIn
-] as const);
+      if (provider !== undefined) {
+        return provider.finalImplementationReport.run(options);
+      }
 
-const defaultProviderBuiltInCatalog =
-  createBuiltInStepCatalog(defaultBuiltInSteps);
+      throw builtInError(
+        `Built-in step does not support implementation reports for source: ${source}`,
+        "built_in_unsupported"
+      );
+    }
+  });
+}
 
-export const builtInStepNames = defaultProviderBuiltInCatalog.names;
-export const defaultProviderBuiltInStepRegistry =
-  defaultProviderBuiltInCatalog.registry;
-export const isBuiltInStepName =
-  defaultProviderBuiltInCatalog.isBuiltInStepName;
-export const runBuiltInStep = defaultProviderBuiltInCatalog.runBuiltInStep;
+export function createProviderBuiltIns({
+  steps,
+  dependencies = {}
+}: {
+  readonly steps: readonly BuiltInStep[];
+  readonly dependencies?: BuiltInStepDependencies;
+}) {
+  const builtInSteps = Object.freeze([...steps] as const);
+  const catalog = createBuiltInStepCatalog(builtInSteps);
 
-export function defaultProviderWorkflowBuiltIns(
-  dependencies: BuiltInStepDependencies = {}
-): Record<string, WorkflowBuiltInExecutor> {
+  function workflowBuiltIns(
+    extraDependencies: BuiltInStepDependencies = {}
+  ): Record<string, WorkflowBuiltInExecutor> {
+    const resolvedDependencies = {
+      ...dependencies,
+      ...extraDependencies
+    };
   const entries: Array<[string, WorkflowBuiltInExecutor]> = [];
-  for (const name of defaultProviderBuiltInCatalog.names) {
-    entries.push([name, workflowExecutorFor(name, dependencies)]);
-  }
-  for (const [capabilityId, name] of workflowCapabilityBuiltInAliasEntries()) {
-    entries.push([capabilityId, workflowExecutorFor(name, dependencies)]);
+    for (const name of catalog.names) {
+      entries.push([name, workflowExecutorFor(catalog, name, resolvedDependencies)]);
+    }
+    for (const [capabilityId, name] of workflowCapabilityBuiltInAliasEntries()) {
+      entries.push([capabilityId, workflowExecutorFor(catalog, name, resolvedDependencies)]);
+    }
+
+    return Object.fromEntries(entries);
   }
 
-  return Object.fromEntries(entries);
+  return {
+    builtInSteps,
+    builtInStepNames: catalog.names,
+    builtInStepRegistry: catalog.registry,
+    isBuiltInStepName: catalog.isBuiltInStepName,
+    runBuiltInStep: catalog.runBuiltInStep,
+    workflowBuiltIns
+  };
 }
 
 function workflowExecutorFor(
+  catalog: ReturnType<typeof createBuiltInStepCatalog<readonly BuiltInStep[]>>,
   name: string,
   dependencies: BuiltInStepDependencies
 ): WorkflowBuiltInExecutor {
   return async ({ state, input, runtimeContext, observabilitySummary }) =>
-    await defaultProviderBuiltInCatalog.runBuiltInStep({
+    await catalog.runBuiltInStep({
       uses: name,
       state: workflowStateView(state, runtimeContext),
       input: workflowBuiltInInput(input),

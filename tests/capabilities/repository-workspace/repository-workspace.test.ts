@@ -4,18 +4,18 @@ import { describe, expect, it, vi } from "vitest";
 import { manifest } from "../../../src/capabilities/repository-workspace/manifest.js";
 import {
   createRepositoryWorkspaceCaptureBuiltIn
-} from "../../../src/capabilities/repository-workspace/built-ins.js";
+} from "../../../src/core/repository-workspace/built-ins.js";
 import type {
   RepositoryWorkspaceEventSink,
   RepositoryWorkspaceManagerPort,
   RepositoryWorkspaceManagerRecord
-} from "../../../src/capabilities/repository-workspace/contracts.js";
+} from "../../../src/core/repository-workspace/contracts.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import { defaultBuiltInCatalog } from "../../../src/core/built-ins/catalog.js";
 import {
   builtInStepNames as providerBuiltInStepNames,
   runBuiltInStep as runProviderBuiltInStep
-} from "../../../src/providers/built-ins.js";
+} from "../../../src/providers/native-built-ins.js";
 
 const state = {
   invocation: {},
@@ -357,9 +357,9 @@ describe("repository-workspace capability", () => {
   it("keeps repository-workspace leaf files free of provider, Git, and change-request leaks", async () => {
     const repositoryRoot = process.cwd();
     const files = [
+      "src/core/repository-workspace/contracts.ts",
       "src/capabilities/repository-workspace/manifest.ts",
-      "src/capabilities/repository-workspace/contracts.ts",
-      "src/capabilities/repository-workspace/built-ins.ts"
+      "src/core/repository-workspace/built-ins.ts"
     ];
     const forbidden = [
       "github",

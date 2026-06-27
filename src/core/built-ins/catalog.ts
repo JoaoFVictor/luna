@@ -1,21 +1,21 @@
 import {
   createLocalExecCommandBuiltIn,
   localExecPortsFromBuiltInOptions
-} from "../../capabilities/local-exec/built-ins.js";
+} from "../local-exec/built-ins.js";
 import {
   createGitCommitBuiltIn,
   createGitPushBranchBuiltIn,
   createGitStatusBuiltIn,
   gitPortsFromBuiltInOptions
-} from "../../capabilities/git/built-ins.js";
+} from "../git/built-ins.js";
 import {
   changeRequestPortsFromBuiltInOptions,
   createChangeRequestCreateBuiltIn
-} from "../../capabilities/change-request/built-ins.js";
+} from "../change-request/built-ins.js";
 import {
   createRepositoryWorkspaceCaptureBuiltIn,
   repositoryWorkspacePortsFromBuiltInOptions
-} from "../../capabilities/repository-workspace/built-ins.js";
+} from "../repository-workspace/built-ins.js";
 import {
   collectWorktreeDiffBuiltIn,
   prepareCommitBuiltIn,
@@ -28,7 +28,7 @@ import {
   runValidationCommandsBuiltIn
 } from "./implementation.js";
 import { collectContextBuiltIn } from "./context.js";
-import { finalReportBuiltIn } from "../../capabilities/reports/final-report.js";
+import { finalReportBuiltIn } from "../reports/final-report.js";
 import { builtInError } from "./errors.js";
 import { builtInStepMetadataByName } from "./metadata.js";
 import { defineBuiltInRegistry } from "./registry.js";

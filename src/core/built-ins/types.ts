@@ -13,14 +13,18 @@ import type {
 import type {
   ChangeRequestBuiltInPorts,
   ChangeRequestArtifact
-} from "../../capabilities/change-request/contracts.js";
+} from "../change-request/contracts.js";
 import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
 import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
 import type { ObservabilitySummary } from "../observability/summary.js";
 import type { WorkflowState } from "../workflow/state.js";
-import type { LocalExecCommandBuiltInPorts } from "../../capabilities/local-exec/contracts.js";
-import type { RepositoryWorkspaceBuiltInPorts } from "../../capabilities/repository-workspace/contracts.js";
-import type { GitBuiltInPorts } from "../../capabilities/git/contracts.js";
+import type { LocalExecCommandBuiltInPorts } from "../local-exec/contracts.js";
+import type { RepositoryWorkspaceBuiltInPorts } from "../repository-workspace/contracts.js";
+import type { GitBuiltInPorts } from "../git/contracts.js";
+import type {
+  CollectContextIntakeInput,
+  ContextIntake
+} from "../context/collect-context-contracts.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -83,6 +87,9 @@ export type BuiltInStepDependencies = {
   changeRequest?: ChangeRequestBuiltInPorts;
   localExec?: LocalExecCommandBuiltInPorts;
   repositoryWorkspace?: RepositoryWorkspaceBuiltInPorts;
+  collectContextIntake?: (
+    input: CollectContextIntakeInput
+  ) => MaybePromise<ContextIntake>;
   runPreflight?: (input: {
     invocation: Invocation;
     repository: RepositoryConfig;

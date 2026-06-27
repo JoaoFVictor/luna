@@ -3,7 +3,7 @@ import {
   finalReportOutputSchema,
   finalReportBuiltIn,
   renderFinalReport
-} from "../../../src/capabilities/reports/final-report.js";
+} from "../../../src/core/reports/final-report.js";
 import { matchesJsonSchema } from "../../../src/core/capabilities/json-schema.js";
 import { createObservabilitySummary, recordPromptOperation, recordPromptUsage } from "../../../src/core/observability/summary.js";
 

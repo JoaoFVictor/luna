@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { collectContextIntake } from "../../capabilities/context/collect-context.js";
 import type { WorkspaceRecord } from "../write-mode/types.js";
 import { defineBuiltInStep } from "./registry.js";
 import { repositoryRequiredMetadata } from "./metadata.js";
 import { repositoryFrom, requiredState } from "./state.js";
+import { builtInError } from "./errors.js";
 
 const CollectContextInputSchema = z
   .object({
@@ -22,11 +22,18 @@ function workspacePathFrom(state: {
 export const collectContextBuiltIn = defineBuiltInStep({
   name: "collect_context",
   metadata: repositoryRequiredMetadata,
-  async run({ state, input }) {
+  async run({ state, input, dependencies = {} }) {
+    if (dependencies.collectContextIntake === undefined) {
+      throw builtInError(
+        "collect_context requires a collectContextIntake dependency.",
+        "built_in_dependency_missing"
+      );
+    }
+
     const parsed = CollectContextInputSchema.parse(input ?? {});
     const repository = repositoryFrom(state);
 
-    return await collectContextIntake({
+    return await dependencies.collectContextIntake({
       repository,
       repositoryRoot: workspacePathFrom(state) ?? repository.path,
       agentsRoot: requiredState(state.agentsRoot, "agentsRoot"),

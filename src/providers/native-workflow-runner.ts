@@ -3,13 +3,18 @@ import { officialCapabilityRegistry } from "../capabilities/registry.js";
 import { createObservabilitySummary } from "../core/observability/summary.js";
 import type { JsonValue } from "../core/runtime/json.js";
 import {
-  createLangGraphWorkflowRuntimeRunner
-} from "../runtime/langgraph/workflow-runner.js";
-import { registerConfiguredPiOAuthProviders } from "../agent-runtimes/pi/auth.js";
-import { piAgentRuntimeFactory } from "../agent-runtimes/pi/factory.js";
-import {
   createRuntimeCompositionForWorkflow
 } from "../runtime/composition/runtime-composition.js";
+import type {
+  AgentRuntimeFactory
+} from "../runtime/composition/runtime-composition.js";
+import type { ChangeRequestProviderFactory } from "../core/change-request/contracts.js";
+import type {
+  ResumeWorkflowInput,
+  RunWorkflowInput,
+  WorkflowRunResult
+} from "../core/workflow/execution-contracts.js";
+import type { WorkflowRuntimeFactory } from "../core/workflow/runner-port.js";
 import type {
   NativeWorkflowRunInput
 } from "../runtime/composition/target-executor.js";
@@ -20,11 +25,27 @@ import {
   workflowUsesAgents
 } from "./native-run-context.js";
 import { buildNativeWorkflowExecutors } from "./native-workflow-executors.js";
+import {
+  nativeAgentRuntimeFactories,
+  nativeWorkflowRuntimeFactories
+} from "./native-runtime-factories.js";
 
 export { compileNativeWorkflow } from "./native-run-context.js";
 export type { NativeCompiledWorkflow } from "./native-run-context.js";
 
-export async function runNativeWorkflowTarget(input: NativeWorkflowRunInput): Promise<void> {
+export type NativeWorkflowTargetDependencies = {
+  readonly workflowRuntimeFactories?: Readonly<Record<
+    string,
+    WorkflowRuntimeFactory<RunWorkflowInput, ResumeWorkflowInput, WorkflowRunResult>
+  >>;
+  readonly agentRuntimeFactories?: Readonly<Record<string, AgentRuntimeFactory>>;
+  readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
+};
+
+export async function runNativeWorkflowTarget(
+  input: NativeWorkflowRunInput,
+  dependencies: NativeWorkflowTargetDependencies = {}
+): Promise<void> {
   const {
     app,
     agentsRoot,
@@ -35,18 +56,30 @@ export async function runNativeWorkflowTarget(input: NativeWorkflowRunInput): Pr
     runtimeConfig
   } = await loadNativeRunContext(input);
 
-  if (runtimeConfig.agent_runtime.id === "pi" && workflowUsesAgents(workflow)) {
-    await registerConfiguredPiOAuthProviders({ configRoot: input.configRoot });
-  }
+  const agentRuntimeFactories = {
+    ...nativeAgentRuntimeFactories,
+    ...(dependencies.agentRuntimeFactories ?? {})
+  };
+  const workflowRuntimeFactories = {
+    ...nativeWorkflowRuntimeFactories,
+    ...(dependencies.workflowRuntimeFactories ?? {})
+  };
 
   const composition = createRuntimeCompositionForWorkflow(
     runtimeConfig,
     nativeWorkflow.workflow,
     {
       capabilityRegistry: officialCapabilityRegistry,
-      agentRuntimeFactories: { [piAgentRuntimeFactory.id]: piAgentRuntimeFactory }
+      workflowRuntimeFactories,
+      agentRuntimeFactories
     }
   );
+  await agentRuntimeFactories[runtimeConfig.agent_runtime.id]?.prepare?.({
+    configRoot: input.configRoot,
+    workflow,
+    options: runtimeConfig.agent_runtime.options,
+    hasAgents: workflowUsesAgents(workflow)
+  });
   const observabilitySummary = createObservabilitySummary({
     runId: run.run_id,
     workflowId: nativeWorkflow.workflow.id
@@ -54,11 +87,10 @@ export async function runNativeWorkflowTarget(input: NativeWorkflowRunInput): Pr
   const executors = buildNativeWorkflowExecutors({
     app,
     projectRoot: input.projectRoot,
-    run
+    run,
+    changeRequestProviderFactories: dependencies.changeRequestProviderFactories
   });
-  const workflowRuntime = createLangGraphWorkflowRuntimeRunner();
-
-  await workflowRuntime.run({
+  const workflowRuntimeInput = {
     compiled: nativeWorkflow.compiled,
     workflow: nativeWorkflow.workflow,
     invocation: input.invocation as unknown as JsonValue,
@@ -76,7 +108,6 @@ export async function runNativeWorkflowTarget(input: NativeWorkflowRunInput): Pr
     ...executors,
     agentRuntime: composition.agentRuntime,
     observabilitySummary,
-    langGraphCheckpointer: composition.langGraphCheckpointer,
     artifactPublisher: composition.artifactPublisherForRun(run),
     agentInputs: await buildNativeWorkflowAgentInputs({
       workflow: nativeWorkflow.workflow,
@@ -84,5 +115,7 @@ export async function runNativeWorkflowTarget(input: NativeWorkflowRunInput): Pr
       repository,
       configRoot: input.configRoot
     })
-  });
+  } satisfies RunWorkflowInput;
+
+  await composition.workflowRuntime.run(workflowRuntimeInput);
 }

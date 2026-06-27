@@ -179,6 +179,7 @@ export function runtimeCompositionConfig(
       },
       runtime_logs: { id: "filesystem.runtime-log", options: { root } }
     },
+    workflow_runtime: app.workflow_runtime ?? { id: "langgraph", options: {} },
     agent_runtime: app.agent_runtime ?? { id: "pi", options: {} },
     interrupt_authorization: { id: "allow_all", options: {} }
   };

@@ -1,13 +1,13 @@
-import { defineBuiltInStep } from "../../core/built-ins/registry.js";
+import { defineBuiltInStep } from "../built-ins/registry.js";
 import {
   gitCommitMetadata,
   gitPushBranchMetadata,
   gitStatusMetadata
-} from "../../core/built-ins/metadata.js";
+} from "../built-ins/metadata.js";
 import type {
   BuiltInStep,
   BuiltInStepRunOptions
-} from "../../core/built-ins/types.js";
+} from "../built-ins/types.js";
 import type { RepositoryWorkspaceRecord } from "../repository-workspace/contracts.js";
 import type {
   GitBuiltInPorts,

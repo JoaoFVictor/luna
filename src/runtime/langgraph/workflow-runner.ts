@@ -1,12 +1,19 @@
 import type { AgentRuntimePort } from "../../core/agent-runtime/contracts.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
+import type { JsonObject } from "../../core/runtime/backends/contracts.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import {
   stableJson,
   type JsonValue
 } from "../../core/runtime/json.js";
-import type { WorkflowRuntimeRunner } from "../../core/workflow/runner-port.js";
+import type {
+  WorkflowRuntimeFactory,
+  WorkflowRuntimeFactoryContext,
+  WorkflowRuntimeRunner
+} from "../../core/workflow/runner-port.js";
+import { sqliteCheckpointBackendRegistration } from "../backends/sqlite/checkpoints.js";
+import { LunaLangGraphCheckpointer } from "../backends/sqlite/langgraph-checkpointer.js";
 import {
   LUNA_RUNTIME_STATE_SCHEMA_VERSION,
   createInitialRuntimeState,
@@ -66,6 +73,10 @@ import {
 } from "./workflow-interrupts.js";
 import { executeNode } from "./workflow-node-executor.js";
 import type {
+  ResumeWorkflowInput,
+  RunWorkflowInput
+} from "../../core/workflow/execution-contracts.js";
+import type {
   ResumeCompiledWorkflowInput,
   RunCompiledWorkflowInput,
   WorkflowAgentInputMap,
@@ -92,6 +103,47 @@ export function createLangGraphWorkflowRuntimeRunner(): WorkflowRuntimeRunner<
   return {
     run: runCompiledWorkflow,
     resume: resumeCompiledWorkflow
+  };
+}
+
+export const langGraphWorkflowRuntimeFactory = {
+  id: "langgraph",
+  create(options: JsonObject, context: WorkflowRuntimeFactoryContext) {
+    if (Object.keys(options).length > 0) {
+      throw runtimeError(
+        "LangGraph workflow runtime options are not supported",
+        "runtime_backend_invalid",
+        { details: { workflow_runtime_id: "langgraph" } }
+      );
+    }
+
+    const runner = createLangGraphWorkflowRuntimeRunner();
+    return {
+      run(input: RunWorkflowInput) {
+        return runner.run(withLangGraphRuntimeExtensions(input, context));
+      },
+      resume(input: ResumeWorkflowInput) {
+        return runner.resume(withLangGraphRuntimeExtensions(input, context));
+      }
+    };
+  }
+} satisfies WorkflowRuntimeFactory<
+  RunWorkflowInput,
+  ResumeWorkflowInput,
+  WorkflowRunResult
+>;
+
+function withLangGraphRuntimeExtensions<TInput extends RunWorkflowInput | ResumeWorkflowInput>(
+  input: TInput,
+  context: WorkflowRuntimeFactoryContext
+): TInput & { readonly langGraphCheckpointer?: RunCompiledWorkflowInput["langGraphCheckpointer"] } {
+  if (context.checkpoints.backendId !== sqliteCheckpointBackendRegistration.id) {
+    return input;
+  }
+
+  return {
+    ...input,
+    langGraphCheckpointer: new LunaLangGraphCheckpointer(context.checkpoints.store)
   };
 }
 

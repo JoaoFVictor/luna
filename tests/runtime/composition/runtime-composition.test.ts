@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import type { RuntimeEventStore } from "../../../src/core/runtime/events/contracts.js";
@@ -108,7 +108,6 @@ describe("runtime composition", () => {
           }
         )
       ).resolves.toEqual({ allowed: true });
-      expect(composition.langGraphCheckpointer).toBeDefined();
       expect(composition.checkpointDurability).toEqual({
         backend_id: "sqlite.checkpoints",
         durable: true
@@ -212,6 +211,55 @@ describe("runtime composition", () => {
     ]);
   });
 
+  it("materializes the configured workflow runtime through an injected factory", () => {
+    const workflowRuntime = {
+      run: vi.fn(),
+      resume: vi.fn()
+    };
+    let checkpointContext:
+      | {
+          readonly checkpoints: {
+            readonly backendId: string;
+            readonly store: unknown;
+          };
+        }
+      | undefined;
+
+    const composition = createRuntimeComposition({
+      mode: "test",
+      backends: {
+        artifacts: { id: "memory.artifacts", options: {} },
+        events: { id: "memory.events", options: {} },
+        interrupts: { id: "memory.interrupts", options: {} },
+        checkpoints: { id: "memory.checkpoints", options: {} },
+        runtime_logs: { id: "memory.runtime-log", options: {} }
+      },
+      workflow_runtime: { id: "custom.workflow-runtime", options: { label: "custom" } },
+      agent_runtime: { id: "pi", options: {} },
+      interrupt_authorization: { id: "allow_all", options: {} }
+    }, {
+      agentRuntimeFactories: piRuntimeFactories,
+      workflowRuntimeFactories: {
+        "custom.workflow-runtime": {
+          id: "custom.workflow-runtime",
+          create: vi.fn((options, context) => {
+            expect(options).toEqual({ label: "custom" });
+            checkpointContext = context;
+            return workflowRuntime;
+          })
+        }
+      }
+    });
+
+    expect(composition.workflowRuntime).toBe(workflowRuntime);
+    expect(checkpointContext).toEqual({
+      checkpoints: {
+        backendId: "memory.checkpoints",
+        store: composition.backends.checkpoints
+      }
+    });
+  });
+
   it("fails unsupported backend and runtime ids before creating a run", () => {
     expect(() =>
       createRuntimeComposition({
@@ -239,6 +287,22 @@ describe("runtime composition", () => {
           runtime_logs: { id: "memory.runtime-log", options: {} }
         },
         agent_runtime: { id: "not-pi", options: {} },
+        interrupt_authorization: { id: "allow_all", options: {} }
+      }, { agentRuntimeFactories: piRuntimeFactories })
+    ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
+
+    expect(() =>
+      createRuntimeComposition({
+        mode: "test",
+        backends: {
+          artifacts: { id: "memory.artifacts", options: {} },
+          events: { id: "memory.events", options: {} },
+          interrupts: { id: "memory.interrupts", options: {} },
+          checkpoints: { id: "memory.checkpoints", options: {} },
+          runtime_logs: { id: "memory.runtime-log", options: {} }
+        },
+        workflow_runtime: { id: "missing.workflow-runtime", options: {} },
+        agent_runtime: { id: "pi", options: {} },
         interrupt_authorization: { id: "allow_all", options: {} }
       }, { agentRuntimeFactories: piRuntimeFactories })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));

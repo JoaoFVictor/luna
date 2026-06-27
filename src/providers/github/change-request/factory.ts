@@ -5,7 +5,7 @@ import type {
   ChangeRequestCreatedResult,
   ChangeRequestProviderFactory,
   ChangeRequestState
-} from "../../../capabilities/change-request/contracts.js";
+} from "../../../core/change-request/contracts.js";
 
 type RunGh = (cwd: string, args: readonly string[]) => Promise<string>;
 type ChangeRequestError = Error & {

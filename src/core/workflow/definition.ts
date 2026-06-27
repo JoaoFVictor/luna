@@ -134,7 +134,7 @@ export async function loadWorkflowDefinitionFromMetadata({
   const capabilities = readCapabilities(raw.capabilities);
   validateDeclaredCapabilities(capabilities, capabilityRegistry);
 
-  const parsedGraph = readGraph(raw, capabilityRegistry);
+  const parsedGraph = readGraph(raw);
   const nodeIds = new Set(parsedGraph.nodes.map((node) => node.id));
   validateNodesAgainstCapabilities(
     parsedGraph.nodes,

@@ -1,7 +1,7 @@
 import {
   ChangeRequestArtifactSchema,
   type ChangeRequestArtifact
-} from "../../capabilities/change-request/contracts.js";
+} from "../change-request/contracts.js";
 import type { BuiltInStepRunOptions } from "./types.js";
 import type { Invocation } from "../router/invocation.js";
 import type { ValidationResult } from "../validation/runner.js";

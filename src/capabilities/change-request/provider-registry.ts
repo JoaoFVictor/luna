@@ -2,7 +2,7 @@ import type {
   ChangeRequestProviderFactory,
   ChangeRequestProviderPort,
   ChangeRequestProviderRegistry
-} from "./contracts.js";
+} from "../../core/change-request/contracts.js";
 
 export type ChangeRequestProviderUnsupportedError = Error & {
   code: "change_request_provider_unsupported";

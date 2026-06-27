@@ -6,17 +6,17 @@ import { defaultBuiltInCatalog } from "../../../src/core/built-ins/catalog.js";
 import {
   builtInStepNames as providerBuiltInStepNames,
   runBuiltInStep as runProviderBuiltInStep
-} from "../../../src/providers/built-ins.js";
+} from "../../../src/providers/native-built-ins.js";
 import { manifest } from "../../../src/capabilities/local-exec/manifest.js";
 import {
   createLocalExecCommandBuiltIn
-} from "../../../src/capabilities/local-exec/built-ins.js";
+} from "../../../src/core/local-exec/built-ins.js";
 import type { BuiltInStepDependencies } from "../../../src/core/built-ins/types.js";
 import type {
   LocalCommandPort,
   LocalExecArtifactPublisher,
   LocalExecEventSink
-} from "../../../src/capabilities/local-exec/contracts.js";
+} from "../../../src/core/local-exec/contracts.js";
 
 const state = {
   invocation: {},
@@ -377,9 +377,9 @@ describe("local-exec capability", () => {
   it("keeps local-exec leaf files free of provider, Git, shell, and runtime leaks", async () => {
     const repositoryRoot = process.cwd();
     const files = [
+      "src/core/local-exec/contracts.ts",
       "src/capabilities/local-exec/manifest.ts",
-      "src/capabilities/local-exec/contracts.ts",
-      "src/capabilities/local-exec/built-ins.ts"
+      "src/core/local-exec/built-ins.ts"
     ];
     const forbiddenPatterns = [
       /node:child_process|child_process/,

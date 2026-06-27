@@ -10,6 +10,10 @@ workspace:
 artifacts:
   # Directory where run artifacts are written.
   root: .runs
+# Workflow runtime used by the native workflow runner.
+workflow_runtime:
+  id: langgraph
+  options: {}
 # Agent runtime used by the native workflow runner.
 agent_runtime:
   id: pi

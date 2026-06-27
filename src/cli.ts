@@ -19,10 +19,10 @@ import {
 import { runNativeWorkflowTarget } from "./providers/native-workflow-runner.js";
 import {
   defaultAdapterContext,
-  inputAdapterRegistry,
   unknownAdapterError,
   type InputAdapterRegistry
 } from "./adapters/registry.js";
+import { nativeInputAdapterRegistry } from "./providers/native-input-adapters.js";
 import type { AdapterContext } from "./adapters/types.js";
 import {
   InvocationSchema,
@@ -200,7 +200,7 @@ export async function main(
   deps: MainDependencies = {}
 ): Promise<number> {
   const parsedArgs = parseCliArgs(args);
-  const registry = deps.adapterRegistry ?? inputAdapterRegistry;
+  const registry = deps.adapterRegistry ?? nativeInputAdapterRegistry;
   const projectRoot = deps.projectRoot ?? (await findProjectRoot());
   const configRoot = resolveCliConfigRoot(projectRoot, deps.env);
   let invocation: Invocation;

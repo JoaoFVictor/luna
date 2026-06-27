@@ -5,7 +5,7 @@ import {
 } from "../../../src/runtime/composition/app-config.js";
 
 describe("runtime composition app config", () => {
-  it("parses backend ids, agent runtime id, interrupt auth, and capability ports", () => {
+  it("parses backend ids, workflow runtime id, agent runtime id, interrupt auth, and capability ports", () => {
     const config = parseRuntimeCompositionConfig({
       mode: "production",
       backends: {
@@ -30,6 +30,7 @@ describe("runtime composition app config", () => {
           options: { root: ".runs/logs" }
         }
       },
+      workflow_runtime: { id: "langgraph", options: { execution: "native" } },
       agent_runtime: { id: "pi", options: {} },
       interrupt_authorization: { id: "allow_all", options: {} },
       capability_ports: {
@@ -41,6 +42,8 @@ describe("runtime composition app config", () => {
     });
 
     expect(config.backends.checkpoints.id).toBe("sqlite.checkpoints");
+    expect(config.workflow_runtime.id).toBe("langgraph");
+    expect(config.workflow_runtime.options).toEqual({ execution: "native" });
     expect(config.agent_runtime.id).toBe("pi");
     expect(config.interrupt_authorization?.id).toBe("allow_all");
     expect(config.capability_ports?.artifacts?.id).toBe(

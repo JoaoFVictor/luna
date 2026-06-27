@@ -1,9 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolveConfigRoot } from "../core/config/loader.js";
-import { githubPrUrlAdapter } from "./github-pr-url/index.js";
-import { jiraTaskUrlAdapter } from "./jira-task-url/index.js";
-import { planeTaskUrlAdapter } from "./plane-task-url/index.js";
 import type { AdapterContext, InputAdapter } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -104,9 +101,3 @@ export function defaultAdapterContext(
     executeJson
   };
 }
-
-export const inputAdapterRegistry = defineInputAdapters([
-  githubPrUrlAdapter,
-  jiraTaskUrlAdapter,
-  planeTaskUrlAdapter
-]);

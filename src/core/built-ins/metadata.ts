@@ -1,4 +1,4 @@
-import { ChangeRequestArtifactSchema } from "../../capabilities/change-request/contracts.js";
+import { ChangeRequestArtifactSchema } from "../change-request/contracts.js";
 import { AcceptanceDecisionSchema } from "../decisions/types.js";
 import { ValidationResultSchema } from "../validation/runner.js";
 import {

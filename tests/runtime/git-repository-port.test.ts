@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createGitRepositoryPorts } from "../../src/runtime/git/repository-port.js";
-import type { RepositoryWorkspaceRecord } from "../../src/capabilities/repository-workspace/contracts.js";
+import type { RepositoryWorkspaceRecord } from "../../src/core/repository-workspace/contracts.js";
 
 const workspace: RepositoryWorkspaceRecord = {
   operation_id: "repository-workspace.capture",

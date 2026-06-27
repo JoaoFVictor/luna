@@ -14,7 +14,7 @@ import {
 } from "./transaction-journal.js";
 import { safeJoin } from "../security/path.js";
 import type { RepositoryConfig } from "../config/schemas.js";
-import type { RepositoryWorkspaceRecord } from "../../capabilities/repository-workspace/contracts.js";
+import type { RepositoryWorkspaceRecord } from "../repository-workspace/contracts.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Mkdir = (

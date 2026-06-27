@@ -1,4 +1,3 @@
-import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import {
   AgentRuntimeError,
   type AgentRuntimePort
@@ -14,7 +13,6 @@ import {
   type BackendKind,
   type BackendManifest,
   type BackendRegistration,
-  type CheckpointStore,
   type JsonObject,
   type RuntimeBackends
 } from "../../core/runtime/backends/contracts.js";
@@ -26,6 +24,15 @@ import {
 } from "../../core/runtime/interrupts/authorization.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";
+import type {
+  ResumeWorkflowInput,
+  RunWorkflowInput,
+  WorkflowRunResult
+} from "../../core/workflow/execution-contracts.js";
+import type {
+  WorkflowRuntimeFactory,
+  WorkflowRuntimeRunner
+} from "../../core/workflow/runner-port.js";
 import {
   createFilesystemArtifactContentStore,
   createFilesystemArtifactManifestStore,
@@ -66,12 +73,12 @@ import {
   createSqliteCheckpointStore,
   sqliteCheckpointBackendRegistration
 } from "../backends/sqlite/checkpoints.js";
-import { LunaLangGraphCheckpointer } from "../backends/sqlite/langgraph-checkpointer.js";
 import {
   parseRuntimeCompositionConfig,
   selectionOptions,
   type RuntimeBackendsConfig,
   type RuntimeCompositionConfig,
+  type RuntimeCompositionConfigInput,
   type RuntimeSelection
 } from "./app-config.js";
 import { assertRuntimeDurabilityPolicy } from "./durability.js";
@@ -92,6 +99,11 @@ export type RuntimeBackendFactoryCatalog = {
 export type RuntimeComposition = {
   readonly backends: RuntimeBackends;
   readonly artifactPublisherForRun: (run: RunHandle) => ArtifactPublisherPort;
+  readonly workflowRuntime: WorkflowRuntimeRunner<
+    RunWorkflowInput,
+    ResumeWorkflowInput,
+    WorkflowRunResult
+  >;
   readonly agentRuntime: AgentRuntimePort;
   readonly interruptAuthorization: InterruptResumeAuthorizationPort;
   readonly capabilityPorts: Record<string, RuntimeCapabilityPort>;
@@ -100,7 +112,6 @@ export type RuntimeComposition = {
     readonly backend_id: string;
     readonly durable: boolean;
   };
-  readonly langGraphCheckpointer?: BaseCheckpointSaver;
 };
 
 export type RuntimeCompositionDependencies = {
@@ -109,6 +120,10 @@ export type RuntimeCompositionDependencies = {
   readonly requiresHumanInterrupts?: boolean;
   readonly hasExternalSideEffects?: boolean;
   readonly agentRuntimeFactories?: Readonly<Record<string, AgentRuntimeFactory>>;
+  readonly workflowRuntimeFactories?: Readonly<Record<
+    string,
+    WorkflowRuntimeFactory<RunWorkflowInput, ResumeWorkflowInput, WorkflowRunResult>
+  >>;
   readonly backendFactories?: RuntimeBackendFactoryCatalog;
 };
 
@@ -185,8 +200,66 @@ export function defaultRuntimeBackendFactoryCatalog(): RuntimeBackendFactoryCata
 
 export type AgentRuntimeFactory = {
   readonly id: string;
+  readonly prepare?: (input: AgentRuntimePrepareInput) => Promise<void> | void;
   readonly create: (options: JsonObject) => AgentRuntimePort;
 };
+
+export type AgentRuntimePrepareInput = {
+  readonly configRoot: string;
+  readonly workflow: Pick<WorkflowDefinition, "id" | "mode" | "graph">;
+  readonly options: JsonObject;
+  readonly hasAgents: boolean;
+};
+
+function createWorkflowRuntime(
+  config: RuntimeCompositionConfig,
+  dependencies: RuntimeCompositionDependencies,
+  context: {
+    readonly checkpoints: {
+      readonly backendId: string;
+      readonly store: RuntimeBackends["checkpoints"];
+    };
+  }
+): WorkflowRuntimeRunner<RunWorkflowInput, ResumeWorkflowInput, WorkflowRunResult> {
+  const selection = config.workflow_runtime;
+  if (selection.id === "unconfigured") {
+    validateEmptyOptions(selection, "workflow_runtime");
+    return createUnconfiguredWorkflowRuntime();
+  }
+  const factories = dependencies.workflowRuntimeFactories ?? {};
+  const factory = factories[selection.id];
+  if (factory === undefined) {
+    throw runtimeError("Unsupported workflow runtime id", "runtime_backend_invalid", {
+      details: {
+        workflow_runtime_id: selection.id,
+        supported_workflow_runtime_ids: ["unconfigured", ...Object.keys(factories)]
+      }
+    });
+  }
+
+  return factory.create(selectionOptions(selection), context);
+}
+
+function createUnconfiguredWorkflowRuntime(): WorkflowRuntimeRunner<
+  RunWorkflowInput,
+  ResumeWorkflowInput,
+  WorkflowRunResult
+> {
+  return {
+    async run() {
+      throw runtimeError(
+        "No workflow runtime has been configured",
+        "runtime_backend_invalid"
+      );
+    },
+    async resume() {
+      throw runtimeError(
+        "No workflow runtime has been configured",
+        "runtime_backend_invalid"
+      );
+    }
+  };
+}
 
 function validateBackendOptions<TOptions extends JsonObject>(
   options: JsonObject,
@@ -368,15 +441,6 @@ function validateEmptyOptions(selection: RuntimeSelection, label: string): void 
   }
 }
 
-function langGraphCheckpointerFor(
-  selection: RuntimeSelection,
-  checkpoints: CheckpointStore
-): BaseCheckpointSaver | undefined {
-  return selection.id === sqliteCheckpointBackendRegistration.id
-    ? new LunaLangGraphCheckpointer(checkpoints)
-    : undefined;
-}
-
 export function runtimeBackendManifests(
   backends: RuntimeBackendsConfig,
   backendFactories: RuntimeBackendFactoryCatalog = defaultRuntimeBackendFactoryCatalog()
@@ -427,7 +491,7 @@ function requireBackendFactory(
 }
 
 export function createRuntimeComposition(
-  rawConfig: RuntimeCompositionConfig,
+  rawConfig: RuntimeCompositionConfigInput,
   dependencies: RuntimeCompositionDependencies = {}
 ): RuntimeComposition {
   const config = parseRuntimeCompositionConfig(rawConfig);
@@ -472,26 +536,36 @@ export function createRuntimeComposition(
     config.backends.runtime_logs,
     backendFactories.runtime_logs
   );
-  const langGraphCheckpointer = langGraphCheckpointerFor(
-    config.backends.checkpoints,
-    checkpoints.output
-  );
+  const runtimeBackends = {
+    artifacts: artifacts.output,
+    events: events.output,
+    interrupts: interrupts.output,
+    checkpoints: checkpoints.output,
+    runtimeLogs: runtimeLogs.output
+  };
+  const backendManifests = [
+    artifacts.manifest,
+    events.manifest,
+    interrupts.manifest,
+    checkpoints.manifest,
+    runtimeLogs.manifest
+  ];
 
   return {
-    backends: {
-      artifacts: artifacts.output,
-      events: events.output,
-      interrupts: interrupts.output,
-      checkpoints: checkpoints.output,
-      runtimeLogs: runtimeLogs.output
-    },
+    backends: runtimeBackends,
     artifactPublisherForRun: (run) =>
       createArtifactPublisher({
         selection: config.backends.artifacts,
         manifestStore: artifacts.output,
         manifest: artifacts.manifest,
         run
-      }),
+    }),
+    workflowRuntime: createWorkflowRuntime(config, dependencies, {
+      checkpoints: {
+        backendId: checkpoints.manifest.id,
+        store: checkpoints.output
+      }
+    }),
     agentRuntime: createAgentRuntime(config, dependencies),
     interruptAuthorization: createInterruptAuthorization(
       config.interrupt_authorization
@@ -500,22 +574,11 @@ export function createRuntimeComposition(
       config.capability_ports,
       dependencies.capabilityRegistry
     ),
-    backendManifests: [
-      artifacts.manifest,
-      events.manifest,
-      interrupts.manifest,
-      checkpoints.manifest,
-      runtimeLogs.manifest
-    ],
+    backendManifests,
     checkpointDurability: {
       backend_id: config.backends.checkpoints.id,
       durable: config.backends.checkpoints.id === sqliteCheckpointBackendRegistration.id
-    },
-    ...(langGraphCheckpointer === undefined
-      ? {}
-      : {
-          langGraphCheckpointer
-        })
+    }
   };
 }
 
@@ -563,7 +626,7 @@ function createArtifactPublisher({
 }
 
 export function createRuntimeCompositionForWorkflow(
-  rawConfig: RuntimeCompositionConfig,
+  rawConfig: RuntimeCompositionConfigInput,
   workflowDefinition: Pick<WorkflowDefinition, "id" | "mode" | "graph">,
   dependencies: Omit<RuntimeCompositionDependencies, "workflowDefinition">
 ): RuntimeComposition {

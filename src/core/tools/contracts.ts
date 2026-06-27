@@ -1,6 +1,4 @@
-import type { AgentDefinition } from "../../capabilities/agents/agent-definition.js";
-
-export type LunaToolMode = AgentDefinition["mode"];
+export type LunaToolMode = "read_only" | "trusted_local_write";
 
 export type LunaToolSafety = {
   localWrites: boolean;

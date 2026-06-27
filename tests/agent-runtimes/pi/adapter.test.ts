@@ -77,14 +77,14 @@ function input(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
 }
 
 describe("Pi agent runtime adapter", () => {
-  it("describes a native runtime with local tools and MCP policy support", () => {
+  it("describes a native runtime with local tool support", () => {
     const adapter = createPiAgentRuntimeAdapter();
 
     expect(adapter.describe()).toEqual({
       id: "pi",
       display_name: "Pi AI",
       supported_tool_protocols: ["local"],
-      supported_runtime_requirements: ["tool_calling", "mcp_tools"]
+      supported_runtime_requirements: ["tool_calling"]
     });
   });
 
@@ -265,17 +265,9 @@ describe("Pi agent runtime adapter", () => {
     );
   });
 
-  it("accepts dynamic MCP policy without materializing unsupported MCP handlers", async () => {
-    const complete = vi.fn(
-      async (
-        _model: Model<string>,
-        context: Context,
-        _options?: Record<string, unknown>
-      ) => {
-        expect(context).not.toHaveProperty("tools");
-
-        return message([{ type: "text", text: "{\"summary\":\"ok\"}" }]);
-      }
+  it("rejects dynamic MCP policy until the runtime materializes MCP handlers", async () => {
+    const complete = vi.fn(async () =>
+      message([{ type: "text", text: "{\"summary\":\"ok\"}" }])
     );
     const adapter = createPiAgentRuntimeAdapter({
       complete,
@@ -310,7 +302,11 @@ describe("Pi agent runtime adapter", () => {
 
     await expect(
       adapter.runAgent(input({ tools, runtime_requirements: ["tool_calling", "mcp_tools"] }))
-    ).resolves.toMatchObject({ output: { summary: "ok" } });
+    ).rejects.toMatchObject({
+      code: "runtime_unsupported_feature",
+      details: { unsupported_requirement: "mcp_tools" }
+    });
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it("requires provider/model or an explicit provider field", async () => {

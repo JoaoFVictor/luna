@@ -1,12 +1,12 @@
-import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
-import { builtInError } from "../../core/built-ins/errors.js";
-import { finalReportMetadata } from "../../core/built-ins/metadata.js";
-import { defineBuiltInStep } from "../../core/built-ins/registry.js";
+import { matchesJsonSchema } from "../capabilities/json-schema.js";
+import { builtInError } from "../built-ins/errors.js";
+import { finalReportMetadata } from "../built-ins/metadata.js";
+import { defineBuiltInStep } from "../built-ins/registry.js";
 import {
   executionSummaryJson,
   executionSummaryMarkdownLines
-} from "../../core/reports/execution-summary.js";
-import type { ObservabilitySummary } from "../../core/observability/summary.js";
+} from "./execution-summary.js";
+import type { ObservabilitySummary } from "../observability/summary.js";
 
 type ReportSection = {
   heading: string;

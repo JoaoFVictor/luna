@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { inputAdapterRegistry } from "../../../src/adapters/registry.js";
+import { nativeInputAdapterRegistry } from "../../../src/providers/native-input-adapters.js";
 import {
   InvocationEnvelopeSchema,
   type InvocationEnvelope
@@ -31,14 +31,14 @@ describe("invocation envelope", () => {
   });
 
   it("keeps every registered adapter normalize-only through the shared envelope", () => {
-    expect(inputAdapterRegistry.ids().sort()).toEqual([
+    expect(nativeInputAdapterRegistry.ids().sort()).toEqual([
       "github-pr-url",
       "jira-task-url",
       "plane-task-url"
     ]);
 
-    for (const id of inputAdapterRegistry.ids()) {
-      const adapter = inputAdapterRegistry.require(id);
+    for (const id of nativeInputAdapterRegistry.ids()) {
+      const adapter = nativeInputAdapterRegistry.require(id);
       expect(adapter.load.constructor.name).toBe("AsyncFunction");
     }
   });

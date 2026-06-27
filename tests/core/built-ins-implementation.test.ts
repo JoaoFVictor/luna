@@ -24,7 +24,7 @@ import type {
   ImplementationConfig,
   PushBranchArtifact
 } from "../../src/core/write-mode/types.js";
-import type { ChangeRequestArtifact } from "../../src/capabilities/change-request/contracts.js";
+import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
 import type { ImplementationWorktreeRecord } from "../../src/core/write-mode/worktree.js";
 import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
 import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";

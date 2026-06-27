@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { collectContextBuiltIn } from "../../src/core/built-ins/context.js";
+import { collectContextIntake } from "../../src/capabilities/context/collect-context.js";
 import type { WorkflowState } from "../../src/core/workflow/state.js";
 
 async function writeAgent(
@@ -76,7 +77,8 @@ describe("collect_context built-in", () => {
       await expect(
         collectContextBuiltIn.run({
           state: workflowState(root),
-          input: { agents: ["change-reviewer"] }
+          input: { agents: ["change-reviewer"] },
+          dependencies: { collectContextIntake }
         })
       ).resolves.toEqual({
         kind: "luna.collect_context.v1",

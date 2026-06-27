@@ -1,4 +1,4 @@
-import type { RepositoryWorkspaceBuiltInPorts } from "../../capabilities/repository-workspace/contracts.js";
+import type { RepositoryWorkspaceBuiltInPorts } from "../../core/repository-workspace/contracts.js";
 import type { RepositoryConfig } from "../../core/config/schemas.js";
 import type { Invocation } from "../../core/router/invocation.js";
 import type {

@@ -5,7 +5,7 @@ import {
   createGitCommitBuiltIn,
   createGitPushBranchBuiltIn,
   createGitStatusBuiltIn
-} from "../../../src/capabilities/git/built-ins.js";
+} from "../../../src/core/git/built-ins.js";
 import { manifest } from "../../../src/capabilities/git/manifest.js";
 import { manifest as repositoryWorkspaceManifest } from "../../../src/capabilities/repository-workspace/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
@@ -13,13 +13,13 @@ import { defaultBuiltInCatalog } from "../../../src/core/built-ins/catalog.js";
 import {
   builtInStepNames as providerBuiltInStepNames,
   runBuiltInStep as runProviderBuiltInStep
-} from "../../../src/providers/built-ins.js";
+} from "../../../src/providers/native-built-ins.js";
 import type { BuiltInStepDependencies } from "../../../src/core/built-ins/types.js";
 import type {
   GitCommitState,
   GitRepositoryPort,
   GitStatusResult
-} from "../../../src/capabilities/git/contracts.js";
+} from "../../../src/core/git/contracts.js";
 
 const workspace = {
   operation_id: "repository-workspace.capture",
@@ -629,9 +629,9 @@ describe("git capability", () => {
   it("keeps git capability leaf files free of provider and change-request leaks", async () => {
     const repositoryRoot = process.cwd();
     const files = [
+      "src/core/git/contracts.ts",
       "src/capabilities/git/manifest.ts",
-      "src/capabilities/git/contracts.ts",
-      "src/capabilities/git/built-ins.ts"
+      "src/core/git/built-ins.ts"
     ];
     const forbiddenPatterns = [
       /change-request|changeRequest|ChangeRequest/,

@@ -15,7 +15,7 @@ import type {
   GitCommitSkippedResult,
   GitPushBranchResult,
   GitPushBranchSkippedResult
-} from "../../capabilities/git/contracts.js";
+} from "../git/contracts.js";
 import {
   collectWorktreeDiffMetadata,
   prepareImplementationWorktreeMetadata,

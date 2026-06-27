@@ -1,8 +1,8 @@
-import { defineBuiltInStep } from "../../core/built-ins/registry.js";
+import { defineBuiltInStep } from "../built-ins/registry.js";
 import type {
   BuiltInStep,
   BuiltInStepRunOptions
-} from "../../core/built-ins/types.js";
+} from "../built-ins/types.js";
 import type {
   LocalCommandInput,
   LocalExecArtifactPublisher,

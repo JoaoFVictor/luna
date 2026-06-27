@@ -1,5 +1,6 @@
 import path from "node:path";
 import { createChangeRequestProviderRegistry } from "../capabilities/change-request/provider-registry.js";
+import type { ChangeRequestProviderFactory } from "../core/change-request/contracts.js";
 import { qualityGatePatternExecutors } from "../capabilities/quality-gates/workflow-pattern-executor.js";
 import { builtInStepNameForWorkflowCapability } from "../core/built-ins/workflow-aliases.js";
 import type { AppConfig } from "../core/config/schemas.js";
@@ -10,24 +11,26 @@ import { createGitHubChangeRequestProviderFactory } from "./github/change-reques
 import {
   defaultProviderBuiltInStepRegistry,
   defaultProviderWorkflowBuiltIns
-} from "./built-ins.js";
+} from "./native-built-ins.js";
 
 export function buildNativeWorkflowExecutors({
   app,
   projectRoot,
-  run
+  run,
+  changeRequestProviderFactories = [
+    createGitHubChangeRequestProviderFactory({})
+  ]
 }: {
   readonly app: AppConfig;
   readonly projectRoot: string;
   readonly run: RunHandle;
+  readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
 }) {
   return {
     builtIns: defaultProviderWorkflowBuiltIns({
       git: createGitRepositoryPorts(),
       changeRequest: {
-        providers: createChangeRequestProviderRegistry([
-          createGitHubChangeRequestProviderFactory({})
-        ])
+        providers: createChangeRequestProviderRegistry(changeRequestProviderFactories)
       }
     }),
     patternExecutors: qualityGatePatternExecutors,

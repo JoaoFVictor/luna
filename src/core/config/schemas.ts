@@ -117,12 +117,16 @@ export const AgentRuntimeConfigSchema = z
   .strict();
 export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
 
+export const WorkflowRuntimeConfigSchema = AgentRuntimeConfigSchema;
+export type WorkflowRuntimeConfig = z.infer<typeof WorkflowRuntimeConfigSchema>;
+
 export const AppConfigSchema = z
   .object({
     workspace: WorkspaceConfigSchema,
     artifacts: ArtifactsConfigSchema,
     routing: RouterFileConfigSchema.optional(),
     locks: LockConfigSchema.optional(),
+    workflow_runtime: WorkflowRuntimeConfigSchema.optional(),
     agent_runtime: AgentRuntimeConfigSchema.optional()
   })
   .strict();

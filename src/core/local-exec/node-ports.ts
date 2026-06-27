@@ -3,7 +3,7 @@ import path from "node:path";
 import type {
   LocalExecCommandBuiltInPorts,
   LocalExecEvent
-} from "../../capabilities/local-exec/contracts.js";
+} from "../local-exec/contracts.js";
 import { safeJoin } from "../security/path.js";
 import { defaultProcessRunner } from "../validation/runner.js";
 

@@ -8,8 +8,10 @@ import {
 import {
   requireAgentProjection,
   resolveAgentSkills,
+  type AgentSkillSources,
   workspacePath
 } from "../agents/agent-envelope.js";
+import type { AgentDefinitionProjection } from "../agents/agent-definition.js";
 import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
 import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
 import type { ParsedWorkflowGate } from "../../core/workflow/definition-types.js";
@@ -33,20 +35,28 @@ import {
 } from "./gated-agent-loop.js";
 import { gateResultFromAgentOutput } from "./gate-results.js";
 import type {
-  RunCompiledWorkflowInput,
+  RunWorkflowInput,
   WorkflowAgentDefaults,
   WorkflowPatternExecutor
-} from "../../runtime/langgraph/workflow-runner.js";
+} from "../../core/workflow/execution-contracts.js";
 import {
   deterministicGateResult,
   VALIDATION_GATE
 } from "./deterministic-gates.js";
 import { gatedAgentGateKey, gatedAgentWorkerKey } from "./gated-agent-loop-keys.js";
-import { workflowAgentEventEmitter } from "../../runtime/langgraph/workflow-events.js";
+import { workflowAgentEventEmitter } from "../../core/workflow/events.js";
 
 const GATED_AGENT_LOOP_CAPABILITY = "quality-gates.gated_agent_loop";
 const AGENT_REVIEW_GATE = "quality-gates.agent_review";
 const DEFAULT_DIFF_BYTES = 65_536;
+
+type QualityGateWorkflowAgentDefaults = Omit<
+  WorkflowAgentDefaults,
+  "agent" | "skill_sources"
+> & {
+  readonly agent: AgentDefinitionProjection;
+  readonly skill_sources?: AgentSkillSources;
+};
 
 export const qualityGatePatternExecutors = Object.freeze({
   [GATED_AGENT_LOOP_CAPABILITY]: executeGatedAgentLoopPattern
@@ -66,7 +76,7 @@ export async function executeGatedAgentLoopPattern({
   node,
   input: patternInput
 }: {
-  readonly workflowInput: RunCompiledWorkflowInput;
+  readonly workflowInput: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
@@ -163,7 +173,7 @@ async function repairAttemptsForNode({
   runtimeContext,
   node
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
@@ -191,7 +201,7 @@ function createValidationConfigResolver({
   node,
   gates
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
@@ -221,7 +231,7 @@ async function resolveValidationConfig({
   node,
   gates
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
@@ -270,7 +280,7 @@ async function runPatternGates({
   gateInput,
   cwd
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
@@ -362,7 +372,7 @@ async function resolveGateInput({
   gateIndex,
   gateContext
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
@@ -385,7 +395,7 @@ async function runPatternAgent({
   runtimeContext,
   cwd
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly nodeId: string;
   readonly agentId: string;
   readonly agentInput: RunGatedWorkerInput | unknown;
@@ -447,11 +457,11 @@ function requireJsonSchema(
 }
 
 function requireAgentDefaults(
-  input: RunCompiledWorkflowInput,
+  input: RunWorkflowInput,
   key: string,
   nodeId: string,
   agentId: string
-): WorkflowAgentDefaults {
+): QualityGateWorkflowAgentDefaults {
   const defaults = input.agentInputs?.[key];
   if (defaults === undefined) {
     throw runtimeError("Pattern agent requires projected runtime input", "runtime_state_invalid", {
@@ -459,7 +469,7 @@ function requireAgentDefaults(
     });
   }
 
-  return defaults;
+  return defaults as QualityGateWorkflowAgentDefaults;
 }
 
 function reviewAgentFromGateInput(
@@ -499,7 +509,7 @@ function runtimeRoot({
   runtimeContext,
   gate
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly gate?: unknown;

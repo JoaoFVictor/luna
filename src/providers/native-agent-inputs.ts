@@ -15,7 +15,7 @@ import {
 import { lunaToolCatalog } from "../core/tools/catalog.js";
 import { resolveToolCatalog } from "../core/tools/resolved-catalog.js";
 import type { WorkflowDefinition } from "../core/workflow/definition-types.js";
-import type { WorkflowAgentInputMap } from "../runtime/langgraph/workflow-runner.js";
+import type { WorkflowAgentInputMap } from "../core/workflow/execution-contracts.js";
 
 export async function buildNativeWorkflowAgentInputs({
   workflow,

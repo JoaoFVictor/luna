@@ -14,8 +14,8 @@ import {
   contextIntakeFrom,
   type AgentContextCollection,
   type ContextFileCollection
-} from "../context/collect-context.js";
-export { contextIntakeFrom } from "../context/collect-context.js";
+} from "../../core/context/collect-context-contracts.js";
+export { contextIntakeFrom } from "../../core/context/collect-context-contracts.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 const CapabilityIdSchema = z

@@ -13,7 +13,7 @@ import type {
   CommitChangesArtifact,
   PushBranchArtifact
 } from "../../src/core/write-mode/types.js";
-import type { ChangeRequestArtifact } from "../../src/capabilities/change-request/contracts.js";
+import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
 const invocation: Invocation = {

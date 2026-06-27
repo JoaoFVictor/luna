@@ -6,7 +6,8 @@ import {
   defaultProviderWorkflowBuiltIns,
   isBuiltInStepName,
   runBuiltInStep
-} from "../../src/providers/built-ins.js";
+} from "../../src/providers/native-built-ins.js";
+import { defineTaskProviderBuiltIns } from "../../src/providers/built-ins.js";
 import {
   builtInStepNames as metadataBuiltInStepNames,
   createBuiltInStepCatalog
@@ -146,6 +147,30 @@ describe("built-in step registry", () => {
     expect(() => defineBuiltInRegistry([first, second])).toThrowError(
       expect.objectContaining({ code: "built_in_duplicate" })
     );
+  });
+
+  it("throws when duplicate task provider sources are registered", () => {
+    const collectTaskContext = defineBuiltInStep({
+      name: "collect_task_context",
+      run: async () => null
+    });
+    const finalImplementationReport = defineBuiltInStep({
+      name: "final_implementation_report",
+      run: async () => null
+    });
+
+    expect(() =>
+      defineTaskProviderBuiltIns([
+        {
+          source: "jira",
+          builtIns: { collectTaskContext, finalImplementationReport }
+        },
+        {
+          source: "jira",
+          builtIns: { collectTaskContext, finalImplementationReport }
+        }
+      ])
+    ).toThrowError(expect.objectContaining({ code: "built_in_duplicate" }));
   });
 
   it("passes observability summary through the built-in catalog", async () => {

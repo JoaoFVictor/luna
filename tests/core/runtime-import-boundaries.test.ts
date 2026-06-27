@@ -8,7 +8,14 @@ const FORBIDDEN_RUNTIME_TARGETS = [
   "src/agent-runtimes/",
   "src/providers/"
 ];
+const FORBIDDEN_CAPABILITY_TARGETS = [
+  "src/runtime/"
+];
+const FORBIDDEN_CORE_TARGETS = [
+  "src/capabilities/"
+];
 const SCANNED_RUNTIME_DIRECTORIES = [
+  "src/core",
   "src/runtime",
   "src/capabilities"
 ];
@@ -107,10 +114,10 @@ describe("runtime import boundaries", () => {
         const source = await readFile(path.join(ROOT, file), "utf8");
         for (const importPath of extractImports(source)) {
           const resolved = resolvedProjectImport(importPath, file);
-          if (
-            resolved !== undefined &&
-            FORBIDDEN_RUNTIME_TARGETS.some((target) => resolved.startsWith(target))
-          ) {
+          if (resolved === undefined) {
+            continue;
+          }
+          if (forbiddenTargetsFor(file).some((target) => resolved.startsWith(target))) {
             violations.push(`${file} -> ${resolved}`);
           }
         }
@@ -129,3 +136,13 @@ describe("runtime import boundaries", () => {
     ).toBe("src/agent-runtimes/pi/adapter.ts");
   });
 });
+
+function forbiddenTargetsFor(file: string): readonly string[] {
+  if (file.startsWith("src/core/") && !file.startsWith("src/core/capabilities/")) {
+    return [...FORBIDDEN_RUNTIME_TARGETS, ...FORBIDDEN_CORE_TARGETS];
+  }
+
+  return file.startsWith("src/capabilities/")
+    ? [...FORBIDDEN_RUNTIME_TARGETS, ...FORBIDDEN_CAPABILITY_TARGETS]
+    : FORBIDDEN_RUNTIME_TARGETS;
+}

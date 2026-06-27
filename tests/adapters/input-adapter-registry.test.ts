@@ -3,9 +3,9 @@ import {
   defaultAdapterContext,
   defineInputAdapters,
   executeJson,
-  inputAdapterRegistry,
   unknownAdapterError
 } from "../../src/adapters/registry.js";
+import { nativeInputAdapterRegistry } from "../../src/providers/native-input-adapters.js";
 import type { InputAdapter } from "../../src/adapters/types.js";
 
 function adapter(id: string): InputAdapter {
@@ -51,15 +51,15 @@ describe("input adapter registry", () => {
     expect(() => registry.require("linear-task-url")).toThrow(error);
   });
 
-  it("exports the default input adapters", () => {
-    expect(inputAdapterRegistry.ids()).toEqual([
+  it("composes the native input adapters outside the generic registry", () => {
+    expect(nativeInputAdapterRegistry.ids()).toEqual([
       "github-pr-url",
       "jira-task-url",
       "plane-task-url"
     ]);
-    expect(inputAdapterRegistry.require("github-pr-url").id).toBe("github-pr-url");
-    expect(inputAdapterRegistry.require("jira-task-url").id).toBe("jira-task-url");
-    expect(inputAdapterRegistry.require("plane-task-url").id).toBe("plane-task-url");
+    expect(nativeInputAdapterRegistry.require("github-pr-url").id).toBe("github-pr-url");
+    expect(nativeInputAdapterRegistry.require("jira-task-url").id).toBe("jira-task-url");
+    expect(nativeInputAdapterRegistry.require("plane-task-url").id).toBe("plane-task-url");
   });
 
   it("builds the default adapter context", () => {

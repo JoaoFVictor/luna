@@ -7,7 +7,7 @@ import type {
   GitPushBranchResult,
   GitStatusInput,
   GitStatusResult
-} from "../../capabilities/git/contracts.js";
+} from "../../core/git/contracts.js";
 import { runGit as defaultRunGit } from "../../core/git/client.js";
 import { remoteUrlMatches } from "../../core/git/remote-url.js";
 

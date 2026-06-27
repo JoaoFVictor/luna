@@ -1,6 +1,5 @@
 import YAML from "yaml";
 import { AgentRuntimeRequirementSchema } from "../agent-runtime/contracts.js";
-import type { CapabilityRegistry } from "../capabilities/registry.js";
 import { assertExpressionObject } from "./expression.js";
 import { WorkflowDefinitionError } from "./definition-errors.js";
 import type {
@@ -92,12 +91,9 @@ export function readCapabilities(value: unknown): string[] {
   });
 }
 
-export function readGraph(
-  raw: Record<string, unknown>,
-  registry: CapabilityRegistry | undefined
-): ParsedWorkflowGraph {
+export function readGraph(raw: Record<string, unknown>): ParsedWorkflowGraph {
   return {
-    nodes: readNodes(raw.nodes, registry)
+    nodes: readNodes(raw.nodes)
   };
 }
 
@@ -175,10 +171,7 @@ export function requireString(value: unknown, yamlPath: string): string {
   return value;
 }
 
-function readNodes(
-  value: unknown,
-  registry: CapabilityRegistry | undefined
-): ParsedWorkflowNode[] {
+function readNodes(value: unknown): ParsedWorkflowNode[] {
   if (!Array.isArray(value)) {
     throw new WorkflowDefinitionError(
       "workflow_schema_invalid",
@@ -186,13 +179,12 @@ function readNodes(
       { path: "$.nodes" }
     );
   }
-  return value.map((node, index) => readNode(node, `$.nodes[${index}]`, registry));
+  return value.map((node, index) => readNode(node, `$.nodes[${index}]`));
 }
 
 function readNode(
   value: unknown,
-  yamlPath: string,
-  registry: CapabilityRegistry | undefined
+  yamlPath: string
 ): ParsedWorkflowNode {
   const raw = assertObject(value, yamlPath);
   const type = requireString(raw.type, `${yamlPath}.type`);
@@ -215,7 +207,7 @@ function readNode(
       : { input: assertObject(raw.input, `${yamlPath}.input`) }),
     ...(raw.artifacts === undefined
       ? {}
-      : { artifacts: readArtifacts(raw.artifacts, `${yamlPath}.artifacts`, registry) }),
+      : { artifacts: readArtifacts(raw.artifacts, `${yamlPath}.artifacts`) }),
     ...(raw.policies === undefined
       ? {}
       : { policies: readPolicies(raw.policies, `${yamlPath}.policies`) })
@@ -336,8 +328,7 @@ function readGates(value: unknown, yamlPath: string): ParsedWorkflowGate[] {
 
 function readArtifacts(
   value: unknown,
-  yamlPath: string,
-  _registry: CapabilityRegistry | undefined
+  yamlPath: string
 ): ParsedArtifactWritePlan[] {
   if (!Array.isArray(value)) {
     throw new WorkflowDefinitionError(
