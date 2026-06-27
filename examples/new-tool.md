@@ -47,14 +47,16 @@ Add the implementation to an existing file under `src/core/tools/` or create a
 new domain file there:
 
 ```ts
-import * as v from "valibot";
 import { runGit } from "../git/client.js";
 import type { LunaToolDefinition } from "./contracts.js";
 
-const emptyParameters = v.object({});
+const emptyParameters = {
+  type: "object",
+  additionalProperties: false
+} as const;
 
 export const repositoryLastCommitTool: LunaToolDefinition<
-  v.InferOutput<typeof emptyParameters>,
+  Record<string, never>,
   string
 > = {
   id: "repository.last-commit",

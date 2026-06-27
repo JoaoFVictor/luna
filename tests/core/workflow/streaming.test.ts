@@ -87,4 +87,47 @@ describe("workflow runner event streaming", () => {
       "run.succeeded"
     ]);
   });
+
+  it("emits terminal failure events when a node throws", async () => {
+    const events = createMemoryEventStore();
+    const backends = {
+      artifacts: createMemoryArtifactManifestStore(),
+      events,
+      interrupts: createMemoryInterruptStore(),
+      checkpoints: createMemoryCheckpointStore(),
+      runtimeLogs: createMemoryRuntimeLogStore()
+    };
+
+    await expect(
+      runCompiledWorkflow({
+        compiled: compileWorkflow({ workflow, registry }),
+        workflow,
+        invocation: {},
+        config: {},
+        run: {
+          run_id: "run-failed-events",
+          workflow_id: "streaming-test",
+          attempt: 1,
+          started_at: "2026-06-25T00:00:00.000Z"
+        },
+        backends,
+        builtIns: {
+          "runtime.step": async ({ node }) => {
+            if (node.id === "first") {
+              throw new Error("first failed");
+            }
+            return { ok: true };
+          }
+        },
+        agentRuntime: {} as AgentRuntimePort
+      })
+    ).rejects.toThrow("first failed");
+
+    expect((await events.list("run-failed-events")).map((event) => event.type)).toEqual([
+      "run.started",
+      "node.started",
+      "node.failed",
+      "run.failed"
+    ]);
+  });
 });

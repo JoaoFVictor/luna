@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -51,6 +51,37 @@ describe("runtime composition", () => {
       });
 
       expect(composition.agentRuntime.describe().id).toBe("pi");
+      const artifactPublisher = composition.artifactPublisherForRun({
+        run_id: "run-1",
+        workflow_id: "workflow-1",
+        attempt: 1,
+        started_at: "2026-06-26T00:00:00.000Z"
+      });
+      await expect(
+        artifactPublisher.publish({
+          node_id: "report",
+          path: "final-report.md",
+          format: "markdown",
+          value: "# Report\n",
+          overwrite_policy: "forbid"
+        })
+      ).resolves.toMatchObject({
+        id: "final-report.md",
+        uri: "artifact://run-1/final-report.md",
+        node_id: "report"
+      });
+      await expect(
+        readFile(path.join(root, "artifacts", "run-1", "final-report.md"), "utf8")
+      ).resolves.toBe("# Report\n");
+      await expect(composition.backends.artifacts.list("run-1")).resolves.toEqual(
+        expect.arrayContaining([
+        expect.objectContaining({
+          id: "final-report.md",
+          status: "committed",
+          source_node_id: "report"
+        })
+        ])
+      );
       await expect(
         composition.interruptAuthorization.authorizeResume(
           {
@@ -156,6 +187,21 @@ describe("runtime composition", () => {
           runtime_logs: { id: "memory.runtime-log", options: {} }
         },
         agent_runtime: { id: "pi", options: { max_tool_iterations: 0 } },
+        interrupt_authorization: { id: "allow_all", options: {} }
+      })
+    ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
+
+    expect(() =>
+      createRuntimeComposition({
+        mode: "test",
+        backends: {
+          artifacts: { id: "memory.artifacts", options: {} },
+          events: { id: "memory.events", options: {} },
+          interrupts: { id: "memory.interrupts", options: {} },
+          checkpoints: { id: "memory.checkpoints", options: {} },
+          runtime_logs: { id: "memory.runtime-log", options: {} }
+        },
+        agent_runtime: { id: "pi", options: { request_timeout_ms: 0 } },
         interrupt_authorization: { id: "allow_all", options: {} }
       })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));

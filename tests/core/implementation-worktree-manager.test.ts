@@ -135,6 +135,7 @@ describe("implementation worktree manager", () => {
         appendJournalEntry: async (entry) => {
           journalEntries.push(entry);
         },
+        now: () => new Date("2026-06-25T10:00:00.000Z"),
         runGit: async (cwd, args) => {
           calls.push({ cwd, args });
 
@@ -151,10 +152,14 @@ describe("implementation worktree manager", () => {
       });
 
       expect(record).toEqual({
+        operation_id: "repository-workspace.capture",
         run_id: runId,
+        workspace_id: `${repository.id}:${runId}`,
         path: expectedPath,
         preserved: true,
         reason: "created",
+        lifecycle: "active",
+        captured_at: "2026-06-25T10:00:00.000Z",
         repository_id: repository.id,
         remote: "origin",
         base_ref: "main",

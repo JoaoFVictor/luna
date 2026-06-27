@@ -21,7 +21,17 @@ export type GitCommitInput = {
   readonly paths?: readonly string[];
   readonly expected_branch?: string;
   readonly expected_head_sha?: string;
+  readonly expected_base_sha?: string;
   readonly expected_dirty_paths?: readonly string[];
+  readonly remote?: string;
+  readonly expected_remote_urls?: readonly string[];
+};
+
+export type GitCommitSkippedInput = {
+  readonly operation_id?: GitCommitOperationId;
+  readonly enabled: boolean;
+  readonly skipped: true;
+  readonly reason: string;
 };
 
 export type GitPushBranchInput = {
@@ -30,6 +40,14 @@ export type GitPushBranchInput = {
   readonly branch: string;
   readonly remote: string;
   readonly expected_commit_sha: string;
+  readonly expected_remote_urls?: readonly string[];
+};
+
+export type GitPushBranchSkippedInput = {
+  readonly operation_id?: GitPushBranchOperationId;
+  readonly enabled: boolean;
+  readonly skipped: true;
+  readonly reason: string;
 };
 
 export type GitStatusResult = {
@@ -59,6 +77,10 @@ export type GitCommitResult = GitCommitState & {
   readonly adopted: boolean;
 };
 
+export type GitCommitSkippedResult = GitCommitSkippedInput & {
+  readonly operation_id: GitCommitOperationId;
+};
+
 export type GitPushBranchResult = {
   readonly operation_id: GitPushBranchOperationId;
   readonly workspace_id: string;
@@ -66,6 +88,10 @@ export type GitPushBranchResult = {
   readonly remote: string;
   readonly commit_sha: string;
   readonly pushed: boolean;
+};
+
+export type GitPushBranchSkippedResult = GitPushBranchSkippedInput & {
+  readonly operation_id: GitPushBranchOperationId;
 };
 
 export type GitRepositoryPort = {

@@ -61,6 +61,18 @@ const gitCommitSchema = {
   }
 } as const;
 
+const gitCommitSkippedSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["operation_id", "enabled", "skipped", "reason"],
+  properties: {
+    operation_id: { enum: ["git.commit"] },
+    enabled: { type: "boolean" },
+    skipped: { const: true },
+    reason: { type: "string" }
+  }
+} as const;
+
 const gitPushBranchSchema = {
   type: "object",
   additionalProperties: false,
@@ -82,6 +94,18 @@ const gitPushBranchSchema = {
   }
 } as const;
 
+const gitPushBranchSkippedSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["operation_id", "enabled", "skipped", "reason"],
+  properties: {
+    operation_id: { enum: ["git.push_branch"] },
+    enabled: { type: "boolean" },
+    skipped: { const: true },
+    reason: { type: "string" }
+  }
+} as const;
+
 const statusInputSchema = {
   type: "object",
   additionalProperties: false,
@@ -91,29 +115,70 @@ const statusInputSchema = {
 } as const;
 
 const commitInputSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["message"],
-  properties: {
-    operation_id: { enum: ["git.commit"] },
-    message: { type: "string" },
-    paths: {
-      type: "array",
-      items: { type: "string" }
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["message"],
+      properties: {
+        operation_id: { enum: ["git.commit"] },
+        message: { type: "string" },
+        paths: {
+          type: "array",
+          items: { type: "string" }
+        },
+        expected_branch: { type: "string" },
+        expected_base_sha: { type: "string" },
+        remote: { type: "string" },
+        expected_remote_urls: {
+          type: "array",
+          items: { type: "string" }
+        }
+      }
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["enabled", "skipped", "reason"],
+      properties: {
+        operation_id: { enum: ["git.commit"] },
+        enabled: { type: "boolean" },
+        skipped: { const: true },
+        reason: { type: "string" }
+      }
     }
-  }
+  ]
 } as const;
 
 const pushBranchInputSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["branch", "remote", "expected_commit_sha"],
-  properties: {
-    operation_id: { enum: ["git.push_branch"] },
-    branch: { type: "string" },
-    remote: { type: "string" },
-    expected_commit_sha: { type: "string" }
-  }
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["branch", "remote", "expected_commit_sha"],
+      properties: {
+        operation_id: { enum: ["git.push_branch"] },
+        branch: { type: "string" },
+        remote: { type: "string" },
+        expected_commit_sha: { type: "string" },
+        expected_remote_urls: {
+          type: "array",
+          items: { type: "string" }
+        }
+      }
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["enabled", "skipped", "reason"],
+      properties: {
+        operation_id: { enum: ["git.push_branch"] },
+        enabled: { type: "boolean" },
+        skipped: { const: true },
+        reason: { type: "string" }
+      }
+    }
+  ]
 } as const;
 
 const statusPolicySchema = {
@@ -172,14 +237,16 @@ export const manifest = capabilityManifest({
     "git.commit": {
       id: "git.commit",
       input_schema: commitInputSchema,
-      output_schema: gitCommitSchema,
+      output_schema: { oneOf: [gitCommitSchema, gitCommitSkippedSchema] },
       required_ports: ["git.repository"],
       side_effect_policy: "git.commit_side_effect"
     },
     "git.push_branch": {
       id: "git.push_branch",
       input_schema: pushBranchInputSchema,
-      output_schema: gitPushBranchSchema,
+      output_schema: {
+        oneOf: [gitPushBranchSchema, gitPushBranchSkippedSchema]
+      },
       required_ports: ["git.repository"],
       side_effect_policy: "git.push_branch_side_effect"
     }

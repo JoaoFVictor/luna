@@ -11,9 +11,11 @@ artifacts:
   # Directory where run artifacts are written.
   root: .runs
 # Agent runtime used by the native workflow runner.
-# agent_runtime:
-#   id: pi
-#   options: {}
+agent_runtime:
+  id: pi
+  options:
+    # Deep reasoning/tool-call agents can legitimately take several minutes.
+    request_timeout_ms: 600000
 # Optional lock tuning. If omitted, Luna uses runtime defaults.
 # locks:
 #   root: .runs/locks

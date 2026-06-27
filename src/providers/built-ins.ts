@@ -1,10 +1,12 @@
 import {
   collectWorktreeDiffBuiltIn,
-  commitChangesBuiltIn,
+  prepareCommitBuiltIn,
   prepareImplementationWorktreeBuiltIn,
-  pushBranchBuiltIn,
+  preparePushBuiltIn,
   recordAcceptanceDecisionBuiltIn,
+  recordCommitLifecycleBuiltIn,
   recordImplementationValidationBuiltIn,
+  recordPushLifecycleBuiltIn,
   runValidationCommandsBuiltIn
 } from "../core/built-ins/implementation.js";
 import { collectContextBuiltIn } from "../core/built-ins/context.js";
@@ -134,8 +136,10 @@ export const defaultBuiltInSteps = Object.freeze([
   recordImplementationValidationBuiltIn,
   collectWorktreeDiffBuiltIn,
   recordAcceptanceDecisionBuiltIn,
-  commitChangesBuiltIn,
-  pushBranchBuiltIn,
+  prepareCommitBuiltIn,
+  recordCommitLifecycleBuiltIn,
+  preparePushBuiltIn,
+  recordPushLifecycleBuiltIn,
   finalImplementationReportBuiltIn
 ] as const);
 
@@ -167,12 +171,13 @@ function workflowExecutorFor(
   name: string,
   dependencies: BuiltInStepDependencies
 ): WorkflowBuiltInExecutor {
-  return async ({ state, input, runtimeContext }) =>
+  return async ({ state, input, runtimeContext, observabilitySummary }) =>
     await defaultProviderBuiltInCatalog.runBuiltInStep({
       uses: name,
       state: workflowStateView(state, runtimeContext),
       input: workflowBuiltInInput(input),
-      dependencies
+      dependencies,
+      observabilitySummary
     });
 }
 

@@ -8,8 +8,10 @@ const workflowCapabilityBuiltInAliases = Object.freeze({
   "runtime.collect_task_context": "collect_task_context",
   "runtime.record_implementation_validation": "record_implementation_validation",
   "runtime.collect_worktree_diff": "collect_worktree_diff",
-  "runtime.commit_changes": "commit_changes",
-  "runtime.push_branch": "push_branch",
+  "runtime.prepare_commit": "prepare_commit",
+  "runtime.record_commit_lifecycle": "record_commit_lifecycle",
+  "runtime.prepare_push": "prepare_push",
+  "runtime.record_push_lifecycle": "record_push_lifecycle",
   "runtime.final_implementation_report": "final_implementation_report",
   "context.collect_context": "collect_context",
   "reports.final_report": "final_report"

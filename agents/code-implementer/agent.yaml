@@ -9,5 +9,8 @@ skills:
 tools:
   - repository.status
   - repository.diff-summary
+  - repository.read-file
+  - repository.write-file
+  - repository.delete-file
 subagents:
   - change-reviewer

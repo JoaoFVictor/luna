@@ -2,6 +2,11 @@ import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import { builtInError } from "../../core/built-ins/errors.js";
 import { finalReportMetadata } from "../../core/built-ins/metadata.js";
 import { defineBuiltInStep } from "../../core/built-ins/registry.js";
+import {
+  executionSummaryJson,
+  executionSummaryMarkdownLines
+} from "../../core/reports/execution-summary.js";
+import type { ObservabilitySummary } from "../../core/observability/summary.js";
 
 type ReportSection = {
   heading: string;
@@ -35,6 +40,7 @@ export const finalReportOutputSchema = {
   required: ["report"],
   properties: {
     report: { type: "string" },
+    execution: { type: "object" },
     artifact_refs: {
       type: "array",
       items: { type: "string" }
@@ -59,7 +65,10 @@ function assertFinalReportOutput(output: unknown): void {
   }
 }
 
-export function renderFinalReport(input: unknown): { report: string } {
+export function renderFinalReport(
+  input: unknown,
+  observabilitySummary?: ObservabilitySummary
+): { report: string; execution?: ReturnType<typeof executionSummaryJson> } {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw reportError("Final report input must be an object");
   }
@@ -86,6 +95,7 @@ export function renderFinalReport(input: unknown): { report: string } {
     };
   });
 
+  const execution = executionSummaryJson(observabilitySummary);
   const output = {
     report: [
       `# ${title}`,
@@ -94,8 +104,10 @@ export function renderFinalReport(input: unknown): { report: string } {
         `## ${section.heading}`,
         "",
         sectionContent(section.content)
-      ])
-    ].join("\n")
+      ]),
+      ...executionSummaryMarkdownLines(observabilitySummary)
+    ].join("\n"),
+    ...(execution === undefined ? {} : { execution })
   };
   assertFinalReportOutput(output);
 
@@ -105,7 +117,7 @@ export function renderFinalReport(input: unknown): { report: string } {
 export const finalReportBuiltIn = defineBuiltInStep({
   name: "final_report",
   metadata: finalReportMetadata,
-  async run({ input }) {
-    return renderFinalReport(input ?? {});
+  async run({ input, observabilitySummary }) {
+    return renderFinalReport(input ?? {}, observabilitySummary);
   }
 });

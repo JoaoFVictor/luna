@@ -297,7 +297,7 @@ describe("gated agent loop runner", () => {
     });
   });
 
-  it("throws a coded infrastructure error when the final agent attempt fails", async () => {
+  it("returns failed artifacts when the final agent attempt fails", async () => {
     const cause = new Error("agent crashed for good");
     const runWorker = vi.fn(async () => {
       throw cause;
@@ -306,23 +306,38 @@ describe("gated agent loop runner", () => {
     const collectDiffSummary = vi.fn(async () => ({ files: [] }));
     const runGates = vi.fn(async () => ({ passed: true, results: [] }));
 
-    await expect(
-      runGatedAgentLoopStateMachine({
-        cwd,
-        prompt,
-        repairAttempts: 0,
-        dependencies: {
-          runWorker,
-          runValidation,
-          collectDiffSummary,
-          runGates
-        }
-      })
-    ).rejects.toMatchObject({
-      code: "gated_agent_loop_infrastructure_failure",
-      cause
+    const output = await runGatedAgentLoopStateMachine({
+      cwd,
+      prompt,
+      repairAttempts: 0,
+      dependencies: {
+        runWorker,
+        runValidation,
+        collectDiffSummary,
+        runGates
+      }
     });
 
+    expect(output).toEqual({
+      status: "failed",
+      attempts_exhausted: true,
+      attempts: [
+        {
+          attempt: 1,
+          phase: "initial",
+          agent_error: { message: "agent crashed for good" },
+          diff_summary: { files: [] }
+        }
+      ],
+      validation: failedValidation,
+      final_validation: failedValidation,
+      gates: [],
+      result: {
+        status: "failed",
+        agent_error: { message: "agent crashed for good" },
+        diff_summary: { files: [] }
+      }
+    });
     expect(runValidation).not.toHaveBeenCalled();
     expect(collectDiffSummary).toHaveBeenCalledTimes(1);
   });

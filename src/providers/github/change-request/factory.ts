@@ -16,7 +16,14 @@ type ChangeRequestError = Error & {
 const execFileAsync = promisify(execFile);
 
 async function defaultRunGh(cwd: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync("gh", [...args], { cwd });
+  const { stdout } = await execFileAsync("gh", [...args], {
+    cwd,
+    env: {
+      ...process.env,
+      GH_PROMPT_DISABLED: "1"
+    },
+    timeout: 60_000
+  });
 
   return stdout;
 }
@@ -58,9 +65,7 @@ async function createPullRequest(
     input.title
   );
 
-  if (input.description !== undefined) {
-    args.push("--body", input.description);
-  }
+  args.push("--body", input.description ?? "");
 
   let url: string;
   try {

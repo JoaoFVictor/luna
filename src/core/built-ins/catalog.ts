@@ -18,11 +18,13 @@ import {
 } from "../../capabilities/repository-workspace/built-ins.js";
 import {
   collectWorktreeDiffBuiltIn,
-  commitChangesBuiltIn,
+  prepareCommitBuiltIn,
   prepareImplementationWorktreeBuiltIn,
-  pushBranchBuiltIn,
+  preparePushBuiltIn,
   recordAcceptanceDecisionBuiltIn,
+  recordCommitLifecycleBuiltIn,
   recordImplementationValidationBuiltIn,
+  recordPushLifecycleBuiltIn,
   runValidationCommandsBuiltIn
 } from "./implementation.js";
 import { collectContextBuiltIn } from "./context.js";
@@ -75,8 +77,10 @@ export const defaultBuiltInSteps = Object.freeze([
   recordImplementationValidationBuiltIn,
   collectWorktreeDiffBuiltIn,
   recordAcceptanceDecisionBuiltIn,
-  commitChangesBuiltIn,
-  pushBranchBuiltIn,
+  prepareCommitBuiltIn,
+  recordCommitLifecycleBuiltIn,
+  preparePushBuiltIn,
+  recordPushLifecycleBuiltIn,
   finalReportBuiltIn
 ] as const);
 

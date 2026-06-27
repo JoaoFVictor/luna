@@ -1,24 +1,28 @@
 import {
   prepareImplementationWorktree as defaultPrepareImplementationWorktree
 } from "../write-mode/worktree.js";
-import { safeJoin } from "../security/path.js";
 import { runValidationCommands as defaultRunValidationCommands } from "../validation/runner.js";
 import { collectWorktreeDiff as defaultCollectWorktreeDiff } from "../git/diff/worktree-diff.js";
-import {
-  commitChanges as defaultCommitChanges,
-  pushBranch as defaultPushBranch
-} from "../write-mode/git-gates.js";
 import type { AcceptanceDecision } from "../decisions/types.js";
 import { GatedAgentLoopResultSchema } from "../agent-runtime/contracts.js";
-import type { CommitChangesArtifact } from "../write-mode/types.js";
+import type {
+  CommitChangesArtifact,
+  PushBranchArtifact
+} from "../write-mode/types.js";
 import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
+import type {
+  GitCommitResult,
+  GitCommitSkippedResult,
+  GitPushBranchResult,
+  GitPushBranchSkippedResult
+} from "../../capabilities/git/contracts.js";
 import {
   collectWorktreeDiffMetadata,
-  commitChangesMetadata,
   prepareImplementationWorktreeMetadata,
-  pushBranchMetadata,
   recordAcceptanceDecisionMetadata,
+  recordCommitLifecycleMetadata,
   recordImplementationValidationMetadata,
+  recordPushLifecycleMetadata,
   runValidationCommandsMetadata
 } from "./metadata.js";
 import { AcceptanceDecisionSchema } from "../decisions/types.js";
@@ -69,6 +73,109 @@ function implementationSubjectFrom(input: unknown): ImplementationSubject {
   };
 }
 
+function skipped(
+  enabled: boolean,
+  reason: string
+): { enabled: boolean; skipped: true; reason: string } {
+  return { enabled, skipped: true, reason };
+}
+
+function isAccepted(acceptance: AcceptanceDecision): boolean {
+  return acceptance.status === "accepted";
+}
+
+function fallbackRejectedAcceptance(implementation: { readonly result: unknown }): AcceptanceDecision {
+  const message = agentErrorMessage(implementation.result) ??
+    "Implementation did not produce a reviewable result.";
+
+  return {
+    status: "rejected",
+    summary: `Implementation failed before acceptance review: ${message}`,
+    blocking_reasons: [message],
+    recommended_action: "stop"
+  };
+}
+
+function agentErrorMessage(result: unknown): string | undefined {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return undefined;
+  }
+
+  const agentError = (result as { agent_error?: unknown }).agent_error;
+  if (typeof agentError !== "object" || agentError === null || Array.isArray(agentError)) {
+    return undefined;
+  }
+
+  const message = (agentError as { message?: unknown }).message;
+  return typeof message === "string" && message.length > 0 ? message : undefined;
+}
+
+function hasDiff(diff: WorktreeDiff): boolean {
+  return (
+    diff.files.length > 0 ||
+    diff.untracked_files.length > 0 ||
+    diff.staged_diff.trim() !== "" ||
+    diff.unstaged_diff.trim() !== ""
+  );
+}
+
+function stageablePaths(diff: WorktreeDiff): string[] {
+  const paths: string[] = [];
+
+  for (const file of diff.files) {
+    if (file.status === "untracked") {
+      if (file.untracked_summary?.omitted_reason === "sensitive_path") {
+        continue;
+      }
+
+      paths.push(file.path);
+      continue;
+    }
+
+    paths.push(file.path);
+  }
+
+  return [...new Set(paths)];
+}
+
+function isGitCommitSkipped(value: unknown): value is GitCommitSkippedResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { operation_id?: unknown }).operation_id === "git.commit" &&
+    (value as { skipped?: unknown }).skipped === true
+  );
+}
+
+function isGitCommitResult(value: unknown): value is GitCommitResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { operation_id?: unknown }).operation_id === "git.commit" &&
+    typeof (value as { commit_sha?: unknown }).commit_sha === "string" &&
+    typeof (value as { branch?: unknown }).branch === "string"
+  );
+}
+
+function isGitPushSkipped(value: unknown): value is GitPushBranchSkippedResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { operation_id?: unknown }).operation_id === "git.push_branch" &&
+    (value as { skipped?: unknown }).skipped === true
+  );
+}
+
+function isGitPushResult(value: unknown): value is GitPushBranchResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { operation_id?: unknown }).operation_id === "git.push_branch" &&
+    typeof (value as { remote?: unknown }).remote === "string" &&
+    typeof (value as { branch?: unknown }).branch === "string"
+  );
+}
+
 export const prepareImplementationWorktreeBuiltIn = defineBuiltInStep({
   name: "prepare_implementation_worktree",
   metadata: prepareImplementationWorktreeMetadata,
@@ -114,9 +221,10 @@ export const recordImplementationValidationBuiltIn = defineBuiltInStep({
     const implementation = GatedAgentLoopResultSchema.parse(
       requiredInput(resolved.implementation, "implementation")
     );
-    const acceptance = AcceptanceDecisionSchema.parse(
-      requiredInput(implementation.result.acceptance, "implementation.result.acceptance")
-    );
+    const acceptance =
+      implementation.result.acceptance === undefined
+        ? fallbackRejectedAcceptance(implementation)
+        : AcceptanceDecisionSchema.parse(implementation.result.acceptance);
 
     return {
       validation: implementation.final_validation,
@@ -149,61 +257,145 @@ export const recordAcceptanceDecisionBuiltIn = defineBuiltInStep({
   }
 });
 
-export const commitChangesBuiltIn = defineBuiltInStep({
-  name: "commit_changes",
-  metadata: commitChangesMetadata,
-  async run({ state, input, dependencies = {} }) {
-    const commitChanges = dependencies.commitChanges ?? defaultCommitChanges;
+export const prepareCommitBuiltIn = defineBuiltInStep({
+  name: "prepare_commit",
+  run({ state, input }) {
     const resolved = resolvedInput(input, state);
     const implementation = requiredImplementationFrom(state);
     const repository = repositoryFrom(state);
     const workspace = implementationWorkspaceFrom(state);
-    const runId = runIdFrom(state);
+    const validation = finalValidationFrom(state, resolved);
+    const acceptance = stepValue<AcceptanceDecision>(
+      state,
+      resolved,
+      "acceptance",
+      "acceptance"
+    );
+    const diff = stepValue<WorktreeDiff>(state, resolved, "diff", "worktree_diff");
+    const message = requiredInput(
+      resolved.message as string | undefined,
+      "message"
+    );
 
-    return await commitChanges({
-      enabled: implementation.commit.enabled,
-      cwd: workspace.path,
-      validation: finalValidationFrom(state, resolved),
-      acceptance: stepValue<AcceptanceDecision>(
-        state,
-        resolved,
-        "acceptance",
-        "acceptance"
-      ),
-      diff: stepValue<WorktreeDiff>(state, resolved, "diff", "worktree_diff"),
-      branch: workspace.branch,
+    if (!implementation.commit.enabled) {
+      return skipped(false, "disabled");
+    }
+
+    if (!validation.passed) {
+      return skipped(true, "validation_failed");
+    }
+
+    if (!isAccepted(acceptance)) {
+      return skipped(true, "acceptance_rejected");
+    }
+
+    if (!hasDiff(diff)) {
+      return skipped(true, "empty_diff");
+    }
+
+    const paths = stageablePaths(diff);
+    if (paths.length === 0) {
+      return skipped(true, "sensitive_untracked_files");
+    }
+
+    return {
+      operation_id: "git.commit",
+      message,
+      paths,
+      expected_branch: workspace.branch,
+      expected_base_sha: workspace.base_sha,
       remote: implementation.push.remote,
-      baseSha: workspace.base_sha,
-      branchPattern: implementation.branch_pattern,
-      expectedRemoteUrls: expectedRemoteUrlsFrom(repository),
-      message: requiredInput(resolved.message as string | undefined, "message"),
-      runId,
-      repositoryPath: repository.path,
-      journalPath: await safeJoin(workspaceRootFrom(state), [
-        repository.id,
-        `${runId}.transactions.jsonl`
-      ])
-    });
+      expected_remote_urls: expectedRemoteUrlsFrom(repository)
+    };
   }
 });
 
-export const pushBranchBuiltIn = defineBuiltInStep({
-  name: "push_branch",
-  metadata: pushBranchMetadata,
-  async run({ state, input, dependencies = {} }) {
-    const pushBranch = dependencies.pushBranch ?? defaultPushBranch;
+export const recordCommitLifecycleBuiltIn = defineBuiltInStep({
+  name: "record_commit_lifecycle",
+  metadata: recordCommitLifecycleMetadata,
+  run({ input }) {
+    const commit = requiredInput(input?.commit, "commit");
+
+    if (isGitCommitSkipped(commit)) {
+      return {
+        enabled: commit.enabled,
+        skipped: true,
+        reason: commit.reason
+      } satisfies CommitChangesArtifact;
+    }
+
+    if (!isGitCommitResult(commit)) {
+      throw lifecycleContractError("record_commit_lifecycle requires git.commit output");
+    }
+
+    return {
+      enabled: true,
+      skipped: false,
+      branch: commit.branch,
+      commit_sha: commit.commit_sha
+    } satisfies CommitChangesArtifact;
+  }
+});
+
+export const preparePushBuiltIn = defineBuiltInStep({
+  name: "prepare_push",
+  run({ state, input }) {
     const resolved = resolvedInput(input, state);
     const implementation = requiredImplementationFrom(state);
     const repository = repositoryFrom(state);
     const workspace = implementationWorkspaceFrom(state);
+    const commit = stepValue<CommitChangesArtifact>(
+      state,
+      resolved,
+      "commit",
+      "commit_lifecycle"
+    );
 
-    return await pushBranch({
-      enabled: implementation.push.enabled,
-      cwd: workspace.path,
-      commit: stepValue<CommitChangesArtifact>(state, resolved, "commit", "commit"),
+    if (!implementation.push.enabled) {
+      return skipped(false, "disabled");
+    }
+
+    if (commit.skipped || commit.commit_sha === undefined) {
+      return skipped(true, "no_commit");
+    }
+
+    if (commit.branch !== workspace.branch) {
+      return skipped(true, "branch_mismatch");
+    }
+
+    return {
+      operation_id: "git.push_branch",
       branch: workspace.branch,
       remote: implementation.push.remote,
-      expectedRemoteUrls: expectedRemoteUrlsFrom(repository)
-    });
+      expected_commit_sha: commit.commit_sha,
+      expected_remote_urls: expectedRemoteUrlsFrom(repository)
+    };
+  }
+});
+
+export const recordPushLifecycleBuiltIn = defineBuiltInStep({
+  name: "record_push_lifecycle",
+  metadata: recordPushLifecycleMetadata,
+  run({ input }) {
+    const push = requiredInput(input?.push, "push");
+
+    if (isGitPushSkipped(push)) {
+      return {
+        enabled: push.enabled,
+        skipped: true,
+        reason: push.reason
+      } satisfies PushBranchArtifact;
+    }
+
+    if (!isGitPushResult(push)) {
+      throw lifecycleContractError("record_push_lifecycle requires git.push_branch output");
+    }
+
+    return {
+      enabled: true,
+      skipped: false,
+      remote: push.remote,
+      branch: push.branch
+    } satisfies PushBranchArtifact;
   }
 });

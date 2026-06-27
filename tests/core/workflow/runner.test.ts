@@ -607,20 +607,15 @@ describe("workflow runner", () => {
       ),
       execution: { max_concurrency: 2 }
     };
-    const started = new Set<string>();
-    let releaseBranches: (() => void) | undefined;
-    const branchesStarted = new Promise<void>((resolve) => {
-      releaseBranches = resolve;
+    let releaseLeft!: () => void;
+    const leftMayFinish = new Promise<void>((resolve) => {
+      releaseLeft = resolve;
     });
     let joinInput: unknown;
     const builtIns: Record<string, WorkflowBuiltInExecutor> = {
       "runtime.ok": vi.fn(async ({ node, input }) => {
-        started.add(node.id);
-        if (started.has("left") && started.has("right")) {
-          releaseBranches?.();
-        }
-        if (node.id === "left" || node.id === "right") {
-          await branchesStarted;
+        if (node.id === "left") {
+          await leftMayFinish;
         }
         if (node.id === "join") {
           joinInput = input;
@@ -629,6 +624,8 @@ describe("workflow runner", () => {
         return { ok: true };
       })
     };
+
+    setTimeout(releaseLeft, 20);
 
     const result = await withTimeout(
       runCompiledWorkflow({

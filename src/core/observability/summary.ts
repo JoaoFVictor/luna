@@ -1,5 +1,3 @@
-import type { ArtifactStore } from "../artifacts/store.js";
-
 export type LunaTokenSummary = {
   input: number;
   output: number;
@@ -42,7 +40,16 @@ export type ObservabilitySummary = {
     id: string;
     reason: string;
   }>;
-  write(store: ArtifactStore): Promise<boolean>;
+};
+
+export type ObservabilitySummaryPublisher = {
+  publish(input: {
+    readonly node_id: string;
+    readonly path: string;
+    readonly format: "json";
+    readonly value: unknown;
+    readonly overwrite_policy: "replace";
+  }): Promise<unknown>;
 };
 
 const emptyTokens = (): LunaTokenSummary => ({
@@ -62,28 +69,24 @@ const emptyCost = (): LunaCostSummary => ({
   unit: "provider_cost_unit"
 });
 
-function serializableSummary(summary: ObservabilitySummary): Omit<
-  ObservabilitySummary,
-  "write"
-> {
-  const { write: _write, ...serializable } = summary;
-
-  return serializable;
-}
-
-async function writeSummary(
-  artifactStore: ArtifactStore,
+export function serializableObservabilitySummary(
   summary: ObservabilitySummary
-): Promise<boolean> {
-  try {
-    await artifactStore.writeJson(
-      "observability-summary.json",
-      serializableSummary(summary)
-    );
-    return true;
-  } catch {
-    return false;
-  }
+): ObservabilitySummary {
+  return {
+    schema_version: summary.schema_version,
+    run_id: summary.run_id,
+    workflow_id: summary.workflow_id,
+    events_path: summary.events_path,
+    prompt_operations: summary.prompt_operations,
+    prompt_duration_ms: summary.prompt_duration_ms,
+    usage_missing_count: summary.usage_missing_count,
+    tokens: { ...summary.tokens },
+    cost: { ...summary.cost },
+    failed_steps: summary.failed_steps.map((step) => ({ ...step })),
+    rejected_capabilities: summary.rejected_capabilities.map((rejection) => ({
+      ...rejection
+    }))
+  };
 }
 
 export function createObservabilitySummary({
@@ -104,23 +107,32 @@ export function createObservabilitySummary({
     tokens: emptyTokens(),
     cost: emptyCost(),
     failed_steps: [],
-    rejected_capabilities: [],
-    write: async (store: ArtifactStore): Promise<boolean> =>
-      await writeSummary(store, summary)
+    rejected_capabilities: []
   };
 
   return summary;
 }
 
 export async function writeSummaryBestEffort(
-  artifactStore: ArtifactStore | undefined,
+  publisher: ObservabilitySummaryPublisher | undefined,
   summary: ObservabilitySummary | undefined
 ): Promise<boolean> {
-  if (artifactStore === undefined || summary === undefined) {
+  if (publisher === undefined || summary === undefined) {
     return false;
   }
 
-  return await summary.write(artifactStore);
+  try {
+    await publisher.publish({
+      node_id: "observability",
+      path: "observability-summary.json",
+      format: "json",
+      value: serializableObservabilitySummary(summary),
+      overwrite_policy: "replace"
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function recordPromptOperation(

@@ -64,9 +64,14 @@ export function implementationReportInputFrom({
     state,
     resolved,
     "commit",
-    "commit"
+    "commit_lifecycle"
   );
-  const push = stepValue<PushBranchArtifact>(state, resolved, "push", "push");
+  const push = stepValue<PushBranchArtifact>(
+    state,
+    resolved,
+    "push",
+    "push_lifecycle"
+  );
   const changeRequest = changeRequestArtifactFrom(
     stepValue<unknown>(state, resolved, "change_request", "change_request")
   );

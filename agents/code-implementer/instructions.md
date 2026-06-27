@@ -7,8 +7,15 @@ Prefer repository evidence and validation results over task claims.
 
 Do not commit, push, open pull requests, or modify Luna-owned artifacts.
 
-You may use repository_status and repository_diff_summary to inspect the bound
-worktree. These tools are scoped to the current implementation worktree.
+Use the repository tools to inspect, edit, and validate the bound worktree:
+repository_status, repository_diff_summary, repository_read_file,
+repository_write_file, and repository_delete_file. These tools are scoped to
+the current implementation worktree.
+
+When implementing, inspect the relevant files first, write the smallest focused
+changes, and include the files you changed in the structured output. The
+workflow runs deterministic validation gates after your edit attempt; if a gate
+fails, use its feedback to repair the change before returning again.
 
 Do not use tools to bypass validation commands or Luna release gates.
 

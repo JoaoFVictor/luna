@@ -33,6 +33,16 @@ export type AgentRuntimeUsage = {
   readonly input_tokens?: number;
   readonly output_tokens?: number;
   readonly total_tokens?: number;
+  readonly cache_read_tokens?: number;
+  readonly cache_write_tokens?: number;
+  readonly cost?: {
+    readonly input?: number;
+    readonly output?: number;
+    readonly cache_read?: number;
+    readonly cache_write?: number;
+    readonly total?: number;
+    readonly unit?: string;
+  };
   readonly [key: string]: unknown;
 };
 

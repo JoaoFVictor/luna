@@ -97,8 +97,8 @@ const planeImplementationState: WorkflowState = {
         commands: []
       }
     },
-    commit: { enabled: false, skipped: true, reason: "disabled" },
-    push: { enabled: false, skipped: true, reason: "disabled" },
+    commit_lifecycle: { enabled: false, skipped: true, reason: "disabled" },
+    push_lifecycle: { enabled: false, skipped: true, reason: "disabled" },
     change_request: {
       operation_id: "change-request.create",
       enabled: false,
@@ -192,8 +192,10 @@ describe("built-in step registry", () => {
       "record_implementation_validation",
       "collect_worktree_diff",
       "record_acceptance_decision",
-      "commit_changes",
-      "push_branch",
+      "prepare_commit",
+      "record_commit_lifecycle",
+      "prepare_push",
+      "record_push_lifecycle",
       "final_implementation_report"
     ]);
     expect(isBuiltInStepName("preflight")).toBe(true);
@@ -244,9 +246,7 @@ describe("built-in step registry", () => {
       "git.commit",
       "git.push_branch",
       "change-request.create",
-      "prepare_implementation_worktree",
-      "commit_changes",
-      "push_branch"
+      "prepare_implementation_worktree"
     ]);
 
     for (const name of lockedNames) {
@@ -274,9 +274,7 @@ describe("built-in step registry", () => {
       "git.commit",
       "git.push_branch",
       "change-request.create",
-      "prepare_implementation_worktree",
-      "commit_changes",
-      "push_branch"
+      "prepare_implementation_worktree"
     ]);
   });
 

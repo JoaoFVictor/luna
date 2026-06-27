@@ -1,123 +1,18 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "oneOf": [
-    {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["status", "run", "workflow_id", "steps", "report"],
-      "properties": {
-        "status": {
-          "type": "string",
-          "const": "success"
-        },
-        "workflow_id": {
-          "type": "string",
-          "const": "implementation"
-        },
-        "run": {
-          "$ref": "#/definitions/run_identity"
-        },
-        "steps": {
-          "type": "object",
-          "additionalProperties": true
-        },
-        "report": {
-          "$ref": "#/definitions/final_report"
-        },
-        "workspace": {
-          "$ref": "#/definitions/workspace"
-        }
-      }
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["json", "markdown"],
+  "properties": {
+    "json": {
+      "$ref": "#/definitions/final_report"
     },
-    {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["status", "run", "error"],
-      "properties": {
-        "status": {
-          "type": "string",
-          "const": "failed"
-        },
-        "run": {
-          "$ref": "#/definitions/run_identity"
-        },
-        "workflow_id": {
-          "type": "string",
-          "const": "implementation"
-        },
-        "error": {
-          "$ref": "#/definitions/error_artifact"
-        },
-        "workspace": {
-          "$ref": "#/definitions/workspace"
-        }
-      }
+    "markdown": {
+      "type": "string",
+      "minLength": 1
     }
-  ],
+  },
   "definitions": {
-    "run_identity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["run_id", "attempt", "source", "event"],
-      "properties": {
-        "run_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "attempt": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "source": {
-          "type": "string",
-          "minLength": 1
-        },
-        "event": {
-          "type": "string",
-          "minLength": 1
-        },
-        "action": {
-          "type": "string",
-          "minLength": 1
-        },
-        "route_target": {
-          "$ref": "#/definitions/route_target"
-        },
-        "subject": {
-          "$ref": "#/definitions/run_subject"
-        }
-      }
-    },
-    "route_target": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "id"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "workflow"
-        },
-        "id": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "run_subject": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "id"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "minLength": 1
-        },
-        "id": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
     "final_report": {
       "type": "object",
       "additionalProperties": false,
@@ -168,6 +63,9 @@
         },
         "change_request": {
           "$ref": "#/definitions/change_request_action"
+        },
+        "execution": {
+          "type": "object"
         },
         "warnings": {
           "type": "array",
@@ -473,70 +371,6 @@
         "url": {
           "type": "string",
           "minLength": 1
-        }
-      }
-    },
-    "workspace": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["run_id", "path", "preserved", "reason"],
-      "properties": {
-        "run_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "preserved": {
-          "type": "boolean"
-        },
-        "reason": {
-          "type": "string",
-          "minLength": 1
-        },
-        "repository_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "remote": {
-          "type": "string",
-          "minLength": 1
-        },
-        "base_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "base_sha": {
-          "type": "string",
-          "minLength": 1
-        },
-        "branch": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "error_artifact": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["message"],
-      "properties": {
-        "run_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "message": {
-          "type": "string",
-          "minLength": 1
-        },
-        "code": {
-          "type": "string",
-          "minLength": 1
-        },
-        "details": {
-          "type": "object"
         }
       }
     }

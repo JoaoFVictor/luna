@@ -117,13 +117,15 @@ export const recordAcceptanceDecisionMetadata = Object.freeze({
   }
 } satisfies BuiltInStepMetadata);
 
-export const commitChangesMetadata = Object.freeze({
+export const commitLifecycleArtifactMetadata = Object.freeze({
   implementationLifecycle: "commit",
   requiresRepository: true,
   implementationLifecycleOutcome: (output) => {
     const result = CommitChangesArtifactSchema.safeParse(output);
     if (!result.success) {
-      throw lifecycleContractError("commit_changes must return CommitChangesArtifact");
+      throw lifecycleContractError(
+        "record_commit_lifecycle must return CommitChangesArtifact"
+      );
     }
 
     return {
@@ -134,13 +136,21 @@ export const commitChangesMetadata = Object.freeze({
   locks: Object.freeze([repositoryLock()])
 } satisfies BuiltInStepMetadata);
 
-export const pushBranchMetadata = Object.freeze({
+export const recordCommitLifecycleMetadata = Object.freeze({
+  implementationLifecycle: "commit",
+  implementationLifecycleOutcome:
+    commitLifecycleArtifactMetadata.implementationLifecycleOutcome
+} satisfies BuiltInStepMetadata);
+
+export const pushLifecycleArtifactMetadata = Object.freeze({
   implementationLifecycle: "push",
   requiresRepository: true,
   implementationLifecycleOutcome: (output) => {
     const result = PushBranchArtifactSchema.safeParse(output);
     if (!result.success) {
-      throw lifecycleContractError("push_branch must return PushBranchArtifact");
+      throw lifecycleContractError(
+        "record_push_lifecycle must return PushBranchArtifact"
+      );
     }
 
     return {
@@ -151,6 +161,12 @@ export const pushBranchMetadata = Object.freeze({
     };
   },
   locks: Object.freeze([repositoryLock()])
+} satisfies BuiltInStepMetadata);
+
+export const recordPushLifecycleMetadata = Object.freeze({
+  implementationLifecycle: "push",
+  implementationLifecycleOutcome:
+    pushLifecycleArtifactMetadata.implementationLifecycleOutcome
 } satisfies BuiltInStepMetadata);
 
 export const changeRequestCreateMetadata = Object.freeze({
@@ -193,7 +209,9 @@ export const builtInStepMetadataByName = Object.freeze({
   record_implementation_validation: recordImplementationValidationMetadata,
   collect_worktree_diff: collectWorktreeDiffMetadata,
   record_acceptance_decision: recordAcceptanceDecisionMetadata,
-  commit_changes: commitChangesMetadata,
-  push_branch: pushBranchMetadata,
+  prepare_commit: emptyBuiltInMetadata,
+  record_commit_lifecycle: recordCommitLifecycleMetadata,
+  prepare_push: emptyBuiltInMetadata,
+  record_push_lifecycle: recordPushLifecycleMetadata,
   final_implementation_report: finalReportMetadata
 });

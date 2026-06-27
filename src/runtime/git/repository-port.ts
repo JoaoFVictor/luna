@@ -9,6 +9,7 @@ import type {
   GitStatusResult
 } from "../../capabilities/git/contracts.js";
 import { runGit as defaultRunGit } from "../../core/git/client.js";
+import { remoteUrlMatches } from "../../core/git/remote-url.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
@@ -76,6 +77,56 @@ function assertExpectedHead(status: GitStatusResult, input: GitCommitInput): voi
   }
 }
 
+function isExpectedAncestryMismatch(error: unknown): boolean {
+  const failure =
+    (error as { cause?: { exitCode?: unknown; code?: unknown } } | undefined)
+      ?.cause ?? (error as { exitCode?: unknown; code?: unknown } | undefined);
+  const exitCode = failure?.exitCode ?? failure?.code;
+
+  return exitCode === 1;
+}
+
+async function assertExpectedBaseAncestry(
+  cwd: string,
+  input: GitCommitInput,
+  runGit: RunGit
+): Promise<void> {
+  if (input.expected_base_sha === undefined) {
+    return;
+  }
+
+  try {
+    await runGit(cwd, [
+      "merge-base",
+      "--is-ancestor",
+      input.expected_base_sha,
+      "HEAD"
+    ]);
+  } catch (error) {
+    if (isExpectedAncestryMismatch(error)) {
+      throw gitConflict("Git commit expected_base_sha is not an ancestor of HEAD.");
+    }
+
+    throw error;
+  }
+}
+
+async function assertExpectedRemote(
+  cwd: string,
+  remote: string | undefined,
+  expectedRemoteUrls: readonly string[] | undefined,
+  runGit: RunGit
+): Promise<void> {
+  if (remote === undefined || expectedRemoteUrls === undefined) {
+    return;
+  }
+
+  const actualRemoteUrl = (await runGit(cwd, ["remote", "get-url", remote])).trim();
+  if (!remoteUrlMatches(actualRemoteUrl, expectedRemoteUrls)) {
+    throw gitConflict("Git remote URL does not match expected URLs.");
+  }
+}
+
 export function createGitRepositoryPorts({
   runGit = defaultRunGit
 }: {
@@ -94,6 +145,13 @@ export function createGitRepositoryPorts({
           runGit(cwd, ["log", "-1", "--pretty=%B"]),
           runGit(cwd, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])
         ]);
+        await assertExpectedBaseAncestry(cwd, input, runGit);
+        await assertExpectedRemote(
+          cwd,
+          input.remote,
+          input.expected_remote_urls,
+          runGit
+        );
         const { commitSha, parentSha } = parseCommitLine(commitLine);
 
         return {
@@ -113,6 +171,13 @@ export function createGitRepositoryPorts({
           runGit
         );
         assertExpectedHead(status, input);
+        await assertExpectedBaseAncestry(cwd, input, runGit);
+        await assertExpectedRemote(
+          cwd,
+          input.remote,
+          input.expected_remote_urls,
+          runGit
+        );
         await runGit(cwd, [
           "--literal-pathspecs",
           "add",
@@ -139,6 +204,14 @@ export function createGitRepositoryPorts({
         const headSha = (await runGit(cwd, ["rev-parse", "HEAD"])).trim();
         if (headSha !== input.expected_commit_sha) {
           throw gitConflict("Git push expected_commit_sha does not match HEAD.");
+        }
+        if (input.expected_remote_urls !== undefined) {
+          await assertExpectedRemote(
+            cwd,
+            input.remote,
+            input.expected_remote_urls,
+            runGit
+          );
         }
 
         await runGit(cwd, ["push", input.remote, input.branch]);

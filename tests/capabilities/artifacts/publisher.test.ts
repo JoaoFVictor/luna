@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { manifest } from "../../../src/capabilities/artifacts/manifest.js";
 import {
-  artifactStorePublisher,
   transactionalArtifactPublisher,
-  publishDeclaredArtifacts
+  publishDeclaredArtifacts,
+  type ArtifactPublisherPort
 } from "../../../src/capabilities/artifacts/publisher.js";
 import { matchesJsonSchema } from "../../../src/core/capabilities/json-schema.js";
 import type {
@@ -87,15 +87,15 @@ function artifactPlan(
   };
 }
 
-function artifactStoreMock() {
-  return {
-    writeJson: vi.fn(async (name: string) => `artifact://${name}`),
-    writeMarkdown: vi.fn(async (name: string) => `artifact://${name}`)
-  };
-}
-
-function publisherMock() {
-  return artifactStorePublisher(artifactStoreMock());
+function publisherMock(
+  publish = vi.fn(async (input) => ({
+    id: input.path,
+    uri: `artifact://${input.path}`,
+    node_id: input.node_id,
+    media_type: input.format === "json" ? "application/json" : "text/markdown"
+  }))
+): ArtifactPublisherPort & { publish: typeof publish } {
+  return { publish };
 }
 
 function journal(): ArtifactTransactionJournal {
@@ -217,19 +217,19 @@ describe("artifacts capability publisher", () => {
   });
 
   it("skips optional missing artifact sources and errors for required missing sources", async () => {
-    const artifactStore = artifactStoreMock();
+    const publisher = publisherMock();
     const node = builtInArtifactNode("preflight", [
       artifactPlan("optional.json", "$.steps.preflight.optional", "json", false)
     ]);
 
     await publishDeclaredArtifacts({
-      publisher: artifactStorePublisher(artifactStore),
+      publisher,
       node,
       output: { present: true },
       state: workflowState()
     });
 
-    expect(artifactStore.writeJson).not.toHaveBeenCalled();
+    expect(publisher.publish).not.toHaveBeenCalled();
 
     const requiredNode = builtInArtifactNode("preflight", [
       artifactPlan("required.json", "$.steps.preflight.required")
@@ -237,7 +237,7 @@ describe("artifacts capability publisher", () => {
 
     await expect(
       publishDeclaredArtifacts({
-        publisher: artifactStorePublisher(artifactStore),
+        publisher,
         node: requiredNode,
         output: { present: true },
         state: workflowState()
@@ -246,7 +246,6 @@ describe("artifacts capability publisher", () => {
   });
 
   it("requires markdown artifacts to resolve to strings", async () => {
-    const artifactStore = artifactStoreMock();
     const node = builtInArtifactNode(
       "final_report",
       [
@@ -257,7 +256,7 @@ describe("artifacts capability publisher", () => {
 
     await expect(
       publishDeclaredArtifacts({
-        publisher: artifactStorePublisher(artifactStore),
+        publisher: publisherMock(),
         node,
         output: { markdown: { not: "a string" } },
         state: workflowState()
@@ -266,14 +265,13 @@ describe("artifacts capability publisher", () => {
   });
 
   it("rejects non-JSON values for json artifacts", async () => {
-    const artifactStore = artifactStoreMock();
     const node = builtInArtifactNode("preflight", [
       artifactPlan("output.json", "$.steps.preflight")
     ]);
 
     await expect(
       publishDeclaredArtifacts({
-        publisher: artifactStorePublisher(artifactStore),
+        publisher: publisherMock(),
         node,
         output: { bad: undefined },
         state: workflowState()
@@ -282,35 +280,38 @@ describe("artifacts capability publisher", () => {
   });
 
   it("resolves current node output before scheduler persists it in state steps", async () => {
-    const artifactStore = artifactStoreMock();
+    const publisher = publisherMock();
     const node = builtInArtifactNode("preflight", [
       artifactPlan("preflight.json", "$.steps.preflight")
     ]);
 
     await publishDeclaredArtifacts({
-      publisher: artifactStorePublisher(artifactStore),
+      publisher,
       node,
       output: { ok: true },
       state: workflowState()
     });
 
-    expect(artifactStore.writeJson).toHaveBeenCalledWith("preflight.json", {
-      ok: true
+    expect(publisher.publish).toHaveBeenCalledWith({
+      node_id: "preflight",
+      path: "preflight.json",
+      format: "json",
+      value: { ok: true },
+      overwrite_policy: "forbid"
     });
   });
 
   it("writes declared artifact plans in deterministic order and validates publisher output", async () => {
     const artifactWritePlan: string[] = [];
-    const artifactStore = {
-      writeJson: vi.fn(async (name: string) => {
-        artifactWritePlan.push(name);
-        return `artifact://${name}`;
-      }),
-      writeMarkdown: vi.fn(async (name: string) => {
-        artifactWritePlan.push(name);
-        return `artifact://${name}`;
-      })
-    };
+    const publisher = publisherMock(vi.fn(async (input) => {
+      artifactWritePlan.push(input.path);
+      return {
+        id: input.path,
+        uri: `artifact://${input.path}`,
+        node_id: input.node_id,
+        media_type: input.format === "json" ? "application/json" : "text/markdown"
+      };
+    }));
     const node = builtInArtifactNode("final_report", [
       artifactPlan("summary.json", "$.steps.final_report.summary"),
       artifactPlan("details.json", "$.steps.final_report.details"),
@@ -318,7 +319,7 @@ describe("artifacts capability publisher", () => {
     ]);
 
     const output = await publishDeclaredArtifacts({
-      publisher: artifactStorePublisher(artifactStore),
+      publisher,
       node,
       output: {
         summary: { ok: true },

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   complete as defaultComplete,
   getModel as defaultGetModel,
@@ -18,6 +19,7 @@ import { validateAgentRuntimeInput } from "../../core/agent-runtime/validation.j
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
 import type { ModelProfile } from "../../core/config/schemas.js";
+import { registeredPiProviderApiKey } from "./auth.js";
 
 type CompleteFn = (
   model: Model<string>,
@@ -31,6 +33,7 @@ export type PiAgentRuntimeOptions = {
   readonly complete?: CompleteFn;
   readonly getModel?: GetModelFn;
   readonly maxToolIterations?: number;
+  readonly requestTimeoutMs?: number;
 };
 
 const PI_DESCRIPTOR: AgentRuntimeDescriptor = {
@@ -41,6 +44,8 @@ const PI_DESCRIPTOR: AgentRuntimeDescriptor = {
 };
 
 const DEFAULT_MAX_TOOL_ITERATIONS = 8;
+const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
+const PI_SESSION_ID_PREFIX = "luna-";
 
 function piRuntimeError(
   code: AgentRuntimeError["code"],
@@ -114,13 +119,73 @@ function modelSelection(profile: ModelProfile): {
   };
 }
 
-function runOptions(input: RunAgentInput): Record<string, unknown> {
+function runOptions(
+  input: RunAgentInput,
+  provider: string,
+  signal: AbortSignal | undefined
+): Record<string, unknown> {
+  const apiKey = registeredPiProviderApiKey(provider);
+
   return {
-    signal: input.signal,
+    signal,
     reasoning: input.model_profile.reasoning_effort,
     transport: input.model_profile.transport,
-    sessionId: input.run.run_id
+    sessionId: piSessionId(input),
+    ...(apiKey === undefined ? {} : { apiKey })
   };
+}
+
+async function withTimeout<T>(
+  operation: (signal: AbortSignal | undefined) => Promise<T>,
+  inputSignal: AbortSignal | undefined,
+  timeoutMs: number
+): Promise<T> {
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => {
+    timeoutController.abort();
+  }, timeoutMs);
+  const abortFromInput = () => timeoutController.abort();
+
+  inputSignal?.addEventListener("abort", abortFromInput, { once: true });
+  if (inputSignal?.aborted === true) {
+    timeoutController.abort();
+  }
+  try {
+    return await Promise.race([
+      operation(timeoutController.signal),
+      new Promise<T>((_resolve, reject) => {
+        timeoutController.signal.addEventListener(
+          "abort",
+          () => {
+            reject(
+              inputSignal?.aborted === true
+                ? new DOMException("Pi runtime request was cancelled", "AbortError")
+                : piRuntimeError(
+                    "runtime_provider_unavailable",
+                    `Pi runtime request timed out after ${timeoutMs}ms`,
+                    { timeout_ms: timeoutMs }
+                  )
+            );
+          },
+          { once: true }
+        );
+      })
+    ]);
+  } finally {
+    clearTimeout(timeout);
+    inputSignal?.removeEventListener("abort", abortFromInput);
+  }
+}
+
+function piSessionId(input: RunAgentInput): string {
+  const hash = createHash("sha256")
+    .update(input.run.run_id)
+    .update(":")
+    .update(input.node_id)
+    .digest("hex")
+    .slice(0, 48);
+
+  return `${PI_SESSION_ID_PREFIX}${hash}`;
 }
 
 function systemPrompt(input: RunAgentInput): string {
@@ -259,7 +324,15 @@ function usageFrom(message: AssistantMessage): RunAgentOutput["usage"] {
     output_tokens: message.usage.output,
     total_tokens: message.usage.totalTokens,
     cache_read_tokens: message.usage.cacheRead,
-    cache_write_tokens: message.usage.cacheWrite
+    cache_write_tokens: message.usage.cacheWrite,
+    cost: {
+      input: message.usage.cost.input,
+      output: message.usage.cost.output,
+      cache_read: message.usage.cost.cacheRead,
+      cache_write: message.usage.cost.cacheWrite,
+      total: message.usage.cost.total,
+      unit: "provider_cost_unit"
+    }
   };
 }
 
@@ -282,6 +355,14 @@ export function createPiAgentRuntimeAdapter(
   const complete = options.complete ?? (defaultComplete as CompleteFn);
   const getModel = options.getModel ?? (defaultGetModel as GetModelFn);
   const maxToolIterations = options.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
+  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  if (!Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs < 1) {
+    throw piRuntimeError(
+      "runtime_unsupported_feature",
+      "Pi requestTimeoutMs must be a positive integer",
+      { requestTimeoutMs }
+    );
+  }
 
   return {
     describe(): AgentRuntimeDescriptor {
@@ -312,7 +393,12 @@ export function createPiAgentRuntimeAdapter(
         };
 
         for (let iteration = 0; iteration <= maxToolIterations; iteration += 1) {
-          const message = await complete(model, context, runOptions(input));
+          const message = await withTimeout(
+            async (signal) =>
+              await complete(model, context, runOptions(input, selected.provider, signal)),
+            input.signal,
+            requestTimeoutMs
+          );
           if (message.stopReason === "error" || message.stopReason === "aborted") {
             throw piRuntimeError(
               message.stopReason === "aborted"

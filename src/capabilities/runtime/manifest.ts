@@ -115,8 +115,8 @@ export const manifest = capabilityManifest({
       output_schema: objectOutputSchema,
       required_ports: []
     },
-    "runtime.commit_changes": {
-      id: "runtime.commit_changes",
+    "runtime.prepare_commit": {
+      id: "runtime.prepare_commit",
       input_schema: {
         type: "object",
         additionalProperties: false,
@@ -131,15 +131,57 @@ export const manifest = capabilityManifest({
       output_schema: objectOutputSchema,
       required_ports: []
     },
-    "runtime.push_branch": {
-      id: "runtime.push_branch",
-      input_schema: emptyInputSchema,
+    "runtime.record_commit_lifecycle": {
+      id: "runtime.record_commit_lifecycle",
+      input_schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["commit"],
+        properties: {
+          commit: {}
+        }
+      },
+      output_schema: objectOutputSchema,
+      required_ports: []
+    },
+    "runtime.prepare_push": {
+      id: "runtime.prepare_push",
+      input_schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["commit"],
+        properties: {
+          commit: {}
+        }
+      },
+      output_schema: objectOutputSchema,
+      required_ports: []
+    },
+    "runtime.record_push_lifecycle": {
+      id: "runtime.record_push_lifecycle",
+      input_schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["push"],
+        properties: {
+          push: {}
+        }
+      },
       output_schema: objectOutputSchema,
       required_ports: []
     },
     "runtime.final_implementation_report": {
       id: "runtime.final_implementation_report",
-      input_schema: emptyInputSchema,
+      input_schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          validation: {},
+          commit: {},
+          push: {},
+          change_request: {}
+        }
+      },
       output_schema: objectOutputSchema,
       required_ports: []
     }

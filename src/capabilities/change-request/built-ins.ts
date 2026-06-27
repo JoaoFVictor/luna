@@ -256,7 +256,23 @@ export function createChangeRequestCreateBuiltIn(
         return adopted;
       }
 
-      return await provider.createChangeRequest(input);
+      try {
+        return await provider.createChangeRequest(input);
+      } catch (error) {
+        try {
+          const recovered = compatibleState(
+            await provider.readChangeRequest(input),
+            input
+          );
+          if (recovered !== undefined) {
+            return recovered;
+          }
+        } catch {
+          // Preserve the original write failure when recovery cannot inspect state.
+        }
+
+        throw error;
+      }
     }
   });
 }

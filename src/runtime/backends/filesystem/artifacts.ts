@@ -13,7 +13,9 @@ import {
 import type {
   ArtifactContentCommitInput,
   ArtifactContentStore,
-  ArtifactContentWriteInput
+  ArtifactContentWriteInput,
+  ArtifactTransactionJournal,
+  ArtifactTransactionRecord
 } from "../../../core/runtime/artifacts/transaction.js";
 import { hashArtifactContent } from "../../../core/runtime/artifacts/transaction.js";
 import type { BackendRegistration } from "../../../core/runtime/backends/contracts.js";
@@ -218,6 +220,37 @@ export function createFilesystemArtifactContentStore({
         uri: `artifact://${input.run_id}/${input.artifact_path}`,
         content_hash: input.content_hash
       };
+    }
+  };
+}
+
+export function createFilesystemArtifactTransactionJournal({
+  root
+}: FilesystemArtifactManifestStoreOptions): ArtifactTransactionJournal {
+  async function recordPath(transactionId: string): Promise<string> {
+    return await safeJoin(root, [
+      ".artifact-transactions",
+      `${hashText(transactionId)}.json`
+    ]);
+  }
+
+  return {
+    async get(transactionId) {
+      try {
+        return JSON.parse(
+          await readFile(await recordPath(transactionId), "utf8")
+        ) as ArtifactTransactionRecord;
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
+          return undefined;
+        }
+        throw cause;
+      }
+    },
+    async put(record) {
+      const filePath = await recordPath(record.transaction_id);
+      await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+      await atomicWriteFile(filePath, `${JSON.stringify(record, null, 2)}\n`, 0o600);
     }
   };
 }

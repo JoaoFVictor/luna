@@ -137,6 +137,27 @@ export const manifest = capabilityManifest({
       local_context_roots: ["$.gate"],
       interrupt: "none",
       repair_feedback_schema: repairFeedbackSchema
+    },
+    "quality-gates.non_empty_diff": {
+      id: "quality-gates.non_empty_diff",
+      input_schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {}
+      },
+      decision_schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["passed"],
+        properties: {
+          passed: { type: "boolean" },
+          feedback: repairFeedbackSchema
+        }
+      },
+      output_schema: repairFeedbackSchema,
+      local_context_roots: ["$.gate"],
+      interrupt: "none",
+      repair_feedback_schema: repairFeedbackSchema
     }
   },
   docs: [{ title: "Gated agent loop pattern and gate contracts" }]

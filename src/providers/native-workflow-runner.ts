@@ -1,8 +1,15 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { loadAgentDefinition } from "../capabilities/agents/agent-loader.js";
-import { officialCapabilityRegistry } from "../capabilities/registry.js";
+import {
+  officialCapabilityManifests,
+  officialCapabilityRegistry
+} from "../capabilities/registry.js";
+import { createChangeRequestProviderRegistry } from "../capabilities/change-request/provider-registry.js";
 import { builtInStepNameForWorkflowCapability } from "../core/built-ins/workflow-aliases.js";
+import { capabilityManifest } from "../core/capabilities/manifest.js";
+import type { JsonSchemaLike } from "../core/capabilities/pattern-registration.js";
+import { createCapabilityRegistry } from "../core/capabilities/registry.js";
 import { loadYamlFile } from "../core/config/loader.js";
 import { loadMcpConfig } from "../core/config/mcp.js";
 import { resolveModelProfiles } from "../core/config/models.js";
@@ -13,7 +20,9 @@ import {
   type AppConfig,
   type RepositoryConfig
 } from "../core/config/schemas.js";
+import { ImplementationConfigSchema } from "../core/write-mode/types.js";
 import { createRunIdentity } from "../core/invocation/run-identity.js";
+import { createObservabilitySummary } from "../core/observability/summary.js";
 import type { JsonValue } from "../core/runtime/json.js";
 import {
   defaultProviderBuiltInStepRegistry,
@@ -21,8 +30,9 @@ import {
 } from "./built-ins.js";
 import { lunaToolCatalog } from "../core/tools/catalog.js";
 import { resolveToolCatalog } from "../core/tools/resolved-catalog.js";
-import { compileWorkflow } from "../core/workflow/compiler.js";
+import { compileWorkflow, type CompiledWorkflow } from "../core/workflow/compiler.js";
 import { loadWorkflowDefinition } from "../core/workflow/definition.js";
+import type { WorkflowDefinition } from "../core/workflow/definition-types.js";
 import { RunLockManager } from "../core/workflow/lock-manager.js";
 import {
   runCompiledWorkflow,
@@ -37,6 +47,8 @@ import { registerConfiguredPiOAuthProviders } from "../agent-runtimes/pi/auth.js
 import {
   createRuntimeCompositionForWorkflow
 } from "../runtime/composition/runtime-composition.js";
+import { createGitRepositoryPorts } from "../runtime/git/repository-port.js";
+import { createGitHubChangeRequestProviderFactory } from "./github/change-request/factory.js";
 import type { RuntimeCompositionConfig } from "../runtime/composition/app-config.js";
 import type {
   NativeWorkflowRunInput
@@ -59,6 +71,7 @@ export async function runNativeWorkflowTarget({
     target.id,
     { agentsRoot, capabilityRegistry: officialCapabilityRegistry }
   );
+  const nativeWorkflow = await compileNativeWorkflow({ workflow, agentsRoot });
   const repository = workflow.requires.repository
     ? resolveRepository(invocation, repositories.repositories)
     : undefined;
@@ -77,15 +90,22 @@ export async function runNativeWorkflowTarget({
   }
   const composition = createRuntimeCompositionForWorkflow(
     runtimeConfig,
-    workflow,
+    nativeWorkflow.workflow,
     { capabilityRegistry: officialCapabilityRegistry }
   );
+  const observabilitySummary = createObservabilitySummary({
+    runId: run.run_id,
+    workflowId: nativeWorkflow.workflow.id
+  });
 
   await runCompiledWorkflow({
-    compiled: compileWorkflow({ workflow, registry: officialCapabilityRegistry }),
-    workflow,
+    compiled: nativeWorkflow.compiled,
+    workflow: nativeWorkflow.workflow,
     invocation: invocation as unknown as JsonValue,
-    config: {},
+    config: await workflowRuntimeConfig({
+      workflow: nativeWorkflow.workflow,
+      configRoot
+    }),
     run,
     runtimeContext: {
       repository,
@@ -93,7 +113,14 @@ export async function runNativeWorkflowTarget({
       agentsRoot
     },
     backends: composition.backends,
-    builtIns: defaultProviderWorkflowBuiltIns(),
+    builtIns: defaultProviderWorkflowBuiltIns({
+      git: createGitRepositoryPorts(),
+      changeRequest: {
+        providers: createChangeRequestProviderRegistry([
+          createGitHubChangeRequestProviderFactory({})
+        ])
+      }
+    }),
     builtInMetadata: (node) => {
       const name = builtInStepNameForWorkflowCapability(node.capability_id);
       return defaultProviderBuiltInStepRegistry.has(name)
@@ -107,14 +134,98 @@ export async function runNativeWorkflowTarget({
       staleAfterMs: app.locks?.stale_after_ms ?? 900_000
     }),
     agentRuntime: composition.agentRuntime,
+    observabilitySummary,
     langGraphCheckpointer: composition.langGraphCheckpointer,
+    artifactPublisher: composition.artifactPublisherForRun(run),
     agentInputs: await workflowAgentInputs({
-      workflow,
+      workflow: nativeWorkflow.workflow,
       agentsRoot,
       repository,
       configRoot
     })
   });
+}
+
+async function workflowRuntimeConfig({
+  workflow,
+  configRoot
+}: {
+  readonly workflow: WorkflowDefinition;
+  readonly configRoot: string;
+}): Promise<JsonValue> {
+  if (workflow.mode !== "trusted_local_write") {
+    return {};
+  }
+
+  return (await loadYamlFile(
+    path.join(configRoot, "implementation.yaml"),
+    ImplementationConfigSchema
+  )) as unknown as JsonValue;
+}
+
+export type NativeCompiledWorkflow = {
+  readonly workflow: WorkflowDefinition;
+  readonly compiled: CompiledWorkflow;
+};
+
+export async function compileNativeWorkflow({
+  workflow,
+  agentsRoot
+}: {
+  readonly workflow: WorkflowDefinition;
+  readonly agentsRoot: string;
+}): Promise<NativeCompiledWorkflow> {
+  const schemaRegistrations: Record<
+    string,
+    { readonly id: string; readonly schema: JsonSchemaLike }
+  > = {};
+  const nodes = await Promise.all(
+    workflow.graph.nodes.map(async (node) => {
+      if (
+        node.type !== "agent" ||
+        !node.output_schema.endsWith(".json")
+      ) {
+        return node;
+      }
+
+      const schemaId = `workflow-agent-schemas.${workflow.id}.${node.id}`;
+      const agent = await loadAgentDefinition(agentsRoot, node.agent);
+      schemaRegistrations[schemaId] = {
+        id: schemaId,
+        schema: agent.outputSchema as JsonSchemaLike
+      };
+
+      return { ...node, output_schema: schemaId };
+    })
+  );
+  const compiledWorkflow = {
+    ...workflow,
+    graph: {
+      ...workflow.graph,
+      nodes
+    }
+  };
+  const registry =
+    Object.keys(schemaRegistrations).length === 0
+      ? officialCapabilityRegistry
+      : createCapabilityRegistry([
+          ...officialCapabilityManifests,
+          capabilityManifest({
+            id: "workflow-agent-schemas",
+            kind: "execution",
+            version: workflow.revision,
+            schemas: schemaRegistrations
+          })
+        ]);
+
+  return {
+    workflow: compiledWorkflow,
+    compiled: compileWorkflow({
+      workflow: compiledWorkflow,
+      registry,
+      reducers: { steps: "object_merge" }
+    })
+  };
 }
 
 function workflowUsesAgents(workflow: Awaited<ReturnType<typeof loadWorkflowDefinition>>): boolean {

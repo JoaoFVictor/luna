@@ -20,6 +20,8 @@ type RegisterProvider = (
   options: { readonly apiKey: string }
 ) => void;
 
+const apiKeysByProvider = new Map<string, string>();
+
 type PiAuthErrorCode = "pi_auth_missing" | "pi_auth_invalid";
 
 class PiAuthError extends Error {
@@ -98,7 +100,19 @@ export async function registerPiOAuthProvider(
   } = {}
 ): Promise<void> {
   const apiKey = await loadPiOAuthApiKey(providerId, options);
-  options.registerProvider?.(providerId, { apiKey });
+  const registerProvider = options.registerProvider ?? registerPiProviderApiKey;
+  registerProvider(providerId, { apiKey });
+}
+
+export function registerPiProviderApiKey(
+  providerId: string,
+  options: { readonly apiKey: string }
+): void {
+  apiKeysByProvider.set(providerId, options.apiKey);
+}
+
+export function registeredPiProviderApiKey(providerId: string): string | undefined {
+  return apiKeysByProvider.get(providerId);
 }
 
 export async function registerConfiguredPiOAuthProviders({

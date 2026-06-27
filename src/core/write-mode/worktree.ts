@@ -14,7 +14,7 @@ import {
 } from "./transaction-journal.js";
 import { safeJoin } from "../security/path.js";
 import type { RepositoryConfig } from "../config/schemas.js";
-import type { WorkspaceRecord } from "./types.js";
+import type { RepositoryWorkspaceRecord } from "../../capabilities/repository-workspace/contracts.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 type Mkdir = (
@@ -22,8 +22,7 @@ type Mkdir = (
   options: { recursive: boolean; mode: number }
 ) => Promise<unknown>;
 
-export type ImplementationWorktreeRecord = WorkspaceRecord & {
-  repository_id: string;
+export type ImplementationWorktreeRecord = RepositoryWorkspaceRecord & {
   remote: string;
   base_ref: string;
   base_sha: string;
@@ -421,10 +420,14 @@ export async function prepareImplementationWorktree({
   );
 
   return {
+    operation_id: "repository-workspace.capture",
     run_id: runId,
+    workspace_id: `${repository.id}:${runId}`,
     path: worktreePath,
     preserved: true,
     reason: "created",
+    lifecycle: "active",
+    captured_at: now().toISOString(),
     repository_id: repository.id,
     remote: repository.remote,
     base_ref: baseRef,

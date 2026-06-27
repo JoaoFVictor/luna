@@ -3,6 +3,7 @@ import type {
   AgentRuntimeRequirement,
   RunAgentInput
 } from "../../core/agent-runtime/contracts.js";
+import { runObservedAgent } from "../../core/agent-runtime/observed-runner.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
 import type { ParsedWorkflowGate } from "../../core/workflow/definition-types.js";
@@ -26,10 +27,13 @@ import {
 } from "../../capabilities/quality-gates/gated-agent-loop.js";
 import { gateResultFromAgentOutput } from "../../capabilities/quality-gates/gate-results.js";
 import type { RunCompiledWorkflowInput, WorkflowAgentDefaults } from "./workflow-runner.js";
+import {
+  deterministicGateResult,
+  VALIDATION_GATE
+} from "./gated-agent-deterministic-gates.js";
 import { gatedAgentGateKey, gatedAgentWorkerKey } from "./gated-agent-loop-keys.js";
 
 const GATED_AGENT_LOOP_CAPABILITY = "quality-gates.gated_agent_loop";
-const VALIDATION_GATE = "quality-gates.validation_commands";
 const AGENT_REVIEW_GATE = "quality-gates.agent_review";
 const DEFAULT_DIFF_BYTES = 65_536;
 
@@ -90,7 +94,8 @@ export async function executeGatedAgentLoopNode({
           nodeId: gatedAgentWorkerKey(node.id),
           agentId: source.worker,
           agentInput: workerInput,
-          workflowMode: input.workflow.mode
+          workflowMode: input.workflow.mode,
+          cwd
         }),
       runValidation: async () =>
         await runValidationForGate(cwd, await validationConfig()),
@@ -106,7 +111,8 @@ export async function executeGatedAgentLoopNode({
           runtimeContext,
           node,
           gates: source.gates ?? [],
-          gateInput
+          gateInput,
+          cwd
         })
     }
   });
@@ -246,7 +252,8 @@ async function runPatternGates({
   runtimeContext,
   node,
   gates,
-  gateInput
+  gateInput,
+  cwd
 }: {
   readonly input: RunCompiledWorkflowInput;
   readonly state: LunaRuntimeState;
@@ -254,28 +261,29 @@ async function runPatternGates({
   readonly node: CompiledWorkflowNode;
   readonly gates: readonly ParsedWorkflowGate[];
   readonly gateInput: RunGatesInput;
+  readonly cwd: string;
 }): Promise<RunGatesOutput> {
   const results = [];
   const outputs: Record<string, unknown> = {};
-  const baseGateContext = {
-    output: gateInput.workerOutput,
-    validation: gateInput.validation,
-    diff_summary: gateInput.diffSummary,
-    attempt: gateInput.attempt,
-    phase: gateInput.phase
-  };
-
   for (const [gateIndex, gate] of gates.entries()) {
-    if (gate.type === VALIDATION_GATE) {
-      results.push({
-        id: gate.id,
-        type: gate.type,
-        passed: gateInput.validation.passed,
-        ...(gateInput.validation.passed
-          ? {}
-          : { feedback: JSON.stringify(gateInput.validation.commands ?? []) }),
-        output: gateInput.validation
-      });
+    const gateContext = {
+      output: gateInput.workerOutput,
+      validation: gateInput.validation,
+      diff_summary: gateInput.diffSummary,
+      outputs: { ...outputs },
+      attempt: gateInput.attempt,
+      phase: gateInput.phase
+    };
+    const deterministicResult = deterministicGateResult({
+      gate,
+      validation: gateInput.validation,
+      diffSummary: gateInput.diffSummary
+    });
+    if (deterministicResult !== undefined) {
+      results.push(deterministicResult);
+      if (!deterministicResult.passed) {
+        return { passed: false, results, outputs };
+      }
       continue;
     }
 
@@ -292,7 +300,7 @@ async function runPatternGates({
       node,
       gate,
       gateIndex,
-      gateContext: baseGateContext
+      gateContext
     });
     const reviewAgent = reviewAgentFromGateInput(node.id, gate, resolvedGateInput);
     const reviewOutput = await runPatternAgent({
@@ -300,7 +308,8 @@ async function runPatternGates({
       nodeId: gatedAgentGateKey(node.id, gate.id),
       agentId: reviewAgent,
       agentInput: resolvedGateInput,
-      workflowMode: input.workflow.mode
+      workflowMode: input.workflow.mode,
+      cwd
     });
 
     if (gate.block_when === undefined) {
@@ -358,13 +367,15 @@ async function runPatternAgent({
   nodeId,
   agentId,
   agentInput,
-  workflowMode
+  workflowMode,
+  cwd
 }: {
   readonly input: RunCompiledWorkflowInput;
   readonly nodeId: string;
   readonly agentId: string;
   readonly agentInput: RunGatedWorkerInput | unknown;
   readonly workflowMode: "read_only" | "trusted_local_write";
+  readonly cwd: string;
 }): Promise<unknown> {
   const defaults = requireAgentDefaults(input, nodeId, nodeId, agentId);
   if (defaults.output_schema === undefined) {
@@ -384,14 +395,18 @@ async function runPatternAgent({
     model_profile: defaults.model_profile,
     tools: defaults.tools,
     context: defaults.context,
-    ...(defaults.cwd === undefined ? {} : { cwd: defaults.cwd }),
+    cwd,
     runtime_requirements: runtimeRequirementsForDefaults(defaults),
     signal: defaults.signal,
     events: defaults.events
   };
 
   await input.agentRuntime.validate(runtimeInput);
-  const result = await input.agentRuntime.runAgent(runtimeInput);
+  const result = await runObservedAgent({
+    runtime: input.agentRuntime,
+    input: runtimeInput,
+    observabilitySummary: input.observabilitySummary
+  });
   const outputSchema = requireJsonSchema(defaults.output_schema, nodeId, agentId);
   if (!matchesJsonSchema(outputSchema, result.output)) {
     throw runtimeError("Pattern agent output failed schema validation", "runtime_node_output_schema_invalid", {

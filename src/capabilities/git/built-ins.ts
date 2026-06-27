@@ -13,7 +13,11 @@ import type {
   GitBuiltInPorts,
   GitCommitInput,
   GitCommitResult,
+  GitCommitSkippedInput,
+  GitCommitSkippedResult,
   GitPushBranchInput,
+  GitPushBranchSkippedInput,
+  GitPushBranchSkippedResult,
   GitStatusInput
 } from "./contracts.js";
 
@@ -29,6 +33,10 @@ type GitCommitBuiltInInput = {
   readonly operation_id: "git.commit";
   readonly message: string;
   readonly paths?: readonly string[];
+  readonly expected_branch?: string;
+  readonly expected_base_sha?: string;
+  readonly remote?: string;
+  readonly expected_remote_urls?: readonly string[];
 };
 
 type GitPushBranchBuiltInInput = {
@@ -36,6 +44,7 @@ type GitPushBranchBuiltInInput = {
   readonly branch: string;
   readonly remote: string;
   readonly expected_commit_sha: string;
+  readonly expected_remote_urls?: readonly string[];
 };
 
 function gitError(message: string, code: string): Error & { code: string } {
@@ -116,9 +125,22 @@ function statusInputFrom(
 function commitInputFrom(
   input: Record<string, unknown> | undefined,
   state: BuiltInStepRunOptions["state"]
-): GitCommitInput {
+): GitCommitInput | GitCommitSkippedInput {
   if (input?.operation_id !== undefined && input.operation_id !== "git.commit") {
     throw gitError("Git commit operation_id is invalid.", "git_input_invalid");
+  }
+
+  if (input?.skipped === true) {
+    if (typeof input.enabled !== "boolean" || typeof input.reason !== "string") {
+      throw gitError("Git commit skip input is invalid.", "git_input_invalid");
+    }
+
+    return {
+      operation_id: "git.commit",
+      enabled: input.enabled,
+      skipped: true,
+      reason: input.reason
+    };
   }
 
   if (typeof input?.message !== "string" || input.message === "") {
@@ -132,11 +154,49 @@ function commitInputFrom(
   ) {
     throw gitError("Git commit paths must be strings.", "git_input_invalid");
   }
+  if (
+    input?.expected_branch !== undefined &&
+    typeof input.expected_branch !== "string"
+  ) {
+    throw gitError("Git commit expected_branch must be a string.", "git_input_invalid");
+  }
+  if (
+    input?.expected_base_sha !== undefined &&
+    typeof input.expected_base_sha !== "string"
+  ) {
+    throw gitError(
+      "Git commit expected_base_sha must be a string.",
+      "git_input_invalid"
+    );
+  }
+  if (input?.remote !== undefined && typeof input.remote !== "string") {
+    throw gitError("Git commit remote must be a string.", "git_input_invalid");
+  }
+  if (
+    input?.expected_remote_urls !== undefined &&
+    (!Array.isArray(input.expected_remote_urls) ||
+      input.expected_remote_urls.some((candidate) => typeof candidate !== "string"))
+  ) {
+    throw gitError(
+      "Git commit expected_remote_urls must be strings.",
+      "git_input_invalid"
+    );
+  }
 
   const commitInput: GitCommitBuiltInInput = {
     operation_id: "git.commit",
     message: input.message,
-    ...(input?.paths === undefined ? {} : { paths: input.paths })
+    ...(input?.paths === undefined ? {} : { paths: input.paths }),
+    ...(input?.expected_branch === undefined
+      ? {}
+      : { expected_branch: input.expected_branch }),
+    ...(input?.expected_base_sha === undefined
+      ? {}
+      : { expected_base_sha: input.expected_base_sha }),
+    ...(input?.remote === undefined ? {} : { remote: input.remote }),
+    ...(input?.expected_remote_urls === undefined
+      ? {}
+      : { expected_remote_urls: input.expected_remote_urls })
   };
 
   return {
@@ -148,12 +208,25 @@ function commitInputFrom(
 function pushInputFrom(
   input: Record<string, unknown> | undefined,
   state: BuiltInStepRunOptions["state"]
-): GitPushBranchInput {
+): GitPushBranchInput | GitPushBranchSkippedInput {
   if (
     input?.operation_id !== undefined &&
     input.operation_id !== "git.push_branch"
   ) {
     throw gitError("Git push operation_id is invalid.", "git_input_invalid");
+  }
+
+  if (input?.skipped === true) {
+    if (typeof input.enabled !== "boolean" || typeof input.reason !== "string") {
+      throw gitError("Git push skip input is invalid.", "git_input_invalid");
+    }
+
+    return {
+      operation_id: "git.push_branch",
+      enabled: input.enabled,
+      skipped: true,
+      reason: input.reason
+    };
   }
 
   if (typeof input?.branch !== "string" || input.branch === "") {
@@ -175,12 +248,26 @@ function pushInputFrom(
   const branch = input.branch;
   const remote = input.remote;
   const expectedCommitSha = input.expected_commit_sha;
+  const expectedRemoteUrls = input.expected_remote_urls;
+  if (
+    expectedRemoteUrls !== undefined &&
+    (!Array.isArray(expectedRemoteUrls) ||
+      expectedRemoteUrls.some((candidate) => typeof candidate !== "string"))
+  ) {
+    throw gitError(
+      "Git push expected_remote_urls must be strings.",
+      "git_input_invalid"
+    );
+  }
 
   const pushInput: GitPushBranchBuiltInInput = {
     operation_id: "git.push_branch",
     branch,
     remote,
-    expected_commit_sha: expectedCommitSha
+    expected_commit_sha: expectedCommitSha,
+    ...(expectedRemoteUrls === undefined
+      ? {}
+      : { expected_remote_urls: expectedRemoteUrls })
   };
 
   return {
@@ -188,7 +275,10 @@ function pushInputFrom(
     workspace: workspaceFrom(state),
     branch: pushInput.branch,
     remote: pushInput.remote,
-    expected_commit_sha: pushInput.expected_commit_sha
+    expected_commit_sha: pushInput.expected_commit_sha,
+    ...(pushInput.expected_remote_urls === undefined
+      ? {}
+      : { expected_remote_urls: pushInput.expected_remote_urls })
   };
 }
 
@@ -266,6 +356,18 @@ function compatibleCommit(
   };
 }
 
+function isCommitSkipped(
+  input: GitCommitInput | GitCommitSkippedInput
+): input is GitCommitSkippedInput {
+  return "skipped" in input && input.skipped === true;
+}
+
+function isPushSkipped(
+  input: GitPushBranchInput | GitPushBranchSkippedInput
+): input is GitPushBranchSkippedInput {
+  return "skipped" in input && input.skipped === true;
+}
+
 export function createGitStatusBuiltIn(
   ports: GitBuiltInPortResolver
 ): BuiltInStep<"git.status"> {
@@ -286,15 +388,22 @@ export function createGitCommitBuiltIn(
     name: "git.commit",
     metadata: gitCommitMetadata,
     async run(options) {
-      const repository = resolvePorts(ports, options).repository;
       const initialInput = commitInputFrom(options.input, options.state);
+      if (isCommitSkipped(initialInput)) {
+        return {
+          ...initialInput,
+          operation_id: "git.commit"
+        } satisfies GitCommitSkippedResult;
+      }
+
+      const repository = resolvePorts(ports, options).repository;
       const status = await repository.status({
         operation_id: "git.status",
         workspace: initialInput.workspace
       });
       const input: GitCommitInput = {
         ...initialInput,
-        expected_branch: status.branch,
+        expected_branch: initialInput.expected_branch ?? status.branch,
         expected_head_sha: status.head_sha,
         expected_dirty_paths: normalizedPaths([
           ...status.staged_paths,
@@ -322,6 +431,13 @@ export function createGitPushBranchBuiltIn(
     metadata: gitPushBranchMetadata,
     async run(options) {
       const input = pushInputFrom(options.input, options.state);
+      if (isPushSkipped(input)) {
+        return {
+          ...input,
+          operation_id: "git.push_branch"
+        } satisfies GitPushBranchSkippedResult;
+      }
+
       return await resolvePorts(ports, options).repository.pushBranch(input);
     }
   });

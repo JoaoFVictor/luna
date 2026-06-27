@@ -3,6 +3,9 @@ import { join, relative } from "node:path";
 import { Ajv, type AnySchema, type ErrorObject } from "ajv/dist/ajv.js";
 import YAML from "yaml";
 import { describe, expect, it } from "vitest";
+import { officialCapabilityRegistry } from "../../src/capabilities/registry.js";
+import { loadWorkflowDefinition } from "../../src/core/workflow/definition.js";
+import { compileNativeWorkflow } from "../../src/providers/native-workflow-runner.js";
 
 type AgentConfig = {
   id: string;
@@ -372,7 +375,10 @@ describe("config definition files", () => {
     ]);
     expect(config.tools).toEqual([
       "repository.status",
-      "repository.diff-summary"
+      "repository.diff-summary",
+      "repository.read-file",
+      "repository.write-file",
+      "repository.delete-file"
     ]);
   });
 
@@ -426,100 +432,68 @@ describe("config definition files", () => {
     const ajv = createSchemaAjv();
     const schema = await parseJsonFile("workflows/implementation/output.schema.json");
     const validate = ajv.compile(schema as AnySchema);
-    const output = {
-      status: "success",
-      run: {
-        run_id: "run-1",
-        attempt: 1,
-        source: "jira",
-        event: "issue",
-        action: "selected",
-        route_target: { type: "workflow", id: "implementation" },
-        subject: { type: "jira_issue", id: "ABC-123" }
+    const jiraReport = {
+      task: {
+        provider: "jira",
+        key: "ABC-123",
+        id: "ABC-123",
+        url: "https://company.atlassian.net/browse/ABC-123",
+        title: "Fix checkout validation",
+        status: "To Do"
       },
-      workflow_id: "implementation",
-      steps: {
-        final_report: {}
+      jira: {
+        key: "ABC-123",
+        url: "https://company.atlassian.net/browse/ABC-123",
+        summary: "Fix checkout validation",
+        status: "To Do"
       },
-      report: {
-        task: {
-          provider: "jira",
-          key: "ABC-123",
-          id: "ABC-123",
-          url: "https://company.atlassian.net/browse/ABC-123",
-          title: "Fix checkout validation",
-          status: "To Do"
-        },
-        jira: {
-          key: "ABC-123",
-          url: "https://company.atlassian.net/browse/ABC-123",
-          summary: "Fix checkout validation",
-          status: "To Do"
-        },
-        repository: {
-          provider: "github",
-          owner: "octo-org",
-          name: "hello-world"
-        },
-        status: "validation_failed",
-        branch: "feature/abc-123-fix-checkout-validation",
-        worktree: {
-          path: "/tmp/luna/hello-world/run-1",
-          preserved: true,
-          reason: "commit_disabled"
-        },
-        validation: {
-          passed: false,
-          command_count: 1
-        },
-        commit: {
-          enabled: false,
-          skipped: true,
-          status: "disabled",
-          reason: "disabled"
-        },
-        push: {
-          enabled: false,
-          skipped: true,
-          status: "disabled",
-          reason: "disabled"
-        },
-        change_request: {
-          enabled: false,
-          skipped: true,
-          status: "disabled",
-          reason: "disabled"
-        },
-        warnings: [
-          "trusted_host_local execution can access host filesystem, credentials, network, and local CLIs."
-        ]
+      repository: {
+        provider: "github",
+        owner: "octo-org",
+        name: "hello-world"
       },
-      workspace: {
-        run_id: "run-1",
+      status: "validation_failed",
+      branch: "feature/abc-123-fix-checkout-validation",
+      worktree: {
         path: "/tmp/luna/hello-world/run-1",
         preserved: true,
-        reason: "commit_disabled",
-        repository_id: "hello-world",
-        remote: "origin",
-        base_ref: "main",
-        base_sha: "base-sha",
-        branch: "feature/abc-123-fix-checkout-validation"
-      }
+        reason: "commit_disabled"
+      },
+      validation: {
+        passed: false,
+        command_count: 1
+      },
+      commit: {
+        enabled: false,
+        skipped: true,
+        status: "disabled",
+        reason: "disabled"
+      },
+      push: {
+        enabled: false,
+        skipped: true,
+        status: "disabled",
+        reason: "disabled"
+      },
+      change_request: {
+        enabled: false,
+        skipped: true,
+        status: "disabled",
+        reason: "disabled"
+      },
+      warnings: [
+        "trusted_host_local execution can access host filesystem, credentials, network, and local CLIs."
+      ]
+    };
+    const output = {
+      json: jiraReport,
+      markdown: "# Implementation Report\n"
     };
 
     expect(validate(output), formatAjvErrors(validate.errors)).toBe(true);
     expect(
       validate({
-        ...output,
-        run: {
-          ...output.run,
-          source: "plane",
-          subject: {
-            type: "plane_issue",
-            id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
-          }
-        },
-        report: {
+        json: {
           task: {
             provider: "plane",
             key: "42",
@@ -536,16 +510,17 @@ describe("config definition files", () => {
             priority: "high",
             labels: ["bug"]
           },
-          repository: output.report.repository,
-          status: output.report.status,
-          branch: output.report.branch,
-          worktree: output.report.worktree,
-          validation: output.report.validation,
-          commit: output.report.commit,
-          push: output.report.push,
-          change_request: output.report.change_request,
-          warnings: output.report.warnings
-        }
+          repository: jiraReport.repository,
+          status: jiraReport.status,
+          branch: jiraReport.branch,
+          worktree: jiraReport.worktree,
+          validation: jiraReport.validation,
+          commit: jiraReport.commit,
+          push: jiraReport.push,
+          change_request: jiraReport.change_request,
+          warnings: jiraReport.warnings
+        },
+        markdown: "# Implementation Report\n"
       }),
       formatAjvErrors(validate.errors)
     ).toBe(true);
@@ -553,32 +528,29 @@ describe("config definition files", () => {
     expect(
       validate({
         ...output,
-        report: {
-          ...output.report,
+        json: {
+          ...output.json,
           unexpected: true
         }
       }),
-      "report should reject additional properties"
+      "json report should reject additional properties"
     ).toBe(false);
 
     expect(
       validate({
         ...output,
-        workspace: {
-          ...output.workspace,
-          unexpected: true
-        }
+        status: "success"
       }),
-      "workspace should reject additional properties"
+      "workflow output should reject the old envelope"
     ).toBe(false);
 
     expect(
       validate({
         ...output,
-        report: {
-          ...output.report,
+        json: {
+          ...output.json,
           task: {
-            ...output.report.task,
+            ...output.json.task,
             provider: "plane"
           }
         }
@@ -589,10 +561,10 @@ describe("config definition files", () => {
     expect(
       validate({
         ...output,
-        report: {
-          ...output.report,
+        json: {
+          ...output.json,
           task: {
-            ...output.report.task,
+            ...output.json.task,
             provider: "plane"
           },
           plane: {
@@ -607,11 +579,11 @@ describe("config definition files", () => {
       "report should reject multiple provider-specific blocks"
     ).toBe(false);
 
-    const { jira: _jira, ...reportWithoutProviderBlock } = output.report;
+    const { jira: _jira, ...reportWithoutProviderBlock } = output.json;
     expect(
       validate({
         ...output,
-        report: reportWithoutProviderBlock
+        json: reportWithoutProviderBlock
       }),
       "report should require the provider-specific block for task.provider"
     ).toBe(false);
@@ -698,6 +670,24 @@ describe("config definition files", () => {
     }
   });
 
+  it("compiles real workflows with the native runner reducer contract", async () => {
+    for (const workflowId of ["code-review", "implementation"]) {
+      const workflow = await loadWorkflowDefinition("workflows", workflowId, {
+        agentsRoot: "agents",
+        capabilityRegistry: officialCapabilityRegistry
+      });
+
+      await expect(
+        compileNativeWorkflow({
+          workflow,
+          agentsRoot: "agents"
+        })
+      ).resolves.toMatchObject({
+        compiled: { workflow_id: workflowId }
+      });
+    }
+  });
+
   it("references existing agents from the implementation workflow graph", async () => {
     const graph = (await parseYamlFile(
       "workflows/implementation/workflow.yaml"
@@ -712,8 +702,12 @@ describe("config definition files", () => {
       "implementation",
       "implementation_validation",
       "worktree_diff",
+      "prepare_commit",
       "commit",
+      "commit_lifecycle",
+      "prepare_push",
       "push",
+      "push_lifecycle",
       "change_request",
       "final_report"
     ]);
@@ -745,6 +739,22 @@ describe("config definition files", () => {
         ?.filter((gate) => gate.type === "quality-gates.agent_review")
         .map((gate) => gate.input?.review_agent)
     ).toEqual(["change-reviewer", "change-acceptance-reviewer"]);
+    const acceptanceGate = implementationNode?.gates?.find(
+      (gate) => (gate as { id?: string }).id === "acceptance"
+    ) as
+      | {
+          input?: { subject?: unknown };
+          block_when?: unknown;
+        }
+      | undefined;
+    expect(expressionValue(acceptanceGate?.input?.subject)).toBe("$.gate");
+    expect(
+      expressionValue(
+        acceptanceGate?.block_when as Parameters<typeof expressionValue>[0]
+      )
+    ).toBe(
+      "$.gate.status != 'accepted'"
+    );
     expect(collectContextAgents(graph)).toEqual(agentsWithContextInput(graph));
 
     for (const node of graph.nodes.filter(

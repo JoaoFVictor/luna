@@ -1,6 +1,6 @@
 import { assertJsonValue } from "../../core/json/value.js";
 import type { WorkflowExpression } from "../../core/workflow/expression.js";
-import type { WorkflowRuntimeState } from "../../core/workflow/state.js";
+import type { WorkflowState } from "../../core/workflow/state.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type {
   ArtifactCheckpointMarker,
@@ -26,11 +26,6 @@ export type ArtifactRef = {
 
 export type ArtifactPublisherOutput = {
   artifacts: ArtifactRef[];
-};
-
-export type ArtifactWriter = {
-  writeJson(name: string, value: unknown): Promise<string>;
-  writeMarkdown(name: string, value: string): Promise<string>;
 };
 
 export type ArtifactPublishInput = {
@@ -159,7 +154,7 @@ function assertNoDuplicateArtifactPaths(
 
 export function resolveArtifactSource(
   source: string,
-  state: WorkflowRuntimeState
+  state: WorkflowState
 ): { found: boolean; value?: unknown } {
   const [stepId, ...pathSegments] = parseArtifactSource(source);
 
@@ -185,15 +180,6 @@ export function resolveArtifactSource(
 
 function artifactMediaType(format: ArtifactFormat): string {
   return format === "json" ? "application/json" : "text/markdown";
-}
-
-function artifactRefFromUri(input: ArtifactPublishInput, uri: string): ArtifactRef {
-  return {
-    id: input.path,
-    uri,
-    node_id: input.node_id,
-    media_type: artifactMediaType(input.format)
-  };
 }
 
 function assertArtifactPublisherOutput(output: ArtifactPublisherOutput): void {
@@ -245,29 +231,19 @@ function rejectUnsupportedOverwritePolicy(policy: ArtifactOverwritePolicy): void
   }
 }
 
-export function artifactStorePublisher(artifactStore: ArtifactWriter): ArtifactPublisherPort {
-  return {
-    async publish(input) {
-      assertSafeArtifactPath(input.path);
-      rejectUnsupportedOverwritePolicy(input.overwrite_policy);
-      if (input.format === "json") {
-        assertJsonValue(input.value);
-        return artifactRefFromUri(input, await artifactStore.writeJson(input.path, input.value));
-      }
+function assertArtifactPublishInput(input: ArtifactPublishInput): void {
+  rejectUnsupportedOverwritePolicy(input.overwrite_policy);
 
-      if (typeof input.value !== "string") {
-        throw artifactPlanError(
-          `Artifact source must resolve to a string for ${input.format}: ${input.path}`,
-          "workflow_artifact_string_required"
-        );
-      }
+  if (input.format === "markdown" && typeof input.value !== "string") {
+    throw artifactPlanError(
+      `Artifact source must resolve to a string for ${input.format}: ${input.path}`,
+      "workflow_artifact_string_required"
+    );
+  }
 
-      return artifactRefFromUri(
-        input,
-        await artifactStore.writeMarkdown(input.path, input.value)
-      );
-    }
-  };
+  if (input.format === "json") {
+    assertJsonValue(input.value);
+  }
 }
 
 export function transactionalArtifactPublisher(
@@ -275,6 +251,8 @@ export function transactionalArtifactPublisher(
 ): ArtifactPublisherPort {
   return {
     async publish(input) {
+      assertSafeArtifactPath(input.path);
+      assertArtifactPublishInput(input);
       const result = await publishArtifactTransaction({
         run_id: options.run_id,
         node_id: input.node_id,
@@ -314,9 +292,9 @@ export async function publishDeclaredArtifacts({
   publisher: ArtifactPublisherPort;
   node: WorkflowNodeWithArtifacts;
   output: unknown;
-  state: WorkflowRuntimeState;
+  state: WorkflowState;
 }): Promise<ArtifactPublisherOutput> {
-  const artifactState: WorkflowRuntimeState = {
+  const artifactState: WorkflowState = {
     ...state,
     steps: {
       ...state.steps,
@@ -352,13 +330,16 @@ export async function publishDeclaredArtifacts({
       );
     }
 
-    refs.push(await publisher.publish({
+    const publishInput = {
       node_id: node.id,
       path: artifact.path,
       format: artifact.format,
       value: resolved.value,
       overwrite_policy: overwritePolicy(artifact.config)
-    }));
+    };
+    assertArtifactPublishInput(publishInput);
+
+    refs.push(await publisher.publish(publishInput));
   }
 
   const publisherOutput = { artifacts: refs };

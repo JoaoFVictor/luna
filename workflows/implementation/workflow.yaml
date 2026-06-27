@@ -126,12 +126,15 @@ nodes:
             expression: "$.config.implementation.validation.commands"
           max_output_bytes:
             expression: "$.config.implementation.validation.max_output_bytes"
+      - id: diff
+        type: quality-gates.non_empty_diff
+        input: {}
       - id: review
         type: quality-gates.agent_review
         input:
           review_agent: change-reviewer
           subject:
-            expression: "$.gate.output"
+            expression: "$.gate"
         block_when:
           expression: "$.gate.decision = 'fail'"
         feedback:
@@ -141,11 +144,11 @@ nodes:
         input:
           review_agent: change-acceptance-reviewer
           subject:
-            expression: "$.gate.output"
+            expression: "$.gate"
         block_when:
-          expression: "$.gate.decision = 'fail'"
+          expression: "$.gate.status != 'accepted'"
         feedback:
-          expression: "$.gate.feedback"
+          expression: "$.gate.summary & '\n' & $join($.gate.blocking_reasons, '\n')"
     repair:
       attempts:
         expression: "$.config.implementation.validation.repair_attempts"
@@ -184,9 +187,9 @@ nodes:
     after:
       - implementation_validation
 
-  - id: commit
+  - id: prepare_commit
     type: built_in
-    uses: runtime.commit_changes
+    uses: runtime.prepare_commit
     input:
       validation:
         expression: "$.steps.implementation_validation.validation"
@@ -197,25 +200,94 @@ nodes:
       message:
         expression: "$.invocation.subject.title"
     artifacts:
-      - path: commit.json
+      - path: prepared-commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.prepare_commit"
+        format: json
+    after:
+      - worktree_diff
+
+  - id: commit
+    type: built_in
+    uses: git.commit
+    policies:
+      - uses: git.commit_side_effect
+        config:
+          operation_id: git.commit
+    input:
+      expression: "$.steps.prepare_commit"
+    artifacts:
+      - path: git-commit.json
         publisher: artifacts.manifest_publisher
         source:
           expression: "$.steps.commit"
         format: json
     after:
-      - worktree_diff
+      - prepare_commit
+
+  - id: commit_lifecycle
+    type: built_in
+    uses: runtime.record_commit_lifecycle
+    input:
+      commit:
+        expression: "$.steps.commit"
+    artifacts:
+      - path: commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.commit_lifecycle"
+        format: json
+    after:
+      - commit
+
+  - id: prepare_push
+    type: built_in
+    uses: runtime.prepare_push
+    input:
+      commit:
+        expression: "$.steps.commit_lifecycle"
+    artifacts:
+      - path: prepared-push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.prepare_push"
+        format: json
+    after:
+      - commit_lifecycle
 
   - id: push
     type: built_in
-    uses: runtime.push_branch
+    uses: git.push_branch
+    policies:
+      - uses: git.push_branch_side_effect
+        config:
+          operation_id: git.push_branch
+    input:
+      expression: "$.steps.prepare_push"
     artifacts:
-      - path: push.json
+      - path: git-push.json
         publisher: artifacts.manifest_publisher
         source:
           expression: "$.steps.push"
         format: json
     after:
-      - commit
+      - prepare_push
+
+  - id: push_lifecycle
+    type: built_in
+    uses: runtime.record_push_lifecycle
+    input:
+      push:
+        expression: "$.steps.push"
+    artifacts:
+      - path: push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.push_lifecycle"
+        format: json
+    after:
+      - push
 
   - id: change_request
     type: built_in
@@ -233,8 +305,10 @@ nodes:
         expression: "$.steps.workspace.path"
       title:
         expression: "$.invocation.subject.title"
+      description:
+        expression: "$.steps.task_context.change_request_body"
       source:
-        expression: "$.steps.push"
+        expression: "$.steps.push_lifecycle"
       target_branch:
         expression: "$.config.implementation.change_request.base_ref"
       draft:
@@ -246,11 +320,18 @@ nodes:
           expression: "$.steps.change_request"
         format: json
     after:
-      - push
+      - push_lifecycle
 
   - id: final_report
     type: built_in
     uses: runtime.final_implementation_report
+    input:
+      commit:
+        expression: "$.steps.commit_lifecycle"
+      push:
+        expression: "$.steps.push_lifecycle"
+      change_request:
+        expression: "$.steps.change_request"
     artifacts:
       - path: final-report.json
         publisher: artifacts.manifest_publisher

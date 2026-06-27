@@ -15,7 +15,7 @@ describe("runtime side-effect policies", () => {
   it("derives stable idempotency keys from run, node, attempt, and capability operation id", () => {
     const policy = createSideEffectPolicy({
       capability_id: "git",
-      operation_id: "git.commit_changes",
+      operation_id: "git.commit",
       idempotency_scope: "attempt",
       retry_semantics: "retry_requires_adoption",
       adoption_required: true
@@ -23,7 +23,7 @@ describe("runtime side-effect policies", () => {
 
     expect(policy).toEqual({
       capability_id: "git",
-      operation_id: "git.commit_changes",
+      operation_id: "git.commit",
       idempotency_scope: "attempt",
       retry_semantics: "retry_requires_adoption",
       adoption_required: true
@@ -54,7 +54,7 @@ describe("runtime side-effect policies", () => {
     });
     const attemptPolicy = createSideEffectPolicy({
       capability_id: "git",
-      operation_id: "git.commit_changes",
+      operation_id: "git.commit",
       idempotency_scope: "attempt",
       retry_semantics: "retry_requires_adoption",
       adoption_required: true
@@ -144,7 +144,7 @@ describe("runtime side-effect policies", () => {
     expect(() =>
       createSideEffectPolicy({
         capability_id: "git",
-        operation_id: "commit_changes",
+        operation_id: "commit",
         idempotency_scope: "attempt",
         retry_semantics: "replay_safe",
         adoption_required: false
@@ -155,14 +155,14 @@ describe("runtime side-effect policies", () => {
       createSideEffectRegistry([
         createSideEffectPolicy({
           capability_id: "git",
-          operation_id: "git.commit_changes",
+          operation_id: "git.commit",
           idempotency_scope: "attempt",
           retry_semantics: "retry_requires_adoption",
           adoption_required: true
         }),
         createSideEffectPolicy({
           capability_id: "git",
-          operation_id: "git.commit_changes",
+          operation_id: "git.commit",
           idempotency_scope: "attempt",
           retry_semantics: "retry_requires_adoption",
           adoption_required: true
@@ -175,7 +175,7 @@ describe("runtime side-effect policies", () => {
     expect(() =>
       createSideEffectPolicy({
         capability_id: "git",
-        operation_id: "git.commit_changes",
+        operation_id: "git.commit",
         idempotency_scope: "attempt",
         retry_semantics: "retry_requires_adoption",
         adoption_required: false
@@ -193,7 +193,7 @@ describe("runtime side-effect policies", () => {
     });
     const adoptionRequired = createSideEffectPolicy({
       capability_id: "git",
-      operation_id: "git.commit_changes",
+      operation_id: "git.commit",
       idempotency_scope: "attempt",
       retry_semantics: "retry_requires_adoption",
       adoption_required: true
@@ -232,7 +232,7 @@ describe("runtime side-effect policies", () => {
           side_effecting: true,
           policy: createSideEffectPolicy({
             capability_id: "git",
-            operation_id: "git.commit_changes",
+            operation_id: "git.commit",
             idempotency_scope: "attempt",
             retry_semantics: "retry_requires_adoption",
             adoption_required: true

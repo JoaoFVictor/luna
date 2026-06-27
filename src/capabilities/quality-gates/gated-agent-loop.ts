@@ -115,15 +115,6 @@ function normalizeAgentError(error: unknown): GatedAgentError {
   return { message: String(error || "Unknown agent error") };
 }
 
-function gatedLoopInfrastructureFailure(cause: unknown): Error & { code: string } {
-  const error = new Error("Gated agent loop infrastructure failure", {
-    cause
-  }) as Error & { code: string; cause?: unknown };
-  error.code = "gated_agent_loop_infrastructure_failure";
-  error.cause = cause;
-  return error;
-}
-
 function maxAttemptsFromRepairAttempts(repairAttempts: number): number {
   if (
     !Number.isSafeInteger(repairAttempts) ||
@@ -212,7 +203,19 @@ export async function runGatedAgentLoopStateMachine({
       });
 
       if (attemptNumber >= maxAttempts) {
-        throw gatedLoopInfrastructureFailure(error);
+        return {
+          status: "failed",
+          attempts_exhausted: true,
+          attempts,
+          validation: finalValidation,
+          final_validation: finalValidation,
+          gates: finalGateResults,
+          result: {
+            status: "failed",
+            agent_error: agentError,
+            diff_summary: diffSummary
+          }
+        };
       }
 
       previousError = agentError;

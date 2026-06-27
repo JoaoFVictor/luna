@@ -4,9 +4,11 @@ import type {
   AgentRuntimeEventSink,
   AgentRuntimeRequirement
 } from "../../core/agent-runtime/contracts.js";
+import type { ObservabilitySummary } from "../../core/observability/summary.js";
 import type { BuiltInStepMetadata } from "../../core/built-ins/types.js";
 import type { ModelProfile } from "../../core/config/schemas.js";
 import type { RuntimeBackends } from "../../core/runtime/backends/contracts.js";
+import type { ArtifactPublisherPort } from "../../capabilities/artifacts/publisher.js";
 import type { JsonValue } from "../../core/runtime/json.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
@@ -22,6 +24,7 @@ export type WorkflowBuiltInExecutor = (input: {
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
+  readonly observabilitySummary?: ObservabilitySummary;
 }) => Promise<unknown> | unknown;
 
 export type WorkflowBuiltInMetadataResolver = (
@@ -56,6 +59,8 @@ export type RunCompiledWorkflowInput = {
   readonly agentRuntime: AgentRuntimePort;
   readonly agentInputs?: WorkflowAgentInputMap;
   readonly langGraphCheckpointer?: BaseCheckpointSaver;
+  readonly artifactPublisher?: ArtifactPublisherPort;
+  readonly observabilitySummary?: ObservabilitySummary;
 };
 
 export type ResumeCompiledWorkflowInput = Omit<

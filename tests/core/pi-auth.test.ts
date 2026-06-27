@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   loadPiOAuthApiKey,
   registerConfiguredPiOAuthProviders,
+  registeredPiProviderApiKey,
   registerPiOAuthProvider
 } from "../../src/agent-runtimes/pi/auth.js";
 
@@ -95,6 +96,37 @@ describe("Pi OAuth auth.json integration", () => {
     expect(registerProvider).toHaveBeenCalledWith("openai-codex", {
       apiKey: "access-token"
     });
+  });
+
+  it("stores resolved OAuth API keys when no custom register hook is provided", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-pi-auth-default-register-"));
+    const authPath = path.join(root, "auth.json");
+    await writeFile(
+      authPath,
+      JSON.stringify({
+        "test-provider": {
+          type: "oauth",
+          access: "access-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 3600000
+        }
+      })
+    );
+
+    await registerPiOAuthProvider("test-provider", {
+      authPath,
+      getOAuthApiKey: vi.fn(async () => ({
+        apiKey: "stored-access-token",
+        newCredentials: {
+          type: "oauth",
+          access: "stored-access-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 3600000
+        }
+      }))
+    });
+
+    expect(registeredPiProviderApiKey("test-provider")).toBe("stored-access-token");
   });
 
   it("registers OpenAI Codex only when resolved model profiles use it", async () => {

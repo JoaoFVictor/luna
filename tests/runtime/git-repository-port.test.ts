@@ -103,6 +103,8 @@ describe("git repository runtime port", () => {
       "diff --name-only --cached": "",
       "diff --name-only": "src/a.ts\n",
       "ls-files --others --exclude-standard": "",
+      "merge-base --is-ancestor root123 HEAD": "",
+      "remote get-url origin": "git@github.com:octo-org/hello-world.git\n",
       "--literal-pathspecs add -A -- src/a.ts": "",
       "commit -m Implement thing": ""
     });
@@ -115,7 +117,10 @@ describe("git repository runtime port", () => {
         message: "Implement thing",
         paths: ["src/a.ts"],
         expected_branch: "feature/luna",
-        expected_head_sha: "base123"
+        expected_head_sha: "base123",
+        expected_base_sha: "root123",
+        remote: "origin",
+        expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
       })
     ).resolves.toEqual({
       operation_id: "git.commit",
@@ -167,6 +172,44 @@ describe("git repository runtime port", () => {
       workspace.path,
       expect.arrayContaining(["add"])
     );
+    expect(runGit).not.toHaveBeenCalledWith(
+      workspace.path,
+      expect.arrayContaining(["commit"])
+    );
+  });
+
+  it("refuses to commit when expected base ancestry fails", async () => {
+    const baseRunGit = fakeRunGit({
+      "branch --show-current": "feature/luna\n",
+      "rev-parse HEAD": "base123\n",
+      "diff --name-only --cached": "",
+      "diff --name-only": "src/a.ts\n",
+      "ls-files --others --exclude-standard": ""
+    });
+    const runGit = vi.fn(async (cwd: string, args: readonly string[]) => {
+      if (args.join(" ") === "merge-base --is-ancestor root123 HEAD") {
+        const error = new Error("not ancestor") as Error & { exitCode: number };
+        error.exitCode = 1;
+        throw error;
+      }
+
+      return await baseRunGit(cwd, args);
+    });
+    const git = createGitRepositoryPorts({ runGit });
+
+    await expect(
+      git.repository.commit({
+        operation_id: "git.commit",
+        workspace,
+        message: "Implement thing",
+        paths: ["src/a.ts"],
+        expected_branch: "feature/luna",
+        expected_head_sha: "base123",
+        expected_base_sha: "root123"
+      })
+    ).rejects.toMatchObject({
+      code: "git_conflict"
+    });
     expect(runGit).not.toHaveBeenCalledWith(
       workspace.path,
       expect.arrayContaining(["commit"])

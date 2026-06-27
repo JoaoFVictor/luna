@@ -163,23 +163,26 @@ describe("resolved tool catalog", () => {
   });
 
   it("resolves Luna's official local tool catalog through official capabilities", () => {
+    const requestedTools = [
+      "repository.status",
+      "repository.diff-summary",
+      "repository.read-file",
+      "repository.write-file",
+      "repository.delete-file"
+    ];
     const catalog = resolveToolCatalog({
       registry: officialCapabilityRegistry,
       local_tools: lunaToolCatalog,
-      requested_local_tool_ids: ["repository.status", "repository.diff-summary"],
+      requested_local_tool_ids: requestedTools,
       requested_mcp_server_ids: [],
-      agent_mode: "read_only",
+      agent_mode: "trusted_local_write",
       mcp_config: { mcp_servers: [] }
     });
 
-    expect(catalog.tools.map((tool) => tool.id)).toEqual([
-      "repository.status",
-      "repository.diff-summary"
-    ]);
-    expect(catalog.tools.map((tool) => tool.source)).toEqual([
-      "local_contract",
-      "local_contract"
-    ]);
+    expect(catalog.tools.map((tool) => tool.id)).toEqual(requestedTools);
+    expect(catalog.tools.map((tool) => tool.source)).toEqual(
+      requestedTools.map(() => "local_contract")
+    );
     expect(catalog.runtime_requirements).toEqual(["tool_calling"]);
   });
 });

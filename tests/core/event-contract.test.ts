@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { describe, expect, it, vi } from "vitest";
-import type { ArtifactStore } from "../../src/core/artifacts/store.js";
+import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../src/core/json/value.js";
 import {
   createLunaObservability,
@@ -12,7 +11,6 @@ import {
   type LunaEvent,
   type LunaObservabilitySink
 } from "../../src/core/observability/luna-observability.js";
-import { createJsonlEventSink } from "../../src/core/observability/jsonl-sink.js";
 
 type JsonObject = { [key: string]: JsonValue };
 
@@ -198,14 +196,8 @@ describe("luna event contract", () => {
     }
   });
 
-  it("fans out the same normalized event shape to JSONL and summary sinks", async () => {
-    const jsonlLines: JsonValue[] = [];
-    const artifactStore = {
-      touchArtifact: vi.fn(async () => undefined),
-      appendLine: vi.fn(async (_path: string, value: JsonValue) => {
-        jsonlLines.push(value);
-      })
-    };
+  it("fans out the same normalized event shape to every configured sink", async () => {
+    const copiedEvents: LunaEvent[] = [];
     const summaryEvents: LunaEvent[] = [];
     const summarySink: LunaObservabilitySink = {
       id: "summary",
@@ -213,18 +205,16 @@ describe("luna event contract", () => {
         summaryEvents.push(event);
       }
     };
-    const memoryEvents: LunaEvent[] = [];
     const observability = createLunaObservability({
       run,
       workflow,
       sinks: [
         {
-          id: "memory",
+          id: "copy",
           append: (event) => {
-            memoryEvents.push(event);
+            copiedEvents.push(event);
           }
         },
-        await createJsonlEventSink(artifactStore as unknown as ArtifactStore),
         summarySink
       ],
       now: () => new Date(timestamp)
@@ -238,8 +228,7 @@ describe("luna event contract", () => {
       })
     );
 
-    const event = expectNormalizedEvent(memoryEvents[0]);
-    expect(jsonlLines[0]).toEqual(event);
+    const event = expectNormalizedEvent(copiedEvents[0]);
     expect(summaryEvents[0]).toEqual(event);
   });
 

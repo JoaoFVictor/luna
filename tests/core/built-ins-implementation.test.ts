@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   collectWorktreeDiffBuiltIn,
-  commitChangesBuiltIn,
+  prepareCommitBuiltIn,
   prepareImplementationWorktreeBuiltIn,
-  pushBranchBuiltIn,
+  preparePushBuiltIn,
   recordAcceptanceDecisionBuiltIn,
+  recordCommitLifecycleBuiltIn,
   recordImplementationValidationBuiltIn,
+  recordPushLifecycleBuiltIn,
   runValidationCommandsBuiltIn
 } from "../../src/core/built-ins/implementation.js";
 import {
@@ -109,7 +111,11 @@ const workspace: WorkspaceRecord = {
 
 const implementationWorkspace: ImplementationWorktreeRecord = {
   ...workspace,
+  operation_id: "repository-workspace.capture",
   repository_id: "repo",
+  workspace_id: "repo:run-123",
+  lifecycle: "active",
+  captured_at: "2026-06-25T10:00:00.000Z",
   remote: "origin",
   base_ref: "main",
   base_sha: "abc123",
@@ -364,6 +370,59 @@ describe("implementation built-ins", () => {
     });
   });
 
+  it("records rejected acceptance when the gated implementation worker fails", async () => {
+    await expect(
+      runBuiltIn(recordImplementationValidationBuiltIn, {
+        state: implementationState(),
+        input: {
+          implementation: {
+            status: "failed",
+            attempts_exhausted: true,
+            attempts: [
+              {
+                attempt: 1,
+                phase: "initial",
+                agent_error: {
+                  message: "Pi runtime request timed out after 180000ms",
+                  code: "runtime_provider_unavailable"
+                },
+                diff_summary: {
+                  files: [],
+                  untracked_files: [],
+                  untracked_summaries: [],
+                  staged_diff: "",
+                  unstaged_diff: "",
+                  staged_diff_truncated: false,
+                  unstaged_diff_truncated: false,
+                  max_diff_bytes: 1000
+                }
+              }
+            ],
+            validation: { passed: false },
+            final_validation: { passed: false },
+            gates: [],
+            result: {
+              status: "failed",
+              agent_error: {
+                message: "Pi runtime request timed out after 180000ms",
+                code: "runtime_provider_unavailable"
+              }
+            }
+          }
+        }
+      })
+    ).resolves.toEqual({
+      validation: { passed: false },
+      acceptance: {
+        status: "rejected",
+        summary:
+          "Implementation failed before acceptance review: Pi runtime request timed out after 180000ms",
+        blocking_reasons: ["Pi runtime request timed out after 180000ms"],
+        recommended_action: "stop"
+      }
+    });
+  });
+
   it("collects worktree diff through injected dependencies", async () => {
     const collectWorktreeDiff = vi.fn(async () => worktreeDiff);
 
@@ -380,11 +439,34 @@ describe("implementation built-ins", () => {
     });
   });
 
-  it("runs commit_changes through injected dependencies", async () => {
-    const commitChanges = vi.fn(async () => skippedCommitArtifact);
+  it("prepares git.commit input after deterministic implementation gates pass", async () => {
+    expect(
+      prepareCommitBuiltIn.run({
+        state: implementationState({
+          steps: {
+            implementation: { final_validation: validation },
+            worktree_diff: worktreeDiff,
+            acceptance: acceptedImplementation
+          }
+        }),
+        input: {
+          message: "ABC-123: Fix checkout validation"
+        }
+      })
+    ).toEqual({
+      operation_id: "git.commit",
+      message: "ABC-123: Fix checkout validation",
+      paths: ["src/checkout.ts"],
+      expected_branch: implementationWorkspace.branch,
+      expected_base_sha: implementationWorkspace.base_sha,
+      remote: "origin",
+      expected_remote_urls: repository.expected_remote_urls
+    });
+  });
 
-    await expect(
-      commitChangesBuiltIn.run({
+  it("prepares git.commit skip input when commit is disabled", async () => {
+    expect(
+      prepareCommitBuiltIn.run({
         state: implementationState({
           config: {
             implementation: {
@@ -402,51 +484,67 @@ describe("implementation built-ins", () => {
         }),
         input: {
           message: "ABC-123: Fix checkout validation"
-        },
-        dependencies: { commitChanges }
+        }
       })
-    ).resolves.toEqual(skippedCommitArtifact);
+    ).toEqual(skippedCommitArtifact);
+  });
 
-    expect(commitChanges).toHaveBeenCalledWith({
-      enabled: false,
-      cwd: implementationWorkspace.path,
-      validation: failedValidation,
-      acceptance: acceptedImplementation,
-      diff: worktreeDiff,
+  it("records git.commit output as implementation commit lifecycle", () => {
+    expect(
+      recordCommitLifecycleBuiltIn.run({
+        state: implementationState(),
+        input: {
+          commit: {
+            operation_id: "git.commit",
+            workspace_id: "workspace-1",
+            branch: implementationWorkspace.branch,
+            head_sha: "abc123",
+            commit_sha: commitArtifact.commit_sha,
+            message: "ABC-123: Fix checkout validation",
+            adopted: false
+          }
+        }
+      })
+    ).toEqual(commitArtifact);
+  });
+
+  it("prepares git.push_branch input from recorded commit lifecycle", () => {
+    expect(
+      preparePushBuiltIn.run({
+        state: implementationState({
+          steps: {
+            commit_lifecycle: commitArtifact
+          }
+        }),
+        input: {
+          commit: commitArtifact
+        }
+      })
+    ).toEqual({
+      operation_id: "git.push_branch",
       branch: implementationWorkspace.branch,
       remote: "origin",
-      baseSha: "abc123",
-      branchPattern: "feature/{slug}",
-      expectedRemoteUrls: repository.expected_remote_urls,
-      message: "ABC-123: Fix checkout validation",
-      runId: "run-123",
-      repositoryPath: "/repo",
-      journalPath: "/tmp/worktrees/repo/run-123.transactions.jsonl"
+      expected_commit_sha: commitArtifact.commit_sha,
+      expected_remote_urls: repository.expected_remote_urls
     });
   });
 
-  it("runs push_branch through injected dependencies", async () => {
-    const pushBranch = vi.fn(async () => pushArtifact);
-
-    await expect(
-      pushBranchBuiltIn.run({
-        state: implementationState({
-          steps: {
-            commit: commitArtifact
+  it("records git.push_branch output as implementation push lifecycle", () => {
+    expect(
+      recordPushLifecycleBuiltIn.run({
+        state: implementationState(),
+        input: {
+          push: {
+            operation_id: "git.push_branch",
+            workspace_id: "workspace-1",
+            branch: implementationWorkspace.branch,
+            remote: "origin",
+            commit_sha: "def456",
+            pushed: true
           }
-        }),
-        dependencies: { pushBranch }
+        }
       })
-    ).resolves.toEqual(pushArtifact);
-
-    expect(pushBranch).toHaveBeenCalledWith({
-      enabled: true,
-      cwd: implementationWorkspace.path,
-      commit: commitArtifact,
-      branch: implementationWorkspace.branch,
-      remote: "origin",
-      expectedRemoteUrls: repository.expected_remote_urls
-    });
+    ).toEqual(pushArtifact);
   });
 
   it("runs final_implementation_report as ready_for_change_request through injected dependencies", async () => {
@@ -460,8 +558,8 @@ describe("implementation built-ins", () => {
         state: implementationState({
           steps: {
             implementation: { final_validation: validation },
-            commit: commitArtifact,
-            push: pushArtifact,
+            commit_lifecycle: commitArtifact,
+            push_lifecycle: pushArtifact,
             change_request: changeRequestArtifact
           }
         }),
@@ -507,8 +605,8 @@ describe("implementation built-ins", () => {
       state: implementationState({
         steps: {
           implementation: { final_validation: failedValidation },
-          commit: commitArtifact,
-          push: pushArtifact,
+          commit_lifecycle: commitArtifact,
+          push_lifecycle: pushArtifact,
           change_request: changeRequestArtifact
         }
       }),
@@ -533,8 +631,8 @@ describe("implementation built-ins", () => {
       state: implementationState({
         steps: {
           implementation: { final_validation: validation },
-          commit: skippedCommitArtifact,
-          push: pushArtifact,
+          commit_lifecycle: skippedCommitArtifact,
+          push_lifecycle: pushArtifact,
           change_request: changeRequestArtifact
         }
       }),
@@ -561,8 +659,8 @@ describe("implementation built-ins", () => {
             implementation: { final_validation: validation },
             acceptance: acceptedImplementation,
             worktree_diff: worktreeDiff,
-            commit: commitArtifact,
-            push: pushArtifact,
+            commit_lifecycle: commitArtifact,
+            push_lifecycle: pushArtifact,
             change_request: changeRequestArtifact
           }
         })
@@ -574,8 +672,8 @@ describe("implementation built-ins", () => {
     prepareImplementationWorktreeBuiltIn,
     runValidationCommandsBuiltIn,
     collectWorktreeDiffBuiltIn,
-    commitChangesBuiltIn,
-    pushBranchBuiltIn,
+    prepareCommitBuiltIn,
+    preparePushBuiltIn,
     finalImplementationReportBuiltIn
   ])("rejects missing implementation config for $name", async (builtIn) => {
     await expect(
@@ -586,8 +684,8 @@ describe("implementation built-ins", () => {
             implementation: { final_validation: validation },
             acceptance: acceptedImplementation,
             worktree_diff: worktreeDiff,
-            commit: commitArtifact,
-            push: pushArtifact,
+            commit_lifecycle: commitArtifact,
+            push_lifecycle: pushArtifact,
             change_request: changeRequestArtifact
           }
         })
@@ -599,8 +697,8 @@ describe("implementation built-ins", () => {
   });
 
   it.each([
-    ["branch", commitChangesBuiltIn, "workspace.branch"],
-    ["remote", pushBranchBuiltIn, "workspace.remote"],
+    ["branch", prepareCommitBuiltIn, "workspace.branch"],
+    ["remote", preparePushBuiltIn, "workspace.remote"],
     ["base_sha", finalImplementationReportBuiltIn, "workspace.base_sha"]
   ] as const)("rejects missing workspace.%s", async (field, builtIn, expectedMessage) => {
     const brokenWorkspace = { ...implementationWorkspace };
@@ -614,8 +712,8 @@ describe("implementation built-ins", () => {
             implementation: { final_validation: validation },
             acceptance: acceptedImplementation,
             worktree_diff: worktreeDiff,
-            commit: commitArtifact,
-            push: pushArtifact,
+            commit_lifecycle: commitArtifact,
+            push_lifecycle: pushArtifact,
             change_request: changeRequestArtifact
           }
         })
@@ -627,9 +725,9 @@ describe("implementation built-ins", () => {
   });
 
   it.each([
-    ["acceptance", commitChangesBuiltIn, "steps.acceptance"],
-    ["diff", commitChangesBuiltIn, "steps.worktree_diff"],
-    ["commit", pushBranchBuiltIn, "steps.commit"],
+    ["acceptance", prepareCommitBuiltIn, "steps.acceptance"],
+    ["diff", prepareCommitBuiltIn, "steps.worktree_diff"],
+    ["commit", preparePushBuiltIn, "steps.commit_lifecycle"],
     ["change_request", finalImplementationReportBuiltIn, "steps.change_request"]
   ] as const)(
     "rejects missing %s when input and state.steps fallback are absent",
@@ -638,8 +736,8 @@ describe("implementation built-ins", () => {
         _missing === "change_request"
           ? {
               implementation: { final_validation: validation },
-              commit: commitArtifact,
-              push: pushArtifact
+              commit_lifecycle: commitArtifact,
+              push_lifecycle: pushArtifact
             }
           : _missing === "diff"
             ? {
@@ -663,10 +761,8 @@ describe("implementation built-ins", () => {
     }
   );
 
-  it("uses state.steps fallbacks for commit_changes inputs", async () => {
-    const commitChanges = vi.fn(async () => commitArtifact);
-
-    await commitChangesBuiltIn.run({
+  it("uses state.steps fallbacks for prepare_commit inputs", async () => {
+    expect(prepareCommitBuiltIn.run({
       state: implementationState({
         steps: {
           implementation: { final_validation: validation },
@@ -676,33 +772,24 @@ describe("implementation built-ins", () => {
       }),
       input: {
         message: "ABC-123: Fix checkout validation"
-      },
-      dependencies: { commitChanges }
-    });
-
-    expect(commitChanges).toHaveBeenCalledWith(
-      expect.objectContaining({
-        validation,
-        acceptance: acceptedImplementation,
-        diff: worktreeDiff
-      })
-    );
+      }
+    })).toMatchObject({ operation_id: "git.commit" });
   });
 
-  it("uses state.steps fallbacks for push_branch and final report", async () => {
-    const pushBranch = vi.fn(async () => pushArtifact);
+  it("uses state.steps fallbacks for prepare_push and final report", async () => {
     const buildImplementationReportJson = vi.fn(() => ({ report: "json" }));
 
-    await pushBranchBuiltIn.run({
-      state: implementationState({ steps: { commit: commitArtifact } }),
-      dependencies: { pushBranch }
-    });
+    expect(
+      preparePushBuiltIn.run({
+        state: implementationState({ steps: { commit_lifecycle: commitArtifact } })
+      })
+    ).toMatchObject({ operation_id: "git.push_branch" });
     await finalImplementationReportBuiltIn.run({
       state: implementationState({
         steps: {
           implementation: { final_validation: validation },
-          commit: commitArtifact,
-          push: pushArtifact,
+          commit_lifecycle: commitArtifact,
+          push_lifecycle: pushArtifact,
           change_request: changeRequestArtifact
         }
       }),
@@ -712,7 +799,6 @@ describe("implementation built-ins", () => {
       }
     });
 
-    expect(pushBranch).toHaveBeenCalledWith(expect.objectContaining({ commit: commitArtifact }));
     expect(buildImplementationReportJson).toHaveBeenCalledWith(
       expect.objectContaining({
         validation,

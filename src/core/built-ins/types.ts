@@ -136,30 +136,6 @@ export type BuiltInStepDependencies = {
     cwd: string;
     maxDiffBytes: number;
   }) => MaybePromise<WorktreeDiff>;
-  commitChanges?: (input: {
-    enabled: boolean;
-    cwd: string;
-    validation: ValidationResult;
-    acceptance: AcceptanceDecision;
-    diff: WorktreeDiff;
-    branch: string;
-    remote: string;
-    baseSha: string;
-    branchPattern: string;
-    expectedRemoteUrls: readonly string[];
-    message: string;
-    runId?: string;
-    repositoryPath?: string;
-    journalPath?: string;
-  }) => MaybePromise<CommitChangesArtifact>;
-  pushBranch?: (input: {
-    enabled: boolean;
-    cwd: string;
-    commit: CommitChangesArtifact;
-    branch: string;
-    remote: string;
-    expectedRemoteUrls: readonly string[];
-  }) => MaybePromise<PushBranchArtifact>;
   buildImplementationReportJson?: (input: {
     invocation: Invocation;
     status: string;

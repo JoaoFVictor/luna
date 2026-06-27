@@ -6,6 +6,13 @@ import {
   artifactManifestKeyFromManifest,
   artifactManifestKeyHash
 } from "../../../core/runtime/artifacts/contracts.js";
+import type {
+  ArtifactContentCommitInput,
+  ArtifactContentStore,
+  ArtifactContentWriteInput,
+  ArtifactTransactionJournal,
+  ArtifactTransactionRecord
+} from "../../../core/runtime/artifacts/transaction.js";
 import type { BackendRegistration } from "../../../core/runtime/backends/contracts.js";
 import { z } from "zod";
 
@@ -34,6 +41,80 @@ export function createMemoryArtifactManifestStore(): ArtifactManifestStore {
       return [...manifests.values()]
         .filter((manifest) => manifest.run_id === runId)
         .map((manifest) => ({ ...manifest }));
+    }
+  };
+}
+
+export function createMemoryArtifactContentStore(): ArtifactContentStore {
+  const pending = new Map<string, {
+    readonly content: string | Uint8Array;
+    readonly content_hash: string;
+  }>();
+  const committed = new Map<string, {
+    readonly content: string | Uint8Array;
+    readonly content_hash: string;
+  }>();
+
+  return {
+    async write(input: ArtifactContentWriteInput) {
+      pending.set(input.transaction_id, {
+        content: input.content,
+        content_hash: input.content_hash
+      });
+
+      return {
+        pending_uri: `memory-pending://${input.transaction_id}`,
+        content_hash: input.content_hash
+      };
+    },
+    async commit(input: ArtifactContentCommitInput) {
+      const pendingContent = pending.get(input.transaction_id);
+      if (
+        pendingContent === undefined ||
+        input.pending_uri !== `memory-pending://${input.transaction_id}` ||
+        pendingContent.content_hash !== input.content_hash
+      ) {
+        const error = new Error(
+          `Artifact ${input.artifact_id} pending content does not match the commit request.`
+        ) as Error & { code: "artifact_pending_content_invalid" };
+        error.code = "artifact_pending_content_invalid";
+        throw error;
+      }
+
+      const key = `${input.run_id}/${input.artifact_path}`;
+      const existing = committed.get(key);
+      if (
+        existing !== undefined &&
+        existing.content_hash !== input.content_hash &&
+        input.overwrite_policy === "forbid"
+      ) {
+        const error = new Error(
+          `Artifact ${input.artifact_id} already exists with different content.`
+        ) as Error & { code: "artifact_content_conflict" };
+        error.code = "artifact_content_conflict";
+        throw error;
+      }
+
+      committed.set(key, pendingContent);
+      pending.delete(input.transaction_id);
+
+      return {
+        uri: `artifact://${input.run_id}/${input.artifact_path}`,
+        content_hash: input.content_hash
+      };
+    }
+  };
+}
+
+export function createMemoryArtifactTransactionJournal(): ArtifactTransactionJournal {
+  const records = new Map<string, ArtifactTransactionRecord>();
+
+  return {
+    async get(transactionId) {
+      return records.get(transactionId);
+    },
+    async put(record) {
+      records.set(record.transaction_id, record);
     }
   };
 }

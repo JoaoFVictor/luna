@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
+import { createObservabilitySummary } from "../../../src/core/observability/summary.js";
 import { capabilityManifest } from "../../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import { compileWorkflow } from "../../../src/core/workflow/compiler.js";
@@ -90,6 +91,13 @@ const registry = createCapabilityRegistry([
         output_schema: { type: "object" },
         interrupt: "none"
       },
+      "quality-gates.non_empty_diff": {
+        id: "quality-gates.non_empty_diff",
+        input_schema: { type: "object" },
+        decision_schema: { type: "object" },
+        output_schema: { type: "object" },
+        interrupt: "none"
+      },
       "quality-gates.agent_review": {
         id: "quality-gates.agent_review",
         input_schema: { type: "object" },
@@ -139,14 +147,24 @@ function backends() {
   };
 }
 
-function sequentialAgentRuntime(outputs: unknown[]): AgentRuntimePort {
+function sequentialAgentRuntime(
+  outputs: Array<unknown | Awaited<ReturnType<AgentRuntimePort["runAgent"]>>>
+): AgentRuntimePort {
   const runAgent = vi.fn(async () => {
-    const output = outputs.shift();
-    if (output === undefined) {
+    const next = outputs.shift();
+    if (next === undefined) {
       throw new Error("missing test agent output");
     }
 
-    return { output };
+    if (
+      typeof next === "object" &&
+      next !== null &&
+      Object.prototype.hasOwnProperty.call(next, "output")
+    ) {
+      return next as Awaited<ReturnType<AgentRuntimePort["runAgent"]>>;
+    }
+
+    return { output: next };
   });
 
   return {
@@ -203,9 +221,29 @@ describe("gated agent loop LangGraph executor", () => {
 
   it("executes quality-gates.gated_agent_loop pattern nodes through internal agents and gates", async () => {
     const workspacePath = await emptyGitWorkspace();
+    const wrongDefaultCwd = await emptyGitWorkspace();
+    const summary = createObservabilitySummary({
+      runId: "run-gated-loop",
+      workflowId: "runner-test"
+    });
     const runtime = sequentialAgentRuntime([
-      { files_changed: ["src/example.ts"] },
-      { decision: "pass", feedback: { message: "looks good" } }
+      {
+        output: { files_changed: ["src/example.ts"] },
+        usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+      },
+      {
+        output: { decision: "pass", feedback: { message: "looks good" } },
+        usage: { input_tokens: 3, output_tokens: 2, total_tokens: 5 }
+      },
+      {
+        output: {
+          status: "accepted",
+          summary: "accepted with evidence",
+          blocking_reasons: [],
+          recommended_action: "continue"
+        },
+        usage: { input_tokens: 4, output_tokens: 6, total_tokens: 10 }
+      }
     ]);
     const definition = workflow([
       {
@@ -228,10 +266,20 @@ describe("gated agent loop LangGraph executor", () => {
             type: "quality-gates.agent_review",
             input: {
               review_agent: "change-reviewer",
-              subject: { expression: "$.gate.output" }
+              subject: { expression: "$.gate" }
             },
             block_when: { expression: "$.gate.decision = 'fail'" },
             feedback: { expression: "$.gate.feedback" }
+          },
+          {
+            id: "acceptance",
+            type: "quality-gates.agent_review",
+            input: {
+              review_agent: "change-acceptance-reviewer",
+              subject: { expression: "$.gate" }
+            },
+            block_when: { expression: "$.gate.status != 'accepted'" },
+            feedback: { expression: "$.gate.summary" }
           }
         ],
         repair: { attempts: 0 }
@@ -253,9 +301,11 @@ describe("gated agent loop LangGraph executor", () => {
       backends: backends(),
       builtIns: {},
       agentRuntime: runtime,
+      observabilitySummary: summary,
       agentInputs: {
         [gatedAgentWorkerKey("implementation")]: {
           ...agentDefaults,
+          cwd: wrongDefaultCwd,
           output_schema: { type: "object", additionalProperties: true }
         },
         [gatedAgentGateKey("implementation", "review")]: {
@@ -267,6 +317,20 @@ describe("gated agent loop LangGraph executor", () => {
             properties: {
               decision: { enum: ["pass", "fail"] },
               feedback: { type: "object" }
+            }
+          }
+        },
+        [gatedAgentGateKey("implementation", "acceptance")]: {
+          ...agentDefaults,
+          output_schema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["status", "summary", "blocking_reasons", "recommended_action"],
+            properties: {
+              status: { enum: ["accepted", "rejected", "needs_human_review"] },
+              summary: { type: "string" },
+              blocking_reasons: { type: "array", items: { type: "string" } },
+              recommended_action: { type: "string" }
             }
           }
         }
@@ -293,14 +357,132 @@ describe("gated agent loop LangGraph executor", () => {
       })
     );
     expect(runtime.runAgent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        cwd: workspacePath
+      })
+    );
+    expect(runtime.runAgent).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         node_id: gatedAgentGateKey("implementation", "review"),
         agent_id: "change-reviewer",
+        cwd: workspacePath,
         input: expect.objectContaining({
-          subject: { files_changed: ["src/example.ts"] }
+          subject: expect.objectContaining({
+            output: { files_changed: ["src/example.ts"] },
+            outputs: {}
+          })
         })
       })
     );
+    expect(runtime.runAgent).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        node_id: gatedAgentGateKey("implementation", "acceptance"),
+        agent_id: "change-acceptance-reviewer",
+        input: expect.objectContaining({
+          subject: expect.objectContaining({
+            output: { files_changed: ["src/example.ts"] },
+            outputs: {
+              review: { decision: "pass", feedback: { message: "looks good" } }
+            }
+          })
+        })
+      })
+    );
+    expect(summary).toMatchObject({
+      prompt_operations: 3,
+      usage_missing_count: 0,
+      tokens: {
+        input: 17,
+        output: 13,
+        total: 30
+      }
+    });
+  });
+
+  it("blocks the loop when a non-empty diff gate sees no repository changes", async () => {
+    const workspacePath = await emptyGitWorkspace();
+    const runtime = sequentialAgentRuntime([
+      { status: "implemented", changed_files: ["src/example.ts"] },
+      { decision: "pass" }
+    ]);
+    const definition = workflow([
+      {
+        id: "implementation",
+        type: "pattern",
+        uses: "quality-gates.gated_agent_loop",
+        worker: "code-implementer",
+        input: { prompt: "implement the change" },
+        gates: [
+          {
+            id: "diff",
+            type: "quality-gates.non_empty_diff",
+            input: {}
+          },
+          {
+            id: "review",
+            type: "quality-gates.agent_review",
+            input: {
+              review_agent: "change-reviewer",
+              subject: { expression: "$.gate.output" }
+            },
+            block_when: { expression: "$.gate.decision = 'fail'" }
+          }
+        ],
+        repair: { attempts: 0 }
+      }
+    ]);
+
+    const result = await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-empty-diff-gate",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      runtimeContext: { workspace: { path: workspacePath } },
+      backends: backends(),
+      builtIns: {},
+      agentRuntime: runtime,
+      agentInputs: {
+        [gatedAgentWorkerKey("implementation")]: {
+          ...agentDefaults,
+          output_schema: { type: "object", additionalProperties: true }
+        },
+        [gatedAgentGateKey("implementation", "review")]: {
+          ...agentDefaults,
+          output_schema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["decision"],
+            properties: { decision: { enum: ["pass", "fail"] } }
+          }
+        }
+      }
+    });
+
+    expect(result.status).toBe("succeeded");
+    if (result.status !== "succeeded") {
+      throw new Error("expected workflow to succeed");
+    }
+    expect(result.output).toMatchObject({
+      status: "failed",
+      attempts_exhausted: true,
+      gates: [
+        {
+          id: "diff",
+          type: "quality-gates.non_empty_diff",
+          passed: false,
+          feedback: expect.stringContaining("No repository changes")
+        }
+      ]
+    });
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
   });
 });

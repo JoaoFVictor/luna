@@ -183,14 +183,16 @@ Graph rules:
 - `runtime.collect_repo_context`
 - `runtime.collect_task_context`
 - `runtime.collect_worktree_diff`
-- `runtime.commit_changes`
 - `runtime.final_code_review_report`
 - `runtime.final_implementation_report`
 - `runtime.preflight`
+- `runtime.prepare_commit`
 - `runtime.prepare_implementation_worktree`
+- `runtime.prepare_push`
 - `runtime.prepare_worktree`
-- `runtime.push_branch`
+- `runtime.record_commit_lifecycle`
 - `runtime.record_implementation_validation`
+- `runtime.record_push_lifecycle`
 - `runtime.validate_code_review_findings`
 
 Some built-ins are workflow-specific. If a workflow needs a new local

@@ -3,6 +3,10 @@ import {
   AgentRuntimeError,
   type AgentRuntimePort
 } from "../../core/agent-runtime/contracts.js";
+import {
+  transactionalArtifactPublisher,
+  type ArtifactPublisherPort
+} from "../../capabilities/artifacts/publisher.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { PortRegistration } from "../../core/capabilities/manifest.js";
 import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
@@ -22,11 +26,14 @@ import {
   type InterruptResumeAuthorizationPort
 } from "../../core/runtime/interrupts/authorization.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
+import type { RunHandle } from "../../core/runtime/run-handle.js";
 import {
   createPiAgentRuntimeAdapter
 } from "../../agent-runtimes/pi/adapter.js";
 import {
+  createFilesystemArtifactContentStore,
   createFilesystemArtifactManifestStore,
+  createFilesystemArtifactTransactionJournal,
   filesystemArtifactManifestBackendRegistration
 } from "../backends/filesystem/artifacts.js";
 import {
@@ -38,7 +45,9 @@ import {
   filesystemRuntimeLogBackendRegistration
 } from "../backends/filesystem/runtime-log.js";
 import {
+  createMemoryArtifactContentStore,
   createMemoryArtifactManifestStore,
+  createMemoryArtifactTransactionJournal,
   memoryArtifactManifestBackendRegistration
 } from "../backends/memory/artifacts.js";
 import {
@@ -86,6 +95,7 @@ type BackendFactoryCatalog = {
 
 export type RuntimeComposition = {
   readonly backends: RuntimeBackends;
+  readonly artifactPublisherForRun: (run: RunHandle) => ArtifactPublisherPort;
   readonly agentRuntime: AgentRuntimePort;
   readonly interruptAuthorization: InterruptResumeAuthorizationPort;
   readonly capabilityPorts: Record<string, RuntimeCapabilityPort>;
@@ -186,6 +196,10 @@ const AGENT_RUNTIME_FACTORIES: Record<string, AgentRuntimeFactory> = {
         maxToolIterations: optionalPositiveInteger(
           options.max_tool_iterations,
           "agent_runtime.options.max_tool_iterations"
+        ),
+        requestTimeoutMs: optionalPositiveInteger(
+          options.request_timeout_ms,
+          "agent_runtime.options.request_timeout_ms"
         )
       })
   }
@@ -497,6 +511,13 @@ export function createRuntimeComposition(
       checkpoints: checkpoints.output,
       runtimeLogs: runtimeLogs.output
     },
+    artifactPublisherForRun: (run) =>
+      createArtifactPublisher({
+        selection: config.backends.artifacts,
+        manifestStore: artifacts.output,
+        manifest: artifacts.manifest,
+        run
+      }),
     agentRuntime: createAgentRuntime(config, dependencies),
     interruptAuthorization: createInterruptAuthorization(
       config.interrupt_authorization
@@ -522,6 +543,49 @@ export function createRuntimeComposition(
           langGraphCheckpointer
         })
   };
+}
+
+function createArtifactPublisher({
+  selection,
+  manifestStore,
+  manifest,
+  run
+}: {
+  readonly selection: RuntimeSelection;
+  readonly manifestStore: RuntimeBackends["artifacts"];
+  readonly manifest: BackendManifest;
+  readonly run: RunHandle;
+}): ArtifactPublisherPort {
+  const options = selectionOptions(selection);
+
+  if (selection.id === memoryArtifactManifestBackendRegistration.id) {
+    return transactionalArtifactPublisher({
+      run_id: run.run_id,
+      backend: { id: manifest.id, root: "memory.artifacts" },
+      manifestStore,
+      transactionJournal: createMemoryArtifactTransactionJournal(),
+      contentStore: createMemoryArtifactContentStore(),
+      stepsPublisher: { async publishArtifactRef() {} },
+      checkpointMarker: { async markArtifactCheckpointed() {} }
+    });
+  }
+
+  if (selection.id === filesystemArtifactManifestBackendRegistration.id) {
+    const root = String(options.root);
+    return transactionalArtifactPublisher({
+      run_id: run.run_id,
+      backend: { id: manifest.id, root },
+      manifestStore,
+      transactionJournal: createFilesystemArtifactTransactionJournal({ root }),
+      contentStore: createFilesystemArtifactContentStore({ root }),
+      stepsPublisher: { async publishArtifactRef() {} },
+      checkpointMarker: { async markArtifactCheckpointed() {} }
+    });
+  }
+
+  throw runtimeError("Unsupported artifact publisher backend", "runtime_backend_invalid", {
+    details: { backend_id: selection.id }
+  });
 }
 
 export function createRuntimeCompositionForWorkflow(

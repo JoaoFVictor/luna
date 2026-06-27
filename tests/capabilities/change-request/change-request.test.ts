@@ -190,6 +190,50 @@ describe("change-request capability", () => {
     );
   });
 
+  it("adopts compatible external state when create fails after the side effect", async () => {
+    const readChangeRequest = vi.fn<
+      ChangeRequestProviderPort["readChangeRequest"]
+    >()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        operation_id: "change-request.create",
+        provider_id: "example",
+        external_id: "cr-44",
+        url: "https://example.test/change/cr-44",
+        title: "Implement thing",
+        source_branch: "task/run-1",
+        target_branch: "main"
+      });
+    const provider: ChangeRequestProviderPort = {
+      provider_id: "example",
+      readChangeRequest,
+      createChangeRequest: vi.fn(async () => {
+        throw new Error("create returned non-zero after creating the change request");
+      })
+    };
+    const builtIn = createChangeRequestCreateBuiltIn({
+      providers: createChangeRequestProviderRegistry([factoryFor(provider)])
+    });
+
+    await expect(
+      builtIn.run({
+        state,
+        input: {
+          provider_id: "example",
+          repository_path: "/repo/workspace",
+          title: "Implement thing",
+          source_branch: "task/run-1",
+          target_branch: "main"
+        }
+      })
+    ).resolves.toMatchObject({
+      operation_id: "change-request.create",
+      external_id: "cr-44",
+      adopted: true
+    });
+    expect(readChangeRequest).toHaveBeenCalledTimes(2);
+  });
+
   it("resolves ports from runtime dependencies without a default provider import", () => {
     const providers = createChangeRequestProviderRegistry([]);
 
