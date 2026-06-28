@@ -19,6 +19,7 @@ import type { BuiltInStep } from "../../core/built-ins/types.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import type { WebhookProviderAdapterFactory } from "../../webhooks/contracts.js";
 import { githubPrUrlAdapter } from "../../providers/github/input-adapter.js";
+import { githubWebhookAdapterFactory } from "../../providers/github/webhook-adapter.js";
 import { preflightBuiltIn } from "../../capabilities/runtime/built-ins.js";
 import { createGitHubChangeRequestProviderFactory } from "../../providers/github/change-request/factory.js";
 import { jiraTaskUrlAdapter } from "../../providers/jira/input-adapter.js";
@@ -246,7 +247,8 @@ export const nativePlatformPluginDefinitions = [
       beforeContext: [preflightBuiltIn],
       afterContext: []
     },
-    changeRequestProviderFactories: [createGitHubChangeRequestProviderFactory({})]
+    changeRequestProviderFactories: [createGitHubChangeRequestProviderFactory({})],
+    webhookAdapterFactories: [githubWebhookAdapterFactory]
   },
   {
     id: "jira",

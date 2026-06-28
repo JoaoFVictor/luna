@@ -5,7 +5,8 @@ import {
   createNativeLunaPlatformRegistrations
 } from "../../src/platform/native/native-platform-registrations.js";
 import {
-  defineNativePlatformPlugins
+  defineNativePlatformPlugins,
+  nativePlatformPlugins
 } from "../../src/platform/native/native-platform-plugins.js";
 
 describe("native Luna platform", () => {
@@ -131,6 +132,15 @@ describe("native Luna platform", () => {
     });
 
     expect(registrations.webhookProviderRegistry.ids()).toEqual(["github", "plane"]);
+  });
+
+  it("registers the GitHub webhook provider factory in the default native platform", () => {
+    const registrations = createNativeLunaPlatformRegistrations({
+      plugins: nativePlatformPlugins,
+      baseCapabilityManifests: []
+    });
+
+    expect(registrations.webhookProviderRegistry.ids()).toContain("github");
   });
 
   it("rejects duplicate runtime registrations even when registrations are built manually", () => {
