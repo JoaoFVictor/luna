@@ -1,11 +1,12 @@
-import { QueueEvents, UnrecoverableError, Worker, type Job } from "bullmq";
+import { UnrecoverableError, Worker, type Job } from "bullmq";
 import type { RouterDefinition } from "../core/router/router-definition.js";
 import { routeInvocation, RouterError } from "../core/router/router.js";
 import type { TargetExecutor } from "../runtime/composition/target-executor.js";
 import { loadWebhookConfig, type WebhookConfig } from "./config.js";
 import type { WebhookInvocationJob } from "./contracts.js";
 import {
-  createWebhookQueue,
+  createWebhookQueueEvents,
+  WEBHOOK_JOB_NAME,
   WebhookInvocationJobSchema,
   webhookRedisConnectionOptions,
   type WebhookQueueEnv
@@ -60,6 +61,38 @@ function jobId(job: Pick<Job<WebhookInvocationJob>, "id">): string | undefined {
   return typeof job.id === "string" ? job.id : undefined;
 }
 
+function safeErrorMetadata(error: unknown): {
+  name: string;
+  code?: string;
+} {
+  const name = error instanceof Error && error.name !== ""
+    ? error.name
+    : "Error";
+  const code = typeof error === "object"
+    && error !== null
+    && typeof (error as { code?: unknown }).code === "string"
+    ? (error as { code: string }).code
+    : undefined;
+
+  return {
+    name,
+    ...(code !== undefined && /^[A-Z0-9_]+$/.test(code) ? { code } : {})
+  };
+}
+
+function logBackgroundError(
+  deps: Pick<StartWebhookWorkerDeps, "logger">,
+  queue: string,
+  component: "worker" | "queue-events",
+  error: unknown
+): void {
+  deps.logger?.error("Webhook worker background error", {
+    queue,
+    component,
+    error: safeErrorMetadata(error)
+  });
+}
+
 async function closeAll(resources: readonly Closable[]): Promise<void> {
   const results = await Promise.allSettled(
     resources.map(async (resource) => {
@@ -77,8 +110,12 @@ async function closeAll(resources: readonly Closable[]): Promise<void> {
 
 export async function processWebhookInvocationJob(
   deps: ProcessWebhookJobDeps,
-  job: Pick<Job<WebhookInvocationJob>, "id" | "data">
+  job: Pick<Job<WebhookInvocationJob>, "id" | "name" | "data">
 ): Promise<void> {
+  if (job.name !== WEBHOOK_JOB_NAME) {
+    throw unrecoverable("Webhook invocation job name is invalid", undefined);
+  }
+
   const parsed = WebhookInvocationJobSchema.safeParse(job.data);
 
   if (!parsed.success) {
@@ -153,13 +190,17 @@ export async function startWebhookWorker(
     config,
     env
   });
-  const queue = createWebhookQueue(config, env);
-  const queueEvents = new QueueEvents(config.queue.name, {
-    connection: webhookRedisConnectionOptions(config, env)
-  });
+  const queueEvents = createWebhookQueueEvents(config, env);
   const signalTarget = deps.signalTarget ?? process;
   let closed = false;
   let closePromise: Promise<void> | undefined;
+
+  worker.on("error", (error: unknown) => {
+    logBackgroundError(deps, config.queue.name, "worker", error);
+  });
+  queueEvents.on("error", (error: unknown) => {
+    logBackgroundError(deps, config.queue.name, "queue-events", error);
+  });
 
   const handle: WebhookWorkerHandle = {
     async close(): Promise<void> {
@@ -174,7 +215,7 @@ export async function startWebhookWorker(
         closed = true;
         signalTarget.off?.("SIGINT", onSignal);
         signalTarget.off?.("SIGTERM", onSignal);
-        await closeAll([worker, queueEvents, queue]);
+        await closeAll([worker, queueEvents]);
       })();
 
       return await closePromise;
@@ -186,6 +227,21 @@ export async function startWebhookWorker(
       deps.logger?.error("Webhook worker shutdown failed", error);
     });
   };
+
+  try {
+    await worker.waitUntilReady();
+    await queueEvents.waitUntilReady();
+  } catch (error) {
+    try {
+      await closeAll([worker, queueEvents]);
+    } catch (closeError) {
+      deps.logger?.error("Webhook worker startup cleanup failed", {
+        queue: config.queue.name,
+        error: safeErrorMetadata(closeError)
+      });
+    }
+    throw error;
+  }
 
   signalTarget.on("SIGINT", onSignal);
   signalTarget.on("SIGTERM", onSignal);
