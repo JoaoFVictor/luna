@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdapterContext } from "../../src/adapters/types.js";
+import type { WebhookProviderAdapterFactory } from "../../src/webhooks/contracts.js";
 import {
   createNativeLunaPlatformRegistrations
 } from "../../src/platform/native/native-platform-registrations.js";
@@ -8,6 +9,23 @@ import {
 } from "../../src/platform/native/native-platform-plugins.js";
 
 describe("native Luna platform", () => {
+  function webhookAdapterFactory(id: string): WebhookProviderAdapterFactory {
+    return {
+      id,
+      description: `${id} webhook provider`,
+      create: () => ({
+        id,
+        description: `${id} webhook provider`,
+        verify: () => {},
+        normalize: () => ({
+          kind: "ignored",
+          deliveryId: "delivery-1",
+          reason: "test factory"
+        })
+      })
+    };
+  }
+
   const adapterContext = {
     projectRoot: "/project",
     configRoot: "/config",
@@ -72,6 +90,47 @@ describe("native Luna platform", () => {
         }
       ])
     ).toThrow("Duplicate native task source: jira");
+  });
+
+  it("rejects duplicate native webhook provider ids at plugin definition time", () => {
+    let error: unknown;
+
+    try {
+      defineNativePlatformPlugins([
+        {
+          id: "left",
+          webhookAdapterFactories: [webhookAdapterFactory("github")]
+        },
+        {
+          id: "right",
+          webhookAdapterFactories: [webhookAdapterFactory("github")]
+        }
+      ]);
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toMatchObject({
+      code: "native_plugin_invalid",
+      message: "Duplicate native webhook provider: github"
+    });
+  });
+
+  it("exposes native webhook provider factory ids through registrations", () => {
+    const registrations = createNativeLunaPlatformRegistrations({
+      plugins: defineNativePlatformPlugins([
+        {
+          id: "webhooks",
+          webhookAdapterFactories: [
+            webhookAdapterFactory("github"),
+            webhookAdapterFactory("plane")
+          ]
+        }
+      ]),
+      baseCapabilityManifests: []
+    });
+
+    expect(registrations.webhookProviderRegistry.ids()).toEqual(["github", "plane"]);
   });
 
   it("rejects duplicate runtime registrations even when registrations are built manually", () => {
