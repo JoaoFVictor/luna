@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   WebhookError,
   webhookConfigInvalid,
+  webhookEventIgnored,
   webhookPayloadInvalid,
   webhookQueueUnavailable,
   webhookSignatureInvalid,
@@ -26,6 +27,10 @@ describe("webhook errors", () => {
     expect(webhookPayloadInvalid("Invalid payload")).toMatchObject({
       code: "webhook_payload_invalid",
       statusCode: 400
+    });
+    expect(webhookEventIgnored("Ignored event")).toMatchObject({
+      code: "webhook_event_ignored",
+      statusCode: 200
     });
     expect(webhookQueueUnavailable("Queue down")).toMatchObject({
       code: "webhook_queue_unavailable",
