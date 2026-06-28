@@ -224,7 +224,10 @@ export async function startWebhookWorker(
 
   const onSignal = (): void => {
     void handle.close().catch((error: unknown) => {
-      deps.logger?.error("Webhook worker shutdown failed", error);
+      deps.logger?.error("Webhook worker shutdown failed", {
+        queue: config.queue.name,
+        error: safeErrorMetadata(error)
+      });
     });
   };
 

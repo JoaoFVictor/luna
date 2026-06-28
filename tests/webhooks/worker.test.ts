@@ -441,6 +441,56 @@ describe("webhook worker processing", () => {
     await handle.close();
   });
 
+  it("logs signal shutdown close failures with safe metadata", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
+    };
+    const signalListeners = new Map<NodeJS.Signals, () => void>();
+    const signalTarget = {
+      on: vi.fn((event: NodeJS.Signals, listener: () => void) => {
+        signalListeners.set(event, listener);
+      }),
+      off: vi.fn()
+    };
+    const closeError = Object.assign(
+      new Error("redis://default:secret-token@127.0.0.1:6379 close failed"),
+      { code: "ECONNREFUSED" }
+    );
+    bullmqMock.workerClose.mockRejectedValueOnce(closeError);
+
+    await startWebhookWorker({
+      projectRoot: "/repo",
+      configRoot: "/repo/config",
+      config,
+      routing,
+      targetExecutor: createTargetExecutor(),
+      logger,
+      signalTarget,
+      env: {}
+    });
+
+    signalListeners.get("SIGTERM")?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(logger.error).toHaveBeenCalledWith(
+      "Webhook worker shutdown failed",
+      {
+        queue: config.queue.name,
+        error: {
+          name: "Error",
+          code: "ECONNREFUSED"
+        }
+      }
+    );
+    const shutdownLog = logger.error.mock.calls.find(
+      ([message]) => message === "Webhook worker shutdown failed"
+    );
+    expect(shutdownLog?.[1]).not.toBe(closeError);
+    expect(JSON.stringify(shutdownLog)).not.toContain("secret-token");
+  });
+
   it("returns a lifecycle handle that closes worker lifecycle resources", async () => {
     const handle = await startWebhookWorker({
       projectRoot: "/repo",
