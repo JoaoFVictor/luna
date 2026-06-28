@@ -28,6 +28,7 @@ import {
   finalImplementationReport as finalJiraImplementationReport
 } from "../../providers/jira/built-ins.js";
 import { planeTaskUrlAdapter } from "../../providers/plane/input-adapter.js";
+import { planeWebhookAdapterFactory } from "../../providers/plane/webhook-adapter.js";
 import {
   collectTaskContext as collectPlaneTaskContext,
   finalImplementationReport as finalPlaneImplementationReport
@@ -264,7 +265,8 @@ export const nativePlatformPluginDefinitions = [
     taskBuiltIns: {
       collectTaskContext: collectPlaneTaskContext,
       finalImplementationReport: finalPlaneImplementationReport
-    }
+    },
+    webhookAdapterFactories: [planeWebhookAdapterFactory]
   }
 ] satisfies readonly NativePlatformPlugin[];
 

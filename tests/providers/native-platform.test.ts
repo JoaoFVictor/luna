@@ -134,13 +134,14 @@ describe("native Luna platform", () => {
     expect(registrations.webhookProviderRegistry.ids()).toEqual(["github", "plane"]);
   });
 
-  it("registers the GitHub webhook provider factory in the default native platform", () => {
+  it("registers default webhook provider factories in the default native platform", () => {
     const registrations = createNativeLunaPlatformRegistrations({
       plugins: nativePlatformPlugins,
       baseCapabilityManifests: []
     });
 
     expect(registrations.webhookProviderRegistry.ids()).toContain("github");
+    expect(registrations.webhookProviderRegistry.ids()).toContain("plane");
   });
 
   it("rejects duplicate runtime registrations even when registrations are built manually", () => {
