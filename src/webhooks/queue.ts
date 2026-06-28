@@ -120,7 +120,11 @@ export async function enqueueWebhookInvocation(
     removeOnFail: config.queue.remove_on_fail
   };
 
-  await queue.add(WEBHOOK_JOB_NAME, parsed.data, options);
+  try {
+    await queue.add(WEBHOOK_JOB_NAME, parsed.data, options);
+  } catch (error) {
+    throw webhookQueueUnavailable("Webhook queue is unavailable", error);
+  }
 
   return { jobId };
 }

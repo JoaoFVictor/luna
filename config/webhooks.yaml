@@ -6,6 +6,8 @@ server:
 queue:
   name: "luna:webhooks"
   redis_url: "redis://127.0.0.1:6379"
+  # MVP dedupe uses deterministic BullMQ job ids. This TTL is reserved for a
+  # future explicit BullMQ deduplication mode and is not operative yet.
   dedupe_ttl_seconds: 604800
   remove_on_complete:
     age_seconds: 86400

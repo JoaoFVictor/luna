@@ -1,11 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebhookConfig } from "../../src/webhooks/config.js";
 import type { WebhookInvocationJob } from "../../src/webhooks/contracts.js";
 import {
   WEBHOOK_JOB_NAME,
+  checkWebhookQueueReady,
+  createWebhookQueue,
+  createWebhookQueueEvents,
   enqueueWebhookInvocation,
   webhookJobId
 } from "../../src/webhooks/queue.js";
+
+const bullmqMock = vi.hoisted(() => ({
+  Queue: vi.fn(function Queue(this: object) {
+    return this;
+  }),
+  QueueEvents: vi.fn(function QueueEvents(this: object) {
+    return this;
+  })
+}));
+
+vi.mock("bullmq", () => bullmqMock);
 
 const config: WebhookConfig = {
   version: "2026-06",
@@ -73,6 +87,11 @@ function createFakeQueue() {
 }
 
 describe("webhook queue", () => {
+  beforeEach(() => {
+    bullmqMock.Queue.mockClear();
+    bullmqMock.QueueEvents.mockClear();
+  });
+
   it("builds a stable job id without colons", () => {
     const first = webhookJobId("github", "delivery:1");
     const second = webhookJobId("github", "delivery:1");
@@ -162,6 +181,102 @@ describe("webhook queue", () => {
         count: config.queue.remove_on_complete.count
       },
       removeOnFail: config.queue.remove_on_fail
+    });
+  });
+
+  it("wraps enqueue failures as queue unavailable errors", async () => {
+    const cause = new Error("redis unavailable");
+    const queue = {
+      async add() {
+        throw cause;
+      }
+    };
+
+    await expect(
+      enqueueWebhookInvocation(queue, config, validJob)
+    ).rejects.toMatchObject({
+      code: "webhook_queue_unavailable",
+      statusCode: 503,
+      cause
+    });
+  });
+
+  it("checks readiness with waitUntilReady", async () => {
+    const waitUntilReady = vi.fn(async () => undefined);
+
+    await expect(
+      checkWebhookQueueReady({ waitUntilReady })
+    ).resolves.toBeUndefined();
+
+    expect(waitUntilReady).toHaveBeenCalledOnce();
+  });
+
+  it("checks readiness with ping", async () => {
+    const ping = vi.fn(async () => undefined);
+
+    await expect(checkWebhookQueueReady({ ping })).resolves.toBeUndefined();
+
+    expect(ping).toHaveBeenCalledOnce();
+  });
+
+  it("wraps readiness failures as queue unavailable errors", async () => {
+    const cause = new Error("redis unavailable");
+
+    await expect(
+      checkWebhookQueueReady({
+        waitUntilReady: async () => {
+          throw cause;
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "webhook_queue_unavailable",
+      cause
+    });
+  });
+
+  it("rejects readiness targets without waitUntilReady or ping", async () => {
+    await expect(checkWebhookQueueReady({})).rejects.toMatchObject({
+      code: "webhook_queue_unavailable"
+    });
+  });
+
+  it("creates webhook queue with REDIS_URL env override", () => {
+    createWebhookQueue(config, {
+      REDIS_URL: "redis://override.example:6379"
+    });
+
+    expect(bullmqMock.Queue).toHaveBeenCalledWith(config.queue.name, {
+      connection: {
+        url: "redis://override.example:6379"
+      }
+    });
+  });
+
+  it("creates webhook queue events with REDIS_URL env override", () => {
+    createWebhookQueueEvents(config, {
+      REDIS_URL: "redis://events.example:6379"
+    });
+
+    expect(bullmqMock.QueueEvents).toHaveBeenCalledWith(config.queue.name, {
+      connection: {
+        url: "redis://events.example:6379"
+      }
+    });
+  });
+
+  it("uses configured redis url when no env override is provided", () => {
+    createWebhookQueue(config, {});
+    createWebhookQueueEvents(config, {});
+
+    expect(bullmqMock.Queue).toHaveBeenCalledWith(config.queue.name, {
+      connection: {
+        url: config.queue.redis_url
+      }
+    });
+    expect(bullmqMock.QueueEvents).toHaveBeenCalledWith(config.queue.name, {
+      connection: {
+        url: config.queue.redis_url
+      }
     });
   });
 });
