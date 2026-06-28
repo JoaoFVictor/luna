@@ -3,21 +3,14 @@ import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import type { WorkflowRunResult } from "../../core/workflow/execution-contracts.js";
 import { runtimeError } from "../../core/runtime/errors.js";
-import { assertCheckpointJsonValue, stableJson, type JsonValue } from "../../core/runtime/json.js";
+import { assertCheckpointJsonValue, type JsonValue } from "../../core/runtime/json.js";
 import {
   LUNA_RUNTIME_STATE_SCHEMA_VERSION,
   createInitialRuntimeState,
-  publishNodeOutput,
   type LunaRuntimeState
 } from "../../core/runtime/state.js";
 import {
-  startNodeAttempt,
-  succeedNode
-} from "../../core/runtime/lifecycle.js";
-import { resumeInterrupt } from "../../core/runtime/interrupts/resume.js";
-import {
   selectReadyBatchWithPolicy,
-  splitDeferredFinalReportNodesByPolicy,
   type ExecutionPolicyDecision
 } from "../../core/workflow/execution-policy.js";
 import {
@@ -29,7 +22,6 @@ import { finalWorkflowOutput } from "../../core/workflow/runner-output.js";
 import { writeTraceSummaryBestEffort } from "../../core/observability/summary.js";
 import type { BuiltInStepMetadata } from "../../core/built-ins/types.js";
 import {
-  assertNodeOutputMatchesSchema,
   runWorkflowNodeAttempt,
   type WorkflowNodeAttemptOutcome
 } from "./node-runner.js";
@@ -49,15 +41,14 @@ import {
   saveTerminalCheckpoint,
   terminalCheckpointSnapshot
 } from "./checkpoints.js";
-import {
-  resumeContextFromMetadata
-} from "./interrupts.js";
 import type {
   ResumeWorkflowInput,
   RunWorkflowInput,
   WorkflowAgentInputMap
 } from "../../core/workflow/execution-contracts.js";
+import { applyWorkflowResume } from "./resume-application.js";
 import { appendWorkflowEvent } from "../../core/workflow/events.js";
+import { deferredFinalReportNodeIds } from "./deferred-final-report.js";
 
 export type { WorkflowNodeAttemptOutcome } from "./node-runner.js";
 
@@ -114,138 +105,18 @@ export async function resumeCompiledWorkflowWithScheduler<TInput extends ResumeW
 ): Promise<WorkflowRunResult> {
   assertCompiledWorkflowMatchesDefinition(input);
   assertSupportedExecutionSubset(input);
-  const checkpoint = await input.backends.checkpoints.load(input.thread_id, {
-    checkpointId: input.checkpoint_id,
-    expectedStateSchemaVersion: LUNA_RUNTIME_STATE_SCHEMA_VERSION
-  });
-  if (checkpoint === undefined) {
-    throw runtimeError("Checkpoint not found", "runtime_interrupt_not_found", {
-      details: { checkpoint_id: input.checkpoint_id, thread_id: input.thread_id }
-    });
-  }
-  if (checkpoint.metadata.workflow_revision !== input.workflow.revision) {
-    throw runtimeError(
-      "Checkpoint workflow revision is incompatible",
-      "runtime_checkpoint_schema_mismatch",
-      {
-        details: {
-          expected: input.workflow.revision,
-          actual: checkpoint.metadata.workflow_revision
-        }
-      }
-    );
-  }
-  if (checkpoint.state_schema_version !== input.compiled.state_schema_version) {
-    throw runtimeError(
-      "Checkpoint state schema is incompatible with compiled workflow",
-      "runtime_checkpoint_schema_mismatch",
-      {
-        details: {
-          expected: input.compiled.state_schema_version,
-          actual: checkpoint.state_schema_version
-        }
-      }
-    );
+  const resume = await applyWorkflowResume(input);
+  assertSupportedRuntimeRequirements(input, resume.startIndex);
+  if (resume.terminalResult !== undefined) {
+    return resume.terminalResult;
   }
 
-  const resumeNodeId = String(checkpoint.metadata.resume_node_id ?? "");
-  const resumeIndex = input.compiled.nodes.findIndex(
-    (node) => node.id === resumeNodeId
-  );
-  if (resumeIndex < 0) {
-    throw runtimeError("Resume node is not part of compiled workflow", "runtime_state_invalid", {
-      details: { resume_node_id: resumeNodeId }
-    });
-  }
-  assertSupportedRuntimeRequirements(input, resumeIndex + 1);
-
-  const resumeContext = resumeContextFromMetadata(checkpoint.metadata);
-  let state = createInitialRuntimeState({
-    invocation: resumeContext.invocation,
-    config: resumeContext.config,
-    run: resumeContext.run,
-    workflow: { id: input.workflow.id, mode: input.workflow.mode }
-  });
-  const priorWrites = await input.backends.checkpoints.listWrites(
-    input.thread_id,
-    checkpoint.checkpoint_ns,
-    input.checkpoint_id
-  );
-  state = {
-    ...state,
-    steps: Object.fromEntries(
-      priorWrites
-        .filter((write) => write.channel === "steps")
-        .map((write) => [write.task_id, write.value])
-    )
-  };
-  const resumeNode = input.compiled.nodes[resumeIndex];
-  assertNodeOutputMatchesSchema(resumeNode, input.decision);
-  const existingDecision = state.steps[resumeNodeId];
-  const decisionAlreadyApplied = Object.prototype.hasOwnProperty.call(
-    state.steps,
-    resumeNodeId
-  );
-  if (
-    decisionAlreadyApplied &&
-    stableJson(existingDecision) !== stableJson(input.decision)
-  ) {
-    throw runtimeError(
-      "Checkpoint resume decision conflicts with an already-applied decision",
-      "interrupt_conflict",
-      { details: { interrupt_id: input.interrupt_id, node_id: resumeNodeId } }
-    );
-  }
-  await resumeInterrupt(
-    {
-      interrupt_id: input.interrupt_id,
-      thread_id: input.thread_id,
-      checkpoint_id: input.checkpoint_id,
-      decision: input.decision
-    },
-    {
-      interruptStore: input.backends.interrupts,
-      eventStore: input.backends.events,
-      resumeId: () => `resume-${input.interrupt_id}`
-    }
-  );
-  await input.observability?.recorder.addEvent("interrupt.resumed", {
-    interrupt_id: input.interrupt_id,
-    checkpoint_id: input.checkpoint_id,
-    node_id: resumeNodeId
-  });
-  if (!decisionAlreadyApplied) {
-    await input.backends.checkpoints.saveWrites([
-      {
-        thread_id: input.thread_id,
-        checkpoint_ns: checkpoint.checkpoint_ns,
-        checkpoint_id: input.checkpoint_id,
-        task_id: resumeNodeId,
-        index: priorWrites.length,
-        channel: "steps",
-        value: input.decision
-      }
-    ]);
-  }
-  state = startNodeAttempt(state, resumeNodeId, 1);
-  if (!decisionAlreadyApplied) {
-    state = publishNodeOutput(state, resumeNodeId, input.decision);
-  }
-  state = succeedNode(state, resumeNodeId);
-
-  const resumedInput = {
-    ...input,
-    run: resumeContext.run,
-    invocation: resumeContext.invocation,
-    config: resumeContext.config
-  };
-
-  return await runWithWorkflowSpan(resumedInput, async () =>
+  return await runWithWorkflowSpan(resume.resumedInput, async () =>
     await runFromNodeIndex(
-      resumedInput,
+      resume.resumedInput,
       scheduler,
-      state,
-      resumeIndex + 1
+      resume.state,
+      resume.startIndex
     )
   );
 }
@@ -468,18 +339,6 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
   });
   await appendWorkflowEvent(input, "run.succeeded");
   return { status: "succeeded", output, state: succeededState };
-}
-
-function deferredFinalReportNodeIds(
-  input: RunWorkflowInput,
-  nodes: readonly CompiledWorkflowNode[]
-): ReadonlySet<string> {
-  const { deferredNodes } = splitDeferredFinalReportNodesByPolicy({
-    nodes: nodes.map(workflowExecutionPlanPolicyNode),
-    builtInMetadata: (node) => builtInMetadataForPolicyNode(input, node)
-  });
-
-  return new Set(deferredNodes.map((node) => node.id));
 }
 
 function executionPolicyDecisionForCompiledNode(

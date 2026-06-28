@@ -31,6 +31,7 @@ import {
   type Invocation,
   type RouteTarget
 } from "./core/router/invocation.js";
+import { assertJsonValue, type JsonValue } from "./core/json/value.js";
 
 export type CliArgs = {
   command: "run";
@@ -41,6 +42,13 @@ export type CliArgs = {
   target?: RouteTarget;
   from: string;
   value: string;
+} | {
+  command: "resume";
+  target: RouteTarget;
+  thread: string;
+  checkpoint: string;
+  interrupt: string;
+  decision: JsonValue;
 };
 
 export type MainDependencies = {
@@ -48,7 +56,7 @@ export type MainDependencies = {
   routeInvocation?: typeof routeInvocation;
   routing?: RouterDefinition;
   adapterContext?: AdapterContext;
-  platform?: Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow">;
+  platform?: Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">;
   projectRoot?: string;
   env?: { LUNA_CONFIG_ROOT?: string };
 };
@@ -140,7 +148,58 @@ export function parseCliArgs(args: string[]): CliArgs {
     return { command, target, input };
   }
 
-  throw cliError("unknown_command", "Expected command: run");
+  if (command === "resume") {
+    const allowedFlags = new Set([
+      "--target",
+      "--thread",
+      "--checkpoint",
+      "--interrupt",
+      "--decision"
+    ]);
+    const unsupportedFlag = rest.find(
+      (argument) => argument.startsWith("--") && !allowedFlags.has(argument)
+    );
+    if (unsupportedFlag !== undefined) {
+      throw cliError("unsupported_flag", `Unsupported resume flag: ${unsupportedFlag}`);
+    }
+
+    const target = requiredFlag(rest, "--target", "Missing required --target workflow:<id>");
+    const thread = requiredFlag(rest, "--thread", "Missing required --thread <run_id>");
+    const checkpoint = requiredFlag(rest, "--checkpoint", "Missing required --checkpoint <checkpoint_id>");
+    const interrupt = requiredFlag(rest, "--interrupt", "Missing required --interrupt <interrupt_id>");
+    const decisionText = requiredFlag(rest, "--decision", "Missing required --decision <json>");
+    let decision: unknown;
+    try {
+      decision = JSON.parse(decisionText);
+      assertJsonValue(decision);
+    } catch (error) {
+      throw cliError(
+        "decision_invalid",
+        error instanceof Error ? error.message : "Resume decision must be JSON"
+      );
+    }
+
+    return {
+      command,
+      target: parseWorkflowTarget(target),
+      thread,
+      checkpoint,
+      interrupt,
+      decision
+    };
+  }
+
+  throw cliError("unknown_command", "Expected command: run or resume");
+}
+
+function requiredFlag(args: string[], flag: string, message: string): string {
+  const index = args.indexOf(flag);
+  const value = index >= 0 ? args[index + 1] : undefined;
+  if (!value || value.startsWith("--")) {
+    throw cliError("missing_flag", message);
+  }
+
+  return value;
 }
 
 export function parseWorkflowTarget(value: string): RouteTarget {
@@ -213,7 +272,7 @@ export async function main(
     );
     return app;
   };
-  let loadedPlatform: Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow"> | undefined;
+  let loadedPlatform: Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow"> | undefined;
   const loadPlatform = async () => {
     loadedPlatform ??= deps.platform ?? await loadNativeLunaPlatform({
       projectRoot,
@@ -223,6 +282,21 @@ export async function main(
     return loadedPlatform;
   };
   let invocation: Invocation;
+
+  if (parsedArgs.command === "resume") {
+    const platform = await loadPlatform();
+    await platform.resumeWorkflow({
+      projectRoot,
+      configRoot,
+      target: parsedArgs.target,
+      thread_id: parsedArgs.thread,
+      checkpoint_id: parsedArgs.checkpoint,
+      interrupt_id: parsedArgs.interrupt,
+      decision: parsedArgs.decision
+    });
+
+    return 0;
+  }
 
   if ("input" in parsedArgs) {
     invocation = await loadInvocationFromFile(parsedArgs.input);

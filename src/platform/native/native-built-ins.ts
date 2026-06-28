@@ -36,6 +36,7 @@ import { validateFindingEvidenceBuiltIn } from "../../capabilities/findings/buil
 import { createBuiltInStepCatalog } from "../../core/built-ins/catalog.js";
 import { collectRepoContextBuiltIn } from "../../capabilities/repository-diff/built-ins.js";
 import { finalReportBuiltIn } from "../../capabilities/reports/final-report.js";
+import { requireApprovalBuiltIn } from "../../capabilities/hitl/built-ins.js";
 import {
   createCollectTaskContextBuiltIn,
   createFinalImplementationReportBuiltIn,
@@ -123,6 +124,7 @@ export function createNativeProviderBuiltIns({
       ...(workflowBuiltIns.afterContext ?? []),
       collectRepoContextBuiltIn,
       validateFindingEvidenceBuiltIn,
+      requireApprovalBuiltIn,
       ...(workflowBuiltIns.builtIns ?? []),
       finalReportBuiltIn,
       localExecReadCommandBuiltIn,

@@ -56,7 +56,7 @@ function clonePayload(payload: InterruptPayload): InterruptPayload {
   };
 }
 
-function normalizeResumeInput(input: ResumeInput): ResumeInput {
+export function normalizeResumeInput(input: ResumeInput): ResumeInput {
   return {
     interrupt_id: input.interrupt_id,
     thread_id: input.thread_id,
@@ -67,7 +67,7 @@ function normalizeResumeInput(input: ResumeInput): ResumeInput {
   };
 }
 
-function resumeInputsEqual(left: ResumeInput, right: ResumeInput): boolean {
+export function resumeInputsEqual(left: ResumeInput, right: ResumeInput): boolean {
   return stableJson(normalizeResumeInput(left)) === stableJson(normalizeResumeInput(right));
 }
 
@@ -221,10 +221,10 @@ export async function resumeInterrupt(
     options.authorization ?? allowInterruptResume()
   );
 
-  const resume_id = options.resumeId?.() ?? defaultResumeId(input);
+  const requested_resume_id = options.resumeId?.() ?? defaultResumeId(input);
   const claim = await options.interruptStore.beginResume(
     input.interrupt_id,
-    resume_id,
+    requested_resume_id,
     normalizedInput
   );
   if (claim.status === "duplicate") {
@@ -235,6 +235,7 @@ export async function resumeInterrupt(
   }
 
   const created_at = options.now?.() ?? defaultNow();
+  const resume_id = claim.resume_attempt;
   const resume: InterruptResumeRecord = {
     interrupt_id: input.interrupt_id,
     resume_id,

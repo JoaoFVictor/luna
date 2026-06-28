@@ -3,6 +3,7 @@ export type BuiltInErrorCode =
   | "built_in_input_invalid"
   | "built_in_input_missing"
   | "built_in_dependency_missing"
+  | "built_in_rejected"
   | "built_in_output_invalid"
   | "built_in_state_missing"
   | "built_in_unsupported";

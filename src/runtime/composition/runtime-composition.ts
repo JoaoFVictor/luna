@@ -54,6 +54,10 @@ import {
   filesystemEventBackendRegistration
 } from "../backends/filesystem/events.js";
 import {
+  createFilesystemInterruptStore,
+  filesystemInterruptBackendRegistration
+} from "../backends/filesystem/interrupts.js";
+import {
   createFilesystemRuntimeLogStore,
   filesystemRuntimeLogBackendRegistration
 } from "../backends/filesystem/runtime-log.js";
@@ -182,6 +186,14 @@ export function defaultRuntimeBackendFactoryCatalog(): RuntimeBackendFactoryCata
       [memoryInterruptBackendRegistration.id]: {
         registration: memoryInterruptBackendRegistration,
         create: () => createMemoryInterruptStore()
+      },
+      [filesystemInterruptBackendRegistration.id]: {
+        registration: filesystemInterruptBackendRegistration,
+        durable: true,
+        create: (options) =>
+          createFilesystemInterruptStore(
+            validateBackendOptions(options, filesystemInterruptBackendRegistration)
+          )
       }
     },
     checkpoints: {

@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { capabilityManifest } from "../../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
@@ -13,6 +16,11 @@ import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memor
 import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
+import { createFilesystemInterruptStore } from "../../../src/runtime/backends/filesystem/interrupts.js";
+import {
+  createSqliteCheckpointStore,
+  sqliteCheckpointFile
+} from "../../../src/runtime/backends/sqlite/checkpoints.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -360,6 +368,106 @@ describe("workflow runner checkpoint resume", () => {
     });
 
     expect(resumed.status).toBe("succeeded");
+  });
+
+  it("resumes idempotently across durable checkpoint and filesystem interrupt stores", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-resume-durable-"));
+    const checkpointFile = sqliteCheckpointFile(path.join(root, "checkpoints"));
+    const interruptRoot = path.join(root, "interrupts");
+    const sharedStores = {
+      artifacts: createMemoryArtifactManifestStore(),
+      events: createMemoryEventStore(),
+      runtimeLogs: createMemoryRuntimeLogStore()
+    };
+
+    try {
+      const firstStores = {
+        ...sharedStores,
+        checkpoints: createSqliteCheckpointStore({ filePath: checkpointFile }),
+        interrupts: createFilesystemInterruptStore({ root: interruptRoot })
+      };
+      const compiled = compileWorkflow({ workflow, registry });
+      const waiting = await runCompiledWorkflow({
+        compiled,
+        workflow,
+        invocation: {},
+        config: {},
+        run: {
+          run_id: "run-durable-resume",
+          workflow_id: "checkpoint-test",
+          attempt: 1,
+          started_at: "2026-06-25T00:00:00.000Z"
+        },
+        backends: firstStores,
+        builtIns: {
+          "runtime.pre": async () => ({ before: true })
+        },
+        agentRuntime: {} as AgentRuntimePort
+      });
+      expect(waiting.status).toBe("waiting_for_input");
+      if (waiting.status !== "waiting_for_input") {
+        throw new Error("expected workflow to wait for input");
+      }
+
+      const restartedStores = {
+        ...sharedStores,
+        checkpoints: createSqliteCheckpointStore({ filePath: checkpointFile }),
+        interrupts: createFilesystemInterruptStore({ root: interruptRoot })
+      };
+      let downstreamRuns = 0;
+      const resumeInput = {
+        compiled,
+        workflow,
+        checkpoint_id: waiting.checkpoint_id,
+        thread_id: "run-durable-resume",
+        interrupt_id: waiting.interrupt_id,
+        decision: { approved: true },
+        backends: restartedStores,
+        agentRuntime: {} as AgentRuntimePort
+      };
+
+      const resumed = await resumeCompiledWorkflow({
+        ...resumeInput,
+        builtIns: {
+          "runtime.after": async () => {
+            downstreamRuns += 1;
+            return { done: true };
+          }
+        }
+      });
+      expect(resumed.status).toBe("succeeded");
+
+      const repeated = await resumeCompiledWorkflow({
+        ...resumeInput,
+        builtIns: {
+          "runtime.after": async () => {
+            downstreamRuns += 1;
+            return { done: true };
+          }
+        }
+      });
+      expect(repeated.status).toBe("succeeded");
+      expect(downstreamRuns).toBe(1);
+      await expect(sharedStores.events.query({
+        runId: "run-durable-resume",
+        interruptId: waiting.interrupt_id
+      })).resolves.toEqual([
+        expect.objectContaining({ type: "luna.interrupt.created" }),
+        expect.objectContaining({ type: "luna.interrupt.resumed" })
+      ]);
+
+      await expect(
+        resumeCompiledWorkflow({
+          ...resumeInput,
+          decision: { approved: false },
+          builtIns: {
+            "runtime.after": async () => ({ done: true })
+          }
+        })
+      ).rejects.toMatchObject({ code: "interrupt_conflict" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
 });

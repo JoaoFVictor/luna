@@ -32,13 +32,17 @@ export async function saveNodeOutputWrite({
     {
       thread_id: input.run.run_id,
       checkpoint_ns: "",
-      checkpoint_id: `node-output-${input.run.run_id}-${node.id}`,
+      checkpoint_id: nodeOutputCheckpointId(input.run.run_id, node.id),
       task_id: node.id,
       index: 0,
       channel: "steps",
       value: output
     }
   ]);
+}
+
+export function nodeOutputCheckpointId(runId: string, nodeId: string): string {
+  return `node-output-${runId}-${nodeId}`;
 }
 
 export async function saveTerminalCheckpoint({

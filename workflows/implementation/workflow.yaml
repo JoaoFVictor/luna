@@ -12,6 +12,7 @@ capabilities:
   - agents
   - artifacts
   - quality-gates
+  - hitl
   - reports
   - git
   - change-request
@@ -178,6 +179,35 @@ nodes:
     after:
       - implementation
 
+  - id: implementation_approval
+    type: human_gate
+    uses: hitl.approval
+    artifacts:
+      - path: implementation-approval.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation_approval"
+        format: json
+    input:
+      prompt: Approve the implementation before diff, commit, push, and change request?
+    after:
+      - implementation_validation
+
+  - id: implementation_approval_enforced
+    type: built_in
+    uses: hitl.require_approval
+    input:
+      decision:
+        expression: "$.steps.implementation_approval"
+    artifacts:
+      - path: implementation-approval-enforced.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation_approval_enforced"
+        format: json
+    after:
+      - implementation_approval
+
   - id: worktree_diff
     type: built_in
     uses: repository-change.collect_worktree_diff
@@ -188,7 +218,7 @@ nodes:
           expression: "$.steps.worktree_diff"
         format: json
     after:
-      - implementation_validation
+      - implementation_approval_enforced
 
   - id: prepare_commit
     type: built_in

@@ -3,6 +3,7 @@ import type {
   ResumeInput,
   InterruptStore
 } from "../../../core/runtime/interrupts/contracts.js";
+import { resumeInputsEqual } from "../../../core/runtime/interrupts/resume.js";
 import type { BackendRegistration } from "../../../core/runtime/backends/contracts.js";
 import { runtimeError } from "../../../core/runtime/errors.js";
 import { z } from "zod";
@@ -105,6 +106,7 @@ export function createMemoryInterruptStore(): InterruptStore {
         ...interrupt,
         status: "resuming",
         resume_attempt: resumeAttempt,
+        resume_input: structuredClone(input),
         updated_at: new Date().toISOString()
       });
 
@@ -135,6 +137,7 @@ export function createMemoryInterruptStore(): InterruptStore {
       const next = {
         ...interrupt,
         status,
+        resume_input: undefined,
         ...(resume === undefined ? {} : { resume }),
         updated_at: new Date().toISOString()
       };
@@ -172,26 +175,4 @@ function createPendingResume(input: ResumeInput): PendingResume {
   });
 
   return { input, result, resolve, reject };
-}
-
-function resumeInputsEqual(left: ResumeInput, right: ResumeInput): boolean {
-  return stableJson(left) === stableJson(right);
-}
-
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableJson(item)).join(",")}]`;
-  }
-
-  const entries = Object.entries(value).sort(([left], [right]) =>
-    left.localeCompare(right)
-  );
-
-  return `{${entries
-    .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
-    .join(",")}}`;
 }

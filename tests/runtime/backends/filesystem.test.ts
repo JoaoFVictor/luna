@@ -7,6 +7,7 @@ import {
   createFilesystemArtifactManifestStore
 } from "../../../src/runtime/backends/filesystem/artifacts.js";
 import { createFilesystemEventStore } from "../../../src/runtime/backends/filesystem/events.js";
+import { createFilesystemInterruptStore } from "../../../src/runtime/backends/filesystem/interrupts.js";
 import { createFilesystemRuntimeLogStore } from "../../../src/runtime/backends/filesystem/runtime-log.js";
 
 describe("filesystem runtime backends", () => {
@@ -207,6 +208,62 @@ describe("filesystem runtime backends", () => {
           content_hash: "sha256:unused"
         })
       ).rejects.toMatchObject({ code: "path_security_violation" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("recovers an in-progress interrupt resume after store restart", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
+    const resumeInput = {
+      interrupt_id: "interrupt-1",
+      thread_id: "run-1",
+      checkpoint_id: "checkpoint-1",
+      decision: { approved: true }
+    };
+
+    try {
+      const first = createFilesystemInterruptStore({ root });
+      await first.create({
+        id: "interrupt-1",
+        run_id: "run-1",
+        thread_id: "run-1",
+        checkpoint_id: "checkpoint-1",
+        node_id: "approval",
+        status: "pending",
+        created_at: "2026-06-28T00:00:00.000Z",
+        updated_at: "2026-06-28T00:00:00.000Z"
+      });
+      await first.beginResume("interrupt-1", "resume-1", resumeInput);
+
+      const restarted = createFilesystemInterruptStore({ root });
+      await expect(
+        restarted.beginResume("interrupt-1", "resume-ignored", resumeInput)
+      ).resolves.toMatchObject({
+        status: "claimed",
+        resume_attempt: "resume-1"
+      });
+      await restarted.completeResume(
+        "interrupt-1",
+        {
+          interrupt_id: "interrupt-1",
+          resume_attempt: "resume-1",
+          status: "claimed"
+        },
+        "resolved",
+        {
+          interrupt_id: "interrupt-1",
+          resume_id: "resume-1",
+          input: resumeInput,
+          decision: resumeInput.decision,
+          created_at: "2026-06-28T00:00:01.000Z"
+        }
+      );
+
+      await expect(restarted.get("interrupt-1")).resolves.toMatchObject({
+        status: "resolved",
+        resume: { resume_id: "resume-1" }
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

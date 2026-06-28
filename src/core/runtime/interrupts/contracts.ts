@@ -50,6 +50,7 @@ export type InterruptRecord = {
   payload?: InterruptPayload;
   payload_ref?: string;
   resume_attempt?: string;
+  resume_input?: ResumeInput;
   resume?: InterruptResumeRecord;
 };
 

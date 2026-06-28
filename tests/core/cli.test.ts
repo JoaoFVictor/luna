@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
 import type { InputAdapter } from "../../src/adapters/types.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
+import { createInitialRuntimeState } from "../../src/core/runtime/state.js";
+import type { WorkflowRunResult } from "../../src/core/workflow/execution-contracts.js";
 import type { LunaPlatform } from "../../src/platform/native/native-platform.js";
 import {
   findProjectRoot,
@@ -55,6 +57,24 @@ function registryWith(adapter: InputAdapter): InputAdapterRegistry {
   };
 }
 
+function succeededWorkflowResult(): WorkflowRunResult {
+  return {
+    status: "succeeded",
+    output: {},
+    state: createInitialRuntimeState({
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "test-run",
+        workflow_id: "implementation",
+        attempt: 1,
+        started_at: "2026-06-28T00:00:00.000Z"
+      },
+      workflow: { id: "implementation", mode: "trusted_local_write" }
+    })
+  };
+}
+
 describe("Luna CLI", () => {
   it("rejects invalid or workflow-specific command shapes", () => {
     expect(() => parseCliArgs(["run", "--workflow", "code-review"])).toThrow(
@@ -63,6 +83,31 @@ describe("Luna CLI", () => {
     expect(() => parseCliArgs(["review-pr", "url"])).toThrow(
       expect.objectContaining({ code: "unknown_command" })
     );
+  });
+
+  it("parses generic workflow resume arguments", () => {
+    expect(
+      parseCliArgs([
+        "resume",
+        "--target",
+        "workflow:implementation",
+        "--thread",
+        "run-1",
+        "--checkpoint",
+        "checkpoint-run-1-approval",
+        "--interrupt",
+        "interrupt-run-1-approval",
+        "--decision",
+        "{\"approved\":true}"
+      ])
+    ).toEqual({
+      command: "resume",
+      target: { type: "workflow", id: "implementation" },
+      thread: "run-1",
+      checkpoint: "checkpoint-run-1-approval",
+      interrupt: "interrupt-run-1-approval",
+      decision: { approved: true }
+    });
   });
 
   it("finds the project root from compiled dist paths", async () => {
@@ -139,8 +184,9 @@ describe("Luna CLI", () => {
     };
     const platform = {
       inputAdapterRegistry: registryWith(adapter),
-      runWorkflow: vi.fn(async () => undefined)
-    } satisfies Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow">;
+      runWorkflow: vi.fn(async () => undefined),
+      resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
+    } satisfies Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">;
 
     await expect(
       main(
@@ -178,6 +224,54 @@ describe("Luna CLI", () => {
       configRoot,
       invocation: validInvocation,
       target: { type: "workflow", id: "implementation" }
+    });
+  });
+
+  it("uses the injected platform for generic workflow resume", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-resume-"));
+    const configRoot = path.join(projectRoot, "config");
+    const platform = {
+      inputAdapterRegistry: registryWith({
+        id: "unused",
+        description: "Unused",
+        load: vi.fn()
+      }),
+      runWorkflow: vi.fn(async () => undefined),
+      resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
+    } satisfies Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">;
+
+    await expect(
+      main(
+        [
+          "resume",
+          "--target",
+          "workflow:implementation",
+          "--thread",
+          "run-1",
+          "--checkpoint",
+          "checkpoint-run-1-approval",
+          "--interrupt",
+          "interrupt-run-1-approval",
+          "--decision",
+          "{\"approved\":true}"
+        ],
+        {
+          platform,
+          projectRoot,
+          env: { LUNA_CONFIG_ROOT: configRoot }
+        }
+      )
+    ).resolves.toBe(0);
+
+    expect(platform.runWorkflow).not.toHaveBeenCalled();
+    expect(platform.resumeWorkflow).toHaveBeenCalledWith({
+      projectRoot,
+      configRoot,
+      target: { type: "workflow", id: "implementation" },
+      thread_id: "run-1",
+      checkpoint_id: "checkpoint-run-1-approval",
+      interrupt_id: "interrupt-run-1-approval",
+      decision: { approved: true }
     });
   });
 

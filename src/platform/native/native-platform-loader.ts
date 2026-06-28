@@ -14,6 +14,7 @@ import {
   type NativePlatformPlugin
 } from "./native-platform-plugins.js";
 import {
+  resumeNativeWorkflowTarget,
   runNativeWorkflowTarget
 } from "./native-workflow-runner.js";
 import type { LunaPlatform } from "./native-platform.js";
@@ -61,7 +62,9 @@ export async function loadNativeLunaPlatform({
   return {
     ...registrations,
     runWorkflow: async (input) =>
-      await runNativeWorkflowTarget(input, { platform: registrations })
+      await runNativeWorkflowTarget(input, { platform: registrations }),
+    resumeWorkflow: async (input) =>
+      await resumeNativeWorkflowTarget(input, { platform: registrations })
   };
 }
 

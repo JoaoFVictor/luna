@@ -198,7 +198,7 @@ export function runtimeCompositionConfig(
     backends: {
       artifacts: { id: "filesystem.artifacts", options: { root } },
       events: { id: "filesystem.events", options: { root } },
-      interrupts: { id: "memory.interrupts", options: {} },
+      interrupts: { id: "filesystem.interrupts", options: { root: path.join(root, "interrupts") } },
       checkpoints: {
         id: "sqlite.checkpoints",
         options: { filePath: path.join(root, "checkpoints.sqlite") }
