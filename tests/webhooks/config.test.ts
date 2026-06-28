@@ -22,7 +22,7 @@ queue:
   redis_url: "redis://127.0.0.1:6379"
   dedupe_ttl_seconds: 604800
   remove_on_complete:
-    age_seconds: 86400
+    age_seconds: 604800
     count: 1000
   remove_on_fail: false
 providers:
@@ -55,7 +55,11 @@ describe("webhook config", () => {
       },
       queue: {
         name: "luna:webhooks",
-        redis_url: "redis://127.0.0.1:6379"
+        redis_url: "redis://127.0.0.1:6379",
+        dedupe_ttl_seconds: 604800,
+        remove_on_complete: {
+          age_seconds: 604800
+        }
       },
       worker: { concurrency: 8 },
       providers: {
