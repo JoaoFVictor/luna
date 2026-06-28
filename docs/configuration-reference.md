@@ -31,7 +31,7 @@ Default rules:
 2. GitHub PR selected/opened/synchronized/reopened events to
    `workflow:code-review`.
 3. Jira selected issues to `workflow:implementation`.
-4. Plane selected issues to `workflow:implementation`.
+4. Plane selected/create/update issues to `workflow:implementation`.
 
 Rules are JSONata expressions evaluated over `{ invocation }`. Do not route
 with model judgment.
@@ -148,6 +148,43 @@ Fields:
 
 Plane API keys are stored in `luna.auth.json` under the active config root.
 
+## `webhooks.yaml`
+
+Configures generic webhook ingress, queueing, and worker defaults.
+
+```yaml
+version: "2026-06"
+server:
+  host: "127.0.0.1"
+  port: 4012
+  body_limit_bytes: 1048576
+queue:
+  name: "luna-webhooks"
+  redis_url: "redis://127.0.0.1:6379"
+  dedupe_ttl_seconds: 604800
+  remove_on_complete:
+    age_seconds: 86400
+    count: 1000
+  remove_on_fail: false
+worker:
+  concurrency: 8
+providers:
+  github:
+    enabled: true
+    secret_ref: "providers.webhooks.github.secret"
+  plane:
+    enabled: true
+    secret_ref: "providers.webhooks.plane.secret"
+```
+
+`queue.name` must be BullMQ-safe and must not contain `:`. `REDIS_URL` can
+override `queue.redis_url` at process startup. Worker concurrency defaults to
+`8`; use `webhook-worker --concurrency <n>` for a process-local override.
+
+`dedupe_ttl_seconds` is reserved for future explicit BullMQ deduplication. The
+current MVP dedupes repeated deliveries with deterministic BullMQ job ids and
+retains completed jobs according to `remove_on_complete`.
+
 ## Secrets
 
 Do not commit secrets.
@@ -159,8 +196,9 @@ Do not commit secrets.
 - GitHub provider auth uses `gh`; Luna does not define `github.yaml` or GitHub
   entries in `luna.auth.json`.
 
-Webhook provider secrets use the `providers.webhooks` namespace in
-`luna.auth.json`:
+Webhook provider signing secrets are separate from provider API auth. They use
+the `providers.webhooks` namespace in `luna.auth.json` and are resolved through
+the `secret_ref` fields in `config/webhooks.yaml`:
 
 ```json
 {

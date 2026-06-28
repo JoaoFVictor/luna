@@ -148,6 +148,19 @@ Resume a human interrupt:
 LUNA_CONFIG_ROOT=config npm run dev -- resume --target workflow:implementation --thread <run-id> --checkpoint <checkpoint-id> --interrupt <interrupt-id> --decision '{"approved":true}'
 ```
 
+Run webhook ingress locally:
+
+```bash
+redis-server
+npm run build
+node dist/src/cli.js webhook-server
+node dist/src/cli.js webhook-worker
+```
+
+Configure signing secrets in `luna.auth.json` under `providers.webhooks` and
+send signed requests to `POST /webhooks/:provider`. The HTTP process enqueues
+only; the worker routes and executes the workflow asynchronously.
+
 Run artifacts are written under:
 
 ```text

@@ -32,6 +32,16 @@ adapter registry in `src/platform/native/native-platform-registrations.ts`.
 This means `src/adapters/**` is shared plumbing, not where every concrete
 provider adapter necessarily lives.
 
+Webhook adapters follow the same ownership rule. The HTTP ingress is one
+provider-parametric route, `POST /webhooks/:provider`, implemented by generic
+`src/webhooks/**` plumbing. GitHub and Plane own their signature verification
+and payload normalization under `src/providers/github/` and
+`src/providers/plane/`.
+
+Adding another webhook provider should mean adding a provider-owned webhook
+adapter, registering its factory in native platform plugins, and adding config
+for its `secret_ref`. It should not add another HTTP endpoint.
+
 ## Invocation Boundary
 
 Invocation is the provider/data boundary. It has fixed top-level fields such as
@@ -58,7 +68,8 @@ The CLI flow is:
 4. Execute the workflow target.
 
 The default routing config puts explicit target first, GitHub PR events to
-`workflow:code-review`, and Jira/Plane issue selections to
+`workflow:code-review`, Jira issue selections to `workflow:implementation`, and
+Plane issue selections plus webhook `create`/`update` events to
 `workflow:implementation`.
 
 ## Provider Ownership
