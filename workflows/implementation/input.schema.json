@@ -17,7 +17,7 @@
     },
     "source": {
       "type": "string",
-      "const": "jira"
+      "enum": ["jira", "plane"]
     },
     "event": {
       "type": "string",
@@ -34,7 +34,10 @@
       "$ref": "#/definitions/repository"
     },
     "subject": {
-      "$ref": "#/definitions/jira_issue_subject"
+      "anyOf": [
+        { "$ref": "#/definitions/jira_issue_subject" },
+        { "$ref": "#/definitions/plane_issue_subject" }
+      ]
     },
     "actor": {
       "$ref": "#/definitions/actor"
@@ -94,6 +97,29 @@
         "type": {
           "type": "string",
           "const": "jira_issue"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "plane_issue_subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "url", "title"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "plane_issue"
         },
         "id": {
           "type": "string",

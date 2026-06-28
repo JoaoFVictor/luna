@@ -89,8 +89,9 @@ export type MainDependencies = {
   adapterContext?: AdapterContext;
   platform?: Pick<
     LunaPlatform,
-    "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+    "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow"
   >;
+  webhookProviderRegistry?: LunaPlatform["webhookProviderRegistry"];
   startWebhookServer?: (deps: ResolvedWebhookServerDeps) => Promise<void>;
   startWebhookWorker?: (deps: ResolvedWebhookWorkerDeps) => Promise<void>;
   projectRoot?: string;
@@ -380,10 +381,9 @@ export async function main(
     );
     return app;
   };
-  let loadedPlatform: Pick<
-    LunaPlatform,
-    "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
-  > | undefined;
+  let loadedPlatform:
+    | Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">
+    | undefined;
   const loadPlatform = async () => {
     loadedPlatform ??= deps.platform ?? await loadNativeLunaPlatform({
       projectRoot,
@@ -392,10 +392,20 @@ export async function main(
     });
     return loadedPlatform;
   };
+  let loadedWebhookProviderRegistry: LunaPlatform["webhookProviderRegistry"] | undefined;
+  const loadWebhookProviderRegistry = async () => {
+    loadedWebhookProviderRegistry ??=
+      deps.webhookProviderRegistry ??
+      (await loadNativeLunaPlatform({
+        projectRoot,
+        configRoot,
+        app: await loadApp()
+      })).webhookProviderRegistry;
+    return loadedWebhookProviderRegistry;
+  };
   let invocation: Invocation;
 
   if (parsedArgs.command === "webhook-server") {
-    const platform = await loadPlatform();
     const loadedConfig = await loadWebhookConfig(configRoot);
     const config: WebhookConfig = {
       ...loadedConfig,
@@ -410,7 +420,7 @@ export async function main(
       projectRoot,
       configRoot,
       config,
-      webhookProviderRegistry: platform.webhookProviderRegistry
+      webhookProviderRegistry: await loadWebhookProviderRegistry()
     });
 
     return 0;

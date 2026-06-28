@@ -72,6 +72,10 @@ The default routing config puts explicit target first, GitHub PR events to
 Plane issue selections plus webhook `create`/`update` events to
 `workflow:implementation`.
 
+Plane implementation invocations still need a repository hint. Plane webhook
+normalization reads the same `provider:owner/repo` label shape used by the
+Plane task URL adapter and maps it to the invocation repository.
+
 ## Provider Ownership
 
 A provider owns:

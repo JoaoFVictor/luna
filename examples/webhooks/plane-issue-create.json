@@ -7,6 +7,15 @@
     "url": "https://app.plane.so/acme/projects/proj/issues/issue-1",
     "name": "Implement webhook support",
     "project_id": "project-1",
+    "sequence_id": 42,
+    "description_stripped": "Implement generic webhook ingress.",
+    "state": {
+      "name": "Backlog"
+    },
+    "priority": "high",
+    "labels": [
+      { "name": "github:org/repo" }
+    ],
     "workspace_detail": {
       "slug": "acme"
     },

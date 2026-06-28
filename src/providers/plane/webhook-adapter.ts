@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { InvocationSchema } from "../../core/router/invocation.js";
+import { repositoryHintFromLabels } from "../repository-hints/repository-reference.js";
 import type {
   WebhookAdapterInput,
   WebhookHeaders,
@@ -27,6 +28,13 @@ const PlaneIssuePayloadSchema = z
         url: z.string().url().optional(),
         name: z.string().min(1).optional(),
         title: z.string().min(1).optional(),
+        sequence_id: z.number().int().optional(),
+        description: z.unknown().optional(),
+        description_stripped: z.string().optional(),
+        description_html: z.string().optional(),
+        priority: z.string().optional(),
+        state: z.unknown().optional(),
+        labels: z.array(z.unknown()).optional(),
         project_id: z.string().min(1).optional(),
         project: z.string().min(1).optional(),
         workspace_detail: z
@@ -53,6 +61,13 @@ const PlaneIssuePayloadSchema = z
         url: z.string().url().optional(),
         name: z.string().min(1).optional(),
         title: z.string().min(1).optional(),
+        sequence_id: z.number().int().optional(),
+        description: z.unknown().optional(),
+        description_stripped: z.string().optional(),
+        description_html: z.string().optional(),
+        priority: z.string().optional(),
+        state: z.unknown().optional(),
+        labels: z.array(z.unknown()).optional(),
         project_id: z.string().min(1).optional()
       })
       .passthrough()
@@ -96,6 +111,50 @@ function headerValue(headers: WebhookHeaders, name: string): string | undefined 
   }
 
   return undefined;
+}
+
+function textFromValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(textFromValue).filter(Boolean).join(" ");
+  }
+
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const ownText = typeof record.text === "string" ? record.text : "";
+    const contentText = textFromValue(record.content);
+    const combined = `${ownText}${contentText ? ` ${contentText}` : ""}`;
+
+    return combined.trim();
+  }
+
+  return "";
+}
+
+function compactText(value: unknown): string {
+  return textFromValue(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function nameOf(value: unknown): string {
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.name === "string") {
+      return record.name;
+    }
+  }
+
+  return compactText(value);
+}
+
+function labelNames(values: unknown[] | undefined): string[] {
+  if (values === undefined) {
+    return [];
+  }
+
+  return values.map(nameOf).filter((label) => label.length > 0);
 }
 
 function requireHeader(
@@ -179,25 +238,53 @@ export function normalizePlaneWebhook(
 
   const payload = parseIssuePayload(input.body);
   const issue = issueFrom(payload);
+  const labels = labelNames(issue.labels);
+  const repositoryHint = repositoryHintFromLabels(labels);
+  if (repositoryHint === undefined) {
+    throw webhookPayloadInvalid("Plane issue webhook repository hint is missing");
+  }
+
+  const issueUrl = issue.url;
+  if (issueUrl === undefined) {
+    throw webhookPayloadInvalid("Plane issue webhook URL is missing");
+  }
+
+  const issueTitle = issue.name ?? issue.title;
+  if (issueTitle === undefined) {
+    throw webhookPayloadInvalid("Plane issue webhook title is missing");
+  }
+
+  const workspace = workspaceSlugOrId(payload);
+  const project = projectSlugOrId(payload);
   const invocation = InvocationSchema.parse({
     version: "2026-06",
     source: "plane",
     event: "issue",
     action,
-    repository: {
-      provider: "plane",
-      owner: workspaceSlugOrId(payload),
-      name: projectSlugOrId(payload)
-    },
+    repository: repositoryHint.repository,
     subject: {
-      type: "issue",
+      type: "plane_issue",
       id: issue.id,
-      ...(issue.url === undefined ? {} : { url: issue.url }),
-      ...((issue.name ?? issue.title) === undefined
-        ? {}
-        : { title: issue.name ?? issue.title })
+      url: issueUrl,
+      title: issueTitle
     },
-    payload
+    payload: {
+      plane: {
+        instance_id: workspace,
+        workspace_slug: workspace,
+        project_id: project,
+        issue_id: issue.id,
+        ...(issue.sequence_id === undefined ? {} : { sequence_id: issue.sequence_id }),
+        description: compactText(
+          issue.description_stripped ?? issue.description_html ?? issue.description
+        ),
+        status: nameOf(issue.state),
+        priority: issue.priority ?? "",
+        labels,
+        repository_hint_source: repositoryHint.source
+      },
+      raw: payload
+    }
   });
 
   return { kind: "accepted", deliveryId: id, invocation };

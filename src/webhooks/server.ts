@@ -30,7 +30,7 @@ import { resolveProviderWebhookSecret } from "./secrets.js";
 export type CreateWebhookServerDeps = {
   registry: WebhookProviderRegistry<WebhookProviderAdapter>;
   config: WebhookConfig;
-  queue: Pick<Queue<WebhookInvocationJob>, "add">;
+  queue: WebhookQueueAddTarget;
   checkQueueReady: () => Promise<void>;
   logger?: Pick<Console, "info" | "warn" | "error">;
   now?: () => Date;
@@ -343,7 +343,7 @@ export function createWebhookServer(
           invocation: normalized.invocation
         };
         const enqueued = await enqueueWebhookInvocation(
-          deps.queue as WebhookQueueAddTarget,
+          deps.queue,
           deps.config,
           job
         );

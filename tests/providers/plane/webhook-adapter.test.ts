@@ -1,5 +1,8 @@
 import { createHmac } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { matchesJsonSchema } from "../../../src/core/capabilities/json-schema.js";
 import { InvocationSchema } from "../../../src/core/router/invocation.js";
 import {
   createPlaneWebhookAdapter,
@@ -31,7 +34,12 @@ function issuePayload(action: string, overrides: Record<string, unknown> = {}) {
     issue: {
       id: "issue-1",
       url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
-      name: "Implement webhooks"
+      name: "Implement webhooks",
+      sequence_id: 42,
+      description_stripped: "Wire webhook ingress.",
+      state: { name: "Backlog" },
+      priority: "high",
+      labels: [{ name: "github:org/repo" }]
     },
     workspace: {
       slug: "acme"
@@ -56,6 +64,11 @@ function documentedIssuePayload(
       url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
       name: "Implement webhooks",
       project_id: "project-1",
+      sequence_id: 42,
+      description_html: "<p>Wire webhook ingress.</p>",
+      state: { name: "Backlog" },
+      priority: "high",
+      labels: [{ name: "github:org/repo" }],
       workspace_detail: {
         slug: "acme"
       },
@@ -107,7 +120,7 @@ describe("Plane webhook adapter signature verification", () => {
     const rawBody = Buffer.from(JSON.stringify(body));
 
     expect(signature("plane-secret", rawBody)).toBe(
-      "b809cffbd1343a6c27b475d9b6fa5cb0072630483059746b338c490af4ab1704"
+      "bdae96dafe2560b2e1290022b117ccaee4b82f8e3ad2ac68858771de87c3cca7"
     );
     expect(() =>
       verifyPlaneWebhookSignature(
@@ -115,7 +128,7 @@ describe("Plane webhook adapter signature verification", () => {
           rawBody,
           body,
           signatureHeader:
-            "b809cffbd1343a6c27b475d9b6fa5cb0072630483059746b338c490af4ab1704"
+            "bdae96dafe2560b2e1290022b117ccaee4b82f8e3ad2ac68858771de87c3cca7"
         }),
         "plane-secret"
       )
@@ -166,15 +179,30 @@ describe("Plane webhook adapter normalization", () => {
         event: "issue",
         action: "create",
         repository: {
-          provider: "plane",
-          owner: "acme",
-          name: "proj"
+          provider: "github",
+          owner: "org",
+          name: "repo"
         },
         subject: {
-          type: "issue",
+          type: "plane_issue",
           id: "issue-1",
           url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
           title: "Implement webhooks"
+        },
+        payload: {
+          plane: {
+            instance_id: "acme",
+            workspace_slug: "acme",
+            project_id: "proj",
+            issue_id: "issue-1",
+            sequence_id: 42,
+            description: "Wire webhook ingress.",
+            status: "Backlog",
+            priority: "high",
+            labels: ["github:org/repo"],
+            repository_hint_source: "label:github:org/repo"
+          },
+          raw: issuePayload("create")
         }
       }
     });
@@ -183,7 +211,7 @@ describe("Plane webhook adapter normalization", () => {
       throw new Error("Expected accepted result");
     }
     expect(InvocationSchema.parse(result.invocation)).toEqual(result.invocation);
-    expect(result.invocation.payload).toEqual(issuePayload("create"));
+    expect(result.invocation.payload?.raw).toEqual(issuePayload("create"));
   });
 
   it("accepts Plane's documented issue payload shape", () => {
@@ -199,19 +227,49 @@ describe("Plane webhook adapter normalization", () => {
         event: "issue",
         action: "create",
         repository: {
-          provider: "plane",
-          owner: "acme",
-          name: "PROJ"
+          provider: "github",
+          owner: "org",
+          name: "repo"
         },
         subject: {
-          type: "issue",
+          type: "plane_issue",
           id: "issue-1",
           url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
           title: "Implement webhooks"
         },
-        payload
+        payload: {
+          plane: {
+            instance_id: "acme",
+            workspace_slug: "acme",
+            project_id: "PROJ",
+            issue_id: "issue-1",
+            sequence_id: 42,
+            description: "Wire webhook ingress.",
+            status: "Backlog",
+            priority: "high",
+            labels: ["github:org/repo"],
+            repository_hint_source: "label:github:org/repo"
+          },
+          raw: payload
+        }
       }
     });
+  });
+
+  it("produces an invocation accepted by the implementation workflow input schema", async () => {
+    const result = normalizePlaneWebhook(input());
+    if (result.kind !== "accepted") {
+      throw new Error("Expected accepted result");
+    }
+
+    const schema = JSON.parse(
+      await readFile(
+        path.join(process.cwd(), "workflows/implementation/input.schema.json"),
+        "utf8"
+      )
+    ) as Record<string, unknown>;
+
+    expect(matchesJsonSchema(schema, result.invocation)).toBe(true);
   });
 
   it("accepts issue update", () => {
@@ -220,7 +278,12 @@ describe("Plane webhook adapter normalization", () => {
       deliveryId: "delivery-1",
       invocation: {
         action: "update",
-        payload: issuePayload("update")
+        payload: {
+          plane: expect.objectContaining({
+            issue_id: "issue-1"
+          }),
+          raw: issuePayload("update")
+        }
       }
     });
   });
@@ -251,6 +314,69 @@ describe("Plane webhook adapter normalization", () => {
       code: "webhook_payload_invalid",
       statusCode: 400,
       message: "Plane issue webhook payload is invalid"
+    });
+  });
+
+  it("rejects issue webhooks without a repository hint label", () => {
+    const error = captureError(() =>
+      normalizePlaneWebhook(
+        input({
+          body: issuePayload("create", {
+            issue: {
+              id: "issue-1",
+              url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
+              name: "Implement webhooks",
+              labels: [{ name: "backend" }]
+            }
+          })
+        })
+      )
+    );
+
+    expect(error).toMatchObject({
+      code: "webhook_payload_invalid",
+      statusCode: 400,
+      message: "Plane issue webhook repository hint is missing"
+    });
+  });
+
+  it("rejects issue webhooks missing required implementation subject fields", () => {
+    const missingUrl = captureError(() =>
+      normalizePlaneWebhook(
+        input({
+          body: issuePayload("create", {
+            issue: {
+              id: "issue-1",
+              name: "Implement webhooks",
+              labels: [{ name: "github:org/repo" }]
+            }
+          })
+        })
+      )
+    );
+    const missingTitle = captureError(() =>
+      normalizePlaneWebhook(
+        input({
+          body: issuePayload("create", {
+            issue: {
+              id: "issue-1",
+              url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
+              labels: [{ name: "github:org/repo" }]
+            }
+          })
+        })
+      )
+    );
+
+    expect(missingUrl).toMatchObject({
+      code: "webhook_payload_invalid",
+      statusCode: 400,
+      message: "Plane issue webhook URL is missing"
+    });
+    expect(missingTitle).toMatchObject({
+      code: "webhook_payload_invalid",
+      statusCode: 400,
+      message: "Plane issue webhook title is missing"
     });
   });
 });

@@ -138,7 +138,7 @@ async function writeCliProjectConfig({
 
 function webhookPlatform(): Pick<
   LunaPlatform,
-  "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+  "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow"
 > {
   return {
     inputAdapterRegistry: registryWith({
@@ -147,8 +147,7 @@ function webhookPlatform(): Pick<
       load: vi.fn()
     }),
     runWorkflow: vi.fn(async () => undefined),
-    resumeWorkflow: vi.fn(async () => succeededWorkflowResult()),
-    webhookProviderRegistry: defineWebhookProviderAdapterFactories([])
+    resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
   };
 }
 
@@ -300,11 +299,10 @@ describe("Luna CLI", () => {
     const platform = {
       inputAdapterRegistry: registryWith(adapter),
       runWorkflow: vi.fn(async () => undefined),
-      resumeWorkflow: vi.fn(async () => succeededWorkflowResult()),
-      webhookProviderRegistry: defineWebhookProviderAdapterFactories([])
+      resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
     } satisfies Pick<
       LunaPlatform,
-      "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+      "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow"
     >;
 
     await expect(
@@ -356,11 +354,10 @@ describe("Luna CLI", () => {
         load: vi.fn()
       }),
       runWorkflow: vi.fn(async () => undefined),
-      resumeWorkflow: vi.fn(async () => succeededWorkflowResult()),
-      webhookProviderRegistry: defineWebhookProviderAdapterFactories([])
+      resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
     } satisfies Pick<
       LunaPlatform,
-      "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+      "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow"
     >;
 
     await expect(
@@ -402,6 +399,7 @@ describe("Luna CLI", () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-webhook-server-"));
     const configRoot = path.join(projectRoot, "config");
     const platform = webhookPlatform();
+    const webhookProviderRegistry = defineWebhookProviderAdapterFactories([]);
     const startWebhookServer = vi.fn(async () => undefined);
     await writeCliProjectConfig({ projectRoot, configRoot });
 
@@ -416,6 +414,7 @@ describe("Luna CLI", () => {
         ],
         {
           platform,
+          webhookProviderRegistry,
           projectRoot,
           env: { LUNA_CONFIG_ROOT: configRoot },
           startWebhookServer
@@ -427,7 +426,7 @@ describe("Luna CLI", () => {
       expect.objectContaining({
         projectRoot,
         configRoot,
-        webhookProviderRegistry: platform.webhookProviderRegistry,
+        webhookProviderRegistry,
         config: expect.objectContaining({
           server: expect.objectContaining({
             host: "0.0.0.0",
