@@ -5,7 +5,7 @@ import {
 } from "../reports/execution-summary.js";
 import type { ChangeRequestArtifact } from "../change-request/contracts.js";
 import type { Invocation, InvocationRepository } from "../../core/router/invocation.js";
-import type { ObservabilitySummary } from "../../core/observability/summary.js";
+import type { TraceSummaryProjection } from "../../core/observability/tracing.js";
 import type { ValidationResult } from "../validation/command-runner.js";
 import type {
   CommitChangesArtifact,
@@ -26,7 +26,7 @@ export type ImplementationReportInput = {
   push: PushBranchArtifact;
   changeRequest: ChangeRequestArtifact;
   trustedHostLocal: boolean;
-  summary?: ObservabilitySummary;
+  summary?: TraceSummaryProjection;
 };
 
 export type ImplementationWorktreeSummary = {

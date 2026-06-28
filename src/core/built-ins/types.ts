@@ -1,4 +1,4 @@
-import type { ObservabilitySummary } from "../observability/summary.js";
+import type { WorkflowObservability } from "../observability/workflow-observability.js";
 import type { WorkflowState } from "../workflow/state.js";
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -43,7 +43,7 @@ export type BuiltInStepRunOptions<
   readonly state: WorkflowState;
   readonly input?: Record<string, unknown>;
   readonly dependencies?: Dependencies;
-  readonly observabilitySummary?: ObservabilitySummary;
+  readonly observability?: WorkflowObservability;
 };
 
 export type BuiltInStep<

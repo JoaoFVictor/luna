@@ -77,7 +77,7 @@ export async function runPatternAgent({
     runtime_requirements: runtimeRequirementsForDefaults(defaults),
     signal: defaults.signal,
     events: defaults.events,
-    observabilitySummary: input.observabilitySummary,
+    observability: input.observability?.recorder,
     emitEvent: workflowAgentEventEmitter(input)
   });
 

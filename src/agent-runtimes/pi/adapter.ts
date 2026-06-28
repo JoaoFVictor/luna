@@ -15,6 +15,7 @@ import {
   type RunAgentInput,
   type RunAgentOutput
 } from "../../core/agent-runtime/contracts.js";
+import type { LunaUsage } from "../../core/observability/tracing.js";
 import { validateAgentRuntimeInput } from "../../core/agent-runtime/validation.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { ModelProfile } from "../../core/config/schemas.js";
@@ -214,8 +215,10 @@ function userPrompt(input: RunAgentInput): string {
 function piTools(input: RunAgentInput): {
   readonly tools: Tool[];
   readonly handlers: ReadonlyMap<string, (args: unknown) => Promise<unknown>>;
+  readonly originalToolIds: ReadonlyMap<string, string>;
 } {
   const handlers = new Map<string, (args: unknown) => Promise<unknown>>();
+  const originalToolIds = new Map<string, string>();
   const tools = input.tools.tools
     .filter((tool) => tool.protocol === "local")
     .map((tool): Tool => {
@@ -234,6 +237,7 @@ function piTools(input: RunAgentInput): {
       }
 
       const handler = tool.local.createHandler({ cwd: input.cwd });
+      originalToolIds.set(name, tool.id);
       handlers.set(name, async (args) => {
         if (!matchesJsonSchema(tool.input_schema, args)) {
           throw piRuntimeError(
@@ -253,7 +257,7 @@ function piTools(input: RunAgentInput): {
       };
     });
 
-  return { tools, handlers };
+  return { tools, handlers, originalToolIds };
 }
 
 function toolCalls(message: AssistantMessage): {
@@ -273,7 +277,9 @@ function toolCalls(message: AssistantMessage): {
 async function appendToolResults(
   context: Context,
   calls: ReturnType<typeof toolCalls>,
-  handlers: ReadonlyMap<string, (args: unknown) => Promise<unknown>>
+  handlers: ReadonlyMap<string, (args: unknown) => Promise<unknown>>,
+  originalToolIds: ReadonlyMap<string, string>,
+  observability: RunAgentInput["observability"]
 ): Promise<void> {
   for (const call of calls) {
     const handler = handlers.get(call.name);
@@ -290,7 +296,26 @@ async function appendToolResults(
     }
 
     try {
-      const output = await handler(call.arguments);
+      const runTool = async () => await handler(call.arguments);
+      const output = observability === undefined
+        ? await runTool()
+        : await observability.withSpan(
+            {
+              name: `tool.${originalToolIds.get(call.name) ?? call.name}`,
+              kind: "tool",
+              attributes: {
+                "tool.name": call.name,
+                "tool.call_id": call.id
+              },
+              metadata: {
+                tool_call_id: call.id,
+                tool_name: call.name,
+                tool_id: originalToolIds.get(call.name),
+                arguments: call.arguments
+              }
+            },
+            runTool
+          );
       context.messages.push({
         role: "toolResult",
         toolCallId: call.id,
@@ -318,6 +343,24 @@ async function appendToolResults(
 }
 
 function usageFrom(message: AssistantMessage): RunAgentOutput["usage"] {
+  return {
+    input_tokens: message.usage.input,
+    output_tokens: message.usage.output,
+    total_tokens: message.usage.totalTokens,
+    cache_read_tokens: message.usage.cacheRead,
+    cache_write_tokens: message.usage.cacheWrite,
+    cost: {
+      input: message.usage.cost.input,
+      output: message.usage.cost.output,
+      cache_read: message.usage.cost.cacheRead,
+      cache_write: message.usage.cost.cacheWrite,
+      total: message.usage.cost.total,
+      unit: "provider_cost_unit"
+    }
+  };
+}
+
+function lunaUsageFrom(message: AssistantMessage): LunaUsage {
   return {
     input_tokens: message.usage.input,
     output_tokens: message.usage.output,
@@ -392,12 +435,41 @@ export function createPiAgentRuntimeAdapter(
         };
 
         for (let iteration = 0; iteration <= maxToolIterations; iteration += 1) {
-          const message = await withTimeout(
-            async (signal) =>
-              await complete(model, context, runOptions(input, selected.provider, signal)),
-            input.signal,
-            requestTimeoutMs
-          );
+          const completeOnce = async () =>
+            await withTimeout(
+              async (signal) =>
+                await complete(model, context, runOptions(input, selected.provider, signal)),
+              input.signal,
+              requestTimeoutMs
+            );
+          const message = input.observability === undefined
+            ? await completeOnce()
+            : await input.observability.withSpan(
+                {
+                  name: "llm.complete",
+                  kind: "llm",
+                  provider: selected.provider,
+                  model: selected.model,
+                  attributes: {
+                    "gen_ai.system": selected.provider,
+                    "gen_ai.request.model": selected.model,
+                    "luna.pi.iteration": iteration
+                  },
+                  metadata: {
+                    session_id: piSessionId(input),
+                    max_tool_iterations: maxToolIterations
+                  }
+                },
+                async (span) => {
+                  const message = await completeOnce();
+                  span.setUsage(lunaUsageFrom(message));
+                  span.setMetadata("response_id", message.responseId);
+                  span.setMetadata("stop_reason", message.stopReason);
+                  span.setMetadata("provider", message.provider);
+                  span.setMetadata("model", message.model);
+                  return message;
+                }
+              );
           if (message.stopReason === "error" || message.stopReason === "aborted") {
             throw piRuntimeError(
               message.stopReason === "aborted"
@@ -422,7 +494,13 @@ export function createPiAgentRuntimeAdapter(
             };
           }
 
-          await appendToolResults(context, calls, materialized.handlers);
+          await appendToolResults(
+            context,
+            calls,
+            materialized.handlers,
+            materialized.originalToolIds,
+            input.observability
+          );
         }
 
         throw piRuntimeError(

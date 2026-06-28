@@ -65,7 +65,7 @@ export function finalImplementationReport({
   state,
   input,
   dependencies = {},
-  observabilitySummary
+  observability
 }: BuiltInStepRunOptions): unknown {
   const renderers = implementationReportRenderersFrom({
     dependencies,
@@ -76,7 +76,7 @@ export function finalImplementationReport({
     state,
     input,
     dependencies,
-    observabilitySummary,
+    observability,
     invocation: planeIssueInvocationFrom(state)
   });
 

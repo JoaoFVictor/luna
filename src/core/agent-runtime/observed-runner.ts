@@ -4,87 +4,120 @@ import type {
   RunAgentInput,
   RunAgentOutput
 } from "./contracts.js";
-import {
-  recordPromptOperation,
-  recordPromptUsage,
-  recordPromptUsageMissing,
-  type LunaUsageRecord,
-  type ObservabilitySummary
-} from "../observability/summary.js";
+import type { ObservabilityRecorder } from "../observability/tracing.js";
 import {
   agentFailedEvent,
   agentStartedEvent,
   agentSucceededEvent,
+  type LunaUsageRecord,
   type ObservedAgentEvent
 } from "./observed-agent-events.js";
 
 export async function runObservedAgent({
   runtime,
   input,
-  observabilitySummary,
+  observability,
   emitEvent,
   now = () => Date.now()
 }: {
   readonly runtime: AgentRuntimePort;
   readonly input: RunAgentInput;
-  readonly observabilitySummary?: ObservabilitySummary;
+  readonly observability?: ObservabilityRecorder;
   readonly emitEvent?: (event: ObservedAgentEvent) => Promise<void> | void;
   readonly now?: () => number;
 }): Promise<RunAgentOutput> {
-  const startedAt = now();
   const runtimeId = runtime.describe().id;
-  await emitEvent?.(agentStartedEvent({ input, runtimeId }));
+  return await observabilitySpan(
+    observability,
+    {
+      name: `agent.${input.agent_id}`,
+      kind: "agent",
+      nodeId: input.node_id,
+      agentId: input.agent_id,
+      attributes: {
+        "luna.agent.mode": input.agent_mode,
+        "luna.agent.runtime": runtimeId,
+        "luna.model_profile": input.model_profile.model
+      },
+      metadata: {
+        runtime_requirements: input.runtime_requirements,
+        local_tool_ids: input.tools.tools
+          .filter((tool) => tool.protocol === "local")
+          .map((tool) => tool.id),
+        mcp_tool_ids: input.tools.tools
+          .filter((tool) => tool.protocol === "mcp")
+          .map((tool) => tool.id)
+      }
+    },
+    async (span) => {
+      const startedAt = now();
+      await emitEvent?.(agentStartedEvent({ input, runtimeId }));
 
-  let result: RunAgentOutput;
-  try {
-    result = await runtime.runAgent(input);
-  } catch (cause) {
-    const durationMs = Math.max(0, now() - startedAt);
-    recordPromptOperation(observabilitySummary, {
-      durationMs
-    });
-    recordPromptUsageMissing(observabilitySummary);
-    await emitEvent?.(agentFailedEvent({ input, runtimeId, durationMs, cause }));
-    throw cause;
-  }
+      let result: RunAgentOutput;
+      try {
+        result = await runtime.runAgent(input);
+      } catch (cause) {
+        const durationMs = Math.max(0, now() - startedAt);
+        await emitEvent?.(agentFailedEvent({ input, runtimeId, durationMs, cause }));
+        throw cause;
+      }
 
-  const durationMs = Math.max(0, now() - startedAt);
-  const usage = usageRecordFromRuntimeResult({ input, result });
-  recordAgentObservation({
-    observabilitySummary,
-    usage,
-    durationMs
-  });
-  await emitEvent?.(
-    agentSucceededEvent({
-      input,
-      runtimeId,
-      durationMs,
-      usage,
-      runtimeMetadata: result.runtime_metadata
-    })
+      const durationMs = Math.max(0, now() - startedAt);
+      const usage = usageRecordFromRuntimeResult({ input, result });
+      if (usage !== undefined) {
+        span?.setUsage({
+          input_tokens: usage.tokens.input,
+          output_tokens: usage.tokens.output,
+          cache_read_tokens: usage.tokens.cache_read,
+          cache_write_tokens: usage.tokens.cache_write,
+          total_tokens: usage.tokens.total,
+          rollup: "aggregate_fallback",
+          cost: {
+            input: usage.cost.input,
+            output: usage.cost.output,
+            cache_read: usage.cost.cache_read,
+            cache_write: usage.cost.cache_write,
+            total: usage.cost.total,
+            unit: "provider_cost_unit"
+          }
+        });
+      }
+      for (const [key, value] of Object.entries(result.runtime_metadata ?? {})) {
+        span?.setMetadata(`runtime.${key}`, value);
+      }
+      const provider = usage?.provider;
+      const model = usage?.model;
+      if (provider !== undefined) {
+        span?.setAttribute("gen_ai.system", provider);
+      }
+      if (model !== undefined) {
+        span?.setAttribute("gen_ai.request.model", model);
+      }
+      await emitEvent?.(
+        agentSucceededEvent({
+          input,
+          runtimeId,
+          durationMs,
+          usage,
+          runtimeMetadata: result.runtime_metadata
+        })
+      );
+
+      return result;
+    }
   );
-
-  return result;
 }
 
-function recordAgentObservation({
-  observabilitySummary,
-  usage,
-  durationMs
-}: {
-  readonly observabilitySummary?: ObservabilitySummary;
-  readonly usage: LunaUsageRecord | undefined;
-  readonly durationMs: number;
-}): void {
-  recordPromptOperation(observabilitySummary, { durationMs });
-
-  if (usage === undefined) {
-    recordPromptUsageMissing(observabilitySummary);
-    return;
+async function observabilitySpan<T>(
+  observability: ObservabilityRecorder | undefined,
+  input: Parameters<ObservabilityRecorder["withSpan"]>[0],
+  run: (span: Parameters<Parameters<ObservabilityRecorder["withSpan"]>[1]>[0] | undefined) => Promise<T>
+): Promise<T> {
+  if (observability === undefined) {
+    return await run(undefined);
   }
 
-  recordPromptUsage(observabilitySummary, usage);
+  return await observability.withSpan(input, async (span) => await run(span));
 }
 
 function usageRecordFromRuntimeResult({

@@ -5,7 +5,7 @@ import type {
 } from "../agent-runtime/contracts.js";
 import type { BuiltInStepMetadata } from "../built-ins/types.js";
 import type { ModelProfile } from "../config/schemas.js";
-import type { ObservabilitySummary } from "../observability/summary.js";
+import type { WorkflowObservability } from "../observability/workflow-observability.js";
 import type { ArtifactOverwritePolicy } from "../runtime/artifacts/transaction.js";
 import type { RuntimeBackends } from "../runtime/backends/contracts.js";
 import type { JsonValue } from "../runtime/json.js";
@@ -48,7 +48,7 @@ export type WorkflowBuiltInExecutor = (input: {
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
-  readonly observabilitySummary?: ObservabilitySummary;
+  readonly observability?: WorkflowObservability;
 }) => Promise<unknown> | unknown;
 
 export type WorkflowBuiltInMetadataResolver = (
@@ -62,7 +62,7 @@ export type WorkflowPatternExecutor = (input: {
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
-  readonly observabilitySummary?: ObservabilitySummary;
+  readonly observability?: WorkflowObservability;
 }) => Promise<unknown> | unknown;
 
 export type WorkflowAgentDefaults = {
@@ -94,7 +94,7 @@ export type RunWorkflowInput = {
   readonly agentRuntime: AgentRuntimePort;
   readonly agentInputs?: WorkflowAgentInputMap;
   readonly artifactPublisher?: WorkflowArtifactPublisherPort;
-  readonly observabilitySummary?: ObservabilitySummary;
+  readonly observability?: WorkflowObservability;
   readonly workspaceLifecycle?: WorkflowWorkspaceLifecyclePort;
 };
 
@@ -110,7 +110,7 @@ export type ResumeWorkflowInput = {
   readonly agentRuntime: AgentRuntimePort;
   readonly agentInputs?: WorkflowAgentInputMap;
   readonly artifactPublisher?: WorkflowArtifactPublisherPort;
-  readonly observabilitySummary?: ObservabilitySummary;
+  readonly observability?: WorkflowObservability;
   readonly workspaceLifecycle?: WorkflowWorkspaceLifecyclePort;
   readonly thread_id: string;
   readonly checkpoint_id: string;

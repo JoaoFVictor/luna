@@ -74,7 +74,7 @@ export async function executeAgentNode({
     runtime_requirements: requirements,
     signal: defaults.signal,
     events: defaults.events,
-    observabilitySummary: input.observabilitySummary,
+    observability: input.observability?.recorder,
     emitEvent: workflowAgentEventEmitter(input)
   });
   return result.output;

@@ -61,6 +61,63 @@ export async function runWorkflowNodeAttempt({
   readonly node: CompiledWorkflowNode;
   readonly decision: ExecutionPolicyDecision;
 }): Promise<WorkflowNodeAttemptOutcome> {
+  if (input.observability !== undefined) {
+    return await input.observability.recorder.withSpan(
+      {
+        name: `node.${node.id}`,
+        kind: node.kind === "interrupt" ? "interrupt" : "node",
+        nodeId: node.id,
+        capabilityId: "capability_id" in node ? node.capability_id : undefined,
+        attributes: {
+          "luna.node.kind": node.kind
+        },
+        metadata: {
+          yaml_path: node.yaml_path,
+          source: node.source
+        }
+      },
+      async (span) => {
+        const outcome = await runWorkflowNodeAttemptBody({
+          input,
+          state,
+          runtimeContext,
+          node,
+          decision
+        });
+        if (outcome.kind === "waiting_for_input") {
+          span.setStatus("waiting");
+          await span.addEvent("interrupt.waiting", {
+            interrupt_id: outcome.interrupt_id,
+            checkpoint_id: outcome.checkpoint_id
+          });
+        }
+        return outcome;
+      }
+    );
+  }
+
+  return await runWorkflowNodeAttemptBody({
+    input,
+    state,
+    runtimeContext,
+    node,
+    decision
+  });
+}
+
+async function runWorkflowNodeAttemptBody({
+  input,
+  state,
+  runtimeContext,
+  node,
+  decision
+}: {
+  readonly input: RunWorkflowInput;
+  readonly state: LunaRuntimeState;
+  readonly runtimeContext: WorkflowRuntimeContext;
+  readonly node: CompiledWorkflowNode;
+  readonly decision: ExecutionPolicyDecision;
+}): Promise<WorkflowNodeAttemptOutcome> {
   const started = startNodeAttempt(state, node.id, 1);
   await appendWorkflowEvent(input, "node.started", node.id);
 

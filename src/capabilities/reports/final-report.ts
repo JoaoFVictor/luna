@@ -6,7 +6,8 @@ import {
   executionSummaryJson,
   executionSummaryMarkdownLines
 } from "./execution-summary.js";
-import type { ObservabilitySummary } from "../../core/observability/summary.js";
+import type { TraceSummaryProjection } from "../../core/observability/tracing.js";
+import type { WorkflowObservability } from "../../core/observability/workflow-observability.js";
 
 type ReportSection = {
   heading: string;
@@ -67,7 +68,7 @@ function assertFinalReportOutput(output: unknown): void {
 
 export function renderFinalReport(
   input: unknown,
-  observabilitySummary?: ObservabilitySummary
+  traceSummary?: TraceSummaryProjection
 ): { report: string; execution?: ReturnType<typeof executionSummaryJson> } {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw reportError("Final report input must be an object");
@@ -95,7 +96,7 @@ export function renderFinalReport(
     };
   });
 
-  const execution = executionSummaryJson(observabilitySummary);
+  const execution = executionSummaryJson(traceSummary);
   const output = {
     report: [
       `# ${title}`,
@@ -105,7 +106,7 @@ export function renderFinalReport(
         "",
         sectionContent(section.content)
       ]),
-      ...executionSummaryMarkdownLines(observabilitySummary)
+      ...executionSummaryMarkdownLines(traceSummary)
     ].join("\n"),
     ...(execution === undefined ? {} : { execution })
   };
@@ -117,7 +118,16 @@ export function renderFinalReport(
 export const finalReportBuiltIn = defineBuiltInStep({
   name: "reports.final_report",
   metadata: finalReportMetadata,
-  async run({ input, observabilitySummary }) {
-    return renderFinalReport(input ?? {}, observabilitySummary);
+  async run({ input, observability }) {
+    return renderFinalReport(
+      input ?? {},
+      summaryForReport(observability)
+    );
   }
 });
+
+function summaryForReport(
+  observability: WorkflowObservability | undefined
+): TraceSummaryProjection | undefined {
+  return observability?.snapshotSummary();
+}

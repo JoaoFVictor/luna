@@ -14,7 +14,7 @@ import {
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import type { ModelProfile } from "../../core/config/schemas.js";
-import type { ObservabilitySummary } from "../../core/observability/summary.js";
+import type { ObservabilityRecorder } from "../../core/observability/tracing.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";
 import type { ResolvedSkillReference } from "../../core/skills/definition.js";
 import type { ResolvedToolCatalog } from "../../core/tools/resolved-catalog.js";
@@ -38,7 +38,7 @@ export type RunAgentNodeOptions = {
   readonly runtime_requirements?: readonly AgentRuntimeRequirement[];
   readonly signal?: AbortSignal;
   readonly events?: Parameters<typeof projectAgentRunInput>[0]["events"];
-  readonly observabilitySummary?: ObservabilitySummary;
+  readonly observability?: ObservabilityRecorder;
   readonly emitEvent?: Parameters<typeof runObservedAgent>[0]["emitEvent"];
 };
 
@@ -205,7 +205,8 @@ export async function runAgentNode(
     cwd: options.cwd,
     runtime_requirements: options.runtime_requirements,
     signal: options.signal,
-    events: options.events
+    events: options.events,
+    observability: options.observability
   });
 
   await validateAgentRuntimeInput(input, options.runtime.describe());
@@ -213,7 +214,7 @@ export async function runAgentNode(
   const output = await runObservedAgent({
     runtime: options.runtime,
     input,
-    observabilitySummary: options.observabilitySummary,
+    observability: options.observability,
     emitEvent: options.emitEvent
   });
   validateOutput(outputSchema, output.output);

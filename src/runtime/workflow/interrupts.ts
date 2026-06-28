@@ -66,6 +66,12 @@ export async function waitForHumanInput(
       eventStore: input.backends.events
     }
   );
+  await input.observability?.recorder.addEvent("interrupt.created", {
+    interrupt_id: id,
+    checkpoint_id,
+    node_id: node.id,
+    kind: node.capability_id
+  });
 
   return {
     ...waiting,

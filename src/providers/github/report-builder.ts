@@ -8,7 +8,7 @@ import type { Invocation } from "../../core/router/invocation.js";
 import type { WorkspaceRecord } from "../../capabilities/repository-change/types.js";
 import type { Finding } from "../../core/findings/types.js";
 import type { AcceptanceDecision } from "../../core/decisions/types.js";
-import type { ObservabilitySummary } from "../../core/observability/summary.js";
+import type { TraceSummaryProjection } from "../../core/observability/tracing.js";
 
 const severityRank: Record<Finding["severity"], number> = {
   critical: 0,
@@ -22,14 +22,14 @@ type MarkdownOptions = {
   invocation: Invocation;
   findings: readonly Finding[];
   acceptance: AcceptanceDecision;
-  summary?: ObservabilitySummary;
+  summary?: TraceSummaryProjection;
 };
 
 type JsonOptions = {
   acceptance: AcceptanceDecision;
   findings: readonly Finding[];
   workspace?: WorkspaceRecord;
-  summary?: ObservabilitySummary;
+  summary?: TraceSummaryProjection;
 };
 
 export type FinalReportJson = {

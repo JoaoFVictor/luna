@@ -142,13 +142,18 @@ function workflowExecutorFor(
   name: string,
   dependencies: BuiltInStepDependencies
 ): WorkflowBuiltInExecutor {
-  return async ({ state, input, runtimeContext, observabilitySummary }) =>
+  return async ({
+    state,
+    input,
+    runtimeContext,
+    observability
+  }) =>
     await catalog.runBuiltInStep({
       uses: name,
       state: workflowStateView(state, runtimeContext),
       input: workflowBuiltInInput(input),
       dependencies,
-      observabilitySummary
+      observability
     });
 }
 

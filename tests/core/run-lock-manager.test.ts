@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { RunLockManager } from "../../src/core/workflow/lock-manager.js";
-import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
-import type { LunaEvent } from "../../src/core/observability/events.js";
+import { createTelemetryBufferSink } from "../../src/core/observability/sinks.js";
+import { createObservabilityRecorder } from "../../src/core/observability/tracing.js";
 
 function deferred<T = void>(): {
   promise: Promise<T>;
@@ -42,7 +42,11 @@ describe("run lock manager", () => {
   it("serializes separate managers through the shared filesystem lock root", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
     const waitingObserved = deferred();
-    const events: LunaEvent[] = [];
+    const telemetry = createTelemetryBufferSink();
+    const observability = createObservabilityRecorder({
+      run: { id: "run-2", workflowId: "implementation", attempt: 1 },
+      sinks: [telemetry]
+    });
     const manager1 = new RunLockManager({
       root,
       runId: "run-1",
@@ -54,22 +58,7 @@ describe("run lock manager", () => {
       runId: "run-2",
       timeoutMs: 1000,
       staleAfterMs: 6000,
-      observability: createLunaObservability({
-        run: { id: "run-2" },
-        workflow: { id: "implementation" },
-        sinks: [
-          {
-            id: "memory",
-            required: true,
-            append: (event) => {
-              events.push(event);
-              if (event.type === "luna.lock.waiting") {
-                waitingObserved.resolve();
-              }
-            }
-          }
-        ]
-      })
+      observability
     });
 
     const release1 = await manager1.acquire("repository:repo", "exclusive");
@@ -81,11 +70,9 @@ describe("run lock manager", () => {
         return release;
       });
 
-    await withTimeout(
-      waitingObserved.promise,
-      500,
-      "second manager did not observe repository lock contention"
-    );
+    await withTimeout(waitForLog(telemetry, "luna.lock.waiting").then(() => {
+      waitingObserved.resolve();
+    }), 500, "second manager did not observe repository lock contention");
     expect(secondAcquired).toBe(false);
 
     await release1();
@@ -97,20 +84,24 @@ describe("run lock manager", () => {
     expect(secondAcquired).toBe(true);
     await release2();
 
-    expect(events).toEqual(
+    expect(telemetry.records()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: "luna.lock.waiting",
-          run: expect.objectContaining({ id: "run-2" }),
-          data: expect.objectContaining({
-            "luna.resource": "repository:repo"
+          type: "log",
+          log: expect.objectContaining({
+            message: "luna.lock.waiting",
+            attributes: expect.objectContaining({
+              "luna.resource": "repository:repo"
+            })
           })
         }),
         expect.objectContaining({
-          type: "luna.lock.acquired",
-          run: expect.objectContaining({ id: "run-2" }),
-          data: expect.objectContaining({
-            "luna.resource": "repository:repo"
+          type: "log",
+          log: expect.objectContaining({
+            message: "luna.lock.acquired",
+            attributes: expect.objectContaining({
+              "luna.resource": "repository:repo"
+            })
           })
         })
       ])
@@ -231,18 +222,15 @@ describe("run lock manager", () => {
 
   it("does not let observability failures prevent acquire release or timeout behavior", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
-    const observability = createLunaObservability({
-      run: { id: "run-1" },
-      workflow: { id: "code-review" },
-      sinks: [
-        {
-          id: "failing",
-          required: true,
-          append: () => {
-            throw new Error("observability failed");
-          }
+    const observability = createObservabilityRecorder({
+      run: { id: "run-1", workflowId: "code-review", attempt: 1 },
+      sinks: [{
+        id: "failing",
+        required: true,
+        emit: () => {
+          throw new Error("observability failed");
         }
-      ]
+      }]
     });
     const manager = new RunLockManager({
       root,
@@ -259,3 +247,20 @@ describe("run lock manager", () => {
     await expect(release()).resolves.toBeUndefined();
   });
 });
+
+async function waitForLog(
+  telemetry: ReturnType<typeof createTelemetryBufferSink>,
+  message: string
+): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (
+      telemetry.records().some(
+        (record) => record.type === "log" && record.log.message === message
+      )
+    ) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Log not observed: ${message}`);
+}

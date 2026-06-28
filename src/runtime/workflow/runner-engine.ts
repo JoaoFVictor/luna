@@ -26,7 +26,7 @@ import {
 } from "../../core/workflow/execution-plan.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import { finalWorkflowOutput } from "../../core/workflow/runner-output.js";
-import { writeSummaryBestEffort } from "../../core/observability/summary.js";
+import { writeTraceSummaryBestEffort } from "../../core/observability/summary.js";
 import type { BuiltInStepMetadata } from "../../core/built-ins/types.js";
 import {
   assertNodeOutputMatchesSchema,
@@ -103,9 +103,9 @@ export async function runCompiledWorkflowWithScheduler<TInput extends RunWorkflo
     run: input.run,
     workflow: { id: input.workflow.id, mode: input.workflow.mode }
   });
-  await appendWorkflowEvent(input, "run.started");
-
-  return await runFromNodeIndex(input, scheduler, state, 0);
+  return await runWithWorkflowSpan(input, async () =>
+    await runFromNodeIndex(input, scheduler, state, 0)
+  );
 }
 
 export async function resumeCompiledWorkflowWithScheduler<TInput extends ResumeWorkflowInput>(
@@ -209,6 +209,11 @@ export async function resumeCompiledWorkflowWithScheduler<TInput extends ResumeW
       resumeId: () => `resume-${input.interrupt_id}`
     }
   );
+  await input.observability?.recorder.addEvent("interrupt.resumed", {
+    interrupt_id: input.interrupt_id,
+    checkpoint_id: input.checkpoint_id,
+    node_id: resumeNodeId
+  });
   if (!decisionAlreadyApplied) {
     await input.backends.checkpoints.saveWrites([
       {
@@ -228,17 +233,66 @@ export async function resumeCompiledWorkflowWithScheduler<TInput extends ResumeW
   }
   state = succeedNode(state, resumeNodeId);
 
-  return await runFromNodeIndex(
-    {
-      ...input,
-      run: resumeContext.run,
-      invocation: resumeContext.invocation,
-      config: resumeContext.config
-    },
-    scheduler,
-    state,
-    resumeIndex + 1
+  const resumedInput = {
+    ...input,
+    run: resumeContext.run,
+    invocation: resumeContext.invocation,
+    config: resumeContext.config
+  };
+
+  return await runWithWorkflowSpan(resumedInput, async () =>
+    await runFromNodeIndex(
+      resumedInput,
+      scheduler,
+      state,
+      resumeIndex + 1
+    )
   );
+}
+
+async function runWithWorkflowSpan<TInput extends RunWorkflowInput>(
+  input: TInput,
+  run: () => Promise<WorkflowRunResult>
+): Promise<WorkflowRunResult> {
+  if (input.observability === undefined) {
+    return await run();
+  }
+
+  try {
+    const result = await input.observability.recorder.withSpan(
+      {
+        name: "workflow.run",
+        kind: "workflow",
+        attributes: {
+          "luna.workflow.id": input.workflow.id,
+          "luna.workflow.mode": input.workflow.mode,
+          "luna.workflow.revision": input.workflow.revision
+        },
+        metadata: {
+          directory: input.workflow.directory,
+          capabilities: input.workflow.capabilities
+        }
+      },
+      async (span) => {
+        const result = await run();
+        if (result.status === "waiting_for_input") {
+          span.setStatus("waiting");
+          await span.addEvent("workflow.waiting_for_input", {
+            interrupt_id: result.interrupt_id,
+            checkpoint_id: result.checkpoint_id
+          });
+        }
+        return result;
+      }
+    );
+    return result;
+  } finally {
+    await input.observability.close();
+    await writeTraceSummaryBestEffort(
+      input.artifactPublisher,
+      input.observability.snapshotSummary()
+    );
+  }
 }
 
 function assertCompiledWorkflowMatchesDefinition(input: {
@@ -391,7 +445,6 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
       // Preserve the original workflow failure; the run.failed event remains authoritative.
     }
     await appendWorkflowEvent(input, "run.failed");
-    await writeSummaryBestEffort(input.artifactPublisher, input.observabilitySummary);
     throw cause;
   }
 
@@ -414,7 +467,6 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
     state: terminalCheckpointSnapshot(succeededState, "succeeded")
   });
   await appendWorkflowEvent(input, "run.succeeded");
-  await writeSummaryBestEffort(input.artifactPublisher, input.observabilitySummary);
   return { status: "succeeded", output, state: succeededState };
 }
 

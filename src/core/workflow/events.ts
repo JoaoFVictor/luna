@@ -1,13 +1,9 @@
 import type { ObservedAgentEvent } from "../agent-runtime/observed-agent-events.js";
-import type { RuntimeEventStore } from "../runtime/events/contracts.js";
+import type { WorkflowObservability } from "../observability/workflow-observability.js";
 import type { JsonObject } from "../runtime/json.js";
-import type { RunHandle } from "../runtime/run-handle.js";
 
 export type WorkflowEventInput = {
-  readonly backends: {
-    readonly events: RuntimeEventStore;
-  };
-  readonly run: RunHandle;
+  readonly observability?: WorkflowObservability;
 };
 
 export async function appendWorkflowEvent(
@@ -17,14 +13,10 @@ export async function appendWorkflowEvent(
   interruptIdValue?: string,
   data?: JsonObject
 ): Promise<void> {
-  await input.backends.events.append({
-    id: `${input.run.run_id}:${type}:${nodeId ?? "run"}:${Date.now()}`,
-    run_id: input.run.run_id,
-    type,
-    timestamp: new Date().toISOString(),
+  await input.observability?.recorder.addEvent(type, {
     ...(nodeId === undefined ? {} : { node_id: nodeId }),
     ...(interruptIdValue === undefined ? {} : { interrupt_id: interruptIdValue }),
-    ...(data === undefined ? {} : { data })
+    ...(data === undefined ? {} : data)
   });
 }
 

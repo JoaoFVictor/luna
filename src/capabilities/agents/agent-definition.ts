@@ -137,6 +137,7 @@ export type ProjectAgentRunInputOptions = {
   readonly runtime_requirements?: readonly AgentRuntimeRequirement[];
   readonly signal?: AbortSignal;
   readonly events?: RunAgentInput["events"];
+  readonly observability?: RunAgentInput["observability"];
 };
 
 export type AgentDefinitionProjection = {
@@ -381,6 +382,7 @@ export function projectAgentRunInput(
     cwd: options.cwd,
     runtime_requirements: runtimeRequirements,
     signal: options.signal,
-    events: options.events
+    events: options.events,
+    observability: options.observability
   };
 }

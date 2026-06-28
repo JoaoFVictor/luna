@@ -1,5 +1,4 @@
 import path from "node:path";
-import { createObservabilitySummary } from "../../core/observability/summary.js";
 import {
   assertCheckpointJsonValue
 } from "../../core/runtime/json.js";
@@ -70,9 +69,9 @@ export async function runNativeWorkflowTarget(
     options: runtimeConfig.agent_runtime.options,
     hasAgents: workflowUsesAgents(workflow)
   });
-  const observabilitySummary = createObservabilitySummary({
-    runId: run.run_id,
-    workflowId: nativeWorkflow.workflow.id
+  const observability = composition.observabilityForRun({
+    run,
+    workflow: nativeWorkflow.workflow
   });
   const executors = buildNativeWorkflowExecutors({
     app,
@@ -106,7 +105,7 @@ export async function runNativeWorkflowTarget(
     backends: composition.backends,
     ...executors,
     agentRuntime: composition.agentRuntime,
-    observabilitySummary,
+    observability,
     artifactPublisher: composition.artifactPublisherForRun(run),
     agentInputs: await buildNativeWorkflowAgentInputs({
       workflow: nativeWorkflow.workflow,

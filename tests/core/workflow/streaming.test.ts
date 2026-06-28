@@ -10,6 +10,7 @@ import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memor
 import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
+import { createWorkflowObservability } from "../../../src/core/observability/workflow-observability.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -51,12 +52,15 @@ const workflow: WorkflowDefinition = {
   subagent_policy: { allow_write: false }
 };
 
-describe("workflow runner event streaming", () => {
-  it("emits ordered run and node events", async () => {
-    const events = createMemoryEventStore();
+describe("workflow runner trace streaming", () => {
+  it("emits ordered run and node span events", async () => {
+    const observability = createWorkflowObservability({
+      run: { id: "run-events", workflowId: "streaming-test", attempt: 1 },
+      sinks: []
+    });
     const backends = {
       artifacts: createMemoryArtifactManifestStore(),
-      events,
+      events: createMemoryEventStore(),
       interrupts: createMemoryInterruptStore(),
       checkpoints: createMemoryCheckpointStore(),
       runtimeLogs: createMemoryRuntimeLogStore()
@@ -75,11 +79,17 @@ describe("workflow runner event streaming", () => {
       },
       backends,
       builtIns: { "runtime.step": async () => ({ ok: true }) },
-      agentRuntime: {} as AgentRuntimePort
+      agentRuntime: {} as AgentRuntimePort,
+      observability
     });
 
-    expect((await events.list("run-events")).map((event) => event.type)).toEqual([
-      "run.started",
+    expect(
+      observability
+        .records()
+        .filter((record) => record.type === "span.event")
+        .map((record) => record.event.name)
+        .filter((name) => name !== "runtime.stream")
+    ).toEqual([
       "node.started",
       "node.succeeded",
       "node.started",
@@ -88,11 +98,14 @@ describe("workflow runner event streaming", () => {
     ]);
   });
 
-  it("emits terminal failure events when a node throws", async () => {
-    const events = createMemoryEventStore();
+  it("emits terminal failure span events when a node throws", async () => {
+    const observability = createWorkflowObservability({
+      run: { id: "run-failed-events", workflowId: "streaming-test", attempt: 1 },
+      sinks: []
+    });
     const backends = {
       artifacts: createMemoryArtifactManifestStore(),
-      events,
+      events: createMemoryEventStore(),
       interrupts: createMemoryInterruptStore(),
       checkpoints: createMemoryCheckpointStore(),
       runtimeLogs: createMemoryRuntimeLogStore()
@@ -119,12 +132,18 @@ describe("workflow runner event streaming", () => {
             return { ok: true };
           }
         },
-        agentRuntime: {} as AgentRuntimePort
+        agentRuntime: {} as AgentRuntimePort,
+        observability
       })
     ).rejects.toThrow("first failed");
 
-    expect((await events.list("run-failed-events")).map((event) => event.type)).toEqual([
-      "run.started",
+    expect(
+      observability
+        .records()
+        .filter((record) => record.type === "span.event")
+        .map((record) => record.event.name)
+        .filter((name) => name !== "runtime.stream")
+    ).toEqual([
       "node.started",
       "node.failed",
       "run.failed"

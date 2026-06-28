@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ModelProfile } from "../config/schemas.js";
+import type { ObservabilityRecorder } from "../observability/tracing.js";
 import type { RunHandle } from "../runtime/run-handle.js";
 import type { ResolvedToolCatalog } from "../tools/resolved-catalog.js";
 import { ValidationResultSchema } from "../validation/types.js";
@@ -80,6 +81,7 @@ export type RunAgentInput = {
   readonly runtime_requirements: readonly AgentRuntimeRequirement[];
   readonly signal: AbortSignal | undefined;
   readonly events: AgentRuntimeEventSink | undefined;
+  readonly observability?: ObservabilityRecorder;
 };
 
 export type RunAgentOutput = {

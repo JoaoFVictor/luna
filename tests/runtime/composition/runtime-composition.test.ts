@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import type { RuntimeEventStore } from "../../../src/core/runtime/events/contracts.js";
+import type { WorkflowDefinition } from "../../../src/core/workflow/definition-types.js";
 import { manifest as artifactsManifest } from "../../../src/capabilities/artifacts/manifest.js";
 import { piAgentRuntimeFactory } from "../../../src/agent-runtimes/pi/factory.js";
 import {
@@ -103,6 +104,77 @@ describe("runtime composition", () => {
     expect(composition.backends.events).toBe(customEvents);
   });
 
+  it("creates run observability from the selected artifact backend", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-composition-trace-"));
+
+    try {
+      const filesystemComposition = createRuntimeComposition({
+        mode: "test",
+        backends: {
+          artifacts: { id: "filesystem.artifacts", options: { root } },
+          events: { id: "memory.events", options: {} },
+          interrupts: { id: "memory.interrupts", options: {} },
+          checkpoints: { id: "memory.checkpoints", options: {} },
+          runtime_logs: { id: "memory.runtime-log", options: {} }
+        },
+        agent_runtime: { id: "pi", options: {} },
+        interrupt_authorization: { id: "allow_all", options: {} }
+      }, { agentRuntimeFactories: piRuntimeFactories });
+      const memoryComposition = createRuntimeComposition({
+        mode: "test",
+        backends: {
+          artifacts: { id: "memory.artifacts", options: {} },
+          events: { id: "memory.events", options: {} },
+          interrupts: { id: "memory.interrupts", options: {} },
+          checkpoints: { id: "memory.checkpoints", options: {} },
+          runtime_logs: { id: "memory.runtime-log", options: {} }
+        },
+        agent_runtime: { id: "pi", options: {} },
+        interrupt_authorization: { id: "allow_all", options: {} }
+      }, { agentRuntimeFactories: piRuntimeFactories });
+
+      const run = {
+        run_id: "trace-run",
+        workflow_id: "workflow",
+        attempt: 1,
+        started_at: "2026-06-28T00:00:00.000Z"
+      };
+      const filesystemObservability = filesystemComposition.observabilityForRun({
+        run,
+        workflow: compositionWorkflow()
+      });
+      await filesystemObservability.recorder.emit({
+        type: "log",
+        log: {
+          timestamp: "2026-06-28T00:00:00.000Z",
+          level: "info",
+          message: "trace sink ready",
+          attributes: {}
+        }
+      });
+      await filesystemObservability.close();
+
+      await expect(readFile(path.join(root, "trace-run", "trace.jsonl"), "utf8"))
+        .resolves.toContain("trace sink ready");
+      const memoryObservability = memoryComposition.observabilityForRun({
+        run: { ...run, run_id: "memory-run" },
+        workflow: compositionWorkflow()
+      });
+      await memoryObservability.recorder.emit({
+        type: "log",
+        log: {
+          timestamp: "2026-06-28T00:00:00.000Z",
+          level: "info",
+          message: "memory trace",
+          attributes: {}
+        }
+      });
+      expect(memoryObservability.records()).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("materializes the configured workflow runtime through an injected factory", () => {
     const workflowRuntime = {
       run: vi.fn(),
@@ -187,3 +259,24 @@ describe("runtime composition", () => {
   });
 
 });
+
+function compositionWorkflow(): WorkflowDefinition {
+  return {
+    id: "workflow",
+    type: "workflow",
+    mode: "read_only",
+    directory: "/tmp/workflow",
+    input_schema: "input.schema.json",
+    output_schema: "output.schema.json",
+    input_schema_content: { type: "object" },
+    output_schema_content: { type: "object" },
+    capabilities: [],
+    graph: { nodes: [] },
+    revision: "revision-1",
+    external_definition_digests: {},
+    execution: { max_concurrency: 1 },
+    requires: { repository: false },
+    observability: { exporters: { runtime_log: { enabled: false, required: false } } },
+    subagent_policy: { allow_write: false }
+  };
+}

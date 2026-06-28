@@ -11,6 +11,10 @@ import { createMemoryEventStore } from "../../../src/runtime/backends/memory/eve
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
 import {
+  createRuntimeLogProjectionSink
+} from "../../../src/core/observability/sinks.js";
+import { createWorkflowObservability } from "../../../src/core/observability/workflow-observability.js";
+import {
   runCompiledWorkflowWithScheduler,
   type WorkflowNodeScheduler
 } from "../../../src/runtime/workflow/runner-engine.js";
@@ -121,6 +125,147 @@ describe("runtime-neutral workflow runner engine", () => {
     await expect(stores.checkpoints.load("engine-fails")).resolves.toMatchObject({
       checkpoint_id: "terminal-engine-fails-failed",
       state: { run_status: "failed" }
+    });
+  });
+
+  it("records workflow, node, and built-in spans as the execution source of truth", async () => {
+    const stores = backends();
+    const observability = createWorkflowObservability({
+      run: { id: "engine-trace", workflowId: workflow.id, attempt: 1 },
+      sinks: [
+        createRuntimeLogProjectionSink({
+          runId: "engine-trace",
+          store: stores.runtimeLogs
+        })
+      ],
+      idGenerator: (() => {
+        let index = 0;
+        return () => ["trace-1", "span-workflow", "span-node", "span-built-in"][index++] ?? `span-${index}`;
+      })(),
+      now: (() => {
+        let ms = 0;
+        return () => {
+          ms += 10;
+          return new Date(`2026-06-28T00:00:00.${String(ms).padStart(3, "0")}Z`);
+        };
+      })()
+    });
+    const input = {
+      ...runInput({ stores, runId: "engine-trace" }),
+      observability,
+      builtIns: {
+        "runtime.noop": async () => ({})
+      }
+    } satisfies RunWorkflowInput;
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      input,
+      initialState,
+      nodes,
+      runtimeContext,
+      runNode
+    }) => {
+      const result = await runNode(nodes[0], initialState);
+      if (result.kind !== "completed") {
+        throw new Error("unexpected wait");
+      }
+      return {
+        kind: "completed",
+        state: {
+          ...initialState,
+          ...result.update
+        }
+      };
+    };
+
+    await runCompiledWorkflowWithScheduler(input, scheduler);
+
+    const ended = observability
+      .records()
+      .filter((record) => record.type === "span.ended")
+      .map((record) => record.span);
+    expect(ended.map((span) => span.name)).toEqual([
+      "built_in.runtime.noop",
+      "node.noop",
+      "workflow.run"
+    ]);
+    expect(ended[0]).toMatchObject({
+      trace_id: "trace-1",
+      parent_span_id: "span-node",
+      kind: "built_in",
+      capability_id: "runtime.noop"
+    });
+    expect(ended[1]).toMatchObject({
+      parent_span_id: "span-workflow",
+      kind: "node",
+      node_id: "noop"
+    });
+    await expect(stores.runtimeLogs.list("engine-trace")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "span started: workflow.run" }),
+        expect.objectContaining({ message: "span ok: workflow.run; duration_ms=80" })
+      ])
+    );
+  });
+
+  it("publishes one final observability summary after the workflow span closes", async () => {
+    const stores = backends();
+    const observability = createWorkflowObservability({
+      run: { id: "engine-summary", workflowId: workflow.id, attempt: 1 },
+      sinks: [],
+      idGenerator: (() => {
+        let index = 0;
+        return () => ["trace-summary", "span-workflow", "span-node", "span-built-in"][index++] ?? `span-${index}`;
+      })(),
+      now: (() => {
+        let ms = 0;
+        return () => {
+          ms += 10;
+          return new Date(`2026-06-28T00:00:00.${String(ms).padStart(3, "0")}Z`);
+        };
+      })()
+    });
+    const published: unknown[] = [];
+    const input = {
+      ...runInput({ stores, runId: "engine-summary" }),
+      observability,
+      artifactPublisher: {
+        publish: async ({ node_id, value }: {
+          readonly node_id: string;
+          readonly value: unknown;
+        }) => {
+          published.push(value);
+          return { id: "summary", uri: "memory://summary", node_id };
+        }
+      },
+      builtIns: {
+        "runtime.noop": async () => ({})
+      }
+    } satisfies RunWorkflowInput;
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState,
+      nodes,
+      runNode
+    }) => {
+      const result = await runNode(nodes[0], initialState);
+      if (result.kind !== "completed") {
+        throw new Error("unexpected wait");
+      }
+      return {
+        kind: "completed",
+        state: {
+          ...initialState,
+          ...result.update
+        }
+      };
+    };
+
+    await runCompiledWorkflowWithScheduler(input, scheduler);
+
+    expect(published).toHaveLength(1);
+    expect(published[0]).toMatchObject({
+      spans: {
+        total: 3
+      }
     });
   });
 });

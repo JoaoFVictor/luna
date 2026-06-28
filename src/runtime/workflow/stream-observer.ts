@@ -28,50 +28,36 @@ export async function appendWorkflowRuntimeStreamLog(
   input: RunWorkflowInput,
   event: WorkflowRuntimeStreamEvent
 ): Promise<void> {
-  if (!input.workflow.observability.exporters.runtime_log.enabled) {
-    return;
-  }
-
-  const nodeId = primaryNodeId(event);
-  await input.backends.runtimeLogs.append({
-    run_id: input.run.run_id,
-    timestamp: new Date().toISOString(),
-    level: "debug",
-    ...(nodeId === undefined ? {} : { node_id: nodeId }),
-    message: messageFor(event)
+  await input.observability?.recorder.addEvent("runtime.stream", {
+    kind: event.kind,
+    ...structuredEventData(event)
   });
 }
 
-function primaryNodeId(event: WorkflowRuntimeStreamEvent): string | undefined {
+function structuredEventData(event: WorkflowRuntimeStreamEvent): Record<string, unknown> {
   if (event.kind === "update") {
-    return event.nodeIds[0];
-  }
-  if (event.kind === "task") {
-    return event.nodeId;
-  }
-  if (event.kind === "runtime_event") {
-    return event.nodeId;
-  }
-  return event.nextNodeIds[0];
-}
-
-function messageFor(event: WorkflowRuntimeStreamEvent): string {
-  if (event.kind === "update") {
-    return `workflow runtime stream update: ${event.nodeIds.join(",") || "unknown"}`;
+    return { node_ids: event.nodeIds };
   }
 
   if (event.kind === "runtime_event") {
-    const namespace = event.namespace.join("/") || "root";
-    return `workflow runtime stream event: ${event.channel}; namespace=${namespace}`;
+    return {
+      channel: event.channel,
+      node_id: event.nodeId,
+      namespace: event.namespace
+    };
   }
 
   if (event.kind === "checkpoint") {
-    const checkpoint = event.checkpointId ?? "unknown";
-    const next = event.nextNodeIds.join(",") || "none";
-    return `workflow runtime stream checkpoint: ${checkpoint}; next=${next}`;
+    return {
+      checkpoint_id: event.checkpointId,
+      next_node_ids: event.nextNodeIds
+    };
   }
 
-  const task = event.taskId ?? "unknown";
-  const node = event.nodeId ?? "unknown";
-  return `workflow runtime stream task ${event.phase}: ${node}; task=${task}; interrupts=${event.interruptCount}`;
+  return {
+    task_id: event.taskId,
+    node_id: event.nodeId,
+    phase: event.phase,
+    interrupt_count: event.interruptCount
+  };
 }

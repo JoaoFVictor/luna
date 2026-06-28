@@ -4,7 +4,6 @@ import type {
   RunAgentInput
 } from "../../../src/core/agent-runtime/contracts.js";
 import { runObservedAgent } from "../../../src/core/agent-runtime/observed-runner.js";
-import { createObservabilitySummary } from "../../../src/core/observability/summary.js";
 
 const run = {
   run_id: "run-observed-agent",
@@ -59,10 +58,6 @@ function runtime(): AgentRuntimePort {
 
 describe("observed agent runner", () => {
   it("does not classify succeeded-event append failures as runtime failures", async () => {
-    const summary = createObservabilitySummary({
-      runId: "run-observed-agent",
-      workflowId: "workflow-observed-agent"
-    });
     const eventFailure = new Error("event append failed");
     const emitEvent = vi.fn(async (event: { readonly type: string }) => {
       if (event.type === "agent_call.succeeded") {
@@ -74,7 +69,6 @@ describe("observed agent runner", () => {
       runObservedAgent({
         runtime: runtime(),
         input,
-        observabilitySummary: summary,
         emitEvent,
         now: vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(125)
       })

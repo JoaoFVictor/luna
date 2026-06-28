@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderFinalReport } from "../../../src/capabilities/reports/final-report.js";
-import { createObservabilitySummary, recordPromptOperation, recordPromptUsage } from "../../../src/core/observability/summary.js";
+import { createSummaryProjection } from "../../../src/core/observability/tracing.js";
 
 describe("reports capability final_report", () => {
   it("renders sections in declared order", () => {
@@ -36,32 +36,42 @@ describe("reports capability final_report", () => {
   });
 
   it("appends execution summary when observability is available", () => {
-    const summary = createObservabilitySummary({
-      runId: "run-1",
-      workflowId: "code-review"
-    });
-    recordPromptOperation(summary, { durationMs: 25 });
-    recordPromptUsage(summary, {
-      prompt_id: "prompt-1",
-      model_profile: "openai/gpt-5",
-      provider: "openai",
-      model: "gpt-5",
-      tokens: {
-        input: 10,
-        output: 5,
-        cache_read: 2,
-        cache_write: 1,
-        total: 18
-      },
-      cost: {
-        input: 0.01,
-        output: 0.02,
-        cache_read: 0.001,
-        cache_write: 0.002,
-        total: 0.033,
-        unit: "provider_cost_unit"
+    const summary = createSummaryProjection([
+      {
+        type: "span.ended",
+        span: {
+          schema_version: 1,
+          trace_id: "trace-1",
+          span_id: "span-1",
+          run_id: "run-1",
+          workflow_id: "code-review",
+          attempt: 1,
+          name: "agent.review",
+          kind: "agent",
+          status: "ok",
+          started_at: "2026-06-28T00:00:00.000Z",
+          ended_at: "2026-06-28T00:00:00.025Z",
+          duration_ms: 25,
+          attributes: {},
+          metadata: {},
+          usage: {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_tokens: 2,
+            cache_write_tokens: 1,
+            total_tokens: 18,
+            cost: {
+              input: 0.01,
+              output: 0.02,
+              cache_read: 0.001,
+              cache_write: 0.002,
+              total: 0.033,
+              unit: "provider_cost_unit"
+            }
+          }
+        }
       }
-    });
+    ]);
 
     const output = renderFinalReport(
       { title: "Run Summary", sections: [{ heading: "Result", content: "ok" }] },

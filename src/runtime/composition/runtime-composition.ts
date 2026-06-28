@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   AgentRuntimeError,
   type AgentRuntimePort
@@ -29,6 +30,15 @@ import type {
   RunWorkflowInput,
   WorkflowRunResult
 } from "../../core/workflow/execution-contracts.js";
+import type { ObservabilitySink } from "../../core/observability/tracing.js";
+import {
+  createWorkflowObservability,
+  type WorkflowObservability
+} from "../../core/observability/workflow-observability.js";
+import {
+  createJsonlTraceSink,
+  createRuntimeLogProjectionSink
+} from "../../core/observability/sinks.js";
 import type {
   WorkflowRuntimeFactory,
   WorkflowRuntimeRunner
@@ -100,6 +110,10 @@ export type RuntimeBackendFactoryCatalog = {
 export type RuntimeComposition = {
   readonly backends: RuntimeBackends;
   readonly artifactPublisherForRun: (run: RunHandle) => ArtifactPublisherPort;
+  readonly observabilityForRun: (input: {
+    readonly run: RunHandle;
+    readonly workflow: WorkflowDefinition;
+  }) => WorkflowObservability;
   readonly workflowRuntime: WorkflowRuntimeRunner<
     RunWorkflowInput,
     ResumeWorkflowInput,
@@ -565,7 +579,30 @@ export function createRuntimeComposition(
         manifestStore: artifacts.output,
         manifest: artifacts.manifest,
         run
-    }),
+      }),
+    observabilityForRun: ({ run, workflow }) =>
+      createWorkflowObservability({
+        run: {
+          id: run.run_id,
+          workflowId: workflow.id,
+          attempt: run.attempt
+        },
+        sinks: [
+          ...createCompositionObservabilitySinks({
+            artifactSelection: config.backends.artifacts,
+            run
+          }),
+          ...(workflow.observability.exporters.runtime_log.enabled
+            ? [
+                createRuntimeLogProjectionSink({
+                  runId: run.run_id,
+                  store: runtimeBackends.runtimeLogs,
+                  required: workflow.observability.exporters.runtime_log.required
+                })
+              ]
+            : [])
+        ]
+      }),
     workflowRuntime: createWorkflowRuntime(config, dependencies, {
       checkpoints: {
         backendId: checkpoints.manifest.id,
@@ -629,6 +666,30 @@ function createArtifactPublisher({
   throw runtimeError("Unsupported artifact publisher backend", "runtime_backend_invalid", {
     details: { backend_id: selection.id }
   });
+}
+
+function createCompositionObservabilitySinks({
+  artifactSelection,
+  run
+}: {
+  readonly artifactSelection: RuntimeSelection;
+  readonly run: RunHandle;
+}): readonly ObservabilitySink[] {
+  if (artifactSelection.id !== filesystemArtifactManifestBackendRegistration.id) {
+    return [];
+  }
+
+  const root = selectionOptions(artifactSelection).root;
+  if (typeof root !== "string") {
+    return [];
+  }
+
+  return [
+    createJsonlTraceSink({
+      filePath: path.join(root, run.run_id, "trace.jsonl"),
+      required: true
+    })
+  ];
 }
 
 export function createRuntimeCompositionForWorkflow(

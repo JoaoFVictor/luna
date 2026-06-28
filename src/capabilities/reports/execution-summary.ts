@@ -1,13 +1,13 @@
-import type { ObservabilitySummary } from "../../core/observability/summary.js";
+import type { TraceSummaryProjection } from "../../core/observability/tracing.js";
 
 export type ExecutionSummaryJson = {
   prompt_operations: number;
-  prompt_duration_ms: number;
   usage_missing_count: number;
-  tokens: ObservabilitySummary["tokens"];
-  cost: ObservabilitySummary["cost"];
-  failed_steps: ObservabilitySummary["failed_steps"];
-  rejected_capabilities: ObservabilitySummary["rejected_capabilities"];
+  tokens: TraceSummaryProjection["tokens"];
+  cost: TraceSummaryProjection["cost"];
+  failed_steps: TraceSummaryProjection["failed_steps"];
+  spans?: TraceSummaryProjection["spans"];
+  trace_id?: string;
 };
 
 function formatCost(value: number): string {
@@ -15,7 +15,7 @@ function formatCost(value: number): string {
 }
 
 export function executionSummaryJson(
-  summary: ObservabilitySummary | undefined
+  summary: TraceSummaryProjection | undefined
 ): ExecutionSummaryJson | undefined {
   if (summary === undefined) {
     return undefined;
@@ -23,17 +23,17 @@ export function executionSummaryJson(
 
   return {
     prompt_operations: summary.prompt_operations,
-    prompt_duration_ms: summary.prompt_duration_ms,
     usage_missing_count: summary.usage_missing_count,
     tokens: { ...summary.tokens },
     cost: { ...summary.cost },
     failed_steps: [...summary.failed_steps],
-    rejected_capabilities: [...summary.rejected_capabilities]
+    spans: { ...summary.spans },
+    trace_id: summary.trace_id
   };
 }
 
 export function executionSummaryMarkdownLines(
-  summary: ObservabilitySummary | undefined
+  summary: TraceSummaryProjection | undefined
 ): string[] {
   const execution = executionSummaryJson(summary);
 
@@ -45,12 +45,16 @@ export function executionSummaryMarkdownLines(
     "",
     "## Execution Summary",
     "",
+    ...(execution.trace_id === undefined ? [] : [`Trace: ${execution.trace_id}`]),
     `Prompt operations: ${execution.prompt_operations}`,
-    `Prompt duration: ${execution.prompt_duration_ms}ms`,
     `Tokens: ${execution.tokens.total} total (${execution.tokens.input} input, ${execution.tokens.output} output, ${execution.tokens.cache_read} cache read, ${execution.tokens.cache_write} cache write)`,
     `Cost: ${formatCost(execution.cost.total)} ${execution.cost.unit}`,
     `Usage missing: ${execution.usage_missing_count}`,
     `Failed steps: ${execution.failed_steps.length}`,
-    `Rejected capabilities: ${execution.rejected_capabilities.length}`
+    ...(execution.spans === undefined
+      ? []
+      : [
+          `Spans: ${execution.spans.total} total, ${execution.spans.failed} failed, ${execution.spans.duration_ms}ms observed`
+        ])
   ];
 }

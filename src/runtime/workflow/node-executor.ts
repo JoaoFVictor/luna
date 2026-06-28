@@ -26,8 +26,7 @@ export async function executeWorkflowNode(
         input: nodeInput,
         state,
         runtimeContext,
-        workflow: input.workflow,
-        observabilitySummary: input.observabilitySummary
+        workflow: input.workflow
       });
     }
 
@@ -38,14 +37,32 @@ export async function executeWorkflowNode(
       });
     }
 
-    return await executor({
-      node,
-      input: nodeInput,
-      state,
-      runtimeContext,
-      workflow: input.workflow,
-      observabilitySummary: input.observabilitySummary
-    });
+    const runBuiltIn = async () =>
+      await executor({
+        node,
+        input: nodeInput,
+        state,
+        runtimeContext,
+        workflow: input.workflow,
+        observability: input.observability
+      });
+
+    if (input.observability !== undefined) {
+      return await input.observability.recorder.withSpan(
+        {
+          name: `built_in.${node.capability_id}`,
+          kind: "built_in",
+          nodeId: node.id,
+          capabilityId: node.capability_id,
+          attributes: {
+            "luna.node.kind": node.kind
+          }
+        },
+        runBuiltIn
+      );
+    }
+
+    return await runBuiltIn();
   }
 
   if (node.kind === "agent") {
@@ -64,8 +81,7 @@ async function executePatternNode({
   input,
   state,
   runtimeContext,
-  workflow,
-  observabilitySummary
+  workflow
 }: {
   readonly executor: WorkflowPatternExecutor | undefined;
   readonly workflowInput: RunWorkflowInput;
@@ -74,7 +90,6 @@ async function executePatternNode({
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
-  readonly observabilitySummary?: RunWorkflowInput["observabilitySummary"];
 }): Promise<unknown> {
   if (executor === undefined) {
     throw runtimeError("No executor registered for workflow pattern node", "runtime_state_invalid", {
@@ -82,13 +97,30 @@ async function executePatternNode({
     });
   }
 
-  return await executor({
+  const runPattern = async () => await executor({
     workflowInput,
     node,
     input,
     state,
     runtimeContext,
     workflow,
-    observabilitySummary
+    observability: workflowInput.observability
   });
+
+  if (workflowInput.observability !== undefined) {
+    return await workflowInput.observability.recorder.withSpan(
+      {
+        name: `pattern.${node.capability_id}`,
+        kind: "gate",
+        nodeId: node.id,
+        capabilityId: node.capability_id,
+        attributes: {
+          "luna.node.kind": node.kind
+        }
+      },
+      runPattern
+    );
+  }
+
+  return await runPattern();
 }

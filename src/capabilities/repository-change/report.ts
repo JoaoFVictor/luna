@@ -95,7 +95,7 @@ function changeRequestArtifactFrom(value: unknown): ChangeRequestArtifact {
 export function implementationReportInputFrom({
   state,
   input,
-  observabilitySummary,
+  observability,
   invocation
 }: BuiltInStepRunOptions & {
   invocation: Invocation;
@@ -139,8 +139,6 @@ export function implementationReportInputFrom({
     changeRequest,
     trustedHostLocal:
       requiredImplementationFrom(state).sandbox.type === "trusted_host_local",
-    ...(observabilitySummary === undefined
-      ? {}
-      : { summary: observabilitySummary })
+    ...(observability === undefined ? {} : { summary: observability.snapshotSummary() })
   };
 }

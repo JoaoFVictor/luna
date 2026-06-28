@@ -1,7 +1,27 @@
 import type { RunAgentInput } from "./contracts.js";
-import type { LunaUsageRecord } from "../observability/summary.js";
 import { sanitizeJsonObject } from "../observability/sanitize.js";
 import type { JsonObject } from "../runtime/json.js";
+
+export type LunaTokenSummary = {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  total: number;
+};
+
+export type LunaCostSummary = LunaTokenSummary & {
+  unit: "provider_cost_unit";
+};
+
+export type LunaUsageRecord = {
+  prompt_id: string;
+  model_profile: string;
+  provider: string;
+  model: string;
+  tokens: LunaTokenSummary;
+  cost: LunaCostSummary;
+};
 
 export type ObservedAgentEvent = {
   readonly type: "agent_call.started" | "agent_call.succeeded" | "agent_call.failed";
