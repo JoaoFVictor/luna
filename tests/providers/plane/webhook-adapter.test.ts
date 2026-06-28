@@ -69,6 +69,7 @@ function documentedIssuePayload(
 
 function input(options: {
   event?: string;
+  omitEventHeader?: boolean;
   deliveryId?: string;
   rawBody?: Buffer;
   body?: unknown;
@@ -86,7 +87,11 @@ function input(options: {
   return {
     provider: "plane",
     headers: {
-      "X-Plane-Event": event,
+      ...(
+        options.omitEventHeader === true
+          ? {}
+          : { "X-Plane-Event": event }
+      ),
       "X-Plane-Delivery": deliveryId,
       "X-Plane-Signature": resolvedSignature
     },
@@ -183,7 +188,7 @@ describe("Plane webhook adapter normalization", () => {
 
   it("accepts Plane's documented issue payload shape", () => {
     const payload = documentedIssuePayload("create");
-    const result = normalizePlaneWebhook(input({ body: payload }));
+    const result = normalizePlaneWebhook(input({ body: payload, omitEventHeader: true }));
 
     expect(result).toMatchObject({
       kind: "accepted",

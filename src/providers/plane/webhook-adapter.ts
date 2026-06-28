@@ -120,7 +120,22 @@ function deliveryId(input: WebhookAdapterInput): string {
 }
 
 function planeEvent(input: WebhookAdapterInput): string {
-  return requireHeader(input, "x-plane-event", "Plane webhook event is missing");
+  const header = headerValue(input.headers, "x-plane-event");
+  if (header !== undefined && header.trim() !== "") {
+    return header;
+  }
+
+  const parsed = z
+    .object({
+      event: z.string().min(1)
+    })
+    .passthrough()
+    .safeParse(input.body);
+  if (parsed.success) {
+    return parsed.data.event;
+  }
+
+  throw webhookPayloadInvalid("Plane webhook event is missing", parsed.error);
 }
 
 export function verifyPlaneWebhookSignature(
