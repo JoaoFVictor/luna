@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
-import { planeTaskUrlAdapter } from "../../src/adapters/plane-task-url/index.js";
+import { planeTaskUrlAdapter } from "../../src/providers/plane/input-adapter.js";
 import type { AdapterContext } from "../../src/adapters/types.js";
 
 const planeIssue = {

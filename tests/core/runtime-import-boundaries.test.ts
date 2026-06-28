@@ -24,6 +24,19 @@ const SCANNED_RUNTIME_FILES = [
   "src/core/workflow/runner-port.ts",
   "src/runtime/langgraph/workflow-runner.ts"
 ];
+const LANGGRAPH_FREE_DIRECTORIES = [
+  "src/core",
+  "src/runtime/workflow"
+];
+const FORBIDDEN_LANGGRAPH_PACKAGES = [
+  "@langchain/langgraph",
+  "@langchain/langgraph-checkpoint",
+  "langgraph"
+];
+const FORBIDDEN_LANGGRAPH_LOCAL_TARGETS = [
+  "src/runtime/langgraph/",
+  "src/runtime/backends/sqlite/langgraph-checkpointer.ts"
+];
 
 async function listTypeScriptFiles(directory: string): Promise<string[]> {
   const entries = await readdir(path.join(ROOT, directory), {
@@ -134,6 +147,35 @@ describe("runtime import boundaries", () => {
         "src/runtime/composition/runtime-composition.ts"
       )
     ).toBe("src/agent-runtimes/pi/adapter.ts");
+  });
+
+  it("keeps core and the neutral workflow engine free of LangGraph imports", async () => {
+    const files = (
+      await Promise.all(LANGGRAPH_FREE_DIRECTORIES.map(listTypeScriptFiles))
+    ).flat();
+    const violations: string[] = [];
+
+    await Promise.all(
+      files.map(async (file) => {
+        const source = await readFile(path.join(ROOT, file), "utf8");
+        for (const importPath of extractImports(source)) {
+          if (FORBIDDEN_LANGGRAPH_PACKAGES.some((target) => importPath === target || importPath.startsWith(`${target}/`))) {
+            violations.push(`${file} -> ${importPath}`);
+            continue;
+          }
+
+          const resolved = resolvedProjectImport(importPath, file);
+          if (
+            resolved !== undefined &&
+            FORBIDDEN_LANGGRAPH_LOCAL_TARGETS.some((target) => resolved.startsWith(target))
+          ) {
+            violations.push(`${file} -> ${resolved}`);
+          }
+        }
+      })
+    );
+
+    expect(violations).toEqual([]);
   });
 });
 

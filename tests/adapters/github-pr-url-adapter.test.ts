@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { githubPrUrlAdapter } from "../../src/adapters/github-pr-url/index.js";
+import { githubPrUrlAdapter } from "../../src/providers/github/input-adapter.js";
 import type { AdapterContext } from "../../src/adapters/types.js";
 
 const githubPullResponse = {

@@ -1,10 +1,16 @@
 import type { CapabilityManifest } from "./manifest.js";
+import {
+  CapabilityRegistrationIndexError,
+  createCapabilityRegistrationIndex,
+  type CapabilityRegistrationIndex
+} from "./registration-index.js";
 import { validateCapabilityManifest } from "./validation.js";
 
 export type CapabilityRegistry = {
   get(id: string): CapabilityManifest;
   has(id: string): boolean;
   orderedManifests(): CapabilityManifest[];
+  registrations(): CapabilityRegistrationIndex;
 };
 
 type RegistryErrorCode =
@@ -54,7 +60,8 @@ export function createCapabilityRegistry(
   }
 
   const ordered = topologicalOrder(manifests, byId);
-  validateReferences(ordered);
+  const indexes = registrationIndexForRegistry(ordered);
+  validateReferences(ordered, indexes);
   validateSideEffectOperationIds(ordered);
 
   return {
@@ -73,8 +80,24 @@ export function createCapabilityRegistry(
     },
     orderedManifests(): CapabilityManifest[] {
       return [...ordered];
+    },
+    registrations(): CapabilityRegistrationIndex {
+      return indexes;
     }
   };
+}
+
+function registrationIndexForRegistry(
+  manifests: readonly CapabilityManifest[]
+): CapabilityRegistrationIndex {
+  try {
+    return createCapabilityRegistrationIndex(manifests);
+  } catch (cause) {
+    if (cause instanceof CapabilityRegistrationIndexError) {
+      throw new CapabilityRegistryError(cause.code, cause.message);
+    }
+    throw cause;
+  }
 }
 
 function validateSideEffectOperationIds(
@@ -111,9 +134,10 @@ function validateSideEffectOperationIds(
   }
 }
 
-function validateReferences(manifests: readonly CapabilityManifest[]): void {
-  const indexes = buildRegistrationIndexes(manifests);
-
+function validateReferences(
+  manifests: readonly CapabilityManifest[],
+  indexes: CapabilityRegistrationIndex
+): void {
   for (const manifest of manifests) {
     for (const builtIn of Object.values(manifest.built_ins ?? {})) {
       for (const portId of builtIn.required_ports ?? []) {
@@ -164,81 +188,10 @@ function validateReferences(manifests: readonly CapabilityManifest[]): void {
   }
 }
 
-type RegistrationIndexes = {
-  readonly built_ins: Set<string>;
-  readonly patterns: Set<string>;
-  readonly tools: Set<string>;
-  readonly gates: Set<string>;
-  readonly policies: Set<string>;
-  readonly ports: Set<string>;
-  readonly artifact_publishers: Set<string>;
-  readonly all: Set<string>;
-};
-
-function buildRegistrationIndexes(
-  manifests: readonly CapabilityManifest[]
-): RegistrationIndexes {
-  const indexes: RegistrationIndexes = {
-    built_ins: new Set(),
-    patterns: new Set(),
-    tools: new Set(),
-    gates: new Set(),
-    policies: new Set(),
-    ports: new Set(),
-    artifact_publishers: new Set(),
-    all: new Set()
-  };
-
-  for (const manifest of manifests) {
-    addIds(indexes, indexes.built_ins, manifest.built_ins);
-    addIds(indexes, indexes.patterns, manifest.patterns);
-    addIds(indexes, indexes.tools, manifest.tools);
-    addIds(indexes, indexes.gates, manifest.gates);
-    addIds(indexes, indexes.policies, manifest.policies);
-    addIds(indexes, indexes.ports, manifest.ports);
-    addIds(indexes, indexes.artifact_publishers, manifest.artifact_publishers);
-    addIds(indexes, indexes.all, manifest.schemas);
-  }
-
-  for (const index of [
-    indexes.built_ins,
-    indexes.patterns,
-    indexes.tools,
-    indexes.gates,
-    indexes.policies,
-    indexes.ports,
-    indexes.artifact_publishers
-  ]) {
-    for (const id of index) {
-      indexes.all.add(id);
-    }
-  }
-
-  return indexes;
-}
-
-function addIds(
-  indexes: RegistrationIndexes,
-  target: Set<string>,
-  registrations: Record<string, { readonly id: string }> | undefined
-): void {
-  for (const registration of Object.values(registrations ?? {})) {
-    const id = registration.id;
-    if (indexes.all.has(id)) {
-      throw new CapabilityRegistryError(
-        "capability_duplicate_registration_id",
-        `Registration id ${id} is declared more than once.`
-      );
-    }
-    target.add(id);
-    indexes.all.add(id);
-  }
-}
-
 function validateReference(
   manifest: CapabilityManifest,
   referencedId: string,
-  index: ReadonlySet<string>,
+  index: { has(id: string): boolean },
   label: string
 ): void {
   if (!index.has(referencedId)) {

@@ -1,10 +1,7 @@
 import type {
-  BuiltInRegistration,
-  GateRegistration,
-  PolicyRegistration,
-  SchemaRegistration
-} from "../capabilities/manifest.js";
-import type { PatternRegistration } from "../capabilities/pattern-registration.js";
+  CapabilityRegistrationIndex,
+  CapabilityRegistration
+} from "../capabilities/registration-index.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import { analyzeWorkflowGraph } from "./graph-analysis.js";
 import type {
@@ -94,20 +91,12 @@ export type CompiledWorkflow = {
   };
 };
 
-type RegistrationIndexes = {
-  readonly builtIns: ReadonlyMap<string, BuiltInRegistration>;
-  readonly patterns: ReadonlyMap<string, PatternRegistration>;
-  readonly gates: ReadonlyMap<string, GateRegistration>;
-  readonly policies: ReadonlyMap<string, PolicyRegistration>;
-  readonly schemas: ReadonlyMap<string, SchemaRegistration>;
-};
-
 const START = "__start__";
 const END = "__end__";
 
 export function compileWorkflow(input: CompileWorkflowInput): CompiledWorkflow {
   const { workflow, registry } = input;
-  const indexes = registrationIndexes(registry);
+  const indexes = registry.registrations();
   const analysis = analyzeWorkflowGraph({ nodes: workflow.graph.nodes });
   assertSupportedNodes(workflow.graph.nodes);
   assertParallelMergesHaveReducers(workflow.graph.nodes, input.reducers);
@@ -130,34 +119,6 @@ export function compileWorkflow(input: CompileWorkflowInput): CompiledWorkflow {
       channels: LUNA_COMPILED_WORKFLOW_STATE_CHANNELS
     }
   };
-}
-
-function registrationIndexes(registry: CapabilityRegistry): RegistrationIndexes {
-  const builtIns = new Map<string, BuiltInRegistration>();
-  const patterns = new Map<string, PatternRegistration>();
-  const gates = new Map<string, GateRegistration>();
-  const policies = new Map<string, PolicyRegistration>();
-  const schemas = new Map<string, SchemaRegistration>();
-
-  for (const manifest of registry.orderedManifests()) {
-    Object.entries(manifest.built_ins ?? {}).forEach(([id, registration]) =>
-      builtIns.set(id, registration)
-    );
-    Object.entries(manifest.patterns ?? {}).forEach(([id, registration]) =>
-      patterns.set(id, registration)
-    );
-    Object.entries(manifest.gates ?? {}).forEach(([id, registration]) =>
-      gates.set(id, registration)
-    );
-    Object.entries(manifest.policies ?? {}).forEach(([id, registration]) =>
-      policies.set(id, registration)
-    );
-    Object.entries(manifest.schemas ?? {}).forEach(([id, registration]) =>
-      schemas.set(id, registration)
-    );
-  }
-
-  return { builtIns, patterns, gates, policies, schemas };
 }
 
 function assertSupportedNodes(nodes: readonly WorkflowNode[]): void {
@@ -223,12 +184,12 @@ function hasParallelDependencies(
 function compileNode(
   node: WorkflowNode,
   nodeIndex: number,
-  indexes: RegistrationIndexes
+  indexes: CapabilityRegistrationIndex
 ): CompiledWorkflowNode {
   switch (node.type) {
     case "built_in": {
       const registration = requireRegistration(
-        indexes.builtIns,
+        indexes.built_ins,
         node.uses,
         `$.nodes[${nodeIndex}].uses`
       );
@@ -304,7 +265,7 @@ function compileNode(
 function validatePolicies(
   policies: readonly ParsedWorkflowPolicy[],
   nodeIndex: number,
-  indexes: RegistrationIndexes
+  indexes: CapabilityRegistrationIndex
 ): void {
   policies.forEach((policy, policyIndex) => {
     requireRegistration(
@@ -318,7 +279,7 @@ function validatePolicies(
 function validateGates(
   gates: readonly ParsedWorkflowGate[],
   nodeIndex: number,
-  indexes: RegistrationIndexes
+  indexes: CapabilityRegistrationIndex
 ): void {
   gates.forEach((gate, gateIndex) => {
     requireRegistration(
@@ -331,7 +292,7 @@ function validateGates(
 
 function nodeHasInterruptGate(
   gates: readonly ParsedWorkflowGate[],
-  indexes: RegistrationIndexes
+  indexes: CapabilityRegistrationIndex
 ): boolean {
   return gates.some((gate) => {
     const registration = indexes.gates.get(gate.type);
@@ -340,7 +301,7 @@ function nodeHasInterruptGate(
   });
 }
 
-function requireRegistration<T>(
+function requireRegistration<T extends CapabilityRegistration>(
   registrations: ReadonlyMap<string, T>,
   id: string,
   path: string
@@ -417,7 +378,7 @@ function canCreatePendingInterrupt(node: CompiledWorkflowNode): boolean {
 function assertProtectedOperationsAfterApproval(
   nodes: readonly WorkflowNode[],
   compiledNodes: readonly CompiledWorkflowNode[],
-  indexes: RegistrationIndexes
+  indexes: CapabilityRegistrationIndex
 ): void {
   const approvalNodeIds = new Set(
     compiledNodes
@@ -447,13 +408,13 @@ function assertProtectedOperationsAfterApproval(
 
 function isProtectedWriteNode(
   node: WorkflowNode,
-  indexes: RegistrationIndexes
+  indexes: CapabilityRegistrationIndex
 ): boolean {
   if (node.type !== "built_in") {
     return false;
   }
 
-  const registration = indexes.builtIns.get(node.uses);
+  const registration = indexes.built_ins.get(node.uses);
   const sideEffectPolicy =
     registration?.side_effect_policy === undefined
       ? undefined

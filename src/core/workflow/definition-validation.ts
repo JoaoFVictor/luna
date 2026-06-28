@@ -5,6 +5,11 @@ import type {
   PolicyRegistration,
   SchemaRegistration
 } from "../capabilities/manifest.js";
+import {
+  registrationMapForKind,
+  type CapabilityRegistration,
+  type CapabilityRegistrationKind
+} from "../capabilities/registration-index.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import { matchesJsonSchema } from "../capabilities/json-schema.js";
 import {
@@ -32,22 +37,6 @@ import type {
   ParsedPatternNode
 } from "./definition-types.js";
 import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "./repair-attempts.js";
-
-type RegistrationKind =
-  | "built_ins"
-  | "patterns"
-  | "gates"
-  | "policies"
-  | "artifact_publishers"
-  | "schemas";
-
-type Registration =
-  | BuiltInRegistration
-  | PatternRegistration
-  | GateRegistration
-  | PolicyRegistration
-  | ArtifactPublisherRegistration
-  | SchemaRegistration;
 
 export function validateDeclaredCapabilities(
   capabilities: readonly string[],
@@ -669,22 +658,20 @@ function validateExpressionBearingValue(
 
 export function requireRegistration(
   id: string,
-  kind: RegistrationKind,
+  kind: CapabilityRegistrationKind,
   declaredCapabilities: readonly string[],
   registry: CapabilityRegistry | undefined,
   yamlPath: string
-): Registration | undefined {
+): CapabilityRegistration | undefined {
   assertNamespacedCapabilityId(id, yamlPath);
   const owner = id.split(".", 1)[0];
   requireDeclaredCapability(owner, declaredCapabilities, yamlPath);
   if (!registry) {
     return undefined;
   }
-  for (const manifest of registry.orderedManifests()) {
-    const registrations = manifest[kind] as Record<string, Registration> | undefined;
-    if (registrations?.[id]) {
-      return registrations[id];
-    }
+  const registration = registrationMapForKind(registry.registrations(), kind).get(id);
+  if (registration !== undefined) {
+    return registration;
   }
   throw new WorkflowDefinitionError(
     "workflow_capability_unknown",

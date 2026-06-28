@@ -5,17 +5,17 @@ import {
   jiraAuthForInstance,
   loadLunaAuth,
   type JiraAuth
-} from "../../providers/jira/auth.js";
+} from "./auth.js";
 import {
   JiraConfigSchema,
   type JiraConfig
-} from "../../providers/jira/config.js";
-import { repositoryHintFromField } from "../../providers/repository-hint.js";
+} from "./config.js";
+import { repositoryHintFromField } from "../repository-hints/github-full-name.js";
 import {
   InvocationSchema,
   type Invocation
 } from "../../core/router/invocation.js";
-import type { AdapterInput, InputAdapter } from "../types.js";
+import type { AdapterInput, InputAdapter } from "../../adapters/types.js";
 
 type JiraInstanceConfig = JiraConfig["instances"][number];
 

@@ -3,8 +3,6 @@ import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
 import type { WorkflowDefinition, WorkflowNode } from "../../core/workflow/definition-types.js";
 import type { RuntimeMode } from "./app-config.js";
 
-const DURABLE_CHECKPOINT_BACKENDS = new Set(["sqlite.checkpoints"]);
-
 export type RuntimeDurabilityRequirement =
   | "trusted_local_write"
   | "write_mode"
@@ -16,6 +14,7 @@ export type RuntimeDurabilityRequirement =
 export type RuntimeDurabilityPolicyInput = {
   readonly mode: RuntimeMode;
   readonly checkpointBackendId: string;
+  readonly checkpointDurable?: boolean;
   readonly workflow?: {
     readonly id: string;
     readonly mode?: "read_only" | "trusted_local_write";
@@ -27,14 +26,10 @@ export type RuntimeDurabilityPolicyInput = {
   readonly hasExternalSideEffects?: boolean;
 };
 
-export function isDurableCheckpointBackend(backendId: string): boolean {
-  return DURABLE_CHECKPOINT_BACKENDS.has(backendId);
-}
-
 export function assertRuntimeDurabilityPolicy(
   input: RuntimeDurabilityPolicyInput
 ): void {
-  if (input.mode === "test" || isDurableCheckpointBackend(input.checkpointBackendId)) {
+  if (input.mode === "test" || input.checkpointDurable === true) {
     return;
   }
 
@@ -115,18 +110,14 @@ function isWritePolicy(
   policyId: string,
   registry: CapabilityRegistry | undefined
 ): boolean {
-  return (registry?.orderedManifests() ?? []).some(
-    (manifest) => manifest.policies?.[policyId]?.side_effect_semantics === "write"
-  );
+  return registry?.registrations().policies.get(policyId)?.side_effect_semantics === "write";
 }
 
 function isInterruptGate(
   gateType: string,
   registry: CapabilityRegistry | undefined
 ): boolean {
-  return (registry?.orderedManifests() ?? []).some((manifest) => {
-    const gate = manifest.gates?.[gateType];
+  const gate = registry?.registrations().gates.get(gateType);
 
-    return gate !== undefined && gate.interrupt !== "none";
-  });
+  return gate !== undefined && gate.interrupt !== "none";
 }

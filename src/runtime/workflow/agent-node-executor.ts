@@ -8,19 +8,19 @@ import {
   type AgentSkillSources
 } from "../../capabilities/agents/agent-envelope.js";
 import type { AgentDefinitionProjection } from "../../capabilities/agents/agent-definition.js";
-import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
+import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
 import { resolveNodeInput } from "../../core/workflow/runner-input.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import type { WorkflowRuntimeContext } from "../../core/workflow/runtime-context.js";
-import { workflowAgentEventEmitter } from "./workflow-events.js";
+import { workflowAgentEventEmitter } from "../../core/workflow/events.js";
 import type {
-  RunCompiledWorkflowInput,
+  RunWorkflowInput,
   WorkflowAgentDefaults
-} from "./workflow-runner-types.js";
+} from "../../core/workflow/execution-contracts.js";
 
-type LangGraphWorkflowAgentDefaults = Omit<
+type ResolvedWorkflowAgentDefaults = Omit<
   WorkflowAgentDefaults,
   "agent" | "skill_sources"
 > & {
@@ -34,7 +34,7 @@ export async function executeAgentNode({
   runtimeContext,
   node
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
@@ -86,7 +86,7 @@ export function runtimeRequirementsForNode(
 ): AgentRuntimeRequirement[] {
   const sourceRequirements =
     node.source.type === "agent"
-      ? ((node.source.runtime_requirements ?? []) as AgentRuntimeRequirement[])
+      ? node.source.runtime_requirements ?? []
       : [];
   const agentRequirements = projectedInput?.runtime_requirements ?? [];
   const toolRequirements = projectedInput?.tools.runtime_requirements ?? [];
@@ -102,13 +102,13 @@ export function runtimeRequirementsForDefaults(
       ...(projectedInput.runtime_requirements ?? []),
       ...projectedInput.tools.runtime_requirements
     ])
-  ] as AgentRuntimeRequirement[];
+  ];
 }
 
 function requireAgentDefaults(
-  input: RunCompiledWorkflowInput,
+  input: RunWorkflowInput,
   node: CompiledWorkflowNode
-): LangGraphWorkflowAgentDefaults {
+): ResolvedWorkflowAgentDefaults {
   const defaults = input.agentInputs?.[node.id];
   if (defaults === undefined) {
     throw runtimeError("Agent node requires projected runtime input", "runtime_state_invalid", {
@@ -116,5 +116,5 @@ function requireAgentDefaults(
     });
   }
 
-  return defaults as LangGraphWorkflowAgentDefaults;
+  return defaults as ResolvedWorkflowAgentDefaults;
 }

@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { capabilityManifest } from "../../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
@@ -14,6 +17,11 @@ import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memor
 import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
+import {
+  createSqliteCheckpointStore,
+  sqliteCheckpointFile
+} from "../../../src/runtime/backends/sqlite/checkpoints.js";
+import { createLangGraphCheckpointer } from "../../../src/runtime/backends/sqlite/langgraph-checkpointer.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -155,6 +163,51 @@ const agentDefaults: WorkflowAgentDefaults = {
 };
 
 describe("workflow runner checkpoint resume", () => {
+  it("uses native LangGraph interrupt for pure interrupt nodes when a LangGraph checkpointer is available", async () => {
+    const checkpointRoot = await mkdtemp(path.join(tmpdir(), "luna-native-hitl-"));
+    const checkpointStore = createSqliteCheckpointStore({
+      filePath: sqliteCheckpointFile(checkpointRoot)
+    });
+    const stores = {
+      ...backends(),
+      checkpoints: checkpointStore
+    };
+    const compiled = compileWorkflow({ workflow, registry });
+
+    const waiting = await runCompiledWorkflow({
+      compiled,
+      workflow,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-native-hitl",
+        workflow_id: "checkpoint-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      backends: stores,
+      builtIns: {
+        "runtime.pre": async () => ({ before: true }),
+        "runtime.after": async () => ({ done: true })
+      },
+      agentRuntime: {} as AgentRuntimePort,
+      langGraphCheckpointer: createLangGraphCheckpointer(checkpointStore)
+    });
+
+    expect(waiting).toMatchObject({
+      status: "waiting_for_input",
+      interrupt_id: "interrupt-run-native-hitl-approve",
+      checkpoint_id: "checkpoint-run-native-hitl-approve"
+    });
+    await expect(stores.runtimeLogs.list("run-native-hitl")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining("interrupts=1")
+        })
+      ])
+    );
+  });
+
   it("waits for human input, stores ref-only checkpoint state, then resumes", async () => {
     const stores = backends();
     const compiled = compileWorkflow({ workflow, registry });

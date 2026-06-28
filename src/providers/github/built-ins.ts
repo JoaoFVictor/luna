@@ -5,11 +5,9 @@ import {
   buildFinalReportJson as defaultBuildFinalReportJson,
   buildFinalReportMarkdown as defaultBuildFinalReportMarkdown
 } from "./report-builder.js";
-import { runPreflight as defaultRunPreflight } from "../../core/preflight/runner.js";
 import type { Invocation } from "../../core/router/invocation.js";
 import type { RepoContext } from "../../core/git/diff/types.js";
 import type {
-  ImplementationConfig,
   WorkspaceRecord
 } from "../../core/write-mode/types.js";
 import type { RepositoryConfig } from "../../core/config/schemas.js";
@@ -32,9 +30,7 @@ import {
   resolvedInput,
   runIdFrom,
   workspaceFrom,
-  workspaceRootFrom,
-  workflowFrom,
-  implementationFrom
+  workspaceRootFrom
 } from "../../core/built-ins/state.js";
 import { builtInError } from "../../core/built-ins/errors.js";
 import { githubPullRequestContextFrom } from "./pull-request-context.js";
@@ -44,12 +40,6 @@ import type {
 } from "../../core/built-ins/types.js";
 
 type GitHubBuiltInDependencies = BuiltInStepDependencies & {
-  runPreflight?: (input: {
-    invocation: Invocation;
-    repository: RepositoryConfig;
-    workflow?: { mode: "read_only" | "trusted_local_write" };
-    implementation?: ImplementationConfig["implementation"];
-  }) => MaybePromise<unknown>;
   prepareWorktree?: (input: {
     invocation: Invocation;
     repository: RepositoryConfig;
@@ -86,28 +76,6 @@ function githubPullRequestInvocationFrom(state: { invocation?: unknown }): Invoc
 
   return invocation;
 }
-
-export const preflightBuiltIn = defineBuiltInStep<
-  "runtime.preflight",
-  GitHubBuiltInDependencies
->({
-  name: "runtime.preflight",
-  metadata: repositoryRequiredMetadata,
-  async run({ state, dependencies = {} }) {
-    const runPreflight = dependencies.runPreflight ?? defaultRunPreflight;
-    const invocation = requiredState(
-      state.invocation as Invocation | undefined,
-      "invocation"
-    );
-
-    return await runPreflight({
-      invocation,
-      repository: repositoryFrom(state),
-      workflow: workflowFrom(state),
-      implementation: implementationFrom(state)
-    });
-  }
-});
 
 export const prepareWorktreeBuiltIn = defineBuiltInStep<
   "runtime.prepare_worktree",

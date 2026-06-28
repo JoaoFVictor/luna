@@ -194,19 +194,7 @@ function unexpectedViolationKeys(
 }
 
 function isProviderPath(relativePath: string): boolean {
-  return (
-    relativePath.startsWith("src/providers/") ||
-    relativePath.startsWith("src/providers/") ||
-    isProviderAdapterPath(relativePath)
-  );
-}
-
-function isProviderAdapterPath(relativePath: string): boolean {
-  return (
-    relativePath.startsWith("src/adapters/github-pr-url/") ||
-    relativePath.startsWith("src/adapters/jira-task-url/") ||
-    relativePath.startsWith("src/adapters/plane-task-url/")
-  );
+  return relativePath.startsWith("src/providers/");
 }
 
 function isProviderOwnedSourcePath(relativePath: string): boolean {
@@ -489,9 +477,9 @@ describe("refactor guardrails", () => {
   it("treats provider adapters as provider-owned import targets", () => {
     const providerOwnedTargets = [
       "src/providers/github/built-ins.ts",
-      "src/adapters/github-pr-url/index.ts",
-      "src/adapters/jira-task-url/adapter.ts",
-      "src/adapters/plane-task-url/adapter.ts"
+      "src/providers/github/input-adapter.ts",
+      "src/providers/jira/input-adapter.ts",
+      "src/providers/plane/input-adapter.ts"
     ];
 
     expect(providerOwnedTargets.filter(isProviderPath)).toEqual(providerOwnedTargets);

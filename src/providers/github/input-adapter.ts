@@ -3,7 +3,7 @@ import {
   InvocationSchema,
   type Invocation
 } from "../../core/router/invocation.js";
-import type { AdapterInput, InputAdapter } from "../types.js";
+import type { AdapterInput, InputAdapter } from "../../adapters/types.js";
 
 const GitHubRepositorySchema = z
   .object({

@@ -85,6 +85,7 @@ import { assertRuntimeDurabilityPolicy } from "./durability.js";
 
 export type RuntimeBackendFactory<TOutput> = {
   readonly registration: BackendRegistration;
+  readonly durable?: boolean;
   readonly create: (options: JsonObject) => TOutput;
 };
 
@@ -176,6 +177,7 @@ export function defaultRuntimeBackendFactoryCatalog(): RuntimeBackendFactoryCata
       },
       [sqliteCheckpointBackendRegistration.id]: {
         registration: sqliteCheckpointBackendRegistration,
+        durable: true,
         create: (options) =>
           createSqliteCheckpointStore(
             validateBackendOptions(options, sqliteCheckpointBackendRegistration)
@@ -421,11 +423,9 @@ function requirePortRegistration(
   portId: string,
   registry: CapabilityRegistry
 ): PortRegistration {
-  for (const manifest of registry.orderedManifests()) {
-    const port = manifest.ports?.[portId];
-    if (port !== undefined) {
-      return port;
-    }
+  const port = registry.registrations().ports.get(portId);
+  if (port !== undefined) {
+    return port;
   }
 
   throw runtimeError("Unsupported capability port id", "runtime_backend_invalid", {
@@ -497,9 +497,15 @@ export function createRuntimeComposition(
   const config = parseRuntimeCompositionConfig(rawConfig);
   const backendFactories =
     dependencies.backendFactories ?? defaultRuntimeBackendFactoryCatalog();
+  const checkpointFactory = requireBackendFactory(
+    "checkpoints",
+    config.backends.checkpoints,
+    backendFactories
+  );
   assertRuntimeDurabilityPolicy({
     mode: config.mode,
     checkpointBackendId: config.backends.checkpoints.id,
+    checkpointDurable: checkpointFactory.durable === true,
     workflowDefinition: dependencies.workflowDefinition,
     capabilityRegistry: dependencies.capabilityRegistry,
     requiresHumanInterrupts: dependencies.requiresHumanInterrupts,
@@ -577,7 +583,7 @@ export function createRuntimeComposition(
     backendManifests,
     checkpointDurability: {
       backend_id: config.backends.checkpoints.id,
-      durable: config.backends.checkpoints.id === sqliteCheckpointBackendRegistration.id
+      durable: checkpointFactory.durable === true
     }
   };
 }

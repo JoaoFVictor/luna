@@ -5,17 +5,17 @@ import {
   loadPlaneAuth,
   planeAuthForInstance,
   type PlaneAuth
-} from "../../providers/plane/auth.js";
+} from "./auth.js";
 import {
   PlaneConfigSchema,
   type PlaneConfig
-} from "../../providers/plane/config.js";
-import { repositoryHintFromLabels } from "../../providers/repository-hint.js";
+} from "./config.js";
+import { repositoryHintFromLabels } from "../repository-hints/github-full-name.js";
 import {
   InvocationSchema,
   type Invocation
 } from "../../core/router/invocation.js";
-import type { AdapterInput, InputAdapter } from "../types.js";
+import type { AdapterInput, InputAdapter } from "../../adapters/types.js";
 
 export type PlaneIssueRequest = {
   instance: PlaneInstanceConfig;

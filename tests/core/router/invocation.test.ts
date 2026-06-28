@@ -45,9 +45,9 @@ describe("invocation envelope", () => {
 
   it("keeps adapter modules independent from routing and runtime execution", async () => {
     const adapterFiles = [
-      "src/adapters/github-pr-url/adapter.ts",
-      "src/adapters/jira-task-url/adapter.ts",
-      "src/adapters/plane-task-url/adapter.ts",
+      "src/providers/github/input-adapter.ts",
+      "src/providers/jira/input-adapter.ts",
+      "src/providers/plane/input-adapter.ts",
       "src/adapters/registry.ts"
     ];
     const forbiddenImports = [

@@ -1,4 +1,5 @@
 import {
+  assertCheckpointJsonObject,
   assertCheckpointJsonValue,
   type JsonObject,
   type JsonValue
@@ -12,10 +13,10 @@ import { markNodeWaitingForInput } from "../../core/runtime/lifecycle.js";
 import { createInterrupt } from "../../core/runtime/interrupts/resume.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
-import type { RunCompiledWorkflowInput } from "./workflow-runner-types.js";
+import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
 
 export async function waitForHumanInput(
-  input: RunCompiledWorkflowInput,
+  input: RunWorkflowInput,
   state: LunaRuntimeState,
   node: CompiledWorkflowNode
 ): Promise<LunaRuntimeState> {
@@ -72,11 +73,11 @@ export async function waitForHumanInput(
   };
 }
 
-export function checkpointResumeContext(input: RunCompiledWorkflowInput): JsonObject {
+export function checkpointResumeContext(input: RunWorkflowInput): JsonObject {
   const context = {
     invocation: input.invocation,
     config: input.config,
-    run: input.run as unknown as JsonValue
+    run: input.run
   };
   assertCheckpointJsonValue(context);
 
@@ -96,10 +97,8 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
   const invocation = context.invocation;
   const config = context.config;
   const run = context.run;
+  assertCheckpointJsonObject(run, "$.resume_context.run");
   if (
-    typeof run !== "object" ||
-    run === null ||
-    Array.isArray(run) ||
     typeof run.run_id !== "string" ||
     typeof run.workflow_id !== "string" ||
     typeof run.attempt !== "number" ||
@@ -108,7 +107,17 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
     throw runtimeError("Checkpoint resume run handle is invalid", "runtime_checkpoint_schema_mismatch");
   }
 
-  return { invocation, config, run: run as unknown as RunHandle };
+  return {
+    invocation,
+    config,
+    run: {
+      ...run,
+      run_id: run.run_id,
+      workflow_id: run.workflow_id,
+      attempt: run.attempt,
+      started_at: run.started_at
+    }
+  };
 }
 
 export function interruptId(runId: string, nodeId: string): string {

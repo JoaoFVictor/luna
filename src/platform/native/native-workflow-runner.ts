@@ -1,6 +1,8 @@
 import path from "node:path";
 import { createObservabilitySummary } from "../../core/observability/summary.js";
-import type { JsonValue } from "../../core/runtime/json.js";
+import {
+  assertCheckpointJsonValue
+} from "../../core/runtime/json.js";
 import {
   createRuntimeCompositionForWorkflow
 } from "../../runtime/composition/runtime-composition.js";
@@ -30,6 +32,9 @@ export type NativeWorkflowTargetDependencies = {
     | "agentRuntimeFactories"
     | "workflowRuntimeFactories"
     | "workflowBuiltIns"
+    | "taskProviderBuiltIns"
+    | "patternExecutors"
+    | "changeRequestProviderFactories"
     | "capabilityRegistry"
     | "capabilityManifests"
   >;
@@ -73,14 +78,21 @@ export async function runNativeWorkflowTarget(
     app,
     projectRoot: input.projectRoot,
     run,
-    changeRequestProviderFactories: dependencies.changeRequestProviderFactories,
+    changeRequestProviderFactories:
+      dependencies.changeRequestProviderFactories ??
+      platform.changeRequestProviderFactories,
     workflowBuiltIns: platform.workflowBuiltIns,
+    taskProviderBuiltIns: platform.taskProviderBuiltIns,
+    patternExecutors: platform.patternExecutors,
     capabilityRegistry: platform.capabilityRegistry
   });
+  const invocation = input.invocation;
+  assertCheckpointJsonValue(invocation);
+
   const workflowRuntimeInput = {
     compiled: nativeWorkflow.compiled,
     workflow: nativeWorkflow.workflow,
-    invocation: input.invocation as unknown as JsonValue,
+    invocation,
     config: await loadWorkflowRuntimeConfig({
       workflow: nativeWorkflow.workflow,
       configRoot: input.configRoot

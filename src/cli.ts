@@ -2,7 +2,10 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadYamlFile } from "./core/config/loader.js";
-import { AppConfigSchema } from "./core/config/schemas.js";
+import {
+  AppConfigSchema,
+  type AppConfig
+} from "./core/config/schemas.js";
 import {
   parseWorkflowTarget as parseRouterWorkflowTarget,
   routeInvocation
@@ -21,10 +24,8 @@ import {
   unknownAdapterError
 } from "./adapters/registry.js";
 import type { AdapterContext } from "./adapters/types.js";
-import {
-  nativeLunaPlatform,
-  type LunaPlatform
-} from "./platform/native/native-platform.js";
+import type { LunaPlatform } from "./platform/native/native-platform.js";
+import { loadNativeLunaPlatform } from "./platform/native/native-platform-loader.js";
 import {
   InvocationSchema,
   type Invocation,
@@ -182,16 +183,17 @@ export function resolveCliConfigRoot(
 
 export async function loadRoutingDefinition(
   projectRoot: string,
-  env: { LUNA_CONFIG_ROOT?: string } = process.env
+  env: { LUNA_CONFIG_ROOT?: string } = process.env,
+  app?: AppConfig
 ): Promise<RouterDefinition> {
   const configRoot = resolveCliConfigRoot(projectRoot, env);
-  const app = await loadYamlFile(
+  const loadedApp = app ?? await loadYamlFile(
     path.join(configRoot, "app.yaml"),
     AppConfigSchema
   );
 
   return await loadYamlFile(
-    path.join(configRoot, app.routing?.path ?? "routing.yaml"),
+    path.join(configRoot, loadedApp.routing?.path ?? "routing.yaml"),
     RouterDefinitionSchema
   );
 }
@@ -201,15 +203,31 @@ export async function main(
   deps: MainDependencies = {}
 ): Promise<number> {
   const parsedArgs = parseCliArgs(args);
-  const platform = deps.platform ?? nativeLunaPlatform;
-  const registry = platform.inputAdapterRegistry;
   const projectRoot = deps.projectRoot ?? (await findProjectRoot());
   const configRoot = resolveCliConfigRoot(projectRoot, deps.env);
+  let app: AppConfig | undefined;
+  const loadApp = async () => {
+    app ??= await loadYamlFile(
+      path.join(configRoot, "app.yaml"),
+      AppConfigSchema
+    );
+    return app;
+  };
+  let loadedPlatform: Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow"> | undefined;
+  const loadPlatform = async () => {
+    loadedPlatform ??= deps.platform ?? await loadNativeLunaPlatform({
+      projectRoot,
+      configRoot,
+      app: await loadApp()
+    });
+    return loadedPlatform;
+  };
   let invocation: Invocation;
 
   if ("input" in parsedArgs) {
     invocation = await loadInvocationFromFile(parsedArgs.input);
   } else {
+    const registry = (await loadPlatform()).inputAdapterRegistry;
     const adapter = registry.get(parsedArgs.from);
     if (adapter === undefined) {
       throw unknownAdapterError(parsedArgs.from, registry);
@@ -227,7 +245,9 @@ export async function main(
     invocation = { ...invocation, target: parsedArgs.target };
   }
 
-  const routing = deps.routing ?? (await loadRoutingDefinition(projectRoot, deps.env));
+  const platform = await loadPlatform();
+  const routing =
+    deps.routing ?? (await loadRoutingDefinition(projectRoot, deps.env, await loadApp()));
   const route = deps.routeInvocation ?? routeInvocation;
   const target = await route(invocation, routing);
   const targetExecutor =

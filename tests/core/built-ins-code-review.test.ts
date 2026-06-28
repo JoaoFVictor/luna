@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   collectRepoContextBuiltIn,
   finalCodeReviewReportBuiltIn,
-  preflightBuiltIn,
   prepareWorktreeBuiltIn,
   validateCodeReviewFindingsBuiltIn
 } from "../../src/providers/github/built-ins.js";
+import { preflightBuiltIn } from "../../src/core/built-ins/preflight.js";
 import type {
   WorkspaceRecord
 } from "../../src/core/write-mode/types.js";

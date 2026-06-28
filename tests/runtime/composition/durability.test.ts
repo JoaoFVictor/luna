@@ -3,14 +3,19 @@ import { capabilityManifest } from "../../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import {
   assertRuntimeDurabilityPolicy,
-  classifyRuntimeDurabilityRequirements,
-  isDurableCheckpointBackend
+  classifyRuntimeDurabilityRequirements
 } from "../../../src/runtime/composition/durability.js";
 
 describe("runtime composition durability policy", () => {
-  it("classifies memory as test-only checkpointing and sqlite as durable checkpointing", () => {
-    expect(isDurableCheckpointBackend("memory.checkpoints")).toBe(false);
-    expect(isDurableCheckpointBackend("sqlite.checkpoints")).toBe(true);
+  it("uses backend durability metadata instead of hardcoded backend ids", () => {
+    expect(() =>
+      assertRuntimeDurabilityPolicy({
+        mode: "production",
+        checkpointBackendId: "custom.durable-checkpoints",
+        checkpointDurable: true,
+        workflow: { id: "implementation", mode: "trusted_local_write" }
+      })
+    ).not.toThrow();
   });
 
   it("allows memory checkpointing for test-only runs", () => {
@@ -58,6 +63,7 @@ describe("runtime composition durability policy", () => {
       assertRuntimeDurabilityPolicy({
         mode: "production",
         checkpointBackendId: "sqlite.checkpoints",
+        checkpointDurable: true,
         workflow: { id: "implementation", mode: "trusted_local_write" }
       })
     ).not.toThrow();

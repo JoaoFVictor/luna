@@ -1,6 +1,3 @@
-import { defineInputAdapters } from "../../adapters/registry.js";
-import { nativePlatformExtensions } from "./native-platform-extensions.js";
+import { nativeLunaPlatformRegistrations } from "./native-platform-registrations.js";
 
-export const nativeInputAdapterRegistry = defineInputAdapters(
-  nativePlatformExtensions.flatMap((extension) => extension.inputAdapters ?? [])
-);
+export const nativeInputAdapterRegistry = nativeLunaPlatformRegistrations.inputAdapterRegistry;

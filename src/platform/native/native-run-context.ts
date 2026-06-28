@@ -13,7 +13,10 @@ import {
 } from "../../core/config/schemas.js";
 import { ImplementationConfigSchema } from "../../core/write-mode/types.js";
 import { createRunIdentity } from "../../core/invocation/run-identity.js";
-import type { JsonValue } from "../../core/runtime/json.js";
+import {
+  assertCheckpointJsonValue,
+  type JsonValue
+} from "../../core/runtime/json.js";
 import { compileWorkflow, type CompiledWorkflow } from "../../core/workflow/compiler.js";
 import { loadWorkflowDefinition } from "../../core/workflow/definition.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
@@ -175,10 +178,13 @@ export async function loadWorkflowRuntimeConfig({
     return {};
   }
 
-  return (await loadYamlFile(
+  const config = await loadYamlFile(
     path.join(configRoot, "implementation.yaml"),
     ImplementationConfigSchema
-  )) as unknown as JsonValue;
+  );
+  assertCheckpointJsonValue(config);
+
+  return config;
 }
 
 export function runtimeCompositionConfig(

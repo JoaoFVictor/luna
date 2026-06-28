@@ -53,6 +53,38 @@ describe("capability registry", () => {
     expect(registry.get("feature")).toBe(feature);
   });
 
+  it("exposes a canonical registration index shared by workflow consumers", () => {
+    const base = executionManifest("base", {
+      schemas: {
+        "base.result": {
+          id: "base.result",
+          schema
+        }
+      }
+    });
+    const feature = executionManifest("feature", {
+      depends_on: ["base"],
+      gates: {
+        "feature.approval": {
+          id: "feature.approval",
+          input_schema: schema,
+          decision_schema: schema,
+          output_schema: schema,
+          interrupt: "required"
+        }
+      }
+    });
+
+    const index = createCapabilityRegistry([feature, base]).registrations();
+
+    expect(index.built_ins.get("base.do_work")).toBe(base.built_ins?.["base.do_work"]);
+    expect(index.built_ins.get("feature.do_work")).toBe(feature.built_ins?.["feature.do_work"]);
+    expect(index.schemas.get("base.result")).toBe(base.schemas?.["base.result"]);
+    expect(index.gates.get("feature.approval")).toBe(feature.gates?.["feature.approval"]);
+    expect(index.all.has("base.result")).toBe(true);
+    expect(index.all.has("feature.approval")).toBe(true);
+  });
+
   it("rejects duplicate capability ids, unknown dependencies, and cycles", () => {
     expect(() =>
       createCapabilityRegistry([

@@ -25,46 +25,63 @@ import {
   createCollectTaskContextBuiltIn,
   createFinalImplementationReportBuiltIn,
   createProviderBuiltIns,
-  defineTaskProviderBuiltIns
+  defineTaskProviderBuiltIns,
+  type TaskProviderBuiltIns
 } from "../../providers/built-ins.js";
 import {
-  nativePlatformExtensions,
+  nativePlatformPlugins,
+  type NativePlatformPluginRegistration,
   type NativeWorkflowBuiltIns
-} from "./native-platform-extensions.js";
+} from "./native-platform-plugins.js";
 
-const providerWorkflowBuiltInsBeforeContext = nativePlatformExtensions.flatMap(
-  (extension) => extension.workflowBuiltIns?.beforeContext ?? []
-);
-const providerWorkflowBuiltInsAfterContext = nativePlatformExtensions.flatMap(
-  (extension) => extension.workflowBuiltIns?.afterContext ?? []
-);
+export function workflowBuiltInsFromPlugins(
+  plugins: readonly NativePlatformPluginRegistration[]
+): NativeWorkflowBuiltIns {
+  return {
+    beforeContext: plugins.flatMap((plugin) =>
+      plugin.workflowBuiltIns?.beforeContext ?? []
+    ),
+    afterContext: plugins.flatMap((plugin) =>
+      plugin.workflowBuiltIns?.afterContext ?? []
+    ),
+    builtIns: plugins.flatMap((plugin) =>
+      plugin.builtIns ?? []
+    )
+  };
+}
 
-const taskProviderBuiltIns = defineTaskProviderBuiltIns(
-  nativePlatformExtensions.flatMap((extension) =>
-    extension.taskBuiltIns === undefined
+export function taskProviderBuiltInsFromPlugins(
+  plugins: readonly NativePlatformPluginRegistration[]
+): Readonly<Record<string, TaskProviderBuiltIns>> {
+  return defineTaskProviderBuiltIns(plugins.flatMap((plugin) =>
+    plugin.taskBuiltIns === undefined
       ? []
-      : [{ source: extension.id, builtIns: extension.taskBuiltIns }]
-  )
-);
+      : [{ source: plugin.taskSource ?? plugin.id, builtIns: plugin.taskBuiltIns }]
+  ));
+}
 
-const collectTaskContextBuiltIn =
-  createCollectTaskContextBuiltIn(taskProviderBuiltIns);
-const finalImplementationReportBuiltIn =
-  createFinalImplementationReportBuiltIn(taskProviderBuiltIns);
+const defaultWorkflowBuiltIns = workflowBuiltInsFromPlugins(nativePlatformPlugins);
+const defaultTaskProviderBuiltIns = taskProviderBuiltInsFromPlugins(nativePlatformPlugins);
 
 export function createNativeProviderBuiltIns({
-  workflowBuiltIns = {}
+  workflowBuiltIns = defaultWorkflowBuiltIns,
+  taskProviderBuiltIns = defaultTaskProviderBuiltIns
 }: {
   readonly workflowBuiltIns?: NativeWorkflowBuiltIns;
+  readonly taskProviderBuiltIns?: Readonly<Record<string, TaskProviderBuiltIns>>;
 } = {}) {
+  const collectTaskContext = createCollectTaskContextBuiltIn(taskProviderBuiltIns);
+  const finalImplementationReport = createFinalImplementationReportBuiltIn(
+    taskProviderBuiltIns
+  );
+
   return createProviderBuiltIns({
     dependencies: { collectContextIntake },
     steps: [
-      ...providerWorkflowBuiltInsBeforeContext,
       ...(workflowBuiltIns.beforeContext ?? []),
       collectContextBuiltIn,
-      ...providerWorkflowBuiltInsAfterContext,
       ...(workflowBuiltIns.afterContext ?? []),
+      ...(workflowBuiltIns.builtIns ?? []),
       finalReportBuiltIn,
       localExecReadCommandBuiltIn,
       localExecWriteCommandBuiltIn,
@@ -74,7 +91,7 @@ export function createNativeProviderBuiltIns({
       gitPushBranchBuiltIn,
       changeRequestCreateBuiltIn,
       prepareImplementationWorktreeBuiltIn,
-      collectTaskContextBuiltIn,
+      collectTaskContext,
       runValidationCommandsBuiltIn,
       recordImplementationValidationBuiltIn,
       collectWorktreeDiffBuiltIn,
@@ -83,7 +100,7 @@ export function createNativeProviderBuiltIns({
       recordCommitLifecycleBuiltIn,
       preparePushBuiltIn,
       recordPushLifecycleBuiltIn,
-      finalImplementationReportBuiltIn
+      finalImplementationReport
     ]
   });
 }

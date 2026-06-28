@@ -88,6 +88,13 @@ export const RouterFileConfigSchema = z
   .strict();
 export type RouterFileConfig = z.infer<typeof RouterFileConfigSchema>;
 
+export const PluginModuleConfigSchema = z
+  .object({
+    module: NonEmptyStringSchema
+  })
+  .strict();
+export type PluginModuleConfig = z.infer<typeof PluginModuleConfigSchema>;
+
 export const LockConfigSchema = z
   .object({
     root: NonEmptyStringSchema.optional(),
@@ -125,6 +132,7 @@ export const AppConfigSchema = z
     workspace: WorkspaceConfigSchema,
     artifacts: ArtifactsConfigSchema,
     routing: RouterFileConfigSchema.optional(),
+    plugins: z.array(PluginModuleConfigSchema).optional(),
     locks: LockConfigSchema.optional(),
     workflow_runtime: WorkflowRuntimeConfigSchema.optional(),
     agent_runtime: AgentRuntimeConfigSchema.optional()

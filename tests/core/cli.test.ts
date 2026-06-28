@@ -329,4 +329,98 @@ describe("Luna CLI", () => {
       target: { type: "workflow", id: "implementation" }
     });
   });
+
+  it("loads input adapters from app-configured native plugins", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-plugin-"));
+    const configRoot = path.join(projectRoot, "config");
+    const pluginPath = path.join(configRoot, "linear-plugin.mjs");
+    const callsPath = path.join(configRoot, "calls.json");
+
+    await mkdir(configRoot, { recursive: true });
+    await writeFile(
+      pluginPath,
+      [
+        "export default {",
+        "  id: 'linear',",
+        "  inputAdapters: [{",
+        "    id: 'linear-task-url',",
+        "    description: 'Linear task URL',",
+        "    async load(input) {",
+        `      await import('node:fs/promises').then(({ writeFile }) => writeFile(${JSON.stringify(callsPath)}, JSON.stringify(input)));`,
+        "      return {",
+        "        version: '2026-06',",
+        "        source: 'linear',",
+        "        event: 'issue',",
+        "        action: 'selected',",
+        "        subject: {",
+        "          type: 'issue',",
+        "          id: 'LIN-1',",
+        "          url: input.value,",
+        "          title: 'Linear issue'",
+        "        }",
+        "      };",
+        "    }",
+        "  }]",
+        "};",
+        ""
+      ].join("\n")
+    );
+    await writeFile(
+      path.join(configRoot, "app.yaml"),
+      [
+        "workspace:",
+        "  strategy: git_worktree",
+        `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
+        "  preserve_on_success: false",
+        "  preserve_on_failure: true",
+        "artifacts:",
+        `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
+        "plugins:",
+        `  - module: ${JSON.stringify("./linear-plugin.mjs")}`,
+        ""
+      ].join("\n")
+    );
+
+    const targetExecutor = { execute: vi.fn(async () => 0) };
+    await expect(
+      main(
+        [
+          "run",
+          "--target",
+          "workflow:implementation",
+          "--from",
+          "linear-task-url",
+          "https://linear.app/acme/issue/LIN-1"
+        ],
+        {
+          projectRoot,
+          env: { LUNA_CONFIG_ROOT: configRoot },
+          routing: {
+            type: "router",
+            version: "2026-06",
+            rules: [
+              {
+                id: "plugin_route",
+                when: { expression: "true" },
+                target: "workflow:implementation"
+              }
+            ]
+          },
+          targetExecutor
+        }
+      )
+    ).resolves.toBe(0);
+
+    await expect(readFile(callsPath, "utf8")).resolves.toBe(JSON.stringify({
+      kind: "cli",
+      value: "https://linear.app/acme/issue/LIN-1"
+    }));
+    expect(targetExecutor.execute).toHaveBeenCalledWith({
+      invocation: expect.objectContaining({
+        source: "linear",
+        target: { type: "workflow", id: "implementation" }
+      }),
+      target: { type: "workflow", id: "implementation" }
+    });
+  });
 });

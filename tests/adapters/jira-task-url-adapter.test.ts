@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
-import { jiraTaskUrlAdapter } from "../../src/adapters/jira-task-url/index.js";
+import { jiraTaskUrlAdapter } from "../../src/providers/jira/input-adapter.js";
 import type { AdapterContext } from "../../src/adapters/types.js";
 
 const jiraIssue = {

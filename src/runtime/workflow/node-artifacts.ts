@@ -1,10 +1,10 @@
 import { publishDeclaredArtifacts } from "../../capabilities/artifacts/publisher.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
-import type { RunCompiledWorkflowInput } from "./workflow-runner-types.js";
+import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
 
 export async function publishArtifactsForNode(
-  input: RunCompiledWorkflowInput,
+  input: RunWorkflowInput,
   node: CompiledWorkflowNode,
   output: unknown,
   state: LunaRuntimeState

@@ -8,7 +8,7 @@ import {
   type LunaRuntimeState
 } from "../../core/runtime/state.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
-import type { RunCompiledWorkflowInput } from "./workflow-runner-types.js";
+import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
 
 type TerminalCheckpointSnapshot = JsonObject & {
   readonly state_schema_version: typeof LUNA_RUNTIME_STATE_SCHEMA_VERSION;
@@ -23,7 +23,7 @@ export async function saveNodeOutputWrite({
   node,
   output
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly node: CompiledWorkflowNode;
   readonly output: JsonValue;
 }): Promise<void> {
@@ -45,7 +45,7 @@ export async function saveTerminalCheckpoint({
   input,
   state
 }: {
-  readonly input: RunCompiledWorkflowInput;
+  readonly input: RunWorkflowInput;
   readonly state: TerminalCheckpointSnapshot;
 }): Promise<void> {
   await input.backends.checkpoints.save({

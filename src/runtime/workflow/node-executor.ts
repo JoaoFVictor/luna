@@ -4,14 +4,14 @@ import { resolveNodeInput } from "../../core/workflow/runner-input.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import type { WorkflowRuntimeContext } from "../../core/workflow/runtime-context.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
-import { executeAgentNode } from "./workflow-agent-bridge.js";
+import { executeAgentNode } from "./agent-node-executor.js";
 import type {
-  RunCompiledWorkflowInput,
+  RunWorkflowInput,
   WorkflowPatternExecutor
-} from "./workflow-runner-types.js";
+} from "../../core/workflow/execution-contracts.js";
 
-export async function executeNode(
-  input: RunCompiledWorkflowInput,
+export async function executeWorkflowNode(
+  input: RunWorkflowInput,
   state: LunaRuntimeState,
   runtimeContext: WorkflowRuntimeContext,
   node: CompiledWorkflowNode
@@ -68,13 +68,13 @@ async function executePatternNode({
   observabilitySummary
 }: {
   readonly executor: WorkflowPatternExecutor | undefined;
-  readonly workflowInput: RunCompiledWorkflowInput;
+  readonly workflowInput: RunWorkflowInput;
   readonly node: CompiledWorkflowNode;
   readonly input: unknown;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
-  readonly observabilitySummary?: RunCompiledWorkflowInput["observabilitySummary"];
+  readonly observabilitySummary?: RunWorkflowInput["observabilitySummary"];
 }): Promise<unknown> {
   if (executor === undefined) {
     throw runtimeError("No executor registered for workflow pattern node", "runtime_state_invalid", {

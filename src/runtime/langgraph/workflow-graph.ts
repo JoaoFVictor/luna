@@ -23,10 +23,19 @@ type DynamicStateGraph = {
     readonly name: string;
     readonly checkpointer?: BaseCheckpointSaver;
   }): {
-    invoke(
+    streamEvents(
       state: LunaRuntimeState,
-      options: { readonly configurable: { readonly thread_id: string } }
-    ): Promise<WorkflowGraphState>;
+      options: {
+        readonly configurable: { readonly thread_id: string };
+        readonly version: "v3";
+        readonly streamMode: readonly ["updates", "values", "checkpoints", "tasks"];
+        readonly durability?: "sync";
+      }
+    ): Promise<AsyncIterable<unknown> & {
+      readonly output: Promise<unknown>;
+      readonly interrupted: boolean;
+      readonly interrupts: readonly unknown[];
+    }>;
   };
 };
 

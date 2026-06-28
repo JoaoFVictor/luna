@@ -230,6 +230,9 @@ describe("native workflow runner", () => {
                   })
                 ]
               },
+              taskProviderBuiltIns: {},
+              patternExecutors: {},
+              changeRequestProviderFactories: [],
               agentRuntimeFactories: {
                 "custom.agent-runtime": {
                   id: "custom.agent-runtime",

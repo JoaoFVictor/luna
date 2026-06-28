@@ -49,15 +49,7 @@ class ToolCatalogError extends Error {
 }
 
 function registeredTools(registry: CapabilityRegistry): Map<string, ToolRegistration> {
-  const tools = new Map<string, ToolRegistration>();
-
-  for (const manifest of registry.orderedManifests()) {
-    for (const tool of Object.values(manifest.tools ?? {})) {
-      tools.set(tool.id, tool);
-    }
-  }
-
-  return tools;
+  return new Map(registry.registrations().tools);
 }
 
 function requireRegisteredTool(

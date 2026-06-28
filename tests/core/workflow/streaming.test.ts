@@ -86,6 +86,15 @@ describe("workflow runner event streaming", () => {
       "node.succeeded",
       "run.succeeded"
     ]);
+
+    await expect(backends.runtimeLogs.list("run-events")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "debug",
+          message: expect.stringContaining("workflow runtime stream event:")
+        })
+      ])
+    );
   });
 
   it("emits terminal failure events when a node throws", async () => {
