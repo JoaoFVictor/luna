@@ -1,0 +1,56 @@
+export type RuntimeErrorCode =
+  | "runtime_backend_invalid"
+  | "runtime_checkpoint_too_large"
+  | "runtime_checkpoint_not_ref_only"
+  | "runtime_checkpoint_schema_mismatch"
+  | "runtime_duplicate_node_output"
+  | "runtime_interrupt_not_found"
+  | "runtime_interrupt_resume_in_progress"
+  | "runtime_interrupt_status_invalid"
+  | "interrupt_conflict"
+  | "interrupt_stale"
+  | "interrupt_expired"
+  | "interrupt_unauthorized"
+  | "interrupt_concurrent_merge_unsupported"
+  | "runtime_invalid_json"
+  | "runtime_node_attempt_invalid"
+  | "runtime_node_output_error_envelope"
+  | "runtime_node_output_schema_invalid"
+  | "runtime_node_output_status_invalid"
+  | "runtime_node_status_transition_invalid"
+  | "runtime_retry_not_permitted"
+  | "runtime_state_invalid"
+  | "runtime_state_public_payload"
+  | "runtime_state_ref_payload"
+  | "runtime_unsupported_feature";
+
+export class RuntimeError extends Error {
+  readonly code: RuntimeErrorCode;
+  readonly details?: Record<string, unknown>;
+
+  constructor(
+    message: string,
+    code: RuntimeErrorCode,
+    options: {
+      cause?: unknown;
+      details?: Record<string, unknown>;
+    } = {}
+  ) {
+    super(message, { cause: options.cause });
+    this.name = "RuntimeError";
+    this.code = code;
+    this.details = options.details;
+  }
+}
+
+export function runtimeError(
+  message: string,
+  code: RuntimeErrorCode,
+  options: {
+    cause?: unknown;
+    details?: Record<string, unknown>;
+  } = {}
+): RuntimeError {
+  const ErrorCtor = RuntimeError;
+  return new ErrorCtor(message, code, options);
+}

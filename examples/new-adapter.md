@@ -1,82 +1,43 @@
 # Create A New Input Adapter
 
-Adapters turn external input into Luna's normalized invocation format. They
-exist so callers do not need to hand-write JSON.
+Input adapters turn external values into Luna invocations. They let callers use
+`--from <adapter> <value>` instead of hand-writing JSON.
 
-Input adapter modules live under `src/adapters/<id>/` and are registered in
-`src/adapters/registry.ts`.
+Adapters do not run workflows, create worktrees, call model runtimes, write
+artifacts, commit, push, or create change requests.
 
-The CLI shape should stay generic:
+## 1. Pick The Owning Module
 
-```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:my-workflow --from my-adapter value
-```
+Shared contracts live in:
 
-Do not add workflow-specific commands such as:
+- `src/adapters/types.ts`
+- `src/adapters/registry.ts`
 
-```bash
-review-pr <url>
-```
+Concrete provider adapters currently live under provider modules:
 
-## 1. Decide The External Input
+- `src/providers/github/input-adapter.ts`
+- `src/providers/jira/input-adapter.ts`
+- `src/providers/plane/input-adapter.ts`
 
-Examples:
+For a new source provider, prefer `src/providers/<provider>/input-adapter.ts`
+plus provider-owned auth/config/payload parsing.
 
-- GitHub PR URL.
-- Jira task URL.
-- Slack message URL.
-- API event id.
-- GitHub issue URL.
-- Local file path.
+## 2. Return An Invocation
 
-The adapter receives the value after `--from <adapter>`.
-
-## 2. Create The Adapter Module
-
-Create a module under `src/adapters/<adapter-id>/`, for example:
-
-```text
-src/adapters/slack-message-url/
-  adapter.ts
-  index.ts
-```
-
-The adapter should:
-
-- Parse and validate the external value.
-- Fetch source metadata through source-native tooling or APIs.
-- Normalize the result into Luna's invocation shape.
-- Return clear errors for invalid input, missing auth, or unsupported sources.
-- Keep provider code isolated. Do not add one provider's auth, config, schema,
-  fixtures, tests, or docs examples to another provider's module.
-
-Shared provider helpers are allowed only when they are provider-agnostic. For
-example, a common auth loader may read `luna.auth.json` as unknown provider
-data, but provider-specific schema validation belongs under
-`src/core/providers/<provider>/`.
-
-For GitHub PRs, `src/adapters/github-pr-url/adapter.ts` is the reference
-implementation. For Jira tasks, `src/adapters/jira-task-url/adapter.ts` shows
-an adapter that reads `config/jira.yaml`, loads secrets from `luna.auth.json`,
-fetches source metadata over HTTP, and returns a normalized invocation for the
-implementation workflow to consume through routing or a CLI target override.
-
-## 3. Return A Normalized Invocation
-
-The result must satisfy Luna's `NormalizedInvocation` contract:
+Import from `src/core/router/invocation.ts`:
 
 ```ts
 import {
   InvocationSchema,
-  type NormalizedInvocation
-} from "../../core/invocation/types.js";
-import type { InputAdapter } from "../types.js";
+  type Invocation
+} from "../../core/router/invocation.js";
+import type { InputAdapter } from "../../adapters/types.js";
 
 export const slackMessageUrlAdapter: InputAdapter = {
   id: "slack-message-url",
-  description: "Load a Slack message from a Slack message URL.",
-  async load(input): Promise<NormalizedInvocation> {
-    const messageUrl = new URL(input.value);
+  description: "Load a Slack message URL.",
+  async load(input, context): Promise<Invocation> {
+    const url = new URL(input.value);
 
     return InvocationSchema.parse({
       version: "2026-06",
@@ -86,7 +47,8 @@ export const slackMessageUrlAdapter: InputAdapter = {
       subject: {
         type: "slack_message",
         id: "C123:1710000000.000100",
-        url: messageUrl.toString()
+        title: "Slack message",
+        url: url.toString()
       },
       payload: {
         channel_id: "C123",
@@ -97,80 +59,38 @@ export const slackMessageUrlAdapter: InputAdapter = {
 };
 ```
 
-Use `version`, `source`, `event`, optional `action`, and source-specific
-`subject`, `repository`, `references`, and `payload` fields as needed.
-Invocation routing uses `target` when it is present, but URL adapters should
-omit `target` unless the CLI override is used. Without a target override,
-workflow selection comes from the invocation `target` or `config/routing.yaml`.
+Preserve source-specific data under `payload` when later provider-owned steps
+need it. Parse it strictly before use.
 
-Do not ask an LLM which workflow should run. Routing should be deterministic.
+## 3. Register It
 
-## 4. Export And Register The Adapter
+Register provider adapters through native platform plugins in
+`src/platform/native/native-platform-plugins.ts`, or through a configured
+native plugin module when the adapter is external to the bundled platform.
 
-Export the adapter from the adapter package:
+The CLI resolves `--from <adapter>` through the active platform's input adapter
+registry.
 
-```ts
-export { slackMessageUrlAdapter } from "./adapter.js";
-```
+## 4. Routing
 
-Register it once in `src/adapters/registry.ts`:
+Adapters should normally omit `target`. Workflow selection comes from:
 
-```ts
-import { slackMessageUrlAdapter } from "./slack-message-url/index.js";
+1. CLI `--target workflow:<id>`.
+2. invocation `target`.
+3. `config/routing.yaml`.
 
-export const inputAdapterRegistry = defineInputAdapters([
-  githubPrUrlAdapter,
-  jiraTaskUrlAdapter,
-  slackMessageUrlAdapter
-]);
-```
+Routing must remain deterministic and model-free.
 
-The CLI resolves `--from <adapter>` through this registry.
+## 5. Test
 
-## 5. Keep Responsibilities Separate
+Add tests under `tests/adapters/` for valid input, invalid input, source API or
+tool failures, auth/config failures, and normalized invocation shape. Add CLI
+coverage if the adapter is public.
 
-An adapter should not:
-
-- Run Flue directly.
-- Create git worktrees.
-- Write final artifacts.
-- Hide how the workflow is selected.
-- Enable commit, push, or change request creation directly. For the
-  `implementation` workflow, `config/implementation.yaml` controls optional
-  commit, push, and change request gates after validation and acceptance.
-- Reuse another provider's module as a convenience wrapper for auth, config,
-  schema validation, tests, or fixtures.
-
-The runtime handles workflow execution after the adapter returns an invocation.
-
-## 6. Add Tests
-
-Add adapter tests under `tests/adapters/` for:
-
-- Valid input parsing.
-- Invalid input.
-- Source API/tool failures.
-- Normalized invocation shape.
-
-Add CLI tests proving `--from <adapter>` dispatches to the adapter.
-
-Useful test targets:
+Run:
 
 ```bash
-npm test -- tests/core/cli.test.ts tests/adapters/github-pr-url-adapter.test.ts
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused
 ```
-
-For a new adapter, add a dedicated `tests/adapters/<adapter-id>-adapter.test.ts`
-file. For Jira-like adapters, also cover missing `luna.auth.json`, instance
-mapping, and repository field validation.
-
-## 7. Document The Adapter
-
-Update:
-
-- `README.md` current adapter inventory.
-- `examples/configured-workflows.md` current adapter inventory.
-- Any source-specific recipe that helps a new user run it.

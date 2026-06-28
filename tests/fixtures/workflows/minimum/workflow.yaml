@@ -1,0 +1,26 @@
+id: minimum
+type: workflow
+input_schema: input.schema.json
+output_schema: output.schema.json
+capabilities:
+  - context
+  - reports
+  - artifacts
+nodes:
+  - id: context
+    type: built_in
+    uses: context.collect_context
+    artifacts:
+      - path: context.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.context"
+        format: json
+  - id: final_report
+    type: built_in
+    uses: reports.final_report
+    after: [context]
+    input:
+      sections:
+        - heading: Summary
+          content: ok

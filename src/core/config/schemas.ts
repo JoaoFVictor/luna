@@ -1,7 +1,22 @@
 import { z } from "zod";
+import { assertJsonValue, type JsonValue } from "../json/value.js";
 import { SkillPathSchema } from "../skills/schemas.js";
 
 const NonEmptyStringSchema = z.string().min(1);
+
+const JsonObjectSchema = z
+  .record(z.unknown())
+  .superRefine((value, context) => {
+    try {
+      assertJsonValue(value);
+    } catch (cause) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: cause instanceof Error ? cause.message : "value must be JSON"
+      });
+    }
+  })
+  .transform((value) => value as { [key: string]: JsonValue });
 
 export const ContextConfigSchema = z
   .object({
@@ -34,6 +49,7 @@ export type RepositoriesConfig = z.infer<typeof RepositoriesConfigSchema>;
 
 export const ModelProfileSchema = z
   .object({
+    provider: NonEmptyStringSchema.optional(),
     model: NonEmptyStringSchema,
     reasoning_effort: z.enum(["low", "medium", "high"]),
     transport: z.enum(["auto", "sse", "websocket"]).optional()
@@ -65,6 +81,20 @@ export const ArtifactsConfigSchema = z
   .strict();
 export type ArtifactsConfig = z.infer<typeof ArtifactsConfigSchema>;
 
+export const RouterFileConfigSchema = z
+  .object({
+    path: NonEmptyStringSchema
+  })
+  .strict();
+export type RouterFileConfig = z.infer<typeof RouterFileConfigSchema>;
+
+export const PluginModuleConfigSchema = z
+  .object({
+    module: NonEmptyStringSchema
+  })
+  .strict();
+export type PluginModuleConfig = z.infer<typeof PluginModuleConfigSchema>;
+
 export const LockConfigSchema = z
   .object({
     root: NonEmptyStringSchema.optional(),
@@ -86,11 +116,26 @@ export const LockConfigSchema = z
   });
 export type LockConfig = z.infer<typeof LockConfigSchema>;
 
+export const AgentRuntimeConfigSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    options: JsonObjectSchema.default({})
+  })
+  .strict();
+export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
+
+export const WorkflowRuntimeConfigSchema = AgentRuntimeConfigSchema;
+export type WorkflowRuntimeConfig = z.infer<typeof WorkflowRuntimeConfigSchema>;
+
 export const AppConfigSchema = z
   .object({
     workspace: WorkspaceConfigSchema,
     artifacts: ArtifactsConfigSchema,
-    locks: LockConfigSchema.optional()
+    routing: RouterFileConfigSchema.optional(),
+    plugins: z.array(PluginModuleConfigSchema).optional(),
+    locks: LockConfigSchema.optional(),
+    workflow_runtime: WorkflowRuntimeConfigSchema.optional(),
+    agent_runtime: AgentRuntimeConfigSchema.optional()
   })
   .strict();
 export type AppConfig = z.infer<typeof AppConfigSchema>;

@@ -1,5 +1,9 @@
 import { builtInError } from "./errors.js";
-import type { BuiltInStep, BuiltInStepMetadata } from "./types.js";
+import type {
+  BuiltInStep,
+  BuiltInStepDependencies,
+  BuiltInStepMetadata
+} from "./types.js";
 
 function freezeMetadata(
   metadata: BuiltInStepMetadata | undefined
@@ -16,9 +20,10 @@ function freezeMetadata(
   });
 }
 
-export function defineBuiltInStep<const Name extends string>(
-  step: BuiltInStep<Name>
-): BuiltInStep<Name> {
+export function defineBuiltInStep<
+  const Name extends string,
+  Dependencies extends object = BuiltInStepDependencies
+>(step: BuiltInStep<Name, Dependencies>): BuiltInStep<Name, Dependencies> {
   const metadata = freezeMetadata(step.metadata);
 
   return Object.freeze({

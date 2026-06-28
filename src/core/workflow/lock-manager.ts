@@ -1,11 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  customEvent,
-  type LunaObservability
-} from "../observability/luna-observability.js";
-import { sanitizeJsonObject } from "../observability/sanitize.js";
+import type { ObservabilityRecorder } from "../observability/tracing.js";
 import { slugify } from "../security/path.js";
 
 export type LockMode = "exclusive";
@@ -16,7 +12,7 @@ export type RunLockManagerOptions = {
   runtimeRunId?: string;
   timeoutMs: number;
   staleAfterMs: number;
-  observability?: LunaObservability;
+  observability?: ObservabilityRecorder;
 };
 
 export type AcquireLockOptions = {
@@ -128,7 +124,7 @@ export class RunLockManager {
   private readonly timeoutMs: number;
   private readonly staleAfterMs: number;
   private readonly heartbeatIntervalMs: number;
-  private readonly observability: LunaObservability | undefined;
+  private readonly observability: ObservabilityRecorder | undefined;
 
   constructor(options: RunLockManagerOptions) {
     validatePositiveSafeInteger(options.timeoutMs, "Lock timeoutMs");
@@ -433,13 +429,11 @@ export class RunLockManager {
     }
 
     void this.observability
-      .emit(
-        customEvent({
-          ...this.observability.eventContext(level),
-          type: event,
-          data: sanitizeJsonObject(attributes)
-        })
-      )
+      .log({
+        level,
+        message: event,
+        attributes
+      })
       .catch(() => {
       // Observability is diagnostic here; lock behavior remains authoritative.
       });

@@ -1,10 +1,6 @@
-import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
 import type { RepositoryConfig } from "../config/schemas.js";
-import type { WorkspaceRecord } from "../write-mode/types.js";
 import type { CodeReviewFindings, Finding } from "../findings/types.js";
-import type { ValidationResult } from "../validation/runner.js";
-import type { ImplementationConfig } from "../write-mode/types.js";
-import { resolveWorkflowInput, type WorkflowState } from "../workflow/state.js";
+import type { WorkflowState } from "../workflow/state.js";
 import { builtInError, type BuiltInErrorCode } from "./errors.js";
 
 export function requiredState<T>(value: T | undefined, name: string): T {
@@ -54,20 +50,8 @@ export function workflowFrom(
   return undefined;
 }
 
-export function implementationFrom(
-  state: WorkflowState
-): ImplementationConfig["implementation"] | undefined {
-  return (
-    state.config as
-      | { implementation?: ImplementationConfig["implementation"] }
-      | undefined
-  )?.implementation;
-}
-
-export function requiredImplementationFrom(
-  state: WorkflowState
-): ImplementationConfig["implementation"] {
-  return requiredState(implementationFrom(state), "config.implementation");
+export function implementationFrom<T = unknown>(state: WorkflowState): T | undefined {
+  return (state.config as { implementation?: T } | undefined)?.implementation;
 }
 
 export function runIdFrom(state: WorkflowState): string {
@@ -79,20 +63,8 @@ export function runIdFrom(state: WorkflowState): string {
   return requiredState(run.run_id as string | undefined, "run.run_id");
 }
 
-export function workspaceFrom(state: WorkflowState): WorkspaceRecord {
-  return requiredState(state.workspace as WorkspaceRecord | undefined, "workspace");
-}
-
-export function implementationWorkspaceFrom(
-  state: WorkflowState
-): ImplementationWorktreeRecord {
-  const workspace = workspaceFrom(state) as Partial<ImplementationWorktreeRecord>;
-
-  requiredState(workspace.branch, "workspace.branch");
-  requiredState(workspace.remote, "workspace.remote");
-  requiredState(workspace.base_sha, "workspace.base_sha");
-
-  return workspace as ImplementationWorktreeRecord;
+export function workspaceFrom<T = { path: string }>(state: WorkflowState): T {
+  return requiredState(state.workspace as T | undefined, "workspace");
 }
 
 export function workspaceRootFrom(state: WorkflowState): string {
@@ -115,9 +87,9 @@ export function findingsFrom(value: unknown): readonly Finding[] {
 
 export function resolvedInput(
   input: Record<string, unknown> | undefined,
-  state: WorkflowState
+  _state: WorkflowState
 ): Record<string, unknown> {
-  return resolveWorkflowInput(input, state);
+  return input ?? {};
 }
 
 export function optionalResolvedOrStep(
@@ -131,31 +103,6 @@ export function optionalResolvedOrStep(
   }
 
   return (state.steps as Record<string, unknown> | undefined)?.[stepName];
-}
-
-export function finalValidationFrom(
-  state: WorkflowState,
-  resolved: Record<string, unknown> = {}
-): ValidationResult {
-  const direct = optionalResolvedOrStep(resolved, state, "validation", "validation");
-
-  if (direct !== undefined) {
-    return direct as ValidationResult;
-  }
-
-  const implementation = asRecord(
-    requiredState(
-      (state.steps as Record<string, unknown> | undefined)?.implementation,
-      "steps.implementation"
-    ),
-    "state.steps.implementation",
-    "built_in_state_missing"
-  );
-
-  return requiredState(
-    implementation.final_validation as ValidationResult | undefined,
-    "steps.implementation.final_validation"
-  );
 }
 
 export function stepValue<T>(

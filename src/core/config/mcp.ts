@@ -11,7 +11,7 @@ const McpHeaderConfigSchema = z
   })
   .strict();
 
-const McpServerConfigSchema = z
+const McpHttpServerConfigSchema = z
   .object({
     id: NonEmptyStringSchema,
     transport: z.enum(["streamable-http", "sse"]),
@@ -24,6 +24,26 @@ const McpServerConfigSchema = z
     timeout_ms: z.number().int().positive().default(30_000)
   })
   .strict();
+
+const McpStdioServerConfigSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    transport: z.literal("stdio"),
+    command: NonEmptyStringSchema,
+    args: z.array(NonEmptyStringSchema).default([]),
+    env_vars: z.array(NonEmptyStringSchema).default([]),
+    allowed_tools: z.array(NonEmptyStringSchema).nonempty(),
+    allowed_agent_modes: z
+      .array(z.enum(["read_only", "trusted_local_write"]))
+      .nonempty(),
+    timeout_ms: z.number().int().positive().default(30_000)
+  })
+  .strict();
+
+const McpServerConfigSchema = z.discriminatedUnion("transport", [
+  McpHttpServerConfigSchema,
+  McpStdioServerConfigSchema
+]);
 
 export const McpConfigSchema = z
   .object({

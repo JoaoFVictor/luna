@@ -1,4 +1,4 @@
-import type { Invocation } from "../core/invocation/types.js";
+import type { Invocation } from "../core/router/invocation.js";
 
 export type AdapterInput = { kind: "cli"; value: string };
 
@@ -14,4 +14,8 @@ export type InputAdapter = {
   id: string;
   description: string;
   load(input: AdapterInput, context: AdapterContext): Promise<Invocation>;
+};
+
+export type RegisteredInputAdapter = InputAdapter & {
+  source: string;
 };

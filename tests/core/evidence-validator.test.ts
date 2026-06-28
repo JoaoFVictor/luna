@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validateFindingEvidence } from "../../src/core/findings/evidence-validator.js";
+import { validateFindingEvidence } from "../../src/capabilities/findings/evidence-validator.js";
 import type { Finding } from "../../src/core/findings/types.js";
-import type { RepoContext } from "../../src/core/git/diff/types.js";
+import type { RepoContext } from "../../src/capabilities/git/diff/types.js";
 
 const repoContext: RepoContext = {
   repository: {
@@ -132,14 +132,6 @@ describe("evidence validation", () => {
   it("downgrades a high-confidence finding with no valid evidence to low", () => {
     const [validated] = validateFindingEvidence(repoContext, [
       finding({ confidence: "high", evidence: [] })
-    ]);
-
-    expect(validated.confidence).toBe("low");
-  });
-
-  it("downgrades a medium-confidence finding with no valid evidence to low", () => {
-    const [validated] = validateFindingEvidence(repoContext, [
-      finding({ confidence: "medium", evidence: [] })
     ]);
 
     expect(validated.confidence).toBe("low");

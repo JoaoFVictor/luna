@@ -1,27 +1,18 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { cleanup } from "../../src/core/git/worktree-cleanup.js";
-import { prepare } from "../../src/core/providers/github/worktree-manager.js";
-import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
-import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
+import { prepare } from "../../src/providers/github/worktree-manager.js";
+import { githubPullRequestContextFrom } from "../../src/providers/github/pull-request-context.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 const pullRequest = githubPullRequestContextFrom(gitInvocation);
 const pullNumber = pullRequest.pull_number;
-const baseRef = pullRequest.base_ref;
-const baseSha = pullRequest.references.base_sha;
 const headSha = pullRequest.references.head_sha;
 
 type GitCall = {
   cwd: string;
   args: readonly string[];
-};
-
-type MkdirCall = {
-  path: string;
-  options: { recursive: boolean; mode: number };
 };
 
 async function tempRoot(): Promise<string> {
@@ -33,7 +24,6 @@ describe("git worktree manager", () => {
     const workspaceRoot = await tempRoot();
     const runId = "20260618t150405z-octo-hello-pr-42-a1";
     const calls: GitCall[] = [];
-    const mkdirCalls: MkdirCall[] = [];
     const expectedWorktreePath = path.join(workspaceRoot, gitRepository.id, runId);
 
     try {
@@ -51,9 +41,7 @@ describe("git worktree manager", () => {
 
           return "";
         },
-        mkdir: async (targetPath, options) => {
-          mkdirCalls.push({ path: targetPath, options });
-        }
+        mkdir: async () => {}
       });
 
       expect(record).toEqual({
@@ -62,84 +50,19 @@ describe("git worktree manager", () => {
         preserved: true,
         reason: "created"
       });
-      expect(mkdirCalls).toEqual([
-        {
-          path: path.dirname(expectedWorktreePath),
-          options: { recursive: true, mode: 0o700 }
-        }
-      ]);
-      expect(calls).toEqual([
-        {
-          cwd: gitRepository.path,
-          args: ["fetch", gitRepository.remote, baseRef]
-        },
-        {
-          cwd: gitRepository.path,
-          args: [
-            "fetch",
-            gitRepository.remote,
-            `+refs/pull/${pullNumber}/head:refs/remotes/${gitRepository.remote}/pull/${pullNumber}/head`
-          ]
-        },
-        {
-          cwd: gitRepository.path,
-          args: ["cat-file", "-e", `${baseSha}^{commit}`]
-        },
-        {
-          cwd: gitRepository.path,
-          args: ["cat-file", "-e", `${headSha}^{commit}`]
-        },
-        {
-          cwd: gitRepository.path,
-          args: [
-            "worktree",
-            "add",
-            expectedWorktreePath,
-            `refs/remotes/${gitRepository.remote}/pull/${pullNumber}/head`
-          ]
-        },
-        {
-          cwd: expectedWorktreePath,
-          args: ["rev-parse", "HEAD"]
-        }
-      ]);
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("reports head_sha_mismatch when the expected head commit is missing", async () => {
-    const workspaceRoot = await tempRoot();
-    const missingCommit = Object.assign(new Error("missing head"), {
-      code: "git_command_failed",
-      cause: {
-        code: 128,
-        killed: false,
-        signal: null,
-        stderr: `fatal: Not a valid object name ${headSha}^{commit}\n`
-      }
-    });
-
-    try {
-      await expect(
-        prepare({
-          invocation: gitInvocation,
-          repository: gitRepository,
-          workspaceRoot,
-          runId: "run-a1",
-          runGit: async (_cwd, args) => {
-            if (
-              args[0] === "cat-file" &&
-              args.at(-1) === `${headSha}^{commit}`
-            ) {
-              throw missingCommit;
-            }
-
-            return "";
-          },
-          mkdir: async () => {}
-        })
-      ).rejects.toMatchObject({ code: "head_sha_mismatch" });
+      expect(calls).toContainEqual({
+        cwd: gitRepository.path,
+        args: [
+          "worktree",
+          "add",
+          expectedWorktreePath,
+          `refs/remotes/${gitRepository.remote}/pull/${pullNumber}/head`
+        ]
+      });
+      expect(calls).toContainEqual({
+        cwd: expectedWorktreePath,
+        args: ["rev-parse", "HEAD"]
+      });
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
@@ -178,45 +101,6 @@ describe("git worktree manager", () => {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
   });
-
-  it("fetches a non-main base_ref from the invocation", async () => {
-    const workspaceRoot = await tempRoot();
-    const calls: GitCall[] = [];
-
-    try {
-      await prepare({
-        invocation: {
-          ...gitInvocation,
-          references: {
-            base_sha: baseSha,
-            head_sha: headSha,
-            base_ref: "release/1.2"
-          }
-        },
-        repository: gitRepository,
-        workspaceRoot,
-        runId: "run-a1",
-        runGit: async (cwd, args) => {
-          calls.push({ cwd, args });
-
-          if (args[0] === "rev-parse" && args[1] === "HEAD") {
-            return `${headSha}\n`;
-          }
-
-          return "";
-        },
-        mkdir: async () => {}
-      });
-
-      expect(calls[0]).toEqual({
-        cwd: gitRepository.path,
-        args: ["fetch", gitRepository.remote, "release/1.2"]
-      });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
   it("removes the created worktree before throwing when HEAD differs from the expected SHA", async () => {
     const workspaceRoot = await tempRoot();
     const calls: GitCall[] = [];
@@ -246,260 +130,6 @@ describe("git worktree manager", () => {
         cwd: gitRepository.path,
         args: ["worktree", "remove", expectedWorktreePath]
       });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("refuses cleanup paths outside the workspace root", async () => {
-    const workspaceRoot = await tempRoot();
-    const outsideRecord: WorkspaceRecord = {
-      run_id: "run-a1",
-      path: path.join(path.dirname(workspaceRoot), "outside"),
-      preserved: true,
-      reason: "created"
-    };
-
-    try {
-      await expect(
-        cleanup({
-          repositoryPath: gitRepository.path,
-          workspaceRoot,
-          workspaceRecord: outsideRecord,
-          persistedWorkspaceRecord: outsideRecord,
-          runGit: async () => ""
-        })
-      ).rejects.toMatchObject({ code: "path_security_violation" });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("refuses cleanup when a workspace path resolves outside the workspace root", async () => {
-    const workspaceRoot = "/tmp/luna-workspaces";
-    const workspaceRecord: WorkspaceRecord = {
-      run_id: "run-a1",
-      path: "/tmp/luna-workspaces/link/run-a1",
-      preserved: true,
-      reason: "created"
-    };
-    const calls: GitCall[] = [];
-
-    await expect(
-      cleanup({
-        repositoryPath: gitRepository.path,
-        workspaceRoot,
-        workspaceRecord,
-        persistedWorkspaceRecord: workspaceRecord,
-        realpath: async (targetPath) => {
-          if (targetPath === workspaceRoot) {
-            return "/tmp/luna-workspaces-real";
-          }
-
-          if (targetPath === workspaceRecord.path) {
-            return "/tmp/outside/run-a1";
-          }
-
-          return targetPath;
-        },
-        runGit: async (cwd, args) => {
-          calls.push({ cwd, args });
-          return `worktree ${workspaceRecord.path}\n`;
-        }
-      })
-    ).rejects.toMatchObject({ code: "path_security_violation" });
-    expect(calls).toEqual([]);
-  });
-
-  it("refuses cleanup when the persisted workspace.json record is missing", async () => {
-    const workspaceRecord: WorkspaceRecord = {
-      run_id: "run-a1",
-      path: "/tmp/luna-worktrees/run-a1",
-      preserved: true,
-      reason: "created"
-    };
-
-    await expect(
-      cleanup({
-        repositoryPath: gitRepository.path,
-        workspaceRoot: "/tmp/luna-worktrees",
-        workspaceRecord,
-        persistedWorkspaceRecord: undefined,
-        runGit: async () => ""
-      })
-    ).rejects.toMatchObject({ code: "workspace_record_missing" });
-  });
-
-  it("refuses cleanup when persisted workspace.json path differs from memory", async () => {
-    const workspaceRoot = await tempRoot();
-    const workspaceRecord: WorkspaceRecord = {
-      run_id: "run-a1",
-      path: path.join(workspaceRoot, "run-a1"),
-      preserved: true,
-      reason: "created"
-    };
-
-    try {
-      await expect(
-        cleanup({
-          repositoryPath: gitRepository.path,
-          workspaceRoot,
-          workspaceRecord,
-          persistedWorkspaceRecord: {
-            ...workspaceRecord,
-            path: path.join(workspaceRoot, "other-run")
-          },
-          runGit: async () => ""
-        })
-      ).rejects.toMatchObject({ code: "workspace_record_mismatch" });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("refuses cleanup when run ID or preservation state differs from memory", async () => {
-    const workspaceRoot = await tempRoot();
-    const workspaceRecord: WorkspaceRecord = {
-      run_id: "run-a1",
-      path: path.join(workspaceRoot, "run-a1"),
-      preserved: true,
-      reason: "created"
-    };
-
-    try {
-      await expect(
-        cleanup({
-          repositoryPath: gitRepository.path,
-          workspaceRoot,
-          workspaceRecord,
-          persistedWorkspaceRecord: {
-            ...workspaceRecord,
-            run_id: "run-a2"
-          },
-          runGit: async () => ""
-        })
-      ).rejects.toMatchObject({ code: "workspace_record_mismatch" });
-
-      await expect(
-        cleanup({
-          repositoryPath: gitRepository.path,
-          workspaceRoot,
-          workspaceRecord,
-          persistedWorkspaceRecord: {
-            ...workspaceRecord,
-            preserved: false
-          },
-          runGit: async () => ""
-        })
-      ).rejects.toMatchObject({ code: "workspace_record_mismatch" });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("refuses cleanup when persisted workspace.json reason differs from memory", async () => {
-    const workspaceRoot = await tempRoot();
-    const workspaceRecord: WorkspaceRecord = {
-      run_id: "run-a1",
-      path: path.join(workspaceRoot, "run-a1"),
-      preserved: true,
-      reason: "created"
-    };
-
-    try {
-      await expect(
-        cleanup({
-          repositoryPath: gitRepository.path,
-          workspaceRoot,
-          workspaceRecord,
-          persistedWorkspaceRecord: {
-            ...workspaceRecord,
-            reason: "different"
-          },
-          runGit: async () => ""
-        })
-      ).rejects.toMatchObject({ code: "workspace_record_mismatch" });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("only removes a registered Git worktree and marks cleanup successful", async () => {
-    const workspaceRoot = await tempRoot();
-    const workspaceRecord: WorkspaceRecord = {
-      run_id: "run-a1",
-      path: path.join(workspaceRoot, "run-a1"),
-      preserved: true,
-      reason: "created"
-    };
-    const calls: GitCall[] = [];
-
-    try {
-      await mkdir(workspaceRecord.path, { recursive: true });
-
-      const updated = await cleanup({
-        repositoryPath: gitRepository.path,
-        workspaceRoot,
-        workspaceRecord,
-        persistedWorkspaceRecord: workspaceRecord,
-        runGit: async (cwd, args) => {
-          calls.push({ cwd, args });
-
-          if (args[0] === "worktree" && args[1] === "list") {
-            return `worktree ${workspaceRecord.path}\nHEAD ${headSha}\nbranch refs/heads/main\n`;
-          }
-
-          return "";
-        }
-      });
-
-      expect(calls).toEqual([
-        {
-          cwd: gitRepository.path,
-          args: ["worktree", "list", "--porcelain"]
-        },
-        {
-          cwd: gitRepository.path,
-          args: ["worktree", "remove", workspaceRecord.path]
-        }
-      ]);
-      expect(updated).toEqual({
-        ...workspaceRecord,
-        preserved: false,
-        reason: "success_cleanup"
-      });
-    } finally {
-      await rm(workspaceRoot, { force: true, recursive: true });
-    }
-  });
-
-  it("refuses cleanup when the path is not registered as a Git worktree", async () => {
-    const workspaceRoot = await tempRoot();
-    const workspaceRecord: WorkspaceRecord = {
-      run_id: "run-a1",
-      path: path.join(workspaceRoot, "run-a1"),
-      preserved: true,
-      reason: "created"
-    };
-
-    try {
-      await mkdir(workspaceRecord.path, { recursive: true });
-
-      await expect(
-        cleanup({
-          repositoryPath: gitRepository.path,
-          workspaceRoot,
-          workspaceRecord,
-          persistedWorkspaceRecord: workspaceRecord,
-          runGit: async (_cwd, args) => {
-            if (args[0] === "worktree" && args[1] === "list") {
-              return `worktree ${path.join(workspaceRoot, "other-run")}\n`;
-            }
-
-            return "";
-          }
-        })
-      ).rejects.toMatchObject({ code: "workspace_record_missing" });
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }

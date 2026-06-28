@@ -10,8 +10,10 @@ export type SkillSource = "repository" | "agent";
 export type ResolvedSkillReference = {
   directory: string;
   skillMdPath: string;
+  requestedPath: string;
   name: string;
   description: string;
+  content: string;
 };
 
 export type ResolveSkillReferenceOptions = {
@@ -99,8 +101,10 @@ export async function resolveSkillReference({
   return {
     directory,
     skillMdPath: resolvedSkillMdPath,
+    requestedPath: skillPath,
     name: frontmatter.name,
-    description: frontmatter.description
+    description: frontmatter.description,
+    content
   };
 }
 

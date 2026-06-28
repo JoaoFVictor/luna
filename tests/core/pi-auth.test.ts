@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { mkdtemp } from "node:fs/promises";
@@ -6,8 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   loadPiOAuthApiKey,
   registerConfiguredPiOAuthProviders,
+  registeredPiProviderApiKey,
   registerPiOAuthProvider
-} from "../../src/core/agent-runtime/flue/pi-auth.js";
+} from "../../src/agent-runtimes/pi/auth.js";
 
 describe("Pi OAuth auth.json integration", () => {
   it("loads and refreshes an OAuth token from auth.json", async () => {
@@ -61,40 +62,35 @@ describe("Pi OAuth auth.json integration", () => {
     ).rejects.toThrow(expect.objectContaining({ code: "pi_auth_missing" }));
   });
 
-  it("registers the provider with the resolved OAuth access token", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "luna-pi-auth-register-"));
+  it("stores resolved OAuth API keys when no custom register hook is provided", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-pi-auth-default-register-"));
     const authPath = path.join(root, "auth.json");
-    await mkdir(root, { recursive: true });
     await writeFile(
       authPath,
       JSON.stringify({
-        "openai-codex": {
-        type: "oauth",
-        access: "access-token",
+        "test-provider": {
+          type: "oauth",
+          access: "access-token",
           refresh: "refresh-token",
           expires: Date.now() + 3600000
         }
       })
     );
-    const registerProvider = vi.fn();
 
-    await registerPiOAuthProvider("openai-codex", {
+    await registerPiOAuthProvider("test-provider", {
       authPath,
-      registerProvider,
       getOAuthApiKey: vi.fn(async () => ({
-        apiKey: "access-token",
+        apiKey: "stored-access-token",
         newCredentials: {
-        type: "oauth",
-        access: "access-token",
+          type: "oauth",
+          access: "stored-access-token",
           refresh: "refresh-token",
           expires: Date.now() + 3600000
         }
       }))
     });
 
-    expect(registerProvider).toHaveBeenCalledWith("openai-codex", {
-      apiKey: "access-token"
-    });
+    expect(registeredPiProviderApiKey("test-provider")).toBe("stored-access-token");
   });
 
   it("registers OpenAI Codex only when resolved model profiles use it", async () => {

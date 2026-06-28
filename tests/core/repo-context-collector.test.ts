@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
-import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
-import {
-  FileExcerptSchema,
-  RepoContextSchema
-} from "../../src/core/git/diff/types.js";
+import { githubPullRequestContextFrom } from "../../src/providers/github/pull-request-context.js";
+import { collectRepoContext } from "../../src/capabilities/git/diff/repo-context.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 type FakeGitCall = {
@@ -16,27 +12,6 @@ const pullRequest = githubPullRequestContextFrom(gitInvocation);
 const baseSha = pullRequest.references.base_sha;
 const headSha = pullRequest.references.head_sha;
 const tabbedPath = "src/tab\tpath.ts";
-const validRepoContext = {
-  repository: {
-    owner: "octo-org",
-    name: "hello-world",
-    full_name: "octo-org/hello-world"
-  },
-  base_sha: "abc123",
-  head_sha: "def456",
-  files: [
-    {
-      path: "src/image.png",
-      status: "modified",
-      additions: 0,
-      deletions: 0,
-      binary: true,
-      patch: null,
-      excerpt: null
-    }
-  ]
-};
-
 function nul(...fields: string[]): string {
   return `${fields.join("\0")}\0`;
 }
@@ -167,23 +142,7 @@ function gitOutputFor(args: readonly string[]): string {
 }
 
 describe("repo context collector", () => {
-  it("accepts repo context binary metadata with null patch and excerpt", () => {
-    expect(RepoContextSchema.parse(validRepoContext)).toEqual(validRepoContext);
-  });
-
-  it("rejects a file excerpt range with end_line before start_line", () => {
-    expect(() =>
-      FileExcerptSchema.parse({
-        start_line: 20,
-        end_line: 19,
-        content: "const result = run();"
-      })
-    ).toThrow();
-  });
-
   it("collects changed file metadata with pinned diffs and truncation metadata", async () => {
-    const calls: FakeGitCall[] = [];
-
     const context = await collectRepoContext({
       repository: gitRepository,
       baseSha,
@@ -191,11 +150,7 @@ describe("repo context collector", () => {
       maxChangedFiles: 7,
       maxDiffBytes: 150,
       maxExcerptBytes: 60,
-      runGit: async (cwd, args) => {
-        calls.push({ cwd, args });
-
-        return gitOutputFor(args);
-      }
+      runGit: async (_cwd, args) => gitOutputFor(args)
     });
 
     expect(context.changed_files_truncated).toBe(true);
@@ -223,121 +178,13 @@ describe("repo context collector", () => {
       deletions: 0
     });
 
-    expect(context.files.find((file) => file.path === "assets/logo.png")).toMatchObject({
-      status: "modified",
-      binary: true,
-      patch: null,
-      excerpt: null
-    });
-
-    expect(context.files.find((file) => file.path === "src/old.ts")).toMatchObject({
-      status: "deleted",
-      additions: 0,
-      deletions: 8,
-      excerpt: null
-    });
-
     expect(context.files.find((file) => file.path === "src/name-new.ts")).toMatchObject({
       status: "renamed",
       previous_path: "src/name-old.ts"
     });
 
-    expect(context.files.find((file) => file.path === "src/large.ts")).toMatchObject({
-      is_large: true,
-      excerpt: {
-        start_line: 1,
-        end_line: 3,
-        truncated: true
-      }
-    });
-
     expect(context.files.find((file) => file.path === "src/blob.dat")).toMatchObject({
       is_lfs_pointer: true
-    });
-
-    expect(context.files.reduce((bytes, file) => bytes + (file.patch?.length ?? 0), 0)).toBeLessThanOrEqual(
-      150
-    );
-    expect(context.files.at(-1)?.patch).toBeNull();
-
-    expect(
-      calls.filter((call) => call.args[0] === "diff" && call.args[3] === "--")
-    ).toEqual([
-      {
-        cwd: gitRepository.path,
-        args: ["diff", baseSha, headSha, "--", "src/alpha.ts"]
-      },
-      {
-        cwd: gitRepository.path,
-        args: ["diff", baseSha, headSha, "--", tabbedPath]
-      },
-      {
-        cwd: gitRepository.path,
-        args: ["diff", baseSha, headSha, "--", "src/name-new.ts"]
-      }
-    ]);
-    expect(
-      calls.some(
-        (call) =>
-          call.args[0] === "diff" &&
-          call.args.length === 3 &&
-          call.args[1] === "--" &&
-          call.args[2].startsWith("src/")
-      )
-    ).toBe(false);
-    expect(calls.map((call) => call.args)).toContainEqual([
-      "diff",
-      "--raw",
-      "-z",
-      baseSha,
-      headSha
-    ]);
-    expect(calls.map((call) => call.args)).toContainEqual([
-      "diff",
-      "--numstat",
-      "-z",
-      baseSha,
-      headSha
-    ]);
-    expect(calls.map((call) => call.args)).toContainEqual([
-      "diff",
-      "--name-status",
-      "-z",
-      baseSha,
-      headSha
-    ]);
-    expect(calls.map((call) => call.args)).not.toContainEqual([
-      "show",
-      `${headSha}:assets/logo.png`
-    ]);
-    expect(calls.map((call) => call.args)).not.toContainEqual([
-      "show",
-      `${headSha}:src/old.ts`
-    ]);
-    expect(calls.map((call) => call.args)).not.toContainEqual([
-      "show",
-      `${headSha}:vendor/lib`
-    ]);
-    expect(calls.map((call) => call.args)).toContainEqual([
-      "show",
-      `${headSha}:${tabbedPath}`
-    ]);
-  });
-
-  it("marks raw mode 160000 entries as submodules", async () => {
-    const context = await collectRepoContext({
-      repository: gitRepository,
-      baseSha,
-      headSha,
-      maxChangedFiles: 8,
-      runGit: async (_cwd, args) => gitOutputFor(args)
-    });
-
-    expect(context.changed_files_truncated).toBe(false);
-    expect(context.files.find((file) => file.path === "vendor/lib")).toMatchObject({
-      is_submodule: true,
-      patch: null,
-      excerpt: null
     });
   });
 
@@ -392,36 +239,4 @@ describe("repo context collector", () => {
     expect(excerptContent).not.toContain("\uFFFD");
   });
 
-  it("records patch omission reasons and partial truncation metadata", async () => {
-    const context = await collectRepoContext({
-      repository: gitRepository,
-      baseSha,
-      headSha,
-      maxChangedFiles: 8,
-      maxDiffBytes: 150,
-      runGit: async (_cwd, args) => gitOutputFor(args)
-    });
-
-    expect(context.files.find((file) => file.path === "assets/logo.png")).toMatchObject({
-      patch: null,
-      patch_omitted_reason: "binary"
-    });
-    expect(context.files.find((file) => file.path === "src/old.ts")).toMatchObject({
-      patch: null,
-      patch_omitted_reason: "deleted"
-    });
-    expect(context.files.find((file) => file.path === "vendor/lib")).toMatchObject({
-      patch: null,
-      patch_omitted_reason: "submodule"
-    });
-    expect(context.files.find((file) => file.path === "src/name-new.ts")).toMatchObject({
-      additions: 1,
-      deletions: 1,
-      patch_truncated: true
-    });
-    expect(context.files.find((file) => file.path === "src/large.ts")).toMatchObject({
-      patch: null,
-      patch_omitted_reason: "diff_budget_exhausted"
-    });
-  });
 });

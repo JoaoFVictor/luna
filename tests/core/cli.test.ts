@@ -1,21 +1,20 @@
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
-import type { AdapterContext, InputAdapter } from "../../src/adapters/types.js";
-import type { Invocation } from "../../src/core/invocation/types.js";
+import type { InputAdapter } from "../../src/adapters/types.js";
+import type { Invocation } from "../../src/core/router/invocation.js";
+import { createInitialRuntimeState } from "../../src/core/runtime/state.js";
+import type { WorkflowRunResult } from "../../src/core/workflow/execution-contracts.js";
+import type { LunaPlatform } from "../../src/platform/native/native-platform.js";
 import {
-  buildFlueRunCommand,
-  childProcessExitCode,
-  childProcessFailureExitCode,
   findProjectRoot,
-  loadInvocationFromFile,
+  loadRoutingDefinition,
   main,
   parseCliArgs,
-  parseWorkflowTarget,
-  resolveFlueCliBin
-} from "../../src/core/agent-runtime/flue/cli.js";
+  resolveCliConfigRoot
+} from "../../src/cli.js";
 
 const validInvocation: Invocation = {
   version: "2026-06",
@@ -37,73 +36,7 @@ const validInvocation: Invocation = {
     base_sha: "abc123",
     head_sha: "def456"
   },
-  payload: {
-    pull_request: {
-      number: 42
-    }
-  }
-};
-
-const validJiraInvocation: Invocation = {
-  version: "2026-06",
-  source: "jira",
-  event: "issue",
-  action: "selected",
-  repository: {
-    provider: "github",
-    owner: "octo-org",
-    name: "hello-world"
-  },
-  subject: {
-    type: "jira_issue",
-    id: "ABC-123",
-    url: "https://company.atlassian.net/browse/ABC-123",
-    title: "Fix checkout validation"
-  },
-  payload: {
-    jira: {
-      instance_id: "company",
-      description: "Reject invalid checkout payloads.",
-      acceptance_criteria: "Invalid payloads fail validation.",
-      status: "To Do",
-      issue_type: "Task"
-    }
-  }
-};
-
-const validPlaneInvocation: Invocation = {
-  version: "2026-06",
-  source: "plane",
-  event: "issue",
-  action: "selected",
-  repository: {
-    provider: "github",
-    owner: "octo-org",
-    name: "hello-world"
-  },
-  subject: {
-    type: "plane_issue",
-    id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-    url: "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-    title: "Fix checkout validation"
-  },
-  payload: {
-    plane: {
-      instance_id: "company",
-      workspace_slug: "company",
-      project_id: "24f9b7",
-      issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-      description: "Reject invalid checkout payloads."
-    }
-  }
-};
-
-const adapterContext: AdapterContext = {
-  projectRoot: "/workspace/project",
-  configRoot: "/workspace/config",
-  env: {},
-  fetch,
-  executeJson: vi.fn()
+  payload: { pull_request: { number: 42 } }
 };
 
 function registryWith(adapter: InputAdapter): InputAdapterRegistry {
@@ -124,94 +57,57 @@ function registryWith(adapter: InputAdapter): InputAdapterRegistry {
   };
 }
 
-describe("flue local CLI wrapper", () => {
-  it("keeps the package bin pointed at the emitted CLI path", async () => {
-    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
-      bin?: { luna?: unknown };
-    };
+function succeededWorkflowResult(): WorkflowRunResult {
+  return {
+    status: "succeeded",
+    output: {},
+    state: createInitialRuntimeState({
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "test-run",
+        workflow_id: "implementation",
+        attempt: 1,
+        started_at: "2026-06-28T00:00:00.000Z"
+      },
+      workflow: { id: "implementation", mode: "trusted_local_write" }
+    })
+  };
+}
 
-    expect(packageJson.bin?.luna).toBe("./dist/src/cli.js");
-    await expect(access("src/cli.ts")).resolves.toBeUndefined();
+describe("Luna CLI", () => {
+  it("rejects invalid or workflow-specific command shapes", () => {
+    expect(() => parseCliArgs(["run", "--workflow", "code-review"])).toThrow(
+      expect.objectContaining({ code: "unsupported_flag" })
+    );
+    expect(() => parseCliArgs(["review-pr", "url"])).toThrow(
+      expect.objectContaining({ code: "unknown_command" })
+    );
   });
 
-  it("parses run input arguments", () => {
-    expect(parseCliArgs(["run", "--input", "example.json"])).toEqual({
-      command: "run",
-      input: "example.json",
-      target: undefined
-    });
-  });
-
-  it("parses explicit target input adapter arguments", () => {
+  it("parses generic workflow resume arguments", () => {
     expect(
       parseCliArgs([
-        "run",
+        "resume",
         "--target",
-        "workflow:code-review",
-        "--from",
-        "github-pr-url",
-        "https://github.com/withastro/luna/pull/123"
+        "workflow:implementation",
+        "--thread",
+        "run-1",
+        "--checkpoint",
+        "checkpoint-run-1-approval",
+        "--interrupt",
+        "interrupt-run-1-approval",
+        "--decision",
+        "{\"approved\":true}"
       ])
     ).toEqual({
-      command: "run",
-      target: { type: "workflow", id: "code-review" },
-      from: "github-pr-url",
-      value: "https://github.com/withastro/luna/pull/123"
+      command: "resume",
+      target: { type: "workflow", id: "implementation" },
+      thread: "run-1",
+      checkpoint: "checkpoint-run-1-approval",
+      interrupt: "interrupt-run-1-approval",
+      decision: { approved: true }
     });
-  });
-
-  it("parses workflow targets", () => {
-    expect(parseWorkflowTarget("workflow:implementation")).toEqual({
-      type: "workflow",
-      id: "implementation"
-    });
-  });
-
-  it("throws invalid_target when the target is not a workflow target", () => {
-    expect(() => parseWorkflowTarget("agent:implementation")).toThrow(
-      expect.objectContaining({ code: "invalid_target" })
-    );
-  });
-
-  it("rejects the legacy workflow flag", () => {
-    expect(() =>
-      parseCliArgs(["run", "--workflow", "code-review"])
-    ).toThrow(expect.objectContaining({ code: "unsupported_flag" }));
-  });
-
-  it("throws missing_input when run input is missing", () => {
-    expect(() => parseCliArgs(["run"])).toThrow(
-      expect.objectContaining({ code: "missing_input" })
-    );
-  });
-
-  it("throws missing_from_value when an input adapter value is missing", () => {
-    expect(() =>
-      parseCliArgs([
-        "run",
-        "--target",
-        "workflow:code-review",
-        "--from",
-        "github-pr-url"
-      ])
-    ).toThrow(
-      expect.objectContaining({ code: "missing_from_value" })
-    );
-  });
-
-  it("resolves the local @flue/cli binary from package bin.flue", async () => {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-bin-"));
-    await mkdir(path.join(projectRoot, "node_modules", "@flue", "cli"), {
-      recursive: true
-    });
-    await writeFile(
-      path.join(projectRoot, "node_modules", "@flue", "cli", "package.json"),
-      JSON.stringify({ bin: { flue: "dist/index.js" } })
-    );
-
-    await expect(resolveFlueCliBin(projectRoot)).resolves.toBe(
-      path.join(projectRoot, "node_modules", "@flue", "cli", "dist", "index.js")
-    );
   });
 
   it("finds the project root from compiled dist paths", async () => {
@@ -219,227 +115,164 @@ describe("flue local CLI wrapper", () => {
     const nestedStart = path.join(projectRoot, "dist", "src", "core");
 
     await mkdir(nestedStart, { recursive: true });
-    await mkdir(path.join(projectRoot, "node_modules", "@flue", "cli"), {
-      recursive: true
-    });
     await writeFile(path.join(projectRoot, "package.json"), "{}");
-    await writeFile(
-      path.join(projectRoot, "node_modules", "@flue", "cli", "package.json"),
-      JSON.stringify({ bin: { flue: "bin/flue.mjs" } })
-    );
 
     await expect(findProjectRoot(nestedStart)).resolves.toBe(projectRoot);
   });
 
-  it("builds a node command that runs local Flue with the invocation payload", async () => {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-command-"));
-    await mkdir(path.join(projectRoot, "node_modules", "@flue", "cli"), {
-      recursive: true
-    });
+  it("loads routing from LUNA_CONFIG_ROOT outside projectRoot/config", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-project-"));
+    const configRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-config-"));
     await writeFile(
-      path.join(projectRoot, "node_modules", "@flue", "cli", "package.json"),
-      JSON.stringify({ bin: { flue: "./bin/flue.js" } })
+      path.join(configRoot, "app.yaml"),
+      [
+        "workspace:",
+        "  strategy: git_worktree",
+        `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
+        "  preserve_on_success: false",
+        "  preserve_on_failure: true",
+        "artifacts:",
+        `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
+        "routing:",
+        "  path: external-routing.yaml",
+        ""
+      ].join("\n")
+    );
+    await writeFile(
+      path.join(configRoot, "external-routing.yaml"),
+      [
+        "type: router",
+        "version: \"2026-06\"",
+        "rules:",
+        "  - id: external_config_root_route",
+        "    when:",
+        "      expression: \"true\"",
+        "    target: workflow:implementation",
+        ""
+      ].join("\n")
     );
 
-    const command = await buildFlueRunCommand(validInvocation, { projectRoot });
-
-    expect(command.command).toBe(process.execPath);
-    expect(command.args).toEqual([
-      path.join(projectRoot, "node_modules", "@flue", "cli", "bin", "flue.js"),
-      "run",
-      "luna",
-      "--target",
-      "node",
-      "--root",
-      projectRoot,
-      "--payload",
-      JSON.stringify(validInvocation)
-    ]);
+    await expect(
+      loadRoutingDefinition(projectRoot, { LUNA_CONFIG_ROOT: configRoot })
+    ).resolves.toMatchObject({
+      rules: [{ id: "external_config_root_route" }]
+    });
   });
 
-  it("validates invocation JSON before invoking Flue", async () => {
+  it("validates invocation JSON before executing a target", async () => {
     const invocationFile = path.join(
       await mkdtemp(path.join(tmpdir(), "luna-cli-invalid-")),
       "invocation.json"
     );
     await writeFile(invocationFile, JSON.stringify({ ...validInvocation, pull_number: 0 }));
-    const execute = vi.fn();
+    const targetExecutor = { execute: vi.fn(async () => 0) };
 
     await expect(
-      main(["run", "--input", invocationFile], { execute })
+      main(["run", "--input", invocationFile], { targetExecutor })
     ).rejects.toThrow(expect.objectContaining({ code: "invocation_invalid" }));
-    expect(execute).not.toHaveBeenCalled();
+    expect(targetExecutor.execute).not.toHaveBeenCalled();
   });
 
-  it("loads a validated invocation from disk", async () => {
-    const invocationFile = path.join(
-      await mkdtemp(path.join(tmpdir(), "luna-cli-load-")),
-      "invocation.json"
-    );
-    await writeFile(invocationFile, JSON.stringify(validInvocation));
-
-    await expect(loadInvocationFromFile(invocationFile)).resolves.toEqual(validInvocation);
-  });
-
-  it("loads an invocation through the selected input adapter before invoking Flue", async () => {
-    const execute = vi.fn(async () => 0);
-    const buildCommand = vi.fn(async () => ({
-      command: process.execPath,
-      args: ["local-flue"]
-    }));
+  it("uses the injected platform as the default adapter registry and workflow runner", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-platform-"));
+    const configRoot = path.join(projectRoot, "config");
     const load = vi.fn(async () => validInvocation);
     const adapter: InputAdapter = {
-      id: "github-pr-url",
-      description: "GitHub pull request URL",
+      id: "custom-url",
+      description: "Custom URL",
       load
     };
+    const platform = {
+      inputAdapterRegistry: registryWith(adapter),
+      runWorkflow: vi.fn(async () => undefined),
+      resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
+    } satisfies Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">;
 
     await expect(
       main(
         [
           "run",
+          "--from",
+          "custom-url",
+          "https://example.test/task/1"
+        ],
+        {
+          platform,
+          projectRoot,
+          env: { LUNA_CONFIG_ROOT: configRoot },
+          routing: {
+            type: "router",
+            version: "2026-06",
+            rules: [
+              {
+                id: "platform_route",
+                when: { expression: "true" },
+                target: "workflow:implementation"
+              }
+            ]
+          }
+        }
+      )
+    ).resolves.toBe(0);
+
+    expect(load).toHaveBeenCalledWith(
+      { kind: "cli", value: "https://example.test/task/1" },
+      expect.objectContaining({ projectRoot, configRoot })
+    );
+    expect(platform.runWorkflow).toHaveBeenCalledWith({
+      projectRoot,
+      configRoot,
+      invocation: validInvocation,
+      target: { type: "workflow", id: "implementation" }
+    });
+  });
+
+  it("uses the injected platform for generic workflow resume", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-resume-"));
+    const configRoot = path.join(projectRoot, "config");
+    const platform = {
+      inputAdapterRegistry: registryWith({
+        id: "unused",
+        description: "Unused",
+        load: vi.fn()
+      }),
+      runWorkflow: vi.fn(async () => undefined),
+      resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
+    } satisfies Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">;
+
+    await expect(
+      main(
+        [
+          "resume",
           "--target",
-          "workflow:code-review",
-          "--from",
-          "github-pr-url",
-          "https://github.com/octo-org/hello-world/pull/42"
+          "workflow:implementation",
+          "--thread",
+          "run-1",
+          "--checkpoint",
+          "checkpoint-run-1-approval",
+          "--interrupt",
+          "interrupt-run-1-approval",
+          "--decision",
+          "{\"approved\":true}"
         ],
         {
-          execute,
-          buildCommand,
-          adapterRegistry: registryWith(adapter),
-          adapterContext
+          platform,
+          projectRoot,
+          env: { LUNA_CONFIG_ROOT: configRoot }
         }
       )
     ).resolves.toBe(0);
 
-    expect(load).toHaveBeenCalledWith(
-      { kind: "cli", value: "https://github.com/octo-org/hello-world/pull/42" },
-      adapterContext
-    );
-    expect(buildCommand).toHaveBeenCalledWith({
-      ...validInvocation,
-      target: { type: "workflow", id: "code-review" }
+    expect(platform.runWorkflow).not.toHaveBeenCalled();
+    expect(platform.resumeWorkflow).toHaveBeenCalledWith({
+      projectRoot,
+      configRoot,
+      target: { type: "workflow", id: "implementation" },
+      thread_id: "run-1",
+      checkpoint_id: "checkpoint-run-1-approval",
+      interrupt_id: "interrupt-run-1-approval",
+      decision: { approved: true }
     });
-    expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
   });
 
-  it("loads a Jira task invocation through the selected input adapter before invoking Flue", async () => {
-    const execute = vi.fn(async () => 0);
-    const buildCommand = vi.fn(async () => ({
-      command: process.execPath,
-      args: ["local-flue"]
-    }));
-    const load = vi.fn(async () => validJiraInvocation);
-    const adapter: InputAdapter = {
-      id: "jira-task-url",
-      description: "Jira task URL",
-      load
-    };
-
-    await expect(
-      main(
-        [
-          "run",
-          "--from",
-          "jira-task-url",
-          "https://company.atlassian.net/browse/ABC-123"
-        ],
-        {
-          execute,
-          buildCommand,
-          adapterRegistry: registryWith(adapter),
-          adapterContext
-        }
-      )
-    ).resolves.toBe(0);
-
-    expect(load).toHaveBeenCalledWith(
-      { kind: "cli", value: "https://company.atlassian.net/browse/ABC-123" },
-      adapterContext
-    );
-    expect(buildCommand).toHaveBeenCalledWith(validJiraInvocation);
-    expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
-  });
-
-  it("loads a Plane task invocation through the selected input adapter before invoking Flue", async () => {
-    const execute = vi.fn(async () => 0);
-    const buildCommand = vi.fn(async () => ({
-      command: process.execPath,
-      args: ["local-flue"]
-    }));
-    const load = vi.fn(async () => validPlaneInvocation);
-    const adapter: InputAdapter = {
-      id: "plane-task-url",
-      description: "Plane task URL",
-      load
-    };
-
-    await expect(
-      main(
-        [
-          "run",
-          "--from",
-          "plane-task-url",
-          "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
-        ],
-        {
-          execute,
-          buildCommand,
-          adapterRegistry: registryWith(adapter),
-          adapterContext
-        }
-      )
-    ).resolves.toBe(0);
-
-    expect(load).toHaveBeenCalledWith(
-      {
-        kind: "cli",
-        value:
-          "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
-      },
-      adapterContext
-    );
-    expect(buildCommand).toHaveBeenCalledWith(validPlaneInvocation);
-    expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
-  });
-
-  it("does not keep workflow-specific commands in the public CLI", () => {
-    expect(() =>
-      parseCliArgs(["review-pr", "https://github.com/withastro/luna/pull/123"])
-    ).toThrow(expect.objectContaining({ code: "unknown_command" }));
-  });
-
-  it("does not import or call workflow modules directly", async () => {
-    vi.resetModules();
-    vi.doMock("../../src/workflows/luna.js", () => {
-      throw new Error("CLI should invoke Flue, not import the workflow");
-    });
-
-    const { main: isolatedMain } = await import(
-      "../../src/core/agent-runtime/flue/cli.js"
-    );
-    const invocationFile = path.join(
-      await mkdtemp(path.join(tmpdir(), "luna-cli-workflow-")),
-      "invocation.json"
-    );
-    await writeFile(invocationFile, JSON.stringify(validInvocation));
-    const execute = vi.fn(async () => 0);
-
-    await expect(
-      isolatedMain(["run", "--input", invocationFile], {
-        execute,
-        buildCommand: async () => ({ command: process.execPath, args: ["local-flue"] })
-      })
-    ).resolves.toBe(0);
-
-    expect(execute).toHaveBeenCalledWith(process.execPath, ["local-flue"]);
-    vi.doUnmock("../../src/workflows/luna.js");
-    vi.resetModules();
-  });
-
-  it("maps child process signal termination to conventional exit code", () => {
-    expect(childProcessExitCode(null, "SIGTERM")).toBe(143);
-    expect(childProcessFailureExitCode({ signal: "SIGTERM" })).toBe(143);
-  });
 });

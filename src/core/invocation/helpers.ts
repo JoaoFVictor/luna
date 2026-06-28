@@ -4,7 +4,7 @@ import type {
   InvocationSubject,
   NormalizedInvocation,
   RouteTarget
-} from "./types.js";
+} from "../router/invocation.js";
 
 export function codedError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };

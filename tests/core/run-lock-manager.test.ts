@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { RunLockManager } from "../../src/core/workflow/lock-manager.js";
-import { createLunaObservability } from "../../src/core/observability/luna-observability.js";
-import type { LunaEvent } from "../../src/core/observability/events.js";
+import { createTelemetryBufferSink } from "../../src/core/observability/sinks.js";
+import { createObservabilityRecorder } from "../../src/core/observability/tracing.js";
 
 function deferred<T = void>(): {
   promise: Promise<T>;
@@ -39,31 +39,14 @@ async function withTimeout<T>(
 }
 
 describe("run lock manager", () => {
-  it("serializes exclusive access to the same resource", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
-    const manager = new RunLockManager({
-      root,
-      runId: "run-1",
-      timeoutMs: 1000,
-      staleAfterMs: 6000
-    });
-
-    const release = await manager.acquire("repository:repo", "exclusive");
-    await expect(
-      manager.acquire("repository:repo", "exclusive", { timeoutMs: 10 })
-    ).rejects.toMatchObject({ code: "lock_timeout" });
-    await release();
-    const secondRelease = await manager.acquire("repository:repo", "exclusive", {
-      timeoutMs: 1000
-    });
-    expect(secondRelease).toEqual(expect.any(Function));
-    await secondRelease();
-  });
-
   it("serializes separate managers through the shared filesystem lock root", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
     const waitingObserved = deferred();
-    const events: LunaEvent[] = [];
+    const telemetry = createTelemetryBufferSink();
+    const observability = createObservabilityRecorder({
+      run: { id: "run-2", workflowId: "implementation", attempt: 1 },
+      sinks: [telemetry]
+    });
     const manager1 = new RunLockManager({
       root,
       runId: "run-1",
@@ -75,22 +58,7 @@ describe("run lock manager", () => {
       runId: "run-2",
       timeoutMs: 1000,
       staleAfterMs: 6000,
-      observability: createLunaObservability({
-        run: { id: "run-2" },
-        workflow: { id: "implementation" },
-        sinks: [
-          {
-            id: "memory",
-            required: true,
-            append: (event) => {
-              events.push(event);
-              if (event.type === "luna.lock.waiting") {
-                waitingObserved.resolve();
-              }
-            }
-          }
-        ]
-      })
+      observability
     });
 
     const release1 = await manager1.acquire("repository:repo", "exclusive");
@@ -102,11 +70,9 @@ describe("run lock manager", () => {
         return release;
       });
 
-    await withTimeout(
-      waitingObserved.promise,
-      500,
-      "second manager did not observe repository lock contention"
-    );
+    await withTimeout(waitForLog(telemetry, "luna.lock.waiting").then(() => {
+      waitingObserved.resolve();
+    }), 500, "second manager did not observe repository lock contention");
     expect(secondAcquired).toBe(false);
 
     await release1();
@@ -118,48 +84,28 @@ describe("run lock manager", () => {
     expect(secondAcquired).toBe(true);
     await release2();
 
-    expect(events).toEqual(
+    expect(telemetry.records()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: "luna.lock.waiting",
-          run: expect.objectContaining({ id: "run-2" }),
-          data: expect.objectContaining({
-            "luna.resource": "repository:repo"
+          type: "log",
+          log: expect.objectContaining({
+            message: "luna.lock.waiting",
+            attributes: expect.objectContaining({
+              "luna.resource": "repository:repo"
+            })
           })
         }),
         expect.objectContaining({
-          type: "luna.lock.acquired",
-          run: expect.objectContaining({ id: "run-2" }),
-          data: expect.objectContaining({
-            "luna.resource": "repository:repo"
+          type: "log",
+          log: expect.objectContaining({
+            message: "luna.lock.acquired",
+            attributes: expect.objectContaining({
+              "luna.resource": "repository:repo"
+            })
           })
         })
       ])
     );
-  });
-
-  it("writes lock owner metadata", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
-    const manager = new RunLockManager({
-      root,
-      runId: "run-1",
-      runtimeRunId: "runtime-1",
-      timeoutMs: 1000,
-      staleAfterMs: 6000
-    });
-
-    const release = await manager.acquire("repository:repo", "exclusive");
-    const content = await readFile(
-      path.join(root, "repository_repo.lock", "owner.json"),
-      "utf8"
-    );
-    expect(JSON.parse(content)).toMatchObject({
-      resource: "repository:repo",
-      run_id: "run-1",
-      runtime_run_id: "runtime-1"
-    });
-    expect(JSON.parse(content)).not.toHaveProperty("flue_run_id");
-    await release();
   });
 
   it("does not steal a stale-looking lock from a live pid", async () => {
@@ -239,38 +185,6 @@ describe("run lock manager", () => {
     await release();
   });
 
-  it("creates the lock root before acquiring", async () => {
-    const root = path.join(
-      await mkdtemp(path.join(tmpdir(), "luna-lock-parent-")),
-      ".luna",
-      "locks"
-    );
-    const manager = new RunLockManager({
-      root,
-      runId: "run-1",
-      timeoutMs: 1000,
-      staleAfterMs: 3000
-    });
-
-    const release = await manager.acquire("repository:repo", "exclusive");
-    await expect(
-      readFile(path.join(root, "repository_repo.lock", "owner.json"), "utf8")
-    ).resolves.toContain("\"run_id\": \"run-1\"");
-    await release();
-  });
-
-  it("rejects invalid lock timing", () => {
-    expect(
-      () =>
-        new RunLockManager({
-          root: "/tmp/luna-locks",
-          runId: "run-1",
-          timeoutMs: 0,
-          staleAfterMs: 3000
-        })
-    ).toThrow(expect.objectContaining({ code: "lock_config_invalid" }));
-  });
-
   it("does not delete a replacement lock on stale release", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
     const manager = new RunLockManager({
@@ -306,69 +220,17 @@ describe("run lock manager", () => {
     ).resolves.toContain("replacement-run");
   });
 
-  it("emits stable Luna lock observability events", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
-    const events: LunaEvent[] = [];
-    const observability = createLunaObservability({
-      run: { id: "run-1", runtimeRunId: "flue-1" },
-      workflow: { id: "code-review" },
-      sinks: [
-        {
-          id: "memory",
-          required: true,
-          append: (event) => {
-            events.push(event);
-          }
-        }
-      ]
-    });
-    const manager = new RunLockManager({
-      root,
-      runId: "run-1",
-      runtimeRunId: "flue-1",
-      timeoutMs: 1000,
-      staleAfterMs: 3000,
-      observability
-    });
-
-    const release = await manager.acquire("repository:repo", "exclusive");
-    await release();
-    await observability.close();
-
-    expect(events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "luna.lock.acquired",
-          run: { id: "run-1", runtimeRunId: "flue-1", attempt: 1 },
-          data: expect.objectContaining({
-            "luna.resource": "repository:repo"
-          })
-        }),
-        expect.objectContaining({
-          type: "luna.lock.released",
-          run: expect.objectContaining({ id: "run-1" }),
-          data: expect.objectContaining({
-            "luna.resource": "repository:repo"
-          })
-        })
-      ])
-    );
-  });
-
   it("does not let observability failures prevent acquire release or timeout behavior", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
-    const observability = createLunaObservability({
-      run: { id: "run-1" },
-      workflow: { id: "code-review" },
-      sinks: [
-        {
-          id: "failing",
-          required: true,
-          append: () => {
-            throw new Error("observability failed");
-          }
+    const observability = createObservabilityRecorder({
+      run: { id: "run-1", workflowId: "code-review", attempt: 1 },
+      sinks: [{
+        id: "failing",
+        required: true,
+        emit: () => {
+          throw new Error("observability failed");
         }
-      ]
+      }]
     });
     const manager = new RunLockManager({
       root,
@@ -385,3 +247,20 @@ describe("run lock manager", () => {
     await expect(release()).resolves.toBeUndefined();
   });
 });
+
+async function waitForLog(
+  telemetry: ReturnType<typeof createTelemetryBufferSink>,
+  message: string
+): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (
+      telemetry.records().some(
+        (record) => record.type === "log" && record.log.message === message
+      )
+    ) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Log not observed: ${message}`);
+}

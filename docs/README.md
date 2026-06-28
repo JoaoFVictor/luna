@@ -1,78 +1,103 @@
 # Luna Architecture
 
-This directory explains Luna's runtime layers for people who need to change the
-project, not just run it. For step-by-step recipes, use the files in
-`examples/`. For agent-facing operating rules, use the project skills in
-`skills/`.
-
-Luna is built around one deterministic path:
+These docs describe the code that exists now, not an idealized version of the
+project. Use them when changing Luna internals or adding public authoring
+surfaces.
 
 ```text
-adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated_agent_loop -> artifacts
+CLI / input adapter
+  -> Invocation
+  -> deterministic router
+  -> workflow YAML definition
+  -> native platform registrations
+  -> runtime composition
+  -> scheduler + node executors
+  -> artifacts, events, checkpoints, reports
 ```
 
-The current model runtime is Flue, but Luna keeps that at the boundary. New
-workflow behavior should usually be YAML, configuration, agents, built-ins, or
-tools, not a new TypeScript workflow entrypoint.
+## Read First
 
-## Read These First
-
-- [Agents, context, and skills](agents-context-and-skills.md)
 - [Workflows and artifacts](workflows-and-artifacts.md)
+- [Agents, context, and skills](agents-context-and-skills.md)
 - [Adapters and providers](adapters-and-providers.md)
-- [Built-ins, tools, and runtime](built-ins-tools-and-runtime.md)
+- [Capabilities, tools, and runtime](built-ins-tools-and-runtime.md)
+- [Capabilities reference](capabilities-reference.md)
+- [Runtime and observability](runtime-and-observability.md)
+- [Configuration reference](configuration-reference.md)
+
+Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 
 ## Layer Map
 
-| Layer | Owns | Does not own |
+| Layer | Code | Owns |
 | --- | --- | --- |
-| Input adapters | Turning external input into Luna's normalized invocation shape. | Workflow orchestration, artifacts, worktrees, commits, or model calls. |
-| Router | Deterministic workflow selection from target fields and `config/routing.yaml`. | Asking an LLM which workflow to run. |
-| Workflows | YAML DAG orchestration, node dependencies, explicit inputs, gates, and artifact plans. | Provider auth, model runtime internals, or reusable agent role definitions. |
-| Agents | Reusable model roles, instructions, output schema, and allowed capabilities. | Graph orchestration, gate policy, context discovery, commits, or publishing. |
-| Context intake | Reading configured repository and agent files, then producing an auditable context bundle. | Loading skills, choosing agents, or scanning arbitrary repository files. |
-| Skills | Reusable runtime guidance exposed to agents as explicit capabilities. | Inline repository context or deterministic TypeScript behavior. |
-| Built-ins | Deterministic workflow steps with scheduling metadata. | Model judgment, provider-owned schema shortcuts, or hidden orchestration. |
-| Local tools | Small cwd-bound functions an agent can call during a session. | Workflow steps, external input normalization, or direct Flue policy. |
-| Providers | Provider-specific auth, config, schema, task context, reports, and change-request actions. | Generic workflow contracts or another provider's schema/auth/config. |
-| Flue runtime adapter | Materializing agents, model profiles, local tools, MCP, subagents, retries, and usage logs for Flue. | Generic Luna contracts, provider ownership, or workflow policy. |
+| CLI | `src/cli.ts` | command parsing, adapter invocation loading, routing, target execution |
+| Generic workflow entrypoint | `src/workflows/luna.ts` | loading the native platform and delegating to `runWorkflow` |
+| Native platform | `src/platform/native/**` | plugin registrations, platform loading, native run context, executor wiring |
+| Router | `src/core/router/**` | strict invocation envelope and deterministic JSONata route selection |
+| Workflow definition | `src/core/workflow/**` | YAML parsing, capability validation, DAG analysis, compilation contracts |
+| Runtime scheduler | `src/runtime/workflow/**` | node scheduling, resume, checkpoints, final output, node execution |
+| LangGraph adapter | `src/runtime/langgraph/**` | current workflow runtime adapter over generic scheduler contracts |
+| Runtime composition | `src/runtime/composition/**` | backend selection, agent/workflow runtime factories, ports, observability |
+| Observability | `src/core/observability/**` | spans, logs, sinks, runtime-log projection, summary artifacts |
+| Capabilities | `src/capabilities/**` | manifests, built-ins, patterns, gates, tools, ports, policies |
+| Providers | `src/providers/**` | source-system adapters, auth/config, payload parsing, reports, publishing |
+| Agents | `agents/<id>/` and `src/capabilities/agents/**` | reusable model roles and agent-node execution contracts |
+| Agent runtimes | `src/agent-runtimes/<runtime>/` | runtime-specific model/tool/materialization logic |
 
 ## Extension Decision Guide
 
-Use `agents/<id>/` when the role, instructions, model profile, output contract,
-or allowed capabilities need to change.
+Use `workflows/<id>/` when orchestration changes: node order, dependencies,
+gates, artifacts, mode, required capabilities, or final reporting shape.
 
-Use `workflows/<id>/` when the orchestration changes: order, dependencies,
-gates, artifacts, or which agents and built-ins participate.
+Use `agents/<id>/` when a reusable model role changes: instructions, output
+schema, model profile, tools, MCP servers, skills, context, or subagents.
 
-Use `src/adapters/<id>/` when Luna must accept a new external input shape and
-normalize it into an invocation.
+Use `src/capabilities/<capability>/` when adding a public deterministic
+operation, pattern, gate, local tool, port, policy, or artifact publisher.
+Register public ids through the capability manifest and official registry.
 
-Use `src/core/built-ins/` when the workflow needs deterministic TypeScript
-behavior as a graph node.
+Use `src/providers/<provider>/` when behavior depends on source-system auth,
+config, URLs, API payloads, task context, report rendering, or change-request
+publishing.
 
-Use `src/core/tools/` when an agent needs a small deterministic local function
-during its model session.
+Use native platform plugin registration when wiring adapters, provider
+built-ins, runtime factories, pattern executors, or change-request providers
+into the running platform.
 
-Use `src/core/providers/<provider>/` when the behavior is provider-specific:
-auth, source API config, provider payload parsing, task context rendering,
-reports, or change-request publishing.
+Use `src/agent-runtimes/pi/**` only for Pi-specific materialization:
+model calls, Pi tool conversion, runtime auth, usage/log bridging, and Pi
+capability support.
 
-Use `src/core/agent-runtime/flue/` only when the Flue runtime adapter itself
-needs to change.
+Use `src/core/observability/**` when changing telemetry record shape, sinks,
+summary projection, or external trace bridge contracts.
 
-## Non-Negotiable Shape
+## Non-Negotiables
 
-- There is one generic TypeScript workflow entrypoint: `src/workflows/luna.ts`.
-- Workflow definitions live under `workflows/<id>/`.
-- Routing is deterministic and model-free.
-- Context is explicit. A workflow must run `collect_context` and pass
-  `context: $.steps.context` to model nodes that need it.
-- Skills are explicit capabilities. They are not the same system as context
-  intake.
-- Provider code must stay provider-owned. Generic core modules stay
-  provider-agnostic except at composition roots.
-- Built-in metadata, not ad hoc name checks, drives scheduler behavior such as
-  repository locks, workspace capture, lifecycle evidence, and deferred final
-  reports.
+- Routing is deterministic. Do not ask a model which workflow to run.
+- Do not add workflow-specific CLI commands.
+- Do not add per-workflow TypeScript entrypoints.
+- Keep provider code provider-owned. Generic core/capability modules must not
+  import provider auth, schema, URL, SDK, or payload details.
+- Keep runtime-specific code at runtime boundaries.
+- Keep orchestration in workflow YAML, not inside agent prompts.
+- Keep context explicit through `context.collect_context`.
+- Treat capability manifests as the public registry, not scattered name lists.
+- Side-effecting built-ins must declare and use side-effect policies.
+- Agents should not commit, push, or create change requests; deterministic
+  built-ins own publishing gates.
 
+## Verification
+
+For broad documentation or architecture changes, run:
+
+```bash
+npm test
+npm run typecheck
+npm run typecheck:unused-src
+npm run lint:unused
+npm run build
+```
+
+For scoped code changes, run focused tests for the touched layer plus the
+type/unused/lint checks.

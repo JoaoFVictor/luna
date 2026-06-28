@@ -7,7 +7,6 @@ instances:
     repository_hint:
       source: field
       field_id: customfield_12345
-      format: github_full_name
     # Optional acceptance criteria field read from Jira.
     acceptance_criteria_field:
       field_id: customfield_67890

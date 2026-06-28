@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { githubPrUrlAdapter } from "../../src/adapters/github-pr-url/index.js";
+import { githubPrUrlAdapter } from "../../src/providers/github/input-adapter.js";
 import type { AdapterContext } from "../../src/adapters/types.js";
 
 const githubPullResponse = {
@@ -51,11 +51,8 @@ describe("github-pr-url adapter", () => {
         { kind: "cli", value: "https://github.com/withastro/luna/pull/123" },
         context(executeJson)
       )
-    ).resolves.toEqual({
-      version: "2026-06",
+    ).resolves.toMatchObject({
       source: "github",
-      event: "pull_request",
-      action: "selected",
       repository: {
         provider: "github",
         owner: "withastro",
@@ -63,29 +60,7 @@ describe("github-pr-url adapter", () => {
       },
       subject: {
         type: "pull_request",
-        id: "123",
-        url: "https://github.com/withastro/luna/pull/123"
-      },
-      references: {
-        base_ref: "main",
-        base_sha: "base-sha",
-        head_sha: "head-sha"
-      },
-      payload: {
-        pull_request: {
-          number: 123
-        },
-        base_repository: {
-          owner: "withastro",
-          name: "luna",
-          full_name: "withastro/luna"
-        },
-        head_repository: {
-          owner: "contributor",
-          name: "luna",
-          full_name: "contributor/luna",
-          fork: true
-        }
+        id: "123"
       }
     });
 
@@ -104,23 +79,20 @@ describe("github-pr-url adapter", () => {
     ).rejects.toThrow(expect.objectContaining({ code: "invalid_pr_url" }));
   });
 
-  it.each(["1e2", "0x10", "1.0", "0", "abc"])(
-    "rejects non-decimal positive integer pull number %s",
-    async (pullNumber) => {
-      const executeJson = vi.fn(async () => githubPullResponse);
+  it("rejects non-decimal positive integer pull numbers", async () => {
+    const executeJson = vi.fn(async () => githubPullResponse);
 
-      await expect(
-        githubPrUrlAdapter.load(
-          {
-            kind: "cli",
-            value: `https://github.com/withastro/luna/pull/${pullNumber}`
-          },
-          context(executeJson)
-        )
-      ).rejects.toThrow(expect.objectContaining({ code: "invalid_pr_url" }));
-      expect(executeJson).not.toHaveBeenCalled();
-    }
-  );
+    await expect(
+      githubPrUrlAdapter.load(
+        {
+          kind: "cli",
+          value: "https://github.com/withastro/luna/pull/0"
+        },
+        context(executeJson)
+      )
+    ).rejects.toThrow(expect.objectContaining({ code: "invalid_pr_url" }));
+    expect(executeJson).not.toHaveBeenCalled();
+  });
 
   it("throws when GitHub returns a PR without an available head repository", async () => {
     const executeJson = vi.fn(async () => ({

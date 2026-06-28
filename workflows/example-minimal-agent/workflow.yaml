@@ -1,11 +1,61 @@
 id: example-minimal-agent
 type: workflow
+# Smallest runnable Luna workflow: collect explicit context, run one read-only
+# agent, and publish both JSON and markdown artifacts.
 mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
-graph: graph.yaml
+capabilities:
+  - context
+  - agents
+  - artifacts
 requires:
   repository: true
 execution:
   max_concurrency: 2
   lock_timeout_ms: 120000
+nodes:
+  # Context is always explicit. This node reads repository configured context
+  # plus the example agent's own context files and records the audit artifact.
+  - id: context
+    type: built_in
+    uses: context.collect_context
+    artifacts:
+      - path: context-intake.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.context"
+        format: json
+    input:
+      agents:
+        - example-minimal-agent
+
+  # The only model call in this workflow. The agent receives invocation,
+  # repository metadata, run metadata, and the audited context bundle.
+  - id: example_summary
+    type: agent
+    agent: example-minimal-agent
+    output_schema: output.schema.json
+    artifacts:
+      - path: example-summary.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_summary"
+        format: json
+      - path: example-summary.md
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_summary.summary"
+        format: markdown
+    input:
+      invocation:
+        expression: "$.invocation"
+      repository:
+        expression: "$.repository"
+      run:
+        expression: "$.run"
+      context:
+        expression: "$.steps.context"
+      goal: Demonstrate the smallest read-only Luna workflow shape.
+    after:
+      - context

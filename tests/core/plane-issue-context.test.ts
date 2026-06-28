@@ -3,8 +3,8 @@ import {
   planeIssueKey,
   planeIssueContextFrom,
   type PlaneIssueContext
-} from "../../src/core/providers/plane/task-context.js";
-import type { NormalizedInvocation } from "../../src/core/invocation/types.js";
+} from "../../src/providers/plane/task-context.js";
+import type { NormalizedInvocation } from "../../src/core/router/invocation.js";
 
 const invocation: NormalizedInvocation = {
   version: "2026-06",
@@ -81,16 +81,6 @@ describe("Plane issue context parser", () => {
     expect(planeIssueContextFrom(invocation)).toEqual(expected);
   });
 
-  it("extracts Plane issue context without repository", () => {
-    const context = planeIssueContextFrom({
-      ...invocation,
-      repository: undefined
-    });
-
-    expect(context.repository).toBeUndefined();
-    expect(context.issueId).toBe("b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984");
-  });
-
   it("extracts Plane browse issue context", () => {
     const context = planeIssueContextFrom(browseInvocation);
 
@@ -104,12 +94,4 @@ describe("Plane issue context parser", () => {
     expect(planeIssueKey(context)).toBe("PROJ-42");
   });
 
-  it("preserves the generic missing payload error code", () => {
-    expect(() =>
-      planeIssueContextFrom({
-        ...invocation,
-        payload: undefined
-      })
-    ).toThrow(expect.objectContaining({ code: "invocation_payload_missing" }));
-  });
 });

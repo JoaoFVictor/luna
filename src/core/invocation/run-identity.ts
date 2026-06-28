@@ -1,5 +1,6 @@
 import { slugify } from "../security/path.js";
-import type { Invocation, RunIdentity } from "./types.js";
+import type { Invocation } from "../router/invocation.js";
+import type { RunIdentity } from "./types.js";
 
 export type RunIdentityOptions = {
   attempt: number;
@@ -98,7 +99,7 @@ export function createRunIdentity(
 
   return {
     run_id,
-    ...(runtimeRunId === undefined ? {} : { flue_run_id: runtimeRunId }),
+    ...(runtimeRunId === undefined ? {} : { runtime_run_id: runtimeRunId }),
     workflow_id: workflowId,
     attempt,
     source: invocation.source,

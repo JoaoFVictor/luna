@@ -1,11 +1,391 @@
 id: implementation
 type: workflow
+# Trusted local write workflow for Jira/Plane task implementation. It prepares
+# an isolated worktree, plans, runs a gated writer loop, then performs the full
+# deterministic publish chain through GitHub change request creation.
 mode: trusted_local_write
 input_schema: input.schema.json
 output_schema: output.schema.json
-graph: graph.yaml
+capabilities:
+  - runtime
+  - repository-change
+  - task-context
+  - validation
+  - context
+  - agents
+  - artifacts
+  - quality-gates
+  - reports
+  - git
+  - change-request
 requires:
   repository: true
 execution:
+  # Safe independent work may overlap, but agent sessions, protected side
+  # effects, and workspace-sensitive nodes are constrained by runtime policy.
   max_concurrency: 2
   lock_timeout_ms: 120000
+nodes:
+  # Runtime/config sanity check before creating a worktree or calling agents.
+  - id: preflight
+    type: built_in
+    uses: runtime.preflight
+    artifacts:
+      - path: preflight.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.preflight"
+        format: json
+
+  # Creates or prepares the trusted local write workspace from the target
+  # repository. Later write, validation, git, and CR steps use this workspace.
+  - id: workspace
+    type: built_in
+    uses: repository-change.prepare_worktree
+    input:
+      subject:
+        key:
+          expression: "$.invocation.subject.id"
+        title:
+          expression: "$.invocation.subject.title"
+    artifacts:
+      - path: workspace.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.workspace"
+        format: json
+    after:
+      - preflight
+
+  # Normalizes provider task data into text/body fields that planner,
+  # implementer, final report, and change request creation can share.
+  - id: task_context
+    type: built_in
+    uses: task-context.collect
+    artifacts:
+      - path: task-context.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.task_context"
+        format: json
+    after:
+      - preflight
+
+  # Collects repository and agent context for every model role used in this
+  # workflow. Context is audited and rendered as runtime instructions.
+  - id: context
+    type: built_in
+    uses: context.collect_context
+    artifacts:
+      - path: context-intake.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.context"
+        format: json
+    input:
+      agents:
+        - implementation-planner
+        - code-implementer
+        - change-reviewer
+        - change-acceptance-reviewer
+    after:
+      - workspace
+
+  # Planner agent converts task context plus repository guidance into a concrete
+  # implementation plan before any writer gets control of the worktree.
+  - id: implementation_plan
+    type: agent
+    agent: implementation-planner
+    output_schema: output.schema.json
+    artifacts:
+      - path: implementation-plan.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation_plan"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      task_context:
+        expression: "$.steps.task_context"
+    after:
+      - context
+      - task_context
+
+  # Trusted writer loop. The worker may edit the worktree; each attempt is
+  # checked by deterministic validation, non-empty diff, review, and acceptance
+  # gates. Gate feedback loops back according to repair.attempts.
+  - id: implementation
+    type: pattern
+    uses: quality-gates.gated_agent_loop
+    worker: code-implementer
+    artifacts:
+      - path: implementation-result.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      implementation_plan:
+        expression: "$.steps.implementation_plan"
+      workspace:
+        expression: "$.workspace"
+      task_context:
+        expression: "$.steps.task_context"
+    gates:
+      # Runs configured validation commands from config/implementation.yaml.
+      - id: validation
+        type: quality-gates.validation_commands
+        input:
+          commands:
+            expression: "$.config.implementation.validation.commands"
+          max_output_bytes:
+            expression: "$.config.implementation.validation.max_output_bytes"
+      # Prevents a "successful" implementation that changed nothing.
+      - id: diff
+        type: quality-gates.non_empty_diff
+        input: {}
+      # Technical review gate. A failed decision blocks and returns feedback.
+      - id: review
+        type: quality-gates.agent_review
+        input:
+          review_agent: change-reviewer
+          subject:
+            expression: "$.gate"
+        block_when:
+          expression: "$.gate.decision = 'fail'"
+        feedback:
+          expression: "$.gate.feedback"
+      # Acceptance gate maps the produced change back to the task requirements.
+      - id: acceptance
+        type: quality-gates.agent_review
+        input:
+          review_agent: change-acceptance-reviewer
+          subject:
+            expression: "$.gate"
+        block_when:
+          expression: "$.gate.status != 'accepted'"
+        feedback:
+          expression: "$.gate.summary & '\n' & $join($.gate.blocking_reasons, '\n')"
+    repair:
+      attempts:
+        expression: "$.config.implementation.validation.repair_attempts"
+    after:
+      - implementation_plan
+
+  # Extracts gate results from the pattern output into stable artifacts consumed
+  # by publishing preparation.
+  - id: implementation_validation
+    type: built_in
+    uses: repository-change.record_validation
+    input:
+      implementation:
+        expression: "$.steps.implementation"
+    artifacts:
+      - path: validation.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation_validation.validation"
+        format: json
+      - path: acceptance-review.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.implementation_validation.acceptance"
+        format: json
+    after:
+      - implementation
+
+  # Collects the gated worktree diff before commit preparation. The automated
+  # validation/review gates above are the publish boundary for this workflow.
+  - id: worktree_diff
+    type: built_in
+    uses: repository-change.collect_worktree_diff
+    artifacts:
+      - path: diff.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.worktree_diff"
+        format: json
+    after:
+      - implementation_validation
+
+  # Computes commit eligibility and message from validation, acceptance, diff,
+  # and task title before the git side effect runs.
+  - id: prepare_commit
+    type: built_in
+    uses: repository-change.prepare_commit
+    input:
+      validation:
+        expression: "$.steps.implementation_validation.validation"
+      acceptance:
+        expression: "$.steps.implementation_validation.acceptance"
+      diff:
+        expression: "$.steps.worktree_diff"
+      message:
+        expression: "$.invocation.subject.title"
+    artifacts:
+      - path: prepared-commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.prepare_commit"
+        format: json
+    after:
+      - worktree_diff
+
+  # External side effect: creates the git commit when enabled/eligible. The
+  # explicit side-effect policy lets runtime safety checks reason about it.
+  - id: commit
+    type: built_in
+    uses: git.commit
+    policies:
+      - uses: git.commit_side_effect
+        config:
+          operation_id: git.commit
+    input:
+      expression: "$.steps.prepare_commit"
+    artifacts:
+      - path: git-commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.commit"
+        format: json
+    after:
+      - prepare_commit
+
+  # Records commit lifecycle in a provider-neutral shape for reports and later
+  # push preparation.
+  - id: commit_lifecycle
+    type: built_in
+    uses: repository-change.record_commit_lifecycle
+    input:
+      commit:
+        expression: "$.steps.commit"
+    artifacts:
+      - path: commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.commit_lifecycle"
+        format: json
+    after:
+      - commit
+
+  # Computes push eligibility and target remote/branch from commit lifecycle and
+  # implementation config.
+  - id: prepare_push
+    type: built_in
+    uses: repository-change.prepare_push
+    input:
+      commit:
+        expression: "$.steps.commit_lifecycle"
+    artifacts:
+      - path: prepared-push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.prepare_push"
+        format: json
+    after:
+      - commit_lifecycle
+
+  # External side effect: pushes the implementation branch when enabled and
+  # eligible.
+  - id: push
+    type: built_in
+    uses: git.push_branch
+    policies:
+      - uses: git.push_branch_side_effect
+        config:
+          operation_id: git.push_branch
+    input:
+      expression: "$.steps.prepare_push"
+    artifacts:
+      - path: git-push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.push"
+        format: json
+    after:
+      - prepare_push
+
+  # Records push lifecycle in a stable shape for change-request creation and
+  # final reporting.
+  - id: push_lifecycle
+    type: built_in
+    uses: repository-change.record_push_lifecycle
+    input:
+      push:
+        expression: "$.steps.push"
+    artifacts:
+      - path: push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.push_lifecycle"
+        format: json
+    after:
+      - push
+
+  # External side effect: creates the configured provider change request, usually
+  # a draft GitHub PR. This depends on successful push lifecycle.
+  - id: change_request
+    type: built_in
+    uses: change-request.create
+    policies:
+      - uses: change-request.create_side_effect
+        config:
+          operation_id: change-request.create
+    input:
+      enabled:
+        expression: "$.config.implementation.change_request.enabled"
+      provider_id:
+        expression: "$.config.implementation.change_request.provider"
+      repository_path:
+        expression: "$.steps.workspace.path"
+      title:
+        expression: "$.invocation.subject.title"
+      description:
+        expression: "$.steps.task_context.change_request_body"
+      source:
+        expression: "$.steps.push_lifecycle"
+      target_branch:
+        expression: "$.config.implementation.change_request.base_ref"
+      draft:
+        expression: "$.config.implementation.change_request.draft"
+    artifacts:
+      - path: change-request.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.change_request"
+        format: json
+    after:
+      - push_lifecycle
+
+  # Terminal implementation report. Final output comes from this node and
+  # summarizes commit, push, and change-request outcomes.
+  - id: final_report
+    type: built_in
+    uses: task-context.final_report
+    input:
+      commit:
+        expression: "$.steps.commit_lifecycle"
+      push:
+        expression: "$.steps.push_lifecycle"
+      change_request:
+        expression: "$.steps.change_request"
+    artifacts:
+      - path: final-report.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.final_report.json"
+        format: json
+      - path: final-report.md
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.final_report.markdown"
+        format: markdown
+    after:
+      - change_request

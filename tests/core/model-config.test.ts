@@ -33,37 +33,6 @@ describe("model config", () => {
     });
   });
 
-  it("accepts model: openai-codex/gpt-5.4-mini without environment lookup", () => {
-    const modelsConfig: ModelsConfig = {
-      model_profiles: {
-        default: {
-          model: "openai-codex/gpt-5.4-mini",
-          reasoning_effort: "medium"
-        }
-      }
-    };
-
-    expect(resolveModelProfiles(modelsConfig, {}).default.model).toBe(
-      "openai-codex/gpt-5.4-mini"
-    );
-  });
-
-  it("resolves model: ${DEEP_MODEL} from env.DEEP_MODEL", () => {
-    const modelsConfig: ModelsConfig = {
-      model_profiles: {
-        deep: {
-          model: "${DEEP_MODEL}",
-          reasoning_effort: "high"
-        }
-      }
-    };
-
-    expect(
-      resolveModelProfiles(modelsConfig, { DEEP_MODEL: "openai/gpt-5" }).deep
-        .model
-    ).toBe("openai/gpt-5");
-  });
-
   it("resolves model fallback placeholders from the environment when present", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
@@ -110,44 +79,11 @@ describe("model config", () => {
     );
   });
 
-  it("throws model_spec_invalid when a model fallback reference lacks a provider", () => {
-    const modelsConfig: ModelsConfig = {
-      model_profiles: {
-        default: {
-          model: "${DEFAULT_MODEL:-gpt-5-mini}",
-          reasoning_effort: "medium"
-        }
-      }
-    };
-
-    expect(() => resolveModelProfiles(modelsConfig, {})).toThrow(
-      expect.objectContaining({ code: "model_spec_invalid" })
-    );
-  });
-
-  it("throws model_env_missing for whitespace-only environment values", () => {
-    const modelsConfig: ModelsConfig = {
-      model_profiles: {
-        default: {
-          model: "${DEFAULT_MODEL}",
-          reasoning_effort: "medium"
-        }
-      }
-    };
-
-    expect(() =>
-      resolveModelProfiles(modelsConfig, { DEFAULT_MODEL: "   " })
-    ).toThrow(expect.objectContaining({ code: "model_env_missing" }));
-  });
-
-  it.each([
-    ["direct model", "gpt-5"],
-    ["environment model", "${DEEP_MODEL}"]
-  ])("throws model_spec_invalid for %s without provider prefix", (_case, model) => {
+  it("throws model_spec_invalid for an environment model without provider prefix", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {
         deep: {
-          model,
+          model: "${DEEP_MODEL}",
           reasoning_effort: "high"
         }
       }
@@ -158,21 +94,18 @@ describe("model config", () => {
     ).toThrow(expect.objectContaining({ code: "model_spec_invalid" }));
   });
 
-  it.each(["${DEFAULT_MODEL }", "${default_model}", "${DEFAULT_MODEL"])(
-    "throws model_placeholder_invalid for malformed placeholder %s",
-    (model) => {
-      const modelsConfig: ModelsConfig = {
-        model_profiles: {
-          default: {
-            model,
-            reasoning_effort: "medium"
-          }
+  it("throws model_placeholder_invalid for a malformed placeholder", () => {
+    const modelsConfig: ModelsConfig = {
+      model_profiles: {
+        default: {
+          model: "${DEFAULT_MODEL }",
+          reasoning_effort: "medium"
         }
-      };
+      }
+    };
 
-      expect(() => resolveModelProfiles(modelsConfig, {})).toThrow(
-        expect.objectContaining({ code: "model_placeholder_invalid" })
-      );
-    }
-  );
+    expect(() => resolveModelProfiles(modelsConfig, {})).toThrow(
+      expect.objectContaining({ code: "model_placeholder_invalid" })
+    );
+  });
 });

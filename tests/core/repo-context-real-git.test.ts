@@ -2,9 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { prepare } from "../../src/core/providers/github/worktree-manager.js";
-import { githubPullRequestContextFrom } from "../../src/core/providers/github/pull-request-context.js";
-import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
+import { prepare } from "../../src/providers/github/worktree-manager.js";
+import { githubPullRequestContextFrom } from "../../src/providers/github/pull-request-context.js";
+import { collectRepoContext } from "../../src/capabilities/git/diff/repo-context.js";
 import {
   createRealGitReviewFixture,
   type RealGitReviewFixture

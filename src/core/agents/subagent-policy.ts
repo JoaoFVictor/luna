@@ -55,7 +55,7 @@ export function resolveSubagentPolicy(
 
   if (mode === "trusted_local_write" && !base.allow_write) {
     throw subagentPolicyError(
-      "Subagent write mode is not allowed by workflow policy",
+      "Subagent trusted local write mode is not allowed by workflow policy",
       "subagent_write_not_allowed"
     );
   }

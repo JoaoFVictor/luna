@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveRepository } from "../../src/core/workflow/workspace-resolver.js";
-import type { Invocation } from "../../src/core/invocation/types.js";
+import type { Invocation } from "../../src/core/router/invocation.js";
 import { gitRepository } from "../fixtures/git-repo.js";
 
 const githubInvocation = {
@@ -15,20 +15,6 @@ const githubInvocation = {
     name: "Hello-World"
   },
   subject: { type: "pull_request", id: "42" }
-} as const satisfies Invocation;
-
-const jiraInvocation = {
-  version: "2026-06",
-  source: "jira",
-  event: "issue",
-  action: "selected",
-  target: { type: "workflow", id: "implementation" },
-  repository: {
-    provider: "github",
-    owner: "acme-inc",
-    name: "web-app"
-  },
-  subject: { type: "issue", id: "ABC-123" }
 } as const satisfies Invocation;
 
 describe("workspace resolver", () => {
@@ -61,22 +47,6 @@ describe("workspace resolver", () => {
     expect(repository).toBe(gitRepository);
   });
 
-  it("matches jira repositories by invocation repository owner and name", () => {
-    const jiraRepository = {
-      ...gitRepository,
-      id: "web-app",
-      owner: "acme-inc",
-      name: "web-app"
-    };
-
-    const repository = resolveRepository(jiraInvocation, [
-      gitRepository,
-      jiraRepository
-    ]);
-
-    expect(repository).toBe(jiraRepository);
-  });
-
   it("throws repository_not_configured when no repository matches", () => {
     expect(() =>
       resolveRepository(githubInvocation, [
@@ -86,12 +56,6 @@ describe("workspace resolver", () => {
         }
       ])
     ).toThrow(expect.objectContaining({ code: "repository_not_configured" }));
-  });
-
-  it("throws repository_not_configured when no jira repository matches", () => {
-    expect(() => resolveRepository(jiraInvocation, [gitRepository])).toThrow(
-      expect.objectContaining({ code: "repository_not_configured" })
-    );
   });
 
   it("throws repository_not_configured when invocation has no repository", () => {

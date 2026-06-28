@@ -1,22 +1,4 @@
-import type { Invocation } from "../invocation/types.js";
-import type { RepoContext } from "../git/diff/types.js";
-import type { WorkspaceRecord } from "../write-mode/types.js";
-import type { RepositoryConfig } from "../config/schemas.js";
-import type { Finding } from "../findings/types.js";
-import type { AcceptanceDecision } from "../decisions/types.js";
-import type { ValidationResult } from "../validation/runner.js";
-import type {
-  CommitChangesArtifact,
-  ImplementationConfig,
-  PushBranchArtifact
-} from "../write-mode/types.js";
-import type {
-  ChangeRequestArtifact,
-  ChangeRequestRegistry
-} from "../change-request/contracts.js";
-import type { ImplementationWorktreeRecord } from "../write-mode/worktree.js";
-import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
-import type { ObservabilitySummary } from "../observability/summary.js";
+import type { WorkflowObservability } from "../observability/workflow-observability.js";
 import type { WorkflowState } from "../workflow/state.js";
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -53,17 +35,24 @@ export type BuiltInStepMetadata = {
   }[];
 };
 
-export type BuiltInStepRunOptions = {
+export type BuiltInStepDependencies = Record<string, unknown>;
+
+export type BuiltInStepRunOptions<
+  Dependencies extends object = BuiltInStepDependencies
+> = {
   readonly state: WorkflowState;
   readonly input?: Record<string, unknown>;
-  readonly dependencies?: BuiltInStepDependencies;
-  readonly observabilitySummary?: ObservabilitySummary;
+  readonly dependencies?: Dependencies;
+  readonly observability?: WorkflowObservability;
 };
 
-export type BuiltInStep<Name extends string = string> = {
+export type BuiltInStep<
+  Name extends string = string,
+  Dependencies extends object = BuiltInStepDependencies
+> = {
   readonly name: Name;
   readonly metadata?: BuiltInStepMetadata;
-  readonly run: (options: BuiltInStepRunOptions) => MaybePromise<unknown>;
+  readonly run: (options: BuiltInStepRunOptions<Dependencies>) => MaybePromise<unknown>;
 };
 
 export type BuiltInStepRegistryView = {
@@ -73,117 +62,4 @@ export type BuiltInStepRegistryView = {
 
 export type RunBuiltInStepOptions = BuiltInStepRunOptions & {
   uses: string;
-};
-
-export type BuiltInStepDependencies = {
-  runPreflight?: (input: {
-    invocation: Invocation;
-    repository: RepositoryConfig;
-    workflow?: { mode: "read_only" | "trusted_local_write" };
-    implementation?: ImplementationConfig["implementation"];
-  }) => MaybePromise<unknown>;
-  prepareWorktree?: (input: {
-    invocation: Invocation;
-    repository: RepositoryConfig;
-    workspaceRoot: string;
-    runId: string;
-  }) => MaybePromise<WorkspaceRecord>;
-  collectRepoContext?: (input: {
-    repository: RepositoryConfig;
-    baseSha: string;
-    headSha: string;
-  }) => MaybePromise<RepoContext>;
-  validateFindingEvidence?: (
-    repoContext: RepoContext,
-    findings: readonly Finding[]
-  ) => Finding[];
-  buildFinalReportJson?: (input: {
-    acceptance: AcceptanceDecision;
-    findings: readonly Finding[];
-    workspace?: WorkspaceRecord;
-    summary?: ObservabilitySummary;
-  }) => unknown;
-  buildFinalReportMarkdown?: (input: {
-    invocation: Invocation;
-    findings: readonly Finding[];
-    acceptance: AcceptanceDecision;
-    summary?: ObservabilitySummary;
-  }) => string;
-  prepareImplementationWorktree?: (input: {
-    subject: {
-      key: string;
-      title?: string;
-    };
-    repository: RepositoryConfig;
-    workspaceRoot: string;
-    runId: string;
-    baseRef: string;
-    branchPattern: string;
-  }) => MaybePromise<ImplementationWorktreeRecord>;
-  runValidationCommands?: (input: {
-    cwd: string;
-    commands: ImplementationConfig["implementation"]["validation"]["commands"];
-    maxOutputBytes: number;
-  }) => MaybePromise<ValidationResult>;
-  collectWorktreeDiff?: (input: {
-    cwd: string;
-    maxDiffBytes: number;
-  }) => MaybePromise<WorktreeDiff>;
-  commitChanges?: (input: {
-    enabled: boolean;
-    cwd: string;
-    validation: ValidationResult;
-    acceptance: AcceptanceDecision;
-    diff: WorktreeDiff;
-    branch: string;
-    remote: string;
-    baseSha: string;
-    branchPattern: string;
-    expectedRemoteUrls: readonly string[];
-    message: string;
-    runId?: string;
-    repositoryPath?: string;
-    journalPath?: string;
-  }) => MaybePromise<CommitChangesArtifact>;
-  pushBranch?: (input: {
-    enabled: boolean;
-    cwd: string;
-    commit: CommitChangesArtifact;
-    branch: string;
-    remote: string;
-    expectedRemoteUrls: readonly string[];
-  }) => MaybePromise<PushBranchArtifact>;
-  changeRequestRegistry?: ChangeRequestRegistry;
-  buildImplementationReportJson?: (input: {
-    invocation: Invocation;
-    status: string;
-    branch: string;
-    worktree: {
-      path: string;
-      preserved: boolean;
-      reason: string;
-    };
-    validation: ValidationResult;
-    commit: CommitChangesArtifact;
-    push: PushBranchArtifact;
-    changeRequest: ChangeRequestArtifact;
-    trustedHostLocal: boolean;
-    summary?: ObservabilitySummary;
-  }) => unknown;
-  buildImplementationReportMarkdown?: (input: {
-    invocation: Invocation;
-    status: string;
-    branch: string;
-    worktree: {
-      path: string;
-      preserved: boolean;
-      reason: string;
-    };
-    validation: ValidationResult;
-    commit: CommitChangesArtifact;
-    push: PushBranchArtifact;
-    changeRequest: ChangeRequestArtifact;
-    trustedHostLocal: boolean;
-    summary?: ObservabilitySummary;
-  }) => string;
 };

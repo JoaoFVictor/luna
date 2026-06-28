@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+import type { AdapterContext } from "../../src/adapters/types.js";
+import {
+  createNativeLunaPlatformRegistrations
+} from "../../src/platform/native/native-platform-registrations.js";
+import {
+  defineNativePlatformPlugins
+} from "../../src/platform/native/native-platform-plugins.js";
+
+describe("native Luna platform", () => {
+  const adapterContext = {
+    projectRoot: "/project",
+    configRoot: "/config",
+    env: {},
+    fetch,
+    executeJson: async () => ({})
+  } satisfies AdapterContext;
+
+  it("rejects native adapters that return a different invocation source at load time", async () => {
+    const plugins = defineNativePlatformPlugins([
+      {
+        id: "linear",
+        inputAdapters: [
+          {
+            id: "linear-task-url",
+            description: "Linear task URL",
+            load: async () => ({
+              version: "2026-06",
+              source: "jira",
+              event: "issue",
+              action: "selected",
+              subject: {
+                type: "issue",
+                id: "ISS-1",
+                url: "https://linear.app/ISS-1",
+                title: "Issue"
+              }
+            })
+          }
+        ]
+      }
+    ]);
+
+    await expect(
+      plugins[0]?.inputAdapters?.[0]?.load(
+        { kind: "cli", value: "https://linear.app/ISS-1" },
+        adapterContext
+      )
+    ).rejects.toMatchObject({
+      code: "native_plugin_invalid",
+      message: expect.stringContaining("source jira does not match registered source linear")
+    });
+  });
+
+  it("rejects duplicate task provider invocation sources at plugin definition time", () => {
+    const taskBuiltIns = {
+      collectTaskContext: () => ({ ok: true }),
+      finalImplementationReport: () => ({ ok: true })
+    };
+
+    expect(() =>
+      defineNativePlatformPlugins([
+        {
+          id: "atlassian",
+          taskSource: "jira",
+          taskBuiltIns
+        },
+        {
+          id: "jira-cloud",
+          taskSource: "jira",
+          taskBuiltIns
+        }
+      ])
+    ).toThrow("Duplicate native task source: jira");
+  });
+
+  it("rejects duplicate runtime registrations even when registrations are built manually", () => {
+    const agentRuntimeFactory = {
+      id: "shared.agent",
+      create: () => ({
+        describe: () => ({
+          id: "shared.agent",
+          display_name: "Shared Agent",
+          supported_tool_protocols: [],
+          supported_runtime_requirements: []
+        }),
+        validate: async () => {},
+        runAgent: async () => ({ output: {} })
+      })
+    };
+    const buildDuplicateRegistration = () =>
+      createNativeLunaPlatformRegistrations({
+        plugins: [
+          {
+            id: "left",
+            agentRuntimeFactories: { "shared.agent": agentRuntimeFactory }
+          },
+          {
+            id: "right",
+            agentRuntimeFactories: { "shared.agent": agentRuntimeFactory }
+          }
+        ],
+        baseCapabilityManifests: []
+      });
+
+    let error: unknown;
+    try {
+      buildDuplicateRegistration();
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toMatchObject({
+      message: "Duplicate native agent runtime id: shared.agent",
+      code: "native_platform_registration_invalid"
+    });
+  });
+});

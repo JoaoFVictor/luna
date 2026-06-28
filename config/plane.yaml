@@ -4,7 +4,6 @@ instances:
     # Plane instance base URL.
     base_url: https://app.plane.so
     # Optional repository hint read from Plane labels.
-    # Expected label value: github:owner/repo or repo:owner/repo.
+    # Expected label value: provider:owner/repo.
     repository_hint:
       source: label
-      format: github_full_name

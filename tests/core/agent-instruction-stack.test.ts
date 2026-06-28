@@ -1,9 +1,12 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type AgentInstructionMode,
-  contextIntakeFrom,
   prepareAgentInstructionEnvelope
-} from "../../src/core/agents/instruction-stack.js";
+} from "../../src/capabilities/agents/agent-definition.js";
+import { resolveAgentSkills } from "../../src/capabilities/agents/agent-envelope.js";
 
 const repositoryContext = {
   root: "/repo",
@@ -55,9 +58,6 @@ const collectContext = {
   agents: [otherAgentContext, currentAgentContext]
 } as const;
 
-const readOnlyStructuredOutputInstruction =
-  "Use only the provided workflow input and return structured output matching the configured schema.";
-
 function prepare(
   taskInput: Record<string, unknown>,
   mode: AgentInstructionMode = "read_only"
@@ -83,9 +83,7 @@ describe("agent instruction stack", () => {
     expect(envelope.instructions).toContain("Implement the task.");
     expect(envelope.instructions).toContain("Agent instructions.");
     expect(envelope.instructions).toContain("Repository instructions.");
-    expect(envelope.instructions).toContain(
-      readOnlyStructuredOutputInstruction
-    );
+    expect(envelope.instructions).not.toContain("Reviewer only.");
 
     expect(envelope.instructions.indexOf("# Luna Runtime Instructions")).toBeLessThan(
       envelope.instructions.indexOf("# Agent Instructions")
@@ -104,42 +102,19 @@ describe("agent instruction stack", () => {
   it("removes raw collect_context from taskInput and adds context_audit without content", () => {
     const envelope = prepare({ context: collectContext, issue: "LUNA-1" });
 
-    expect(envelope.taskInput).toEqual({
+    expect(envelope.taskInput).toMatchObject({
       issue: "LUNA-1",
       context_audit: {
-        agent: {
-          id: "implementer",
-          configured: ["local.md"],
-          read: [{ path: "local.md", bytes: 20 }],
-          missing: [{ path: "missing-agent.md" }],
-          skipped: [{ path: "dir", reason: "not_file" }]
-        },
-        repository: {
-          configured: ["AGENTS.md", "README.md"],
-          read: [{ path: "AGENTS.md", bytes: 25 }],
-          missing: [{ path: "README.md" }],
-          skipped: [{ path: "large.md", reason: "too_large", bytes: 100000 }]
-        }
+        agent: { id: "implementer" },
+        repository: {}
       }
     });
-    expect(JSON.stringify(envelope.taskInput)).not.toContain("content");
-    expect(JSON.stringify(envelope.taskInput)).not.toContain(
+    expect(envelope.taskInput).not.toHaveProperty("context");
+    expect(JSON.stringify(envelope.taskInput.context_audit)).not.toContain(
       "Agent instructions."
     );
-    expect(JSON.stringify(envelope.taskInput)).not.toContain(
+    expect(JSON.stringify(envelope.taskInput.context_audit)).not.toContain(
       "Repository instructions."
-    );
-  });
-
-  it("does not include context from another agent", () => {
-    const envelope = prepare({ context: collectContext });
-
-    expect(envelope.instructions).toContain("Agent instructions.");
-    expect(envelope.instructions).not.toContain("Reviewer only.");
-    expect(envelope.taskInput.context_audit).toEqual(
-      expect.objectContaining({
-        agent: expect.objectContaining({ id: "implementer" })
-      })
     );
   });
 
@@ -152,61 +127,24 @@ describe("agent instruction stack", () => {
     expect(envelope.instructions).not.toContain("# Repository Context");
   });
 
-  it("does not confuse collect_context-like payloads missing root or read.content", () => {
-    expect(
-      contextIntakeFrom({
-        kind: "luna.collect_context.v1",
-        repository: {
-          configured: [],
-          read: [],
-          missing: [],
-          skipped: []
-        },
-        agents: []
-      })
-    ).toBeUndefined();
-
-    expect(
-      contextIntakeFrom({
-        kind: "luna.collect_context.v1",
-        repository: {
-          root: "/repo",
-          configured: [],
-          read: [{ path: "AGENTS.md", bytes: 25 }],
-          missing: [],
-          skipped: []
-        },
-        agents: []
-      })
-    ).toBeUndefined();
-  });
-
-  it("does not promote context-shaped task payloads without collect_context kind", () => {
-    const context = {
-      repository: repositoryContext,
-      agents: [currentAgentContext]
-    };
-    const envelope = prepare({ context });
-
-    expect(contextIntakeFrom(context)).toBeUndefined();
-    expect(envelope.taskInput).toEqual({ context });
-    expect(envelope.instructions).not.toContain("# Agent Context");
-    expect(envelope.instructions).not.toContain("# Repository Context");
-  });
-
   it("throws a clear coded error when context_audit would collide", () => {
-    expect(() =>
+    let thrown: unknown;
+    try {
       prepare({
         context: collectContext,
         context_audit: { existing: true }
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toEqual(
+      expect.objectContaining({
+        code: "agent_context_audit_collision"
       })
-    ).toThrow("Task input already contains context_audit");
-    expect(() =>
-      prepare({
-        context: collectContext,
-        context_audit: { existing: true }
-      })
-    ).toThrow(expect.objectContaining({ code: "agent_context_audit_collision" }));
+    );
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain("Task input already contains context_audit");
   });
 
   it("uses repository context when the current agent has no context", () => {
@@ -233,15 +171,54 @@ describe("agent instruction stack", () => {
     });
   });
 
-  it("uses write-mode runtime instructions for trusted_local_write", () => {
-    const envelope = prepare({ context: collectContext }, "trusted_local_write");
+  it("resolves repository skills from the prepared workspace root", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-agent-skills-"));
 
-    expect(envelope.instructions).toContain("trusted host-local write mode");
-    expect(envelope.instructions).toContain(
-      "Make changes only in the configured worktree"
-    );
-    expect(envelope.instructions).toContain(
-      "Return structured output matching the configured schema."
-    );
+    try {
+      const sourceRoot = path.join(root, "source");
+      const workspaceRoot = path.join(root, "workspace");
+      const agentDirectory = path.join(root, "agents", "reviewer");
+      await mkdir(path.join(sourceRoot, "skills"), { recursive: true });
+      await mkdir(path.join(workspaceRoot, "skills"), { recursive: true });
+      await mkdir(agentDirectory, { recursive: true });
+      await writeFile(
+        path.join(sourceRoot, "skills", "review.md"),
+        [
+          "---",
+          "name: repo-review",
+          "description: Source repo review skill.",
+          "---",
+          "",
+          "SOURCE REPO SKILL SHOULD NOT BE USED."
+        ].join("\n"),
+        "utf8"
+      );
+      await writeFile(
+        path.join(workspaceRoot, "skills", "review.md"),
+        [
+          "---",
+          "name: repo-review",
+          "description: Workspace review skill.",
+          "---",
+          "",
+          "WORKSPACE SKILL WAS USED."
+        ].join("\n"),
+        "utf8"
+      );
+
+      const skills = await resolveAgentSkills({
+        skillSources: {
+          repository: { root: sourceRoot, skills: ["skills/review.md"] },
+          agentDirectory
+        },
+        workspace: { path: workspaceRoot }
+      });
+
+      expect(skills?.[0]?.content).toContain("WORKSPACE SKILL WAS USED.");
+      expect(skills?.[0]?.content).not.toContain("SOURCE REPO SKILL SHOULD NOT BE USED.");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
+
 });

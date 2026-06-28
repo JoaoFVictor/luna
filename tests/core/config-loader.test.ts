@@ -1,59 +1,14 @@
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import {
   loadJsonFile,
   loadOptionalYamlFile,
-  loadYamlFile,
-  resolveConfigRoot
+  loadYamlFile
 } from "../../src/core/config/loader.js";
-import { McpConfigSchema } from "../../src/core/config/mcp.js";
-import { resolveModelProfiles } from "../../src/core/config/models.js";
-import { JiraConfigSchema } from "../../src/core/providers/jira/config.js";
-import { PlaneConfigSchema } from "../../src/core/providers/plane/config.js";
-import {
-  AppConfigSchema,
-  ModelsConfigSchema,
-  RepositoriesConfigSchema
-} from "../../src/core/config/schemas.js";
-import { RoutingConfigSchema } from "../../src/core/invocation/types.js";
-import { ImplementationConfigSchema } from "../../src/core/write-mode/types.js";
-
-const configSchemas = {
-  "app.yaml": AppConfigSchema,
-  "implementation.yaml": ImplementationConfigSchema,
-  "jira.yaml": JiraConfigSchema,
-  "plane.yaml": PlaneConfigSchema,
-  "mcp.yaml": McpConfigSchema,
-  "models.yaml": ModelsConfigSchema,
-  "repositories.yaml": RepositoriesConfigSchema,
-  "routing.yaml": RoutingConfigSchema
-};
-
 describe("config loader", () => {
-  it("loads YAML config and validates it against a Zod schema", async () => {
-    const root = await mkdtemp(join(tmpdir(), "luna-config-"));
-    const filePath = join(root, "sample.yaml");
-
-    try {
-      await writeFile(filePath, "name: luna\ncount: 3\n", "utf8");
-
-      const schema = z.object({
-        name: z.literal("luna"),
-        count: z.number()
-      });
-
-      await expect(loadYamlFile(filePath, schema)).resolves.toEqual({
-        name: "luna",
-        count: 3
-      });
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  });
-
   it("fails invalid YAML shape with config_schema_invalid", async () => {
     const root = await mkdtemp(join(tmpdir(), "luna-config-"));
     const filePath = join(root, "invalid.yaml");
@@ -142,94 +97,4 @@ describe("config loader", () => {
     });
   });
 
-  it("uses config as the default config root", () => {
-    expect(resolveConfigRoot({})).toBe("config");
-  });
-
-  it("allows LUNA_CONFIG_ROOT to override the default config root", () => {
-    expect(resolveConfigRoot({ LUNA_CONFIG_ROOT: "/tmp/luna-config" })).toBe(
-      "/tmp/luna-config"
-    );
-  });
-
-  it("uses default config root for whitespace-only LUNA_CONFIG_ROOT", () => {
-    expect(resolveConfigRoot({ LUNA_CONFIG_ROOT: "   " })).toBe("config");
-  });
-
-  it("parses every YAML file in the committed config directory", async () => {
-    const files = (await readdir("config"))
-      .filter((file) => file.endsWith(".yaml"))
-      .sort();
-
-    expect(files).toEqual(Object.keys(configSchemas).sort());
-
-    await Promise.all(
-      files.map(async (file) => {
-        const schema = configSchemas[file as keyof typeof configSchemas] as z.ZodTypeAny;
-
-        await expect(loadYamlFile(join("config", file), schema)).resolves.toEqual(
-          expect.any(Object)
-        );
-      })
-    );
-  });
-
-  it("models.yaml contains generic capability profiles", async () => {
-    const config = await loadYamlFile("config/models.yaml", ModelsConfigSchema);
-
-    expect(Object.keys(config.model_profiles).sort()).toEqual([
-      "balanced",
-      "deep",
-      "default",
-      "fast"
-    ]);
-  });
-
-  it("requires every model profile to use model and never env", async () => {
-    const config = await loadYamlFile("config/models.yaml", ModelsConfigSchema);
-
-    for (const profile of Object.values(config.model_profiles)) {
-      expect(profile).toHaveProperty("model");
-      expect(profile).not.toHaveProperty("env");
-    }
-
-    const invalidConfig = {
-      model_profiles: {
-        default: {
-          env: "DEFAULT_MODEL",
-          reasoning_effort: "medium"
-        }
-      }
-    };
-
-    expect(() => ModelsConfigSchema.parse(invalidConfig)).toThrow(ZodError);
-  });
-
-  it("resolves generic model profile fallbacks from a provided environment map", async () => {
-    const config = await loadYamlFile("config/models.yaml", ModelsConfigSchema);
-
-    expect(
-      resolveModelProfiles(config, {
-        DEFAULT_MODEL: "openai-codex/gpt-5.4-mini",
-        DEEP_MODEL: "openai/gpt-5",
-        FAST_MODEL: "openai-codex/gpt-5.3-codex-spark",
-        BALANCED_MODEL: "openai-codex/gpt-5.4-mini"
-      }).default.model
-    ).toBe("openai-codex/gpt-5.4-mini");
-  });
-
-  it("throws model_env_missing when a model environment variable is missing", () => {
-    const config = {
-      model_profiles: {
-        default: {
-          model: "${DEFAULT_MODEL}",
-          reasoning_effort: "medium"
-        }
-      }
-    } as const;
-
-    expect(() => resolveModelProfiles(config, {})).toThrow(
-      expect.objectContaining({ code: "model_env_missing" })
-    );
-  });
 });

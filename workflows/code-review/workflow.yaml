@@ -1,11 +1,206 @@
 id: code-review
 type: workflow
+# Read-only PR review workflow. It captures repository evidence, plans review
+# scope, runs a reviewer agent, validates evidence, then renders a report.
 mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
-graph: graph.yaml
+capabilities:
+  - runtime
+  - repository-workspace
+  - repository-diff
+  - findings
+  - context
+  - agents
+  - reports
+  - artifacts
 requires:
   repository: true
 execution:
+  # The scheduler can run independent safe nodes concurrently, while agent
+  # sessions and repository-sensitive work are still serialized by policies.
   max_concurrency: 2
   lock_timeout_ms: 120000
+nodes:
+  # Runtime/config sanity check. Keep this first so failures happen before
+  # repository capture or model calls.
+  - id: preflight
+    type: built_in
+    uses: runtime.preflight
+    artifacts:
+      - path: preflight.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.preflight"
+        format: json
+
+  # Captures a read-only repository workspace for the PR. The explicit policy
+  # tells the compiler/runtime this node uses repository workspace mechanics.
+  - id: workspace
+    type: built_in
+    uses: repository-workspace.capture
+    policies:
+      - uses: repository-workspace.capture_policy
+        config:
+          operation_id: repository-workspace.capture
+    artifacts:
+      - path: workspace.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.workspace"
+        format: json
+    after:
+      - preflight
+
+  # Builds deterministic PR/repository evidence for agents and later evidence
+  # validation. This is provider-neutral repository diff context.
+  - id: repo_context
+    type: built_in
+    uses: repository-diff.collect_context
+    artifacts:
+      - path: repo-context.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.repo_context"
+        format: json
+    after:
+      - workspace
+
+  # Loads repository and agent context/skills for all model roles used by this
+  # workflow. Raw file bodies become instructions; task input gets context_audit.
+  - id: context
+    type: built_in
+    uses: context.collect_context
+    input:
+      agents:
+        - review-planner
+        - change-reviewer
+        - change-acceptance-reviewer
+    artifacts:
+      - path: context-intake.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.context"
+        format: json
+    after:
+      - workspace
+
+  # Planner narrows review scope before the reviewer runs. This keeps the
+  # reviewer focused and gives later report artifacts an explicit plan.
+  - id: review_plan
+    type: agent
+    agent: review-planner
+    output_schema: output.schema.json
+    artifacts:
+      - path: review-plan.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.review_plan"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      repo_context:
+        expression: "$.steps.repo_context"
+    after:
+      - context
+      - repo_context
+
+  # Reviewer returns structured findings only. It remains read-only and should
+  # cite evidence from repo_context rather than trusting PR prose.
+  - id: code_review
+    type: agent
+    agent: change-reviewer
+    output_schema: output.schema.json
+    artifacts:
+      - path: raw-code-review-findings.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.code_review"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      review_plan:
+        expression: "$.steps.review_plan"
+      repo_context:
+        expression: "$.steps.repo_context"
+    after:
+      - review_plan
+
+  # Deterministic evidence validator filters/normalizes model findings against
+  # captured repository evidence before acceptance or reporting.
+  - id: validated_findings
+    type: built_in
+    uses: findings.validate_evidence
+    artifacts:
+      - path: code-review-findings.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.validated_findings"
+        format: json
+    input:
+      repo_context:
+        expression: "$.steps.repo_context"
+      findings:
+        expression: "$.steps.code_review"
+    after:
+      - code_review
+
+  # Acceptance reviewer checks whether the findings are useful and complete
+  # from the requested review perspective.
+  - id: acceptance
+    type: agent
+    agent: change-acceptance-reviewer
+    output_schema: output.schema.json
+    artifacts:
+      - path: acceptance-review.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.acceptance"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      review_plan:
+        expression: "$.steps.review_plan"
+      findings:
+        expression: "$.steps.validated_findings"
+      repo_context:
+        expression: "$.steps.repo_context"
+    after:
+      - validated_findings
+
+  # Terminal report node. Final workflow output is derived from this terminal
+  # node, and artifacts publish both structured JSON and markdown.
+  - id: final_report
+    type: built_in
+    uses: reports.final_report
+    artifacts:
+      - path: final-report.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.final_report"
+        format: json
+      - path: final-report.md
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.final_report.report"
+        format: markdown
+    input:
+      title: Code Review
+      sections:
+        - heading: Findings
+          content:
+            expression: "$.steps.validated_findings"
+        - heading: Acceptance
+          content:
+            expression: "$.steps.acceptance"
+    after:
+      - acceptance

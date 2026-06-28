@@ -1,0 +1,31 @@
+{
+  "version": "2026-06",
+  "source": "plane",
+  "event": "issue.selected",
+  "action": "selected",
+  "target": {
+    "type": "workflow",
+    "id": "implementation"
+  },
+  "repository": {
+    "provider": "github",
+    "owner": "org",
+    "name": "repo"
+  },
+  "subject": {
+    "type": "plane_issue",
+    "id": "PROJ-42",
+    "url": "https://app.plane.so/company/browse/PROJ-42/",
+    "title": "Implement account export"
+  },
+  "actor": {
+    "display_name": "Product Manager"
+  },
+  "references": {
+    "plane_instance": "company"
+  },
+  "payload": {
+    "description": "Add account export support.",
+    "acceptance_criteria": "Exports include account id, name, status, and creation date."
+  }
+}

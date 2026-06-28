@@ -1,74 +1,67 @@
 ---
 name: luna-create-built-in
-description: Use when creating or modifying Luna built-in workflow steps, including provider-facing built-ins, runtime-neutral built-ins under src/core/built-ins/, defineBuiltInStep, catalog registration, metadata, workflow YAML uses values, state helpers, reports, worktree capture, deferral, and built-in tests.
+description: Use when creating or modifying Luna capability built-ins, capability manifests, native executor wiring, side-effect policies, workflow YAML uses values, metadata, reports, worktree capture, deferral, and built-in tests.
 ---
 
 # Luna Create Built-In
 
-Read `examples/new-built-in.md` first. Built-ins are deterministic TypeScript
-capabilities called by workflow YAML.
+Built-ins are deterministic workflow operations exposed by capability
+manifests. Add them through `src/capabilities/<capability>/`, not as an
+unregistered helper.
 
 ## Files
 
-- `src/core/built-ins/<domain>.ts`: runtime-neutral exported step objects.
-- `src/core/providers/<provider>/built-ins.ts`: provider-specific exported step
-  objects.
-- `src/core/built-ins/state.ts`: shared state/input parsing helpers only.
-- `src/core/built-ins/catalog.ts`: shared catalog helpers and runtime-neutral
-  built-in exports.
-- `src/core/providers/built-ins.ts`: active provider-facing built-in registry
-  used by the Flue workflow factory.
-- `src/core/write-mode/`: owned services and contracts for write-mode git
-  branches, worktrees, gates, lifecycle, and transaction journals.
+Typical capability-owned files:
 
-Use `defineBuiltInStep({ name, metadata?, run })`. Export each step
-individually as `<camelName>BuiltIn`.
+```text
+src/capabilities/<capability>/
+  manifest.ts
+  built-ins.ts
+```
 
-## Provider Boundaries
+Shared mechanics live under `src/core/built-ins/**`. Runtime/provider wiring
+lives in composition roots such as `src/platform/native/**` or
+`src/providers/**`.
 
-Keep runtime-neutral built-ins provider-agnostic. Code under
-`src/core/built-ins/` must not mention provider-specific auth, config, schemas,
-URLs, or payload details.
+## Manifest First
 
-Keep provider-specific built-ins isolated under their own provider directory. A
-Plane built-in must not add Plane behavior to Jira modules, and a Jira built-in
-must not add Jira behavior to Plane modules. Shared helpers are allowed only
-when they are truly provider-agnostic; provider-specific validation belongs
-under `src/core/providers/<provider>/`.
+Register public ids in the capability manifest:
 
-## Metadata
+- built-in id and schemas.
+- required ports.
+- side-effect policy when the built-in reads/writes external state.
+- docs metadata when useful.
 
-Most built-ins need no metadata.
+If another capability re-exports the built-in, update that manifest too.
 
-- `capturesWorkspace`: step returns a `WorkspaceRecord` for `state.workspace`.
-- `deferredLifecycle: "final_report"`: final report step runs after workspace
-  preserve/cleanup decision.
+## Side Effects
 
-Do not add name checks to `src/core/configured-workflow/runner.ts`; runner
-behavior comes from metadata.
+Write-side-effecting built-ins must have a policy with operation ids,
+idempotency scope, and retry semantics. Workflow YAML must declare the matching
+`policies:` entry with `operation_id`.
 
-## Registration
+Do not hide side effects in prompts or provider modules.
 
-Add provider-facing built-ins to `defaultBuiltInSteps` in
-`src/core/providers/built-ins.ts`. Keep runtime-neutral built-ins and shared
-catalog helpers under `src/core/built-ins/`. Do not create another handwritten
-built-in name list in workflow validation or runner code.
-Do not add barrel exports for new domain files; import owning modules directly.
-Do not create compatibility wrappers for old built-in module paths.
+## Boundaries
+
+- Runtime-neutral capability code must not import provider auth/config/schema,
+  provider API payloads, or runtime SDKs.
+- Provider-specific built-ins belong under `src/providers/<provider>/` and are
+  wired through native/plugin composition.
+- Runner behavior should come from metadata, manifest registrations, and
+  policies, not name checks.
+- Do not add unregistered indirection or barrel exports for paths that are not
+  part of the current public surface.
 
 ## Testing
 
-Create focused domain tests under `tests/core/`, and update
-`tests/core/built-ins-registry.test.ts` for catalog/metadata changes.
+Run focused tests for the capability and workflow definition/runner checks,
+then:
 
-Run:
-
-```sh
-npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-*.test.ts
-npm test -- tests/core/workflow-definition.test.ts tests/core/configured-workflow-runner.test.ts
+```bash
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused
 ```
 
-Update README/examples when adding public built-ins.
+Update examples/docs when adding a public built-in.

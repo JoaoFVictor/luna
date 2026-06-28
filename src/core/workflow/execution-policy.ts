@@ -1,5 +1,19 @@
 import type { BuiltInStepMetadata } from "../built-ins/types.js";
-import type { WorkflowNode } from "./definition.js";
+
+export type WorkflowExecutionNode = {
+  id: string;
+  type: "built_in" | "agent" | "pattern";
+  uses?: string;
+  after?: string[];
+  batchExclusionKeys?: readonly string[];
+  artifacts?: readonly {
+    path: string;
+    source: unknown;
+    format: "json" | "markdown";
+    required: boolean;
+  }[];
+  [key: string]: unknown;
+};
 
 export type WorkflowExecutionLocks = NonNullable<BuiltInStepMetadata["locks"]>;
 
@@ -11,24 +25,32 @@ export type ExecutionPolicyDecision = {
   artifactPaths: string[];
 };
 
-export type WorkflowExecutionPlanItem = {
-  node: WorkflowNode;
+export type WorkflowExecutionPlanItem<
+  TNode extends WorkflowExecutionNode = WorkflowExecutionNode
+> = {
+  node: TNode;
   decision: ExecutionPolicyDecision;
 };
 
-export type WorkflowExecutionBatchPlan = {
-  items: WorkflowExecutionPlanItem[];
+export type WorkflowExecutionBatchPlan<
+  TNode extends WorkflowExecutionNode = WorkflowExecutionNode
+> = {
+  items: WorkflowExecutionPlanItem<TNode>[];
 };
 
-export type SelectReadyBatchWithPolicyOptions = {
-  ready: WorkflowNode[];
+export type SelectReadyBatchWithPolicyOptions<
+  TNode extends WorkflowExecutionNode = WorkflowExecutionNode
+> = {
+  ready: TNode[];
   maxConcurrency: number;
-  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata;
+  builtInMetadata: (node: TNode) => BuiltInStepMetadata;
 };
 
-export type SplitDeferredWorkflowNodesByPolicyOptions = {
-  nodes: WorkflowNode[];
-  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata;
+export type SplitDeferredWorkflowNodesByPolicyOptions<
+  TNode extends WorkflowExecutionNode = WorkflowExecutionNode
+> = {
+  nodes: TNode[];
+  builtInMetadata: (node: TNode) => BuiltInStepMetadata;
 };
 
 function policyError(message: string, code: string): Error & { code: string } {
@@ -37,11 +59,11 @@ function policyError(message: string, code: string): Error & { code: string } {
   return error;
 }
 
-function isAgentLike(node: WorkflowNode): boolean {
-  return node.type === "agent" || node.type === "gated_agent_loop";
+function isAgentLike(node: WorkflowExecutionNode): boolean {
+  return node.type === "agent";
 }
 
-function artifactPaths(node: WorkflowNode): string[] {
+function artifactPaths(node: WorkflowExecutionNode): string[] {
   return (node.artifacts ?? []).map((artifact) => artifact.path);
 }
 
@@ -51,15 +73,18 @@ function normalizedMaxConcurrency(maxConcurrency: number): number {
     : 1;
 }
 
-export function executionPolicyDecisionForNode(
-  node: WorkflowNode,
-  builtInMetadata: (node: WorkflowNode) => BuiltInStepMetadata
+export function executionPolicyDecisionForNode<
+  TNode extends WorkflowExecutionNode
+>(
+  node: TNode,
+  builtInMetadata: (node: TNode) => BuiltInStepMetadata
 ): ExecutionPolicyDecision {
   const metadata = builtInMetadata(node);
   const locks = metadata.locks ?? [];
   const capturesWorkspace = metadata.capturesWorkspace === true;
   const batchExclusionKeys = [
     ...(isAgentLike(node) ? ["agent_session"] : []),
+    ...(node.batchExclusionKeys ?? []),
     ...(capturesWorkspace ? ["workspace_capture"] : [])
   ];
 
@@ -73,12 +98,14 @@ export function executionPolicyDecisionForNode(
   };
 }
 
-export function selectReadyBatchWithPolicy({
+export function selectReadyBatchWithPolicy<
+  TNode extends WorkflowExecutionNode
+>({
   ready,
   maxConcurrency,
   builtInMetadata
-}: SelectReadyBatchWithPolicyOptions): WorkflowExecutionBatchPlan {
-  const items: WorkflowExecutionPlanItem[] = [];
+}: SelectReadyBatchWithPolicyOptions<TNode>): WorkflowExecutionBatchPlan<TNode> {
+  const items: WorkflowExecutionPlanItem<TNode>[] = [];
   const selectedArtifactPaths = new Set<string>();
   const selectedBatchExclusionKeys = new Set<string>();
   const concurrency = normalizedMaxConcurrency(maxConcurrency);
@@ -116,12 +143,14 @@ export function selectReadyBatchWithPolicy({
   return { items };
 }
 
-export function splitDeferredFinalReportNodesByPolicy({
+export function splitDeferredFinalReportNodesByPolicy<
+  TNode extends WorkflowExecutionNode
+>({
   nodes,
   builtInMetadata
-}: SplitDeferredWorkflowNodesByPolicyOptions): {
-  mainNodes: WorkflowNode[];
-  deferredNodes: WorkflowNode[];
+}: SplitDeferredWorkflowNodesByPolicyOptions<TNode>): {
+  mainNodes: TNode[];
+  deferredNodes: TNode[];
 } {
   const decisions = new Map(
     nodes.map((node) => [

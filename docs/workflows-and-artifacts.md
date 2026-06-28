@@ -1,201 +1,198 @@
 # Workflows And Artifacts
 
-This document explains Luna's deterministic orchestration layer: YAML workflow
-graphs, scheduler state, gates, artifacts, and finalization.
+This document covers Luna's workflow definition, compilation, execution,
+resume, and artifact model.
 
-## What A Workflow Is
+## Definition Files
 
-A workflow is a YAML DAG under `workflows/<id>/`. It describes what runs, in
-what order, which state each node receives, and which artifacts each node
-writes.
-
-The usual files are:
+A workflow lives under `workflows/<id>/`:
 
 ```text
 workflows/<id>/
   workflow.yaml
-  graph.yaml
   input.schema.json
   output.schema.json
 ```
 
-There is still only one TypeScript workflow entrypoint:
-`src/workflows/luna.ts`. New workflows should be new YAML directories, not new
-TypeScript workflow files.
+`workflow.yaml` is strict. Unknown top-level, node, gate, policy, or artifact
+fields fail during loading. The directory name and workflow `id` must match.
+Schema paths are resolved inside the workflow directory and path escapes are
+rejected.
 
-## Runtime Path
+Important top-level fields:
 
-The workflow runtime path is:
-
-```text
-CLI or adapter -> Invocation -> routeInvocation -> workflow YAML -> runConfiguredWorkflow -> scheduler -> artifacts and finalization
-```
-
-`runConfiguredWorkflow` loads configuration, routes the invocation, loads the
-workflow definition, creates run identity and artifact writers, resolves the
-repository when required, schedules graph nodes, writes planned artifacts,
-finalizes workspace state, and runs deferred final-report nodes.
+- `mode`: `read_only` or `trusted_local_write`.
+- `capabilities`: unqualified capability ids, such as `agents` or `reports`.
+- `nodes`: the DAG.
+- `execution.max_concurrency`: safe ready-node parallelism.
+- `observability.exporters.runtime_log`: optional runtime log projection.
+- `requires.repository`: whether invocation repository resolution is required.
+- `subagent_policy`: workflow-level delegation policy.
 
 ## Node Types
 
-`built_in` nodes call deterministic TypeScript steps registered in the built-in
-registry.
+Supported node types:
 
-`agent` nodes call reusable agent definitions and validate structured model
-output.
+- `built_in`: calls a registered capability built-in.
+- `agent`: calls a reusable agent and validates structured JSON output.
+- `pattern`: calls a registered workflow pattern.
+- `human_gate`: creates a resumable interrupt backed by a gate registration.
 
-`gated_agent_loop` nodes run trusted local write agents with validation and
-gate repair loops. They are only valid in trusted write workflows.
+Dependencies are declared with `after`. Duplicate node ids, missing
+dependencies, and cycles fail graph analysis.
 
-Read-only workflows cannot use `gated_agent_loop` or write lifecycle built-ins.
-Trusted write workflows must still declare their write behavior explicitly in
-the graph and implementation config.
+Final workflow output is derived from terminal node outputs. One terminal node
+returns that output. Multiple terminal nodes return an object keyed by terminal
+node id. Workflow YAML does not have a separate `output:` mapping.
 
-## State And References
+## Expressions
 
-The scheduler state contains:
+Dynamic values use expression objects:
 
-- `invocation`
-- flattened runtime `config`
-- optional resolved `repository`
-- `run` identity
-- workflow metadata
-- optional `workspace`
-- previous `steps`
-- workspace, agents, and workflow roots
-- lifecycle evidence
+```yaml
+input:
+  invocation:
+    expression: "$.invocation"
+  context:
+    expression: "$.steps.context"
+```
 
-Node inputs are explicit. A string that starts with `$.` replaces the whole
-field value with a value from workflow state. Supported roots are
-`$.invocation`, `$.config`, `$.repository`, `$.run`, `$.workspace`, and
-`$.steps.<node-id>`.
+Plain strings are literals, not interpolation. Validation rejects string
+expressions. Local expression roots are constrained by the capability schema or
+policy being configured.
 
-This is not arbitrary string interpolation. Prefer explicit fields over hiding
-state lookup inside prose.
+Common roots:
 
-## Scheduler Behavior
+- `$.invocation`
+- `$.config`
+- `$.repository`
+- `$.run`
+- `$.workspace`
+- `$.steps.<node-id>`
 
-The scheduler validates graph shape before execution: duplicate ids, unknown
-dependencies, dependency cycles, unsafe graph paths, unknown built-ins, invalid
-artifact plans, and mode violations are rejected.
+## Capabilities And Policies
 
-During execution it:
+Workflow nodes can only reference ids from declared capabilities. Built-ins,
+patterns, gates, policies, artifact publishers, and schema references are
+validated through the capability registry.
 
-- chooses ready node batches according to dependency and execution policy.
+Side-effecting built-ins must declare an explicit node policy:
+
+```yaml
+policies:
+  - uses: git.commit_side_effect
+    config:
+      operation_id: git.commit
+```
+
+The policy id and operation id must match the capability manifest. This is how
+the runtime knows a step is read-only, write-side-effecting, retryable, or
+requires adoption semantics.
+
+The compiler also rejects protected side-effect operations that are not ordered
+after approval in trusted write flows.
+
+## Compilation And Scheduling
+
+Workflow loading lives in `src/core/workflow/definition.ts`. Compilation lives
+in `src/core/workflow/compiler.ts`. Execution lives primarily in
+`src/runtime/workflow/**`, with the current workflow runtime adapter under
+`src/runtime/langgraph/**`.
+
+Compilation records node capability ids, output schemas, execution policy,
+interrupt capability, and edges. It rejects unsafe combinations such as:
+
+- fan-in from independent parallel branches without an object-merge reducer.
+- parallel branches that can create multiple pending human interrupts.
+- protected side-effect operations before approval.
+
+At runtime, the scheduler:
+
+- chooses dependency-ready nodes.
 - respects `execution.max_concurrency`.
-- prevents unsafe concurrent agent sessions and workspace capture.
-- uses repository locks for repository-sensitive steps.
-- snapshots state before node execution in development.
-- records lifecycle evidence from built-in metadata.
-- writes planned artifacts before adding the node output to `state.steps`.
-- skips dependents when a dependency fails.
+- avoids artifact path collisions in the same batch.
+- serializes agent sessions with an `agent_session` exclusion key.
+- serializes workspace capture.
+- applies built-in metadata locks for repository-sensitive steps.
+- validates node output schemas and checkpoint-safe JSON.
+- records state in checkpoints and emits events.
+- runs deferred final-report nodes after the main graph where metadata asks for
+  that lifecycle behavior.
 
-`events.jsonl` is mandatory for observability. `runtime_log` is the optional
-exporter.
+## Patterns And Gates
+
+`quality-gates.gated_agent_loop` is the trusted local write pattern used by the
+implementation workflow. It runs a writer agent, deterministic validation,
+optional diff checks, optional review agents, and repair attempts.
+
+Current quality-gate ids:
+
+- `quality-gates.validation_commands`
+- `quality-gates.agent_review`
+- `quality-gates.non_empty_diff`
+
+Agent-review gates configure `input.review_agent`, `block_when.expression`, and
+optional `feedback.expression` on the workflow gate entry. Gate policy stays in
+workflow YAML, not in the reusable agent.
+
+Repair attempts are not transport retries. `repair.attempts` controls how many
+times validation or review feedback loops back to the writer. Trusted write
+loops should not replay unknown write attempts through generic model retry.
+
+## Human Gates And Resume
+
+`human_gate` nodes compile to interrupt-capable nodes. The native CLI exposes
+resume through:
+
+```bash
+npm run dev -- resume --target workflow:<id> --thread <run-id> --checkpoint <checkpoint-id> --interrupt <interrupt-id> --decision '<json>'
+```
+
+Resume reloads the workflow definition, recompiles it, loads the checkpoint,
+reconstructs invocation/run context from checkpoint metadata, applies the
+decision, and continues the scheduler.
 
 ## Artifacts
 
-Run artifacts are written under:
+Artifact plans are declared on nodes:
+
+```yaml
+artifacts:
+  - path: final-report.md
+    publisher: artifacts.manifest_publisher
+    source:
+      expression: "$.steps.final_report.markdown"
+    format: markdown
+    required: true
+```
+
+Artifact paths must be safe relative paths under:
 
 ```text
 <app.artifacts.root>/<workflow-id>/<run-id>/
 ```
 
-Common runtime files include:
+Artifact sources must stay under `$.steps.<declaring-node>...`. Formats are
+`json` and `markdown`. `required` defaults to true. The publisher uses
+transactional stores for content, manifests, and journals, then appends artifact
+refs to runtime state.
 
-- `invocation.json`
-- `run.json`
-- `events.jsonl`
-- `observability-summary.json`
-- planned node artifacts
-- final reports
-- failure artifacts when a run fails
-
-Artifact plans are declared on nodes. Paths must be safe relative paths.
-Sources must reference the declaring node output with `$.steps.<node-id>`.
-Formats are JSON or Markdown. Artifacts default to required unless the plan
-sets `required: false`.
-
-Keep artifact paths simple and flat unless runtime support changes. The
-artifact store writes into the run directory and should remain inspectable by a
-person after the run.
-
-## Gated Agent Loops
-
-A `gated_agent_loop` is for trusted local write work. The writer agent must
-declare `mode: trusted_local_write`, and the node sandbox must be
-`trusted_host_local`.
-
-Current gates are:
-
-- `validation_commands`: deterministic commands from implementation config.
-- `agent`: a read-only review or acceptance agent.
-
-For an agent gate, put `block_when.expression` and optional
-`feedback.expression` in the workflow gate entry. Do not put gate policy in
-`agents/<id>/agent.yaml`. `block_when.expression` must evaluate to a boolean.
-
-Gate repair attempts are not transport retries. `repair.attempts` controls how
-many times failed validation or gate feedback loops back to the writer.
-`retry.max_attempts` is prompt replay policy, and trusted write loops reject
-prompt replay above one attempt because replaying a write prompt after an
-unknown transport failure is not safe.
-
-Use one `validation_commands` gate per loop. The current runner uses the first
-validation gate as the command source.
-
-## Finalization
-
-Built-in metadata can mark a node as a deferred final report. The runner splits
-those nodes out, runs the main graph first, finalizes the workspace, and then
-runs final-report nodes with final workspace disposition available.
-
-`workspace.json` may be rewritten during finalization. Treat it as the final
-workspace state, not just the state at worktree creation time.
-
-`run.json` is strict identity and should stay small. Put summaries in
-`observability-summary.json` or report artifacts.
-
-## What This Layer Does
-
-- Orchestrates deterministic DAGs.
-- Routes explicit workflow state into node inputs.
-- Enforces read-only versus trusted write workflow mode.
-- Writes inspectable artifacts.
-- Applies built-in metadata for locks, lifecycle, workspace capture, and
-  deferred final reports.
-- Keeps final workspace state visible.
-
-## What This Layer Does Not Do
-
-- It does not add per-workflow TypeScript entrypoints.
-- It does not let agents discover context implicitly.
-- It does not ask a model to choose workflow routing.
-- It does not use arbitrary JSONPath in artifact sources.
-- It does not treat workflow input and output schema files as the scheduler's
-  active runtime validators.
+Common runtime artifacts include `invocation.json`, `run.json`, `events.jsonl`,
+`trace.jsonl`, `observability-summary.json`, node artifacts, interrupt data,
+and final reports.
 
 ## Source Map
 
-- Workflow definitions: `src/core/workflow/definition.ts`
-- Scheduler: `src/core/workflow/scheduler.ts`
+- Definition loading: `src/core/workflow/definition.ts`
+- YAML schema parsing: `src/core/workflow/definition-schema.ts`
+- Capability validation: `src/core/workflow/definition-validation.ts`
+- Graph analysis: `src/core/workflow/graph-analysis.ts`
+- Compilation: `src/core/workflow/compiler.ts`
+- Final output: `src/core/workflow/runner-output.ts`
 - Execution policy: `src/core/workflow/execution-policy.ts`
-- State references: `src/core/workflow/state.ts`
-- Artifact plans: `src/core/workflow/artifact-write-plan.ts`
-- Configured runner: `src/core/configured-workflow/runner.ts`
-- Node runner: `src/core/configured-workflow/node-runner.ts`
-- Bootstrap: `src/core/configured-workflow/bootstrap.ts`
-- Finalization: `src/core/configured-workflow/finalization.ts`
-- Routing: `src/core/invocation/router.ts`
-- Artifact store: `src/core/artifacts/store.ts`
-- Gated loop types: `src/core/agents/gated-loop-runner.ts`
-
-Useful tests include `tests/core/workflow-definition.test.ts`,
-`tests/core/workflow-scheduler.test.ts`,
-`tests/core/workflow-execution-policy.test.ts`,
-`tests/core/artifact-write-plan.test.ts`,
-`tests/core/configured-workflow-runner.test.ts`,
-`tests/core/router.test.ts`, `tests/core/workflow-state.test.ts`,
-`tests/core/gated-agent-loop-runner.test.ts`, and
-`tests/core/flue-gated-agent-loop-retry.test.ts`.
-
+- Runtime scheduler: `src/runtime/workflow/runner-engine.ts`
+- Node runner: `src/runtime/workflow/node-runner.ts`
+- LangGraph adapter: `src/runtime/langgraph/workflow-runner.ts`
+- Artifact publisher: `src/capabilities/artifacts/publisher.ts`
+- Gated loop: `src/capabilities/quality-gates/gated-agent-loop.ts`
+- Pattern executor: `src/capabilities/quality-gates/workflow-pattern-executor.ts`

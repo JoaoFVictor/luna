@@ -1,6 +1,6 @@
 import { redactValue } from "../security/redactor.js";
-import type { JsonObject } from "./events.js";
 import type { JsonValue } from "../json/value.js";
+import type { JsonObject } from "../runtime/json.js";
 
 const OBSERVABILITY_SENSITIVE_KEYS = [
   "prompt",

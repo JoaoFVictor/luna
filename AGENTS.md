@@ -5,95 +5,94 @@ repository.
 
 ## Project Shape
 
-Luna is a multi-agent workflow orchestration repo with Flue as the current
-agent runtime adapter. It has one generic workflow entrypoint in
-`src/workflows/luna.ts`; do not add a TypeScript workflow file per workflow.
-
-Runtime flow:
+Luna is a deterministic multi-agent workflow orchestration repo. It runs
+generic YAML workflows through a native platform/runtime composition layer.
 
 ```text
-adapter -> invocation -> router -> workflow graph -> built-ins/agents/gated_agent_loop -> artifacts
+input adapter or invocation JSON
+  -> deterministic router
+  -> workflows/<id>/workflow.yaml
+  -> native platform registrations
+  -> runtime scheduler
+  -> capability built-ins / agents / patterns / gates
+  -> artifacts
 ```
 
-Primary extension points:
+There is one generic TypeScript workflow entrypoint:
+`src/workflows/luna.ts`. Do not add one TypeScript workflow file per workflow.
 
-- `agents/<id>/`: reusable Luna agent definitions.
-- `workflows/<id>/`: YAML workflow graphs.
-- `src/adapters/<id>/`: input adapters for external sources.
-- `src/core/built-ins/`: deterministic workflow built-ins.
-- `src/core/context/`: deterministic repository/agent context intake.
-- `src/core/providers/<id>/`: provider-specific integrations and adapters to
-  provider APIs, auth, config, reports, built-ins, and change-request services.
-- `src/core/tools/`: Luna-native local tool contracts and catalog.
-- `src/core/agent-runtime/flue/`: current Flue runtime adapter, including
-  runner, capabilities, tool/MCP materialization, model options, Pi auth, and
-  observability.
-- `skills/`: reusable guidance for LLMs and runtime agents.
+## Current Extension Points
+
+- `workflows/<id>/`: strict YAML workflow graphs plus JSON schemas.
+- `agents/<id>/`: reusable model roles and output contracts.
+- `src/capabilities/<capability>/`: capability manifests and deterministic
+  built-ins, patterns, gates, tools, ports, policies, and publishers.
+- `src/providers/<provider>/`: provider-owned input adapters, auth/config,
+  payload parsing, task/PR context, reports, and change-request actions.
+- `src/platform/native/**`: native plugin registration and workflow execution
+  wiring.
+- `src/runtime/**`: runtime backend composition, LangGraph adapter,
+  scheduler, checkpoints, interrupts, event logs, runtime logs, and artifacts.
+- `src/core/observability/**`: telemetry, spans, sinks, runtime-log
+  projection, external trace bridges, and summary artifacts.
+- `src/core/**`: runtime-neutral contracts, validation, security, config,
+  routing, workflow definition/compilation, JSON/runtime state, observability,
+  and shared helpers.
+- `src/agent-runtimes/pi/**`: Pi-specific agent runtime adapter.
+- `skills/`: reusable guidance for humans and runtime agents.
 
 ## Use The Luna Skills
 
 Before changing an area, read the matching project skill:
 
-- `skills/luna-project-map/SKILL.md`: repo orientation and architecture.
-- `skills/luna-create-agent/SKILL.md`: create or modify agents.
+- `skills/luna-project-map/SKILL.md`: repo orientation and boundaries.
 - `skills/luna-create-workflow/SKILL.md`: create or modify workflow YAML.
-- `skills/luna-create-adapter/SKILL.md`: create input adapters.
-- `skills/luna-create-built-in/SKILL.md`: create workflow built-ins.
-- `skills/luna-create-tool/SKILL.md`: create local Luna tools.
+- `skills/luna-create-agent/SKILL.md`: create or modify agents.
+- `skills/luna-create-adapter/SKILL.md`: create provider-owned input adapters.
+- `skills/luna-create-built-in/SKILL.md`: create capability built-ins.
+- `skills/luna-create-tool/SKILL.md`: create local tools for agents.
 - `skills/luna-review-change/SKILL.md`: review Luna changes critically.
-- `skills/implementation-safe-git/SKILL.md`: safe file/git discipline for
-  trusted local write agents and implementation loops.
+- `skills/implementation-safe-git/SKILL.md`: safe file/git discipline.
 
 ## Non-Negotiables
 
 - Keep routing deterministic. Do not ask an LLM which workflow to run.
-- Do not add workflow-specific CLI commands; use `run --target workflow:<id>`.
-- Do not create compatibility wrappers or deadcode for old architecture.
-- Keep agents reusable; put orchestration in workflow graphs.
-- Use `gated_agent_loop` for trusted local write loops. Gates are configured in
-  `workflows/<id>/graph.yaml` under the node's `gates:` list. Current gate
-  types are `validation_commands` and read-only workflow `agent` gates. For an
-  `agent` gate, configure JSONata `block_when.expression` and optional
-  `feedback.expression` on the workflow gate entry, never in
-  `agents/<id>/agent.yaml`; failed gates loop back to the writer as repair
-  input. Keep gate policy provider-agnostic.
-- Keep module responsibilities isolated. Generic modules must stay agnostic:
-  `src/core/built-ins/`, `src/core/tools/`, `src/core/context/`,
-  `src/core/workflow/`, and shared helpers must not know provider-specific
-  auth, config, schemas, URLs, payload shapes, or workflow details.
-- Keep provider responsibilities isolated. Provider-specific code belongs under
-  `src/core/providers/<provider>/` or the matching provider-owned adapter.
-  A provider module must never import, validate, store, or mention another
-  provider's schema/auth/config. Shared provider helpers may only handle neutral
-  mechanics, such as reading `luna.auth.json` as unknown provider data.
-- Keep composition at composition roots. Cross-provider or generic-plus-provider
-  wiring belongs in explicit registries/factories such as
-  `src/adapters/registry.ts`, `src/core/providers/built-ins.ts`, or runtime
-  factories, not in leaf modules.
-- Put context files in repository or agent config; collect them through
-  `collect_context` and pass `context: $.steps.context` explicitly so Luna can
-  render them as runtime instructions with `context_audit` task metadata.
-- Keep skills explicit and layered. Repository skills live in
-  `config/repositories.yaml` and resolve relative to the prepared repository
-  root. Agent skills live in `agents/<id>/agent.yaml` and resolve relative to
-  the agent directory. Luna loads repository skills first, then agent skills;
-  do not mix skill loading into context intake or provider adapters.
-- Register provider-facing built-ins through `src/core/providers/built-ins.ts`;
-  keep runtime-neutral built-ins and shared catalog helpers under
-  `src/core/built-ins/`.
-- Register local tools through `src/core/tools/catalog.ts`; Flue
-  materialization lives in `src/core/agent-runtime/flue/tool-registry.ts`.
-- Update AGENTS.md, README, examples, and skills when changing public
-  extension points or durable authoring patterns.
+- Do not add workflow-specific CLI commands; use `run --target workflow:<id>`,
+  `--from <adapter>`, or `--input <invocation.json>`.
+- Do not add `src/workflows/<workflow>.ts`; add `workflows/<id>/`.
+- Do not create unregistered indirection or unused code.
+- Keep agents reusable. Workflow YAML owns orchestration, dependencies, gates,
+  retries, and artifact plans.
+- Use capability manifests as the public registry for built-ins, patterns,
+  gates, tools, ports, policies, and publishers. Avoid duplicate hand-written
+  public id lists.
+- `quality-gates.gated_agent_loop` gates are configured on the pattern node in
+  workflow YAML. Gate policy does not belong in `agents/<id>/agent.yaml`.
+- Side-effecting built-ins must declare explicit workflow `policies:` matching
+  their capability side-effect policy.
+- Context is explicit. Run `context.collect_context` and pass
+  `context: { expression: "$.steps.context" }` to model nodes that need it.
+- Skills are explicit runtime guidance. Repository skills live in
+  `config/repositories.yaml`; agent skills live in `agents/<id>/agent.yaml`.
+- Provider-specific auth, config, schemas, URLs, payloads, task context,
+  reports, and publishing belong under `src/providers/<provider>/`.
+- Generic `src/core/**` and provider-neutral capabilities must not know
+  provider-specific data shapes or runtime SDK details.
+- Pi-specific code belongs under `src/agent-runtimes/pi/**`.
+- Agents in trusted write loops edit worktrees. They do not commit, push, or
+  create change requests; deterministic built-ins own those gates.
 - Run focused tests for the touched area plus `npm run typecheck`,
   `npm run typecheck:unused-src`, and `npm run lint:unused`.
 
 ## Useful Docs
 
 - `README.md`
-- `examples/configured-workflows.md`
-- `examples/new-agent.md`
-- `examples/new-workflow.md`
-- `examples/new-adapter.md`
-- `examples/new-built-in.md`
-- `examples/new-tool.md`
+- `docs/README.md`
+- `docs/workflows-and-artifacts.md`
+- `docs/agents-context-and-skills.md`
+- `docs/adapters-and-providers.md`
+- `docs/built-ins-tools-and-runtime.md`
+- `docs/capabilities-reference.md`
+- `docs/runtime-and-observability.md`
+- `docs/configuration-reference.md`
+- `examples/README.md`

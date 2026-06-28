@@ -1,24 +1,13 @@
 repositories:
-  - id: example
-    # Repository provider id.
+  - id: swg-front-nuxt
     provider: github
-    # Repository owner/organization.
-    owner: org
-    # Repository name.
-    name: repo
-    # Local checkout path used as the source for Luna worktrees.
-    path: /tmp/luna-example-repo
-    # Git remote used for fetch/push operations.
+    owner: swinggo-dev
+    name: swg-front-nuxt
+    path: ../swinggo/swg-front-nuxt
     remote: origin
-    # Optional remote allowlist for safety checks before write-mode worktrees.
-    # expected_remote_urls:
-    #   - git@github.com:org/repo.git
-    #   - https://github.com/org/repo.git
-    # Optional repository-wide skills. Paths are relative to the prepared
-    # repository root and load before agent-owned skills.
-    # skills:
-    #   - .luna/skills/repository-guidance/SKILL.md
-    # Optional repository-wide context files.
+    expected_remote_urls:
+      - git@github.com:swinggo-dev/swg-front-nuxt.git
+      - https://github.com/swinggo-dev/swg-front-nuxt.git
     context:
       files:
         - AGENTS.md
