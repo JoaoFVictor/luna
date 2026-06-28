@@ -74,7 +74,10 @@ const registry = createCapabilityRegistry([
         declaring_node_type: "pattern",
         input_schema: { type: "object" },
         output_schema: { type: "object" },
-        expand: { type: "declaring_node_subgraph" }
+        expand: { type: "declaring_node_subgraph" },
+        execution_policy: {
+          batch_exclusion_keys: ["agent_session"]
+        }
       }
     },
     gates: {
@@ -167,6 +170,30 @@ describe("workflow compiler", () => {
     expect(compiled.state_schema_version).toBe(LUNA_RUNTIME_STATE_SCHEMA_VERSION);
     expect(compiled.state.channels).toEqual(LUNA_COMPILED_WORKFLOW_STATE_CHANNELS);
     expect(compiled.state.channels).toEqual(LUNA_RUNTIME_STATE_CHANNELS);
+  });
+
+  it("copies pattern execution policy metadata from the capability registration", () => {
+    const compiled = compileWorkflow({
+      workflow: workflow([
+        {
+          id: "write_loop",
+          type: "pattern",
+          uses: "quality.gated_agent_loop",
+          worker: "writer",
+          gates: [{ id: "approval", type: "quality.approval" }]
+        }
+      ]),
+      registry,
+      reducers: { steps: "object_merge" }
+    });
+
+    expect(compiled.nodes[0]).toMatchObject({
+      id: "write_loop",
+      kind: "pattern",
+      execution_policy: {
+        batch_exclusion_keys: ["agent_session"]
+      }
+    });
   });
 
   it("compiles fan-out branches and requires a registered reducer before fan-in merge", () => {

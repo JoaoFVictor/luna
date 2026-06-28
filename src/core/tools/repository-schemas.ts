@@ -3,6 +3,8 @@ export const repositoryEmptyInputSchema = {
   additionalProperties: false
 } as const;
 
+export const repositoryTextOutputSchema = { type: "string" } as const;
+
 export const repositoryFilePathSchema = { type: "string", minLength: 1 } as const;
 
 export const repositoryReadFileInputSchema = {

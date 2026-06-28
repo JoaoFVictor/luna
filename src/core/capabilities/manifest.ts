@@ -1,4 +1,5 @@
-import type { JsonSchemaLike, PatternRegistration } from "./pattern-registration.js";
+import type { JsonSchemaLike } from "./json-schema-types.js";
+import type { PatternRegistration } from "./pattern-registration.js";
 
 export type CapabilityKind = "execution" | "composition";
 

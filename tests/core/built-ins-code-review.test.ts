@@ -252,8 +252,8 @@ describe("code review built-ins", () => {
           }
         }),
         input: {
-          repo_context: "$.steps.repo_context",
-          findings: "$.steps.code_review"
+          repo_context: repoContext,
+          findings: { findings: [finding], summary: "Reviewed." }
         },
         dependencies: { validateFindingEvidence }
       })
@@ -278,8 +278,8 @@ describe("code review built-ins", () => {
           }
         }),
         input: {
-          findings: "$.steps.validated_findings",
-          acceptance: "$.steps.acceptance"
+          findings: { findings: [finding] },
+          acceptance
         },
         dependencies: { buildFinalReportJson, buildFinalReportMarkdown }
       })
@@ -318,8 +318,8 @@ describe("code review built-ins", () => {
           }
         }),
         input: {
-          findings: "$.steps.validated_findings",
-          acceptance: "$.steps.acceptance"
+          findings: { findings: [finding] },
+          acceptance
         }
       })
     ).rejects.toMatchObject({

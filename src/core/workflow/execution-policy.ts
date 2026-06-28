@@ -2,9 +2,10 @@ import type { BuiltInStepMetadata } from "../built-ins/types.js";
 
 export type WorkflowExecutionNode = {
   id: string;
-  type: "built_in" | "agent" | "gated_agent_loop";
+  type: "built_in" | "agent" | "pattern";
   uses?: string;
   after?: string[];
+  batchExclusionKeys?: readonly string[];
   artifacts?: readonly {
     path: string;
     source: unknown;
@@ -59,7 +60,7 @@ function policyError(message: string, code: string): Error & { code: string } {
 }
 
 function isAgentLike(node: WorkflowExecutionNode): boolean {
-  return node.type === "agent" || node.type === "gated_agent_loop";
+  return node.type === "agent";
 }
 
 function artifactPaths(node: WorkflowExecutionNode): string[] {
@@ -83,6 +84,7 @@ export function executionPolicyDecisionForNode<
   const capturesWorkspace = metadata.capturesWorkspace === true;
   const batchExclusionKeys = [
     ...(isAgentLike(node) ? ["agent_session"] : []),
+    ...(node.batchExclusionKeys ?? []),
     ...(capturesWorkspace ? ["workspace_capture"] : [])
   ];
 

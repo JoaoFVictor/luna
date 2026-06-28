@@ -10,7 +10,7 @@ import {
   PlaneConfigSchema,
   type PlaneConfig
 } from "./config.js";
-import { repositoryHintFromLabels } from "../repository-hints/github-full-name.js";
+import { repositoryHintFromLabels } from "../repository-hints/repository-reference.js";
 import {
   InvocationSchema,
   type Invocation

@@ -34,7 +34,6 @@ async function writeContextFiles() {
       "    base_url: https://app.plane.so",
       "    repository_hint:",
       "      source: label",
-      "      format: github_full_name",
       ""
     ].join("\n"),
     "utf8"
@@ -269,7 +268,36 @@ describe("plane-task-url adapter", () => {
     ).resolves.not.toHaveProperty("repository");
   });
 
-  it("rejects repo-prefixed labels because github is the only repository hint prefix", async () => {
+  it("loads a Plane task URL with a non-GitHub repository provider hint", async () => {
+    const { adapterContext } = await context({
+      ...planeIssue,
+      labels: [{ name: "gitlab:platform/luna" }, { name: "bug" }]
+    });
+
+    await expect(
+      planeTaskUrlAdapter.load(
+        {
+          kind: "cli",
+          value:
+            "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
+        },
+        adapterContext
+      )
+    ).resolves.toMatchObject({
+      repository: {
+        provider: "gitlab",
+        owner: "platform",
+        name: "luna"
+      },
+      payload: {
+        plane: expect.objectContaining({
+          repository_hint_source: "label:gitlab:platform/luna"
+        })
+      }
+    });
+  });
+
+  it("accepts any explicit repository provider prefix in labels", async () => {
     const { adapterContext } = await context({
       ...planeIssue,
       labels: [{ name: "repo:octo-org/hello-world" }, { name: "bug" }]
@@ -284,9 +312,13 @@ describe("plane-task-url adapter", () => {
         },
         adapterContext
       )
-    ).rejects.toThrow(
-      expect.objectContaining({ code: "plane_repository_hint_invalid" })
-    );
+    ).resolves.toMatchObject({
+      repository: {
+        provider: "repo",
+        owner: "octo-org",
+        name: "hello-world"
+      }
+    });
   });
 
   it("rejects Plane task URLs containing credentials", async () => {

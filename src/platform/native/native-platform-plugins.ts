@@ -39,7 +39,6 @@ import {
 import type { TaskProviderBuiltIns } from "../../providers/built-ins.js";
 import { piAgentRuntimeFactory } from "../../agent-runtimes/pi/factory.js";
 import { langGraphWorkflowRuntimeFactory } from "../../runtime/langgraph/workflow-runner.js";
-import { nativeWorkflowRuntimeFactory } from "../../runtime/native/workflow-runner.js";
 import { qualityGatePatternExecutors } from "../../capabilities/quality-gates/workflow-pattern-executor.js";
 
 export type NativeWorkflowBuiltIns = {
@@ -222,8 +221,7 @@ export const nativePlatformPluginDefinitions = [
       [piAgentRuntimeFactory.id]: piAgentRuntimeFactory
     },
     workflowRuntimeFactories: {
-      [langGraphWorkflowRuntimeFactory.id]: langGraphWorkflowRuntimeFactory,
-      [nativeWorkflowRuntimeFactory.id]: nativeWorkflowRuntimeFactory
+      [langGraphWorkflowRuntimeFactory.id]: langGraphWorkflowRuntimeFactory
     }
   },
   {

@@ -13,6 +13,22 @@ function hasRequirement(
   return requirements.includes(requirement);
 }
 
+function requireNonEmptyString(
+  value: unknown,
+  label: string,
+  detailKey: string
+): void {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return;
+  }
+
+  throw new AgentRuntimeError(
+    "runtime_unsupported_feature",
+    `${label} must be a non-empty string`,
+    { details: { [detailKey]: value } }
+  );
+}
+
 function requireDeclaredRuntimeRequirement(
   input: RunAgentInput,
   requirement: AgentRuntimeRequirement
@@ -62,6 +78,10 @@ export async function validateAgentRuntimeInput(
   input: RunAgentInput,
   descriptor: AgentRuntimeDescriptor
 ): Promise<void> {
+  requireNonEmptyString(input.node_id, "Agent runtime node_id", "node_id");
+  requireNonEmptyString(input.agent_id, "Agent runtime agent_id", "agent_id");
+  requireNonEmptyString(input.instructions, "Agent runtime instructions", "instructions");
+
   for (const requirement of input.runtime_requirements) {
     requireSupportedRuntimeRequirement(descriptor, requirement);
   }

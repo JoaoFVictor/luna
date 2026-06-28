@@ -164,7 +164,7 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
   const workflowReferences: string[] = [];
   const commandViolations: string[] = [];
 
-  expect(builtIns, "runtime built-in inventory from src/core/built-ins/catalog.ts").not.toEqual([]);
+  expect(builtIns, "runtime built-in inventory from capability manifests").not.toEqual([]);
   expect(toolIds, "runtime tool inventory from src/core/tools/catalog.ts").not.toEqual([]);
   expect(workflowIds, "workflow id inventory from workflows/*/workflow.yaml").not.toEqual([]);
 

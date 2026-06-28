@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
-import { defaultBuiltInCatalog } from "../../../src/core/built-ins/catalog.js";
 import {
+  defaultBuiltInCatalog,
   builtInStepNames as providerBuiltInStepNames,
   runBuiltInStep as runProviderBuiltInStep
 } from "../../../src/platform/native/native-built-ins.js";

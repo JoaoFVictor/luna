@@ -28,7 +28,7 @@ describe("native Luna platform", () => {
       nativeInputAdapterRegistry.ids()
     );
     expect(Object.keys(nativeLunaPlatform.agentRuntimeFactories)).toEqual(["pi"]);
-    expect(Object.keys(nativeLunaPlatform.workflowRuntimeFactories)).toEqual(["langgraph", "native"]);
+    expect(Object.keys(nativeLunaPlatform.workflowRuntimeFactories)).toEqual(["langgraph"]);
     expect(nativeLunaPlatform.capabilityRegistry).toBe(officialCapabilityRegistry);
     expect(nativeLunaPlatform.runWorkflow).toBe(runNativeWorkflowTarget);
   });
@@ -40,7 +40,7 @@ describe("native Luna platform", () => {
       "plane-task-url"
     ]);
     expect(Object.keys(nativeLunaPlatform.agentRuntimeFactories)).toEqual(["pi"]);
-    expect(Object.keys(nativeLunaPlatform.workflowRuntimeFactories)).toEqual(["langgraph", "native"]);
+    expect(Object.keys(nativeLunaPlatform.workflowRuntimeFactories)).toEqual(["langgraph"]);
   });
 
   it("composes native platform plugin facets independently", () => {

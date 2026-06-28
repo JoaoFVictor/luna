@@ -12,7 +12,7 @@ import {
   runObservedAgent
 } from "../../core/agent-runtime/observed-runner.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
-import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
+import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import type { ModelProfile } from "../../core/config/schemas.js";
 import type { ObservabilitySummary } from "../../core/observability/summary.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";

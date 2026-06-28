@@ -1,6 +1,6 @@
 import type { AgentRuntimePort } from "../../core/agent-runtime/contracts.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
-import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
+import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import type { WorkflowRunResult } from "../../core/workflow/execution-contracts.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import { stableJson } from "../../core/runtime/json.js";

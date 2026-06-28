@@ -1,5 +1,5 @@
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
-import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
+import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import {
   startNodeAttempt,

@@ -10,7 +10,7 @@ import {
   JiraConfigSchema,
   type JiraConfig
 } from "./config.js";
-import { repositoryHintFromField } from "../repository-hints/github-full-name.js";
+import { repositoryHintFromField } from "../repository-hints/repository-reference.js";
 import {
   InvocationSchema,
   type Invocation
@@ -221,7 +221,7 @@ async function loadJiraIssueUrlInvocation(
   } catch (cause) {
     throw adapterError(
       "jira_repository_hint_invalid",
-      "Expected Jira repository hint to be github_full_name",
+      "Expected Jira repository hint to be provider_full_name",
       cause
     );
   }

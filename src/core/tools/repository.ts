@@ -2,19 +2,20 @@ import { mkdir, open, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { runGit } from "../git/client.js";
 import type {
+  AnyLunaToolDefinition,
   LunaToolDefinition,
   LunaToolDependencies
 } from "./contracts.js";
 import {
-  repositoryDeleteFileInputSchema,
-  repositoryEmptyInputSchema,
-  repositoryReadFileInputSchema,
-  repositoryWriteFileInputSchema
-} from "./repository-schemas.js";
+  repositoryDeleteFileToolContract,
+  repositoryDiffSummaryToolContract,
+  repositoryReadFileToolContract,
+  repositoryStatusToolContract,
+  repositoryWriteFileToolContract
+} from "./repository-contracts.js";
 
 type EmptyInput = Record<string, never>;
 type RepositoryToolDefinition = LunaToolDefinition<EmptyInput, string>;
-const allAgentModes = ["read_only", "trusted_local_write"] as const;
 const DEFAULT_MAX_FILE_BYTES = 64 * 1024;
 
 type RepositoryReadFileInput = {
@@ -106,29 +107,13 @@ function repositoryHandler(
 }
 
 export const repositoryStatusTool: RepositoryToolDefinition = {
-  id: "repository.status",
-  description: "Return short git status for the bound repository worktree.",
-  parameters: repositoryEmptyInputSchema,
-  safety: {
-    localWrites: false,
-    network: false,
-    externalSideEffects: false
-  },
-  modes: allAgentModes,
+  ...repositoryStatusToolContract,
   createHandler: (dependencies) =>
     repositoryHandler(dependencies, ["status", "--short"])
 };
 
 export const repositoryDiffSummaryTool: RepositoryToolDefinition = {
-  id: "repository.diff-summary",
-  description: "Return compact git diff stat for the bound repository worktree.",
-  parameters: repositoryEmptyInputSchema,
-  safety: {
-    localWrites: false,
-    network: false,
-    externalSideEffects: false
-  },
-  modes: allAgentModes,
+  ...repositoryDiffSummaryToolContract,
   createHandler: (dependencies) =>
     repositoryHandler(dependencies, ["diff", "--stat"])
 };
@@ -137,15 +122,7 @@ export const repositoryReadFileTool: LunaToolDefinition<
   RepositoryReadFileInput,
   RepositoryReadFileOutput
 > = {
-  id: "repository.read-file",
-  description: "Read a UTF-8 text file from the bound repository worktree.",
-  parameters: repositoryReadFileInputSchema,
-  safety: {
-    localWrites: false,
-    network: false,
-    externalSideEffects: false
-  },
-  modes: allAgentModes,
+  ...repositoryReadFileToolContract,
   createHandler: (dependencies) => async (input) => {
     const maxBytes = input.max_bytes ?? DEFAULT_MAX_FILE_BYTES;
     const file = await readBoundedFile(safePath(dependencies.cwd, input.path), maxBytes);
@@ -163,15 +140,7 @@ export const repositoryWriteFileTool: LunaToolDefinition<
   RepositoryWriteFileInput,
   RepositoryWriteFileOutput
 > = {
-  id: "repository.write-file",
-  description: "Write a UTF-8 text file inside the bound repository worktree.",
-  parameters: repositoryWriteFileInputSchema,
-  safety: {
-    localWrites: true,
-    network: false,
-    externalSideEffects: false
-  },
-  modes: ["trusted_local_write"],
+  ...repositoryWriteFileToolContract,
   createHandler: (dependencies) => async (input) => {
     const absolutePath = safePath(dependencies.cwd, input.path);
     if (input.create_dirs === true) {
@@ -190,15 +159,7 @@ export const repositoryDeleteFileTool: LunaToolDefinition<
   RepositoryDeleteFileInput,
   RepositoryDeleteFileOutput
 > = {
-  id: "repository.delete-file",
-  description: "Delete a file inside the bound repository worktree.",
-  parameters: repositoryDeleteFileInputSchema,
-  safety: {
-    localWrites: true,
-    network: false,
-    externalSideEffects: false
-  },
-  modes: ["trusted_local_write"],
+  ...repositoryDeleteFileToolContract,
   createHandler: (dependencies) => async (input) => {
     const absolutePath = safePath(dependencies.cwd, input.path);
     try {
@@ -220,3 +181,11 @@ export const repositoryDeleteFileTool: LunaToolDefinition<
     };
   }
 };
+
+export const repositoryLocalTools = {
+  [repositoryStatusTool.id]: repositoryStatusTool,
+  [repositoryDiffSummaryTool.id]: repositoryDiffSummaryTool,
+  [repositoryReadFileTool.id]: repositoryReadFileTool,
+  [repositoryWriteFileTool.id]: repositoryWriteFileTool,
+  [repositoryDeleteFileTool.id]: repositoryDeleteFileTool
+} satisfies Record<string, AnyLunaToolDefinition>;

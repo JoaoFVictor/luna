@@ -1,5 +1,23 @@
 import { collectContextIntake } from "../../capabilities/context/collect-context.js";
 import {
+  changeRequestPortsFromBuiltInOptions,
+  createChangeRequestCreateBuiltIn
+} from "../../core/change-request/built-ins.js";
+import {
+  createGitCommitBuiltIn,
+  createGitPushBranchBuiltIn,
+  createGitStatusBuiltIn,
+  gitPortsFromBuiltInOptions
+} from "../../core/git/built-ins.js";
+import {
+  createLocalExecCommandBuiltIn,
+  localExecPortsFromBuiltInOptions
+} from "../../core/local-exec/built-ins.js";
+import {
+  createRepositoryWorkspaceCaptureBuiltIn,
+  repositoryWorkspacePortsFromBuiltInOptions
+} from "../../core/repository-workspace/built-ins.js";
+import {
   collectWorktreeDiffBuiltIn,
   prepareCommitBuiltIn,
   prepareImplementationWorktreeBuiltIn,
@@ -11,15 +29,7 @@ import {
   runValidationCommandsBuiltIn
 } from "../../core/built-ins/implementation.js";
 import { collectContextBuiltIn } from "../../core/built-ins/context.js";
-import {
-  changeRequestCreateBuiltIn,
-  gitCommitBuiltIn,
-  gitPushBranchBuiltIn,
-  gitStatusBuiltIn,
-  localExecReadCommandBuiltIn,
-  localExecWriteCommandBuiltIn,
-  repositoryWorkspaceCaptureBuiltIn
-} from "../../core/built-ins/catalog.js";
+import { createBuiltInStepCatalog } from "../../core/built-ins/catalog.js";
 import { finalReportBuiltIn } from "../../core/reports/final-report.js";
 import {
   createCollectTaskContextBuiltIn,
@@ -62,6 +72,31 @@ export function taskProviderBuiltInsFromPlugins(
 
 const defaultWorkflowBuiltIns = workflowBuiltInsFromPlugins(nativePlatformPlugins);
 const defaultTaskProviderBuiltIns = taskProviderBuiltInsFromPlugins(nativePlatformPlugins);
+
+export const localExecReadCommandBuiltIn = createLocalExecCommandBuiltIn(
+  localExecPortsFromBuiltInOptions,
+  "local-exec.command.read"
+);
+export const localExecWriteCommandBuiltIn = createLocalExecCommandBuiltIn(
+  localExecPortsFromBuiltInOptions,
+  "local-exec.command.write"
+);
+export const repositoryWorkspaceCaptureBuiltIn =
+  createRepositoryWorkspaceCaptureBuiltIn(
+    repositoryWorkspacePortsFromBuiltInOptions
+  );
+export const gitStatusBuiltIn = createGitStatusBuiltIn(
+  gitPortsFromBuiltInOptions
+);
+export const gitCommitBuiltIn = createGitCommitBuiltIn(
+  gitPortsFromBuiltInOptions
+);
+export const gitPushBranchBuiltIn = createGitPushBranchBuiltIn(
+  gitPortsFromBuiltInOptions
+);
+export const changeRequestCreateBuiltIn = createChangeRequestCreateBuiltIn(
+  changeRequestPortsFromBuiltInOptions
+);
 
 export function createNativeProviderBuiltIns({
   workflowBuiltIns = defaultWorkflowBuiltIns,
@@ -115,3 +150,4 @@ export const isBuiltInStepName = nativeProviderBuiltIns.isBuiltInStepName;
 export const runBuiltInStep = nativeProviderBuiltIns.runBuiltInStep;
 export const defaultProviderWorkflowBuiltIns =
   nativeProviderBuiltIns.workflowBuiltIns;
+export const defaultBuiltInCatalog = createBuiltInStepCatalog(defaultBuiltInSteps);

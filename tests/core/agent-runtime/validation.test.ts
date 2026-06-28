@@ -39,6 +39,18 @@ function input(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
 }
 
 describe("agent runtime validation", () => {
+  it("rejects malformed identity before provider execution", async () => {
+    await expect(
+      validateAgentRuntimeInput(
+        input({ node_id: undefined }),
+        descriptor
+      )
+    ).rejects.toMatchObject({
+      code: "runtime_unsupported_feature",
+      details: { node_id: undefined }
+    });
+  });
+
   it("rejects unsupported tool protocols before execution", async () => {
     await expect(
       validateAgentRuntimeInput(

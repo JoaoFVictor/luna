@@ -28,7 +28,7 @@ type ExpectedLunaEvent = {
   };
   step?: {
     id: string;
-    type: "built_in" | "agent" | "gated_agent_loop";
+    type: "built_in" | "agent" | "pattern";
   };
   outcome?: {
     status: "started" | "succeeded" | "failed" | "skipped";
@@ -60,7 +60,7 @@ function expectNormalizedEvent(event: LunaEvent): ExpectedLunaEvent {
       : {
           step: {
             id: expect.any(String),
-            type: expect.stringMatching(/^(built_in|agent|gated_agent_loop)$/)
+            type: expect.stringMatching(/^(built_in|agent|pattern)$/)
           }
         }),
     ...(event.outcome === undefined

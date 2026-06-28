@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { loadAgentDefinition } from "../../capabilities/agents/agent-loader.js";
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
-import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
+import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import { createCapabilityRegistry } from "../../core/capabilities/registry.js";
 import { loadYamlFile } from "../../core/config/loader.js";
 import {

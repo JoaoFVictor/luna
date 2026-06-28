@@ -1,4 +1,4 @@
-import type { JsonSchemaLike } from "./pattern-registration.js";
+import type { JsonSchemaLike } from "./json-schema-types.js";
 
 export type JsonSchemaMatcherOptions = {
   readonly isExpressionObject?: (value: unknown) => boolean;

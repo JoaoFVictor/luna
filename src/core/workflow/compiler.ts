@@ -2,6 +2,7 @@ import type {
   CapabilityRegistrationIndex,
   CapabilityRegistration
 } from "../capabilities/registration-index.js";
+import type { PatternExecutionPolicy } from "../capabilities/pattern-registration.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import { analyzeWorkflowGraph } from "./graph-analysis.js";
 import type {
@@ -72,6 +73,7 @@ export type CompiledWorkflowNode = {
   readonly capability_id: string;
   readonly output_schema: unknown;
   readonly can_create_pending_interrupt: boolean;
+  readonly execution_policy?: PatternExecutionPolicy;
   readonly source: WorkflowNode;
 };
 
@@ -238,6 +240,7 @@ function compileNode(
         capability_id: registration.id,
         output_schema: registration.output_schema,
         can_create_pending_interrupt: nodeHasInterruptGate(node.gates ?? [], indexes),
+        execution_policy: registration.execution_policy,
         source: node
       };
     }

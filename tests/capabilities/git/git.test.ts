@@ -9,8 +9,8 @@ import {
 import { manifest } from "../../../src/capabilities/git/manifest.js";
 import { manifest as repositoryWorkspaceManifest } from "../../../src/capabilities/repository-workspace/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
-import { defaultBuiltInCatalog } from "../../../src/core/built-ins/catalog.js";
 import {
+  defaultBuiltInCatalog,
   builtInStepNames as providerBuiltInStepNames,
   runBuiltInStep as runProviderBuiltInStep
 } from "../../../src/platform/native/native-built-ins.js";

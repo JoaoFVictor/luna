@@ -98,6 +98,9 @@ export const manifest = capabilityManifest({
         }
       },
       expand: { type: "declaring_node_subgraph" },
+      execution_policy: {
+        batch_exclusion_keys: ["agent_session"]
+      },
       local_context_roots: ["$.gate"]
     }
   },

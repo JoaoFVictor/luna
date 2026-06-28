@@ -125,6 +125,14 @@ describe("Pi agent runtime adapter", () => {
     expect(firstContext).toMatchObject({
       systemPrompt: expect.stringContaining("Return only JSON")
     });
+    const userMessage = firstContext?.messages[0];
+    expect(userMessage?.role).toBe("user");
+    expect(JSON.parse(String(userMessage?.content))).toMatchObject({
+      agent_id: "agent-1",
+      node_id: "node-1",
+      mode: "read_only"
+    });
+    expect(JSON.parse(String(userMessage?.content))).not.toHaveProperty("context");
   });
 
   it("passes registered Pi OAuth API keys into provider calls", async () => {
@@ -229,13 +237,15 @@ describe("Pi agent runtime adapter", () => {
           local: {
             id: "repository.status",
             description: "Status",
-            parameters: {},
+            input_schema: { type: "object", additionalProperties: false },
+            output_schema: { type: "string" },
             safety: {
               localWrites: false,
               network: false,
               externalSideEffects: false
             },
             modes: ["read_only", "trusted_local_write"],
+            runtime_requirements: ["tool_calling"],
             createHandler: () => handler
           }
         }

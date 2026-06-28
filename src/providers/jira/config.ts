@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RepositoryHintFieldConfigSchema } from "../repository-hints/github-full-name.js";
+import { RepositoryHintFieldConfigSchema } from "../repository-hints/repository-reference.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 

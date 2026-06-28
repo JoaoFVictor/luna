@@ -2,22 +2,18 @@ import { z } from "zod";
 import type { InvocationRepository } from "../../core/router/invocation.js";
 
 const NonEmptyStringSchema = z.string().min(1);
-
-export const RepositoryHintFormatSchema = z.literal("github_full_name");
-export type RepositoryHintFormat = z.infer<typeof RepositoryHintFormatSchema>;
+const RepositoryProviderSchema = z.string().regex(/^[A-Za-z0-9_.-]+$/);
 
 export const RepositoryHintFieldConfigSchema = z
   .object({
     source: z.literal("field"),
-    field_id: NonEmptyStringSchema,
-    format: RepositoryHintFormatSchema
+    field_id: NonEmptyStringSchema
   })
   .strict();
 
 export const RepositoryHintLabelConfigSchema = z
   .object({
-    source: z.literal("label"),
-    format: RepositoryHintFormatSchema
+    source: z.literal("label")
   })
   .strict();
 
@@ -26,10 +22,10 @@ export type RepositoryHintResult = {
   source: string;
 };
 
-function parseGithubFullName(value: string): InvocationRepository | undefined {
-  const trimmed = value.trim();
-  const withoutPrefix = trimmed.replace(/^github:/i, "");
-  const [owner, name, ...extra] = withoutPrefix.split("/");
+function parseOwnerAndName(
+  value: string
+): Pick<InvocationRepository, "owner" | "name"> | undefined {
+  const [owner, name, ...extra] = value.split("/");
   const safeSegment = /^[A-Za-z0-9_.-]+$/;
 
   if (
@@ -42,11 +38,33 @@ function parseGithubFullName(value: string): InvocationRepository | undefined {
     return undefined;
   }
 
-  return { provider: "github", owner, name };
+  return { owner, name };
+}
+
+function parseProviderFullName(value: string): InvocationRepository | undefined {
+  const trimmed = value.trim();
+  const [provider, fullName] = trimmed.split(":", 2);
+
+  if (
+    provider === undefined ||
+    fullName === undefined ||
+    !RepositoryProviderSchema.safeParse(provider).success
+  ) {
+    return undefined;
+  }
+
+  const parsed = parseOwnerAndName(fullName);
+  return parsed === undefined ? undefined : { provider, ...parsed };
+}
+
+function parseRepositoryHint(value: string): InvocationRepository | undefined {
+  return parseProviderFullName(value);
 }
 
 function isRepositoryHintLabel(value: string): boolean {
-  return /^(github|repo):/i.test(value.trim());
+  const trimmed = value.trim();
+
+  return /^[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmed);
 }
 
 export function repositoryHintFromField(
@@ -57,9 +75,9 @@ export function repositoryHintFromField(
     return undefined;
   }
 
-  const repository = parseGithubFullName(value);
+  const repository = parseRepositoryHint(value);
   if (repository === undefined) {
-    throw new Error("Expected repository hint to be github_full_name");
+    throw new Error("Expected repository hint to be provider_full_name");
   }
 
   return { repository, source };
@@ -73,9 +91,9 @@ export function repositoryHintFromLabels(
       continue;
     }
 
-    const repository = parseGithubFullName(label);
+    const repository = parseRepositoryHint(label);
     if (repository === undefined) {
-      throw new Error("Expected repository label hint to be github_full_name");
+      throw new Error("Expected repository label hint to be provider_full_name");
     }
 
     return { repository, source: `label:${label}` };

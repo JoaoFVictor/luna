@@ -1,0 +1,21 @@
+export type JsonSchemaLike = {
+  readonly type?: string | readonly string[];
+  readonly properties?: Record<string, JsonSchemaLike>;
+  readonly items?: JsonSchemaLike;
+  readonly required?: readonly string[];
+  readonly additionalProperties?: boolean | JsonSchemaLike;
+  readonly enum?: readonly unknown[];
+  readonly const?: unknown;
+  readonly oneOf?: readonly JsonSchemaLike[];
+  readonly anyOf?: readonly JsonSchemaLike[];
+  readonly allOf?: readonly JsonSchemaLike[];
+  readonly not?: JsonSchemaLike;
+  readonly description?: string;
+  readonly minItems?: number;
+  readonly maxItems?: number;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly pattern?: string;
+  readonly minimum?: number;
+  readonly maximum?: number;
+};

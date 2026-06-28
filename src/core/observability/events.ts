@@ -7,7 +7,7 @@ export type JsonObject = { [key: string]: JsonValue };
 
 export type LunaEventStatus = "started" | "succeeded" | "failed" | "skipped";
 
-export type LunaStepType = "built_in" | "agent" | "gated_agent_loop";
+export type LunaStepType = "built_in" | "agent" | "pattern";
 
 export type LunaEvent = {
   type: string;

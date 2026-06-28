@@ -86,6 +86,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
     "input_schema",
     "output_schema",
     "expand",
+    "execution_policy",
     "local_context_roots"
   ]),
   built_ins: new Set([
@@ -329,7 +330,51 @@ export function validatePatternRegistration<T extends PatternRegistration>(
     );
   }
 
+  validatePatternExecutionPolicy(registration);
+
   return registration;
+}
+
+function validatePatternExecutionPolicy(
+  registration: PatternRegistration
+): void {
+  const executionPolicy = registration.execution_policy;
+  if (executionPolicy === undefined) {
+    return;
+  }
+
+  if (
+    typeof executionPolicy !== "object" ||
+    executionPolicy === null
+  ) {
+    throw new CapabilityValidationError(
+      "pattern_registration_forbidden",
+      `Pattern ${registration.id} has invalid execution_policy.`
+    );
+  }
+
+  const candidate = executionPolicy as Record<string, unknown>;
+  for (const field of Object.keys(candidate)) {
+    if (field !== "batch_exclusion_keys") {
+      throw new CapabilityValidationError(
+        "pattern_registration_forbidden",
+        `Pattern ${registration.id} cannot define execution_policy.${field}.`
+      );
+    }
+  }
+
+  if (
+    candidate.batch_exclusion_keys !== undefined &&
+    (
+      !Array.isArray(candidate.batch_exclusion_keys) ||
+      candidate.batch_exclusion_keys.some((key) => typeof key !== "string")
+    )
+  ) {
+    throw new CapabilityValidationError(
+      "pattern_registration_forbidden",
+      `Pattern ${registration.id} has invalid execution_policy.batch_exclusion_keys.`
+    );
+  }
 }
 
 function validateNamespacedId(capabilityId: string, id: string): void {

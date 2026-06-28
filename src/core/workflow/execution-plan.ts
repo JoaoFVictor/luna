@@ -104,6 +104,7 @@ export function workflowExecutionPlanPolicyNode(
     id: node.id,
     type: policyNodeType(node),
     after: afterFromCompiledNode(node),
+    batchExclusionKeys: node.execution_policy?.batch_exclusion_keys,
     artifacts: node.source.type === "built_in" ||
       node.source.type === "agent" ||
       node.source.type === "pattern" ||
@@ -215,7 +216,7 @@ function policyNodeType(
     return "agent";
   }
   if (node.kind === "pattern") {
-    return "gated_agent_loop";
+    return "pattern";
   }
 
   return "built_in";

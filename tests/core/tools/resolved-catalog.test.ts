@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   capabilityManifest
@@ -21,13 +23,15 @@ const schema = {
 const localTool = {
   id: "repository.status",
   description: "Get status.",
-  parameters: schema,
+  input_schema: schema,
+  output_schema: schema,
   safety: {
     localWrites: false,
     network: false,
     externalSideEffects: false
   },
   modes: ["read_only", "trusted_local_write"],
+  runtime_requirements: ["tool_calling"],
   createHandler: () => async () => ({ status: "clean" })
 } satisfies AnyLunaToolDefinition;
 
@@ -64,6 +68,17 @@ const registry = createCapabilityRegistry([
 ]);
 
 describe("resolved tool catalog", () => {
+  it("keeps repository capability registration derived from pure tool contracts", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "src/capabilities/repository/manifest.ts"),
+      "utf8"
+    );
+
+    expect(source).toContain("repository-contracts");
+    expect(source).not.toContain("../../core/tools/catalog");
+    expect(source).not.toContain("../../core/tools/repository.js");
+  });
+
   it("combines capability-registered local tools with local contracts", () => {
     const catalog = resolveToolCatalog({
       registry,
@@ -85,9 +100,36 @@ describe("resolved tool catalog", () => {
       runtime_requirements: ["tool_calling"]
     });
     expect(catalog.tools[0]).toHaveProperty("local", localTool);
+    expect(catalog.tools[0]?.input_schema).toBe(localTool.input_schema);
+    expect(catalog.tools[0]?.output_schema).toBe(localTool.output_schema);
   });
 
-  it("accepts capability-declared runtime requirements without a core enum change", () => {
+  it("rejects local tools whose implementation schema drifts from the capability registration", () => {
+    const driftedTool = {
+      ...localTool,
+      input_schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["path"],
+        properties: { path: { type: "string" } }
+      }
+    } satisfies AnyLunaToolDefinition;
+
+    expect(() =>
+      resolveToolCatalog({
+        registry,
+        local_tools: { [driftedTool.id]: driftedTool },
+        requested_local_tool_ids: ["repository.status"],
+        requested_mcp_server_ids: [],
+        agent_mode: "read_only",
+        mcp_config: { mcp_servers: [] }
+      })
+    ).toThrow(expect.objectContaining({
+      code: "tool_catalog_local_contract_mismatch"
+    }));
+  });
+
+  it("uses local-contract runtime requirements without a core enum change", () => {
     const registryWithRuntimeRequirement = createCapabilityRegistry([
       capabilityManifest({
         id: "browser",
@@ -106,7 +148,8 @@ describe("resolved tool catalog", () => {
     ]);
     const browserTool = {
       ...localTool,
-      id: "browser.screenshot"
+      id: "browser.screenshot",
+      runtime_requirements: ["browser_automation"]
     } satisfies AnyLunaToolDefinition;
 
     const catalog = resolveToolCatalog({

@@ -187,31 +187,3 @@ export const changeRequestCreateMetadata = Object.freeze({
   },
   locks: Object.freeze([repositoryLock()])
 } satisfies BuiltInStepMetadata);
-
-export const builtInStepMetadataByName = Object.freeze({
-  "runtime.preflight": repositoryRequiredMetadata,
-  "runtime.prepare_worktree": prepareWorktreeMetadata,
-  "context.collect_context": repositoryRequiredMetadata,
-  "runtime.collect_repo_context": repositoryRequiredMetadata,
-  "runtime.validate_code_review_findings": emptyBuiltInMetadata,
-  "runtime.final_code_review_report": finalReportMetadata,
-  "reports.final_report": finalReportMetadata,
-  "local-exec.command.read": emptyBuiltInMetadata,
-  "local-exec.command.write": emptyBuiltInMetadata,
-  "repository-workspace.capture": repositoryWorkspaceCaptureMetadata,
-  "git.status": gitStatusMetadata,
-  "git.commit": gitCommitMetadata,
-  "git.push_branch": gitPushBranchMetadata,
-  "change-request.create": changeRequestCreateMetadata,
-  "runtime.prepare_implementation_worktree": prepareImplementationWorktreeMetadata,
-  "runtime.collect_task_context": emptyBuiltInMetadata,
-  "runtime.run_validation_commands": runValidationCommandsMetadata,
-  "runtime.record_implementation_validation": recordImplementationValidationMetadata,
-  "runtime.collect_worktree_diff": collectWorktreeDiffMetadata,
-  "runtime.record_acceptance_decision": recordAcceptanceDecisionMetadata,
-  "runtime.prepare_commit": emptyBuiltInMetadata,
-  "runtime.record_commit_lifecycle": recordCommitLifecycleMetadata,
-  "runtime.prepare_push": emptyBuiltInMetadata,
-  "runtime.record_push_lifecycle": recordPushLifecycleMetadata,
-  "runtime.final_implementation_report": finalReportMetadata
-});

@@ -23,7 +23,7 @@ const jiraIssue = {
       ]
     },
     customfield_67890: "Validation rejects missing documents.",
-    customfield_12345: "octo-org/hello-world",
+    customfield_12345: "github:octo-org/hello-world",
     status: {
       name: "To Do"
     },
@@ -46,7 +46,6 @@ async function writeContextFiles() {
       "    repository_hint:",
       "      source: field",
       "      field_id: customfield_12345",
-      "      format: github_full_name",
       "    acceptance_criteria_field:",
       "      field_id: customfield_67890",
       "      format: markdown",
@@ -198,7 +197,30 @@ describe("jira-task-url adapter", () => {
     expect(result).not.toHaveProperty("repository");
   });
 
-  it("throws jira_repository_hint_invalid when github_full_name is malformed", async () => {
+  it("loads a Jira task URL with a non-GitHub repository provider hint", async () => {
+    const { adapterContext } = await context({
+      ...jiraIssue,
+      fields: {
+        ...jiraIssue.fields,
+        customfield_12345: "gitlab:platform/luna"
+      }
+    });
+
+    await expect(
+      jiraTaskUrlAdapter.load(
+        { kind: "cli", value: "https://company.atlassian.net/browse/ABC-123" },
+        adapterContext
+      )
+    ).resolves.toMatchObject({
+      repository: {
+        provider: "gitlab",
+        owner: "platform",
+        name: "luna"
+      }
+    });
+  });
+
+  it("throws jira_repository_hint_invalid when provider_full_name is malformed", async () => {
     const { adapterContext } = await context({
       ...jiraIssue,
       fields: {
@@ -217,12 +239,12 @@ describe("jira-task-url adapter", () => {
     );
   });
 
-  it("throws jira_repository_hint_invalid when repository hint uses repo prefix", async () => {
+  it("throws jira_repository_hint_invalid when repository hint omits provider prefix", async () => {
     const { adapterContext } = await context({
       ...jiraIssue,
       fields: {
         ...jiraIssue.fields,
-        customfield_12345: "repo:octo-org/hello-world"
+        customfield_12345: "octo-org/hello-world"
       }
     });
 

@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   defaultBuiltInSteps,
@@ -9,7 +11,6 @@ import {
 } from "../../src/platform/native/native-built-ins.js";
 import { defineTaskProviderBuiltIns } from "../../src/providers/built-ins.js";
 import {
-  builtInStepNames as metadataBuiltInStepNames,
   createBuiltInStepCatalog
 } from "../../src/core/built-ins/catalog.js";
 import {
@@ -111,6 +112,20 @@ const planeImplementationState: WorkflowState = {
 };
 
 describe("built-in step registry", () => {
+  it("keeps the core built-in catalog free of concrete built-in composition", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "src/core/built-ins/catalog.ts"),
+      "utf8"
+    );
+
+    expect(source).not.toContain("../local-exec/built-ins");
+    expect(source).not.toContain("../git/built-ins");
+    expect(source).not.toContain("../change-request/built-ins");
+    expect(source).not.toContain("../repository-workspace/built-ins");
+    expect(source).not.toContain("./implementation");
+    expect(source).not.toContain("../reports/final-report");
+  });
+
   it("resolves registered built-ins by name", async () => {
     const sampleBuiltIn = defineBuiltInStep({
       name: "sample_step",
@@ -242,11 +257,13 @@ describe("built-in step registry", () => {
     expect(Object.isFrozen(builtInStepNames)).toBe(true);
   });
 
-  it("keeps provider runtime names aligned with workflow validation metadata", () => {
-    expect(metadataBuiltInStepNames).toEqual(builtInStepNames);
-    expect(defaultProviderBuiltInStepRegistry.names).toEqual(
-      metadataBuiltInStepNames
-    );
+  it("derives provider runtime names and metadata from the built-in registry", () => {
+    expect(defaultProviderBuiltInStepRegistry.names).toEqual(builtInStepNames);
+    for (const step of defaultBuiltInSteps) {
+      expect(defaultProviderBuiltInStepRegistry.require(step.name).metadata).toEqual(
+        step.metadata
+      );
+    }
   });
 
   it("keeps built-in metadata immutable in the default catalog", () => {

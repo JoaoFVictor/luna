@@ -32,11 +32,12 @@ export async function appendWorkflowRuntimeStreamLog(
     return;
   }
 
+  const nodeId = primaryNodeId(event);
   await input.backends.runtimeLogs.append({
     run_id: input.run.run_id,
     timestamp: new Date().toISOString(),
     level: "debug",
-    node_id: primaryNodeId(event),
+    ...(nodeId === undefined ? {} : { node_id: nodeId }),
     message: messageFor(event)
   });
 }

@@ -13,7 +13,7 @@ import {
 } from "../agents/agent-envelope.js";
 import type { AgentDefinitionProjection } from "../agents/agent-definition.js";
 import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
-import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
+import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import type { ParsedWorkflowGate } from "../../core/workflow/definition-types.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import type { WorkflowRuntimeContext } from "../../core/workflow/runtime-context.js";

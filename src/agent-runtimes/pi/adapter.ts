@@ -17,7 +17,6 @@ import {
 } from "../../core/agent-runtime/contracts.js";
 import { validateAgentRuntimeInput } from "../../core/agent-runtime/validation.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
-import type { JsonSchemaLike } from "../../core/capabilities/pattern-registration.js";
 import type { ModelProfile } from "../../core/config/schemas.js";
 import { registeredPiProviderApiKey } from "./auth.js";
 
@@ -236,7 +235,7 @@ function piTools(input: RunAgentInput): {
 
       const handler = tool.local.createHandler({ cwd: input.cwd });
       handlers.set(name, async (args) => {
-        if (!matchesJsonSchema(tool.input_schema as JsonSchemaLike, args)) {
+        if (!matchesJsonSchema(tool.input_schema, args)) {
           throw piRuntimeError(
             "runtime_tool_materialization_failed",
             `Tool ${tool.id} arguments did not match input schema`,

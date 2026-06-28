@@ -4,7 +4,7 @@ import type { WorkspaceRecord } from "../write-mode/types.js";
 import type { CodeReviewFindings, Finding } from "../findings/types.js";
 import type { ValidationResult } from "../validation/runner.js";
 import type { ImplementationConfig } from "../write-mode/types.js";
-import { resolveWorkflowInput, type WorkflowState } from "../workflow/state.js";
+import type { WorkflowState } from "../workflow/state.js";
 import { builtInError, type BuiltInErrorCode } from "./errors.js";
 
 export function requiredState<T>(value: T | undefined, name: string): T {
@@ -115,9 +115,9 @@ export function findingsFrom(value: unknown): readonly Finding[] {
 
 export function resolvedInput(
   input: Record<string, unknown> | undefined,
-  state: WorkflowState
+  _state: WorkflowState
 ): Record<string, unknown> {
-  return resolveWorkflowInput(input, state);
+  return input ?? {};
 }
 
 export function optionalResolvedOrStep(

@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import type { JsonSchemaLike } from "../capabilities/json-schema-types.js";
 import type { ToolRegistration } from "../capabilities/manifest.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import type {
@@ -18,8 +20,8 @@ import {
 export type ResolvedTool = {
   readonly id: string;
   readonly protocol: ToolProtocol;
-  readonly input_schema: unknown;
-  readonly output_schema: unknown;
+  readonly input_schema: JsonSchemaLike;
+  readonly output_schema: JsonSchemaLike;
   readonly runtime_requirements: readonly AgentRuntimeRequirement[];
   readonly source: "local_contract" | "mcp_policy";
   readonly local?: AnyLunaToolDefinition;
@@ -36,6 +38,7 @@ type ToolCatalogErrorCode =
   | "tool_catalog_tool_not_registered"
   | "tool_catalog_protocol_mismatch"
   | "tool_catalog_local_contract_missing"
+  | "tool_catalog_local_contract_mismatch"
   | "tool_catalog_local_mode_not_allowed";
 
 class ToolCatalogError extends Error {
@@ -99,6 +102,25 @@ function runtimeRequirementsFor(
   return resolved;
 }
 
+function assertLocalContractMatchesRegistration(
+  registration: ToolRegistration,
+  local: AnyLunaToolDefinition
+): void {
+  if (
+    !isDeepStrictEqual(registration.input_schema, local.input_schema) ||
+    !isDeepStrictEqual(registration.output_schema, local.output_schema) ||
+    !isDeepStrictEqual(
+      registration.runtime_requirements ?? [],
+      local.runtime_requirements
+    )
+  ) {
+    throw new ToolCatalogError(
+      "tool_catalog_local_contract_mismatch",
+      `Local tool ${local.id} contract does not match its capability registration`
+    );
+  }
+}
+
 function resolveLocalTool({
   id,
   registered,
@@ -127,13 +149,14 @@ function resolveLocalTool({
       `Local tool ${id} is not allowed for agent mode ${agentMode}`
     );
   }
+  assertLocalContractMatchesRegistration(registration, local);
 
   return {
     id,
     protocol: "local",
-    input_schema: registration.input_schema,
-    output_schema: registration.output_schema,
-    runtime_requirements: runtimeRequirementsFor(registration.runtime_requirements),
+    input_schema: local.input_schema,
+    output_schema: local.output_schema,
+    runtime_requirements: runtimeRequirementsFor(local.runtime_requirements),
     source: "local_contract",
     local
   };
