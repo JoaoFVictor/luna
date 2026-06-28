@@ -19,7 +19,7 @@ const config: WebhookConfig = {
     redis_url: "redis://127.0.0.1:6379",
     dedupe_ttl_seconds: 604800,
     remove_on_complete: {
-      age_seconds: 604800,
+      age_seconds: 86400,
       count: 1000
     },
     remove_on_fail: false
@@ -133,14 +133,14 @@ describe("webhook queue", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it("retains completed jobs through the configured dedupe window", async () => {
+  it("retains completed jobs through the configured removeOnComplete age", async () => {
     const fake = createFakeQueue();
 
     await enqueueWebhookInvocation(fake.queue, config, validJob);
 
     expect(fake.calls[0]?.opts).toMatchObject({
       removeOnComplete: {
-        age: config.queue.dedupe_ttl_seconds,
+        age: config.queue.remove_on_complete.age_seconds,
         count: config.queue.remove_on_complete.count
       }
     });

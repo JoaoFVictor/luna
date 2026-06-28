@@ -22,7 +22,7 @@ queue:
   redis_url: "redis://127.0.0.1:6379"
   dedupe_ttl_seconds: 604800
   remove_on_complete:
-    age_seconds: 604800
+    age_seconds: 86400
     count: 1000
   remove_on_fail: false
 providers:
@@ -58,7 +58,7 @@ describe("webhook config", () => {
         redis_url: "redis://127.0.0.1:6379",
         dedupe_ttl_seconds: 604800,
         remove_on_complete: {
-          age_seconds: 604800
+          age_seconds: 86400
         }
       },
       worker: { concurrency: 8 },
