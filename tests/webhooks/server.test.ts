@@ -18,7 +18,8 @@ import {
 } from "../../src/webhooks/provider-registry.js";
 import {
   buildWebhookRuntimeProviderRegistry,
-  createWebhookServer
+  createWebhookServer,
+  startWebhookServer
 } from "../../src/webhooks/server.js";
 
 const receivedAt = "2026-06-28T12:00:00.000Z";
@@ -251,6 +252,33 @@ describe("webhook HTTP server", () => {
     expect(queue.calls).toHaveLength(0);
   });
 
+  it("returns payload too large when the body limit rejects the request", async () => {
+    const limitedConfig: WebhookConfig = {
+      ...config,
+      server: {
+        ...config.server,
+        body_limit_bytes: 8
+      }
+    };
+    const { server, queue } = createServer({ serverConfig: limitedConfig });
+    const uniquePayloadContent = "secret-payload-detail";
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/webhooks/github",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({ value: uniquePayloadContent })
+    });
+    const parsed = await parseJson(response);
+
+    expect(response.statusCode).toBe(413);
+    expect(parsed).toMatchObject({
+      code: "webhook_payload_invalid"
+    });
+    expect(JSON.stringify(parsed)).not.toContain(uniquePayloadContent);
+    expect(queue.calls).toHaveLength(0);
+  });
+
   it("returns ignored status for ignored provider events without enqueueing", async () => {
     const adapter = createAdapter({
       kind: "ignored",
@@ -416,5 +444,96 @@ describe("webhook runtime provider registry", () => {
     } finally {
       await rm(projectRoot, { force: true, recursive: true });
     }
+  });
+});
+
+describe("webhook server lifecycle", () => {
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn()
+  };
+
+  it("returns a lifecycle handle that closes the Fastify app", async () => {
+    const queue = {
+      add: vi.fn(),
+      close: vi.fn(async () => undefined)
+    } as unknown as Queue<WebhookInvocationJob>;
+    let closeSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    const handle = await startWebhookServer({
+      config,
+      registry: defineWebhookProviderAdapters([createAdapter()]),
+      queue,
+      checkQueueReady: vi.fn(async () => undefined),
+      logger,
+      listen: async (app) => {
+        closeSpy = vi.spyOn(app, "close");
+      }
+    });
+
+    await handle.close();
+
+    expect(closeSpy).toHaveBeenCalledOnce();
+    expect(queue.close).not.toHaveBeenCalled();
+  });
+
+  it("closes an owned queue when the lifecycle handle closes", async () => {
+    const queue = {
+      add: vi.fn(),
+      close: vi.fn(async () => undefined)
+    } as unknown as Queue<WebhookInvocationJob>;
+
+    const handle = await startWebhookServer({
+      config,
+      registry: defineWebhookProviderAdapters([createAdapter()]),
+      createQueue: () => queue,
+      logger,
+      listen: async () => undefined
+    });
+
+    await handle.close();
+
+    expect(queue.close).toHaveBeenCalledOnce();
+  });
+
+  it("closes an owned queue when startup listen fails", async () => {
+    const queue = {
+      add: vi.fn(),
+      close: vi.fn(async () => undefined)
+    } as unknown as Queue<WebhookInvocationJob>;
+    const startupError = new Error("port unavailable");
+
+    await expect(startWebhookServer({
+      config,
+      registry: defineWebhookProviderAdapters([createAdapter()]),
+      createQueue: () => queue,
+      logger,
+      listen: async () => {
+        throw startupError;
+      }
+    })).rejects.toThrow(startupError);
+
+    expect(queue.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not close an injected queue when startup listen fails", async () => {
+    const queue = {
+      add: vi.fn(),
+      close: vi.fn(async () => undefined)
+    } as unknown as Queue<WebhookInvocationJob>;
+    const startupError = new Error("port unavailable");
+
+    await expect(startWebhookServer({
+      config,
+      registry: defineWebhookProviderAdapters([createAdapter()]),
+      queue,
+      logger,
+      listen: async () => {
+        throw startupError;
+      }
+    })).rejects.toThrow(startupError);
+
+    expect(queue.close).not.toHaveBeenCalled();
   });
 });

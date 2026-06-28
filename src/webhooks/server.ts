@@ -27,8 +27,6 @@ import {
   type WebhookProviderRegistry
 } from "./provider-registry.js";
 import { resolveProviderWebhookSecret } from "./secrets.js";
-import { nativeLunaPlatformRegistrations } from "../platform/native/native-platform-registrations.js";
-
 export type CreateWebhookServerDeps = {
   registry: WebhookProviderRegistry<WebhookProviderAdapter>;
   config: WebhookConfig;
@@ -41,7 +39,16 @@ export type CreateWebhookServerDeps = {
 export type BuildWebhookRuntimeProviderRegistryArgs = {
   config: WebhookConfig;
   projectRoot: string;
-  webhookProviderRegistry?: WebhookProviderRegistry<WebhookProviderAdapterFactory>;
+  webhookProviderRegistry: WebhookProviderRegistry<WebhookProviderAdapterFactory>;
+};
+
+export type StartWebhookServerListen = (
+  app: FastifyInstance,
+  options: { host: string; port: number }
+) => Promise<void>;
+
+export type WebhookServerHandle = {
+  close(): Promise<void>;
 };
 
 export type StartWebhookServerDeps = {
@@ -51,7 +58,9 @@ export type StartWebhookServerDeps = {
   registry?: WebhookProviderRegistry<WebhookProviderAdapter>;
   webhookProviderRegistry?: WebhookProviderRegistry<WebhookProviderAdapterFactory>;
   queue?: Queue<WebhookInvocationJob>;
+  createQueue?: (config: WebhookConfig) => Queue<WebhookInvocationJob>;
   checkQueueReady?: () => Promise<void>;
+  listen?: StartWebhookServerListen;
   logger?: Pick<Console, "info" | "warn" | "error">;
 };
 
@@ -83,6 +92,11 @@ type ErrorResponseBody = {
   message: string;
 };
 
+type FrameworkHttpError = {
+  statusCode?: unknown;
+  status?: unknown;
+};
+
 function isJsonObject(body: unknown): body is Record<string, unknown> {
   return body !== null && typeof body === "object" && !Array.isArray(body);
 }
@@ -101,6 +115,20 @@ function errorResponse(error: unknown): {
     };
   }
 
+  const frameworkStatusCode = frameworkErrorStatusCode(error);
+  if (frameworkStatusCode !== undefined) {
+    return {
+      statusCode: frameworkStatusCode,
+      body: {
+        code: "webhook_payload_invalid",
+        message:
+          frameworkStatusCode === 413
+            ? "Webhook payload exceeds the configured size limit"
+            : "Webhook request is invalid"
+      }
+    };
+  }
+
   return {
     statusCode: 500,
     body: {
@@ -108,6 +136,29 @@ function errorResponse(error: unknown): {
       message: "Webhook request failed"
     }
   };
+}
+
+function frameworkErrorStatusCode(error: unknown): number | undefined {
+  if (error === null || typeof error !== "object") {
+    return undefined;
+  }
+
+  const frameworkError = error as FrameworkHttpError;
+  const statusCode =
+    typeof frameworkError.statusCode === "number"
+      ? frameworkError.statusCode
+      : frameworkError.status;
+
+  if (
+    typeof statusCode === "number" &&
+    Number.isInteger(statusCode) &&
+    statusCode >= 400 &&
+    statusCode < 500
+  ) {
+    return statusCode;
+  }
+
+  return undefined;
 }
 
 function parseJsonBody(rawBody: Buffer): unknown {
@@ -128,7 +179,7 @@ function isDisabledConfiguredProvider(
 export async function buildWebhookRuntimeProviderRegistry({
   config,
   projectRoot,
-  webhookProviderRegistry = nativeLunaPlatformRegistrations.webhookProviderRegistry
+  webhookProviderRegistry
 }: BuildWebhookRuntimeProviderRegistryArgs): Promise<
   WebhookProviderRegistry<WebhookProviderAdapter>
 > {
@@ -149,6 +200,22 @@ export async function buildWebhookRuntimeProviderRegistry({
   }
 
   return defineWebhookProviderAdapters(adapters);
+}
+
+async function loadNativeWebhookProviderRegistry(): Promise<
+  WebhookProviderRegistry<WebhookProviderAdapterFactory>
+> {
+  const { nativeLunaPlatformRegistrations } = await import(
+    "../platform/native/native-platform-registrations.js"
+  );
+  return nativeLunaPlatformRegistrations.webhookProviderRegistry;
+}
+
+async function defaultListen(
+  app: FastifyInstance,
+  options: { host: string; port: number }
+): Promise<void> {
+  await app.listen(options);
 }
 
 export function createWebhookServer(
@@ -293,18 +360,22 @@ export async function startWebhookServer({
   registry,
   webhookProviderRegistry,
   queue,
+  createQueue = createWebhookQueue,
   checkQueueReady: providedCheckQueueReady,
+  listen = defaultListen,
   logger = console
-}: StartWebhookServerDeps = {}): Promise<void> {
+}: StartWebhookServerDeps = {}): Promise<WebhookServerHandle> {
   const loadedConfig = config ?? await loadWebhookConfig(configRoot);
   const runtimeRegistry =
     registry ??
     await buildWebhookRuntimeProviderRegistry({
       config: loadedConfig,
       projectRoot,
-      ...(webhookProviderRegistry === undefined ? {} : { webhookProviderRegistry })
+      webhookProviderRegistry:
+        webhookProviderRegistry ?? await loadNativeWebhookProviderRegistry()
     });
-  const webhookQueue = queue ?? createWebhookQueue(loadedConfig);
+  const ownsQueue = queue === undefined;
+  const webhookQueue = queue ?? createQueue(loadedConfig);
   const checkReady =
     providedCheckQueueReady ??
     (async () => {
@@ -318,11 +389,28 @@ export async function startWebhookServer({
     logger
   });
 
-  await app.listen({
-    host: loadedConfig.server.host,
-    port: loadedConfig.server.port
-  });
+  try {
+    await listen(app, {
+      host: loadedConfig.server.host,
+      port: loadedConfig.server.port
+    });
+  } catch (error) {
+    if (ownsQueue) {
+      await webhookQueue.close();
+    }
+    throw error;
+  }
+
   logger.info(
     `Webhook server listening on ${loadedConfig.server.host}:${loadedConfig.server.port}`
   );
+
+  return {
+    async close(): Promise<void> {
+      await app.close();
+      if (ownsQueue) {
+        await webhookQueue.close();
+      }
+    }
+  };
 }
