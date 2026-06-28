@@ -1,42 +1,26 @@
 import { z } from "zod";
-import type {
-  AgentRuntimeRequirement
-} from "../../core/agent-runtime/contracts.js";
 import {
-  runAgentNode
-} from "../agents/agent-node.js";
-import {
-  requireAgentProjection,
-  resolveAgentSkills,
-  type AgentSkillSources,
   workspacePath
 } from "../agents/agent-envelope.js";
-import type { AgentDefinitionProjection } from "../agents/agent-definition.js";
-import { requireWorkflowAgentTaskInput } from "../../core/workflow/agent-task-input.js";
-import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import type { ParsedWorkflowGate } from "../../core/workflow/definition-types.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import type { WorkflowRuntimeContext } from "../../core/workflow/runtime-context.js";
-import { collectWorktreeDiff } from "../../core/git/diff/worktree-diff.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
 import {
-  runValidationCommands,
   ValidationCommandSchema,
   type ValidationCommand,
   type ValidationResult
-} from "../../core/validation/runner.js";
+} from "../../core/validation/types.js";
 import { resolveWorkflowRuntimeValue } from "../../core/workflow/runner-input.js";
 import {
   runGatedAgentLoopStateMachine,
-  type RunGatedWorkerInput,
   type RunGatesInput,
   type RunGatesOutput
 } from "./gated-agent-loop.js";
 import { gateResultFromAgentOutput } from "./gate-results.js";
 import type {
   RunWorkflowInput,
-  WorkflowAgentDefaults,
   WorkflowPatternExecutor
 } from "../../core/workflow/execution-contracts.js";
 import {
@@ -44,23 +28,35 @@ import {
   VALIDATION_GATE
 } from "./deterministic-gates.js";
 import { gatedAgentGateKey, gatedAgentWorkerKey } from "./gated-agent-loop-keys.js";
-import { workflowAgentEventEmitter } from "../../core/workflow/events.js";
+import {
+  requireAgentDefaults,
+  runPatternAgent
+} from "./pattern-agent-runner.js";
 
 const GATED_AGENT_LOOP_CAPABILITY = "quality-gates.gated_agent_loop";
 const AGENT_REVIEW_GATE = "quality-gates.agent_review";
 const DEFAULT_DIFF_BYTES = 65_536;
 
-type QualityGateWorkflowAgentDefaults = Omit<
-  WorkflowAgentDefaults,
-  "agent" | "skill_sources"
-> & {
-  readonly agent: AgentDefinitionProjection;
-  readonly skill_sources?: AgentSkillSources;
+export type QualityGatePatternDependencies = {
+  readonly runValidationCommands: (input: {
+    readonly cwd: string;
+    readonly commands: readonly ValidationCommand[];
+    readonly maxOutputBytes: number;
+  }) => Promise<ValidationResult>;
+  readonly collectDiffSummary: (input: {
+    readonly cwd: string;
+    readonly maxDiffBytes: number;
+  }) => Promise<unknown>;
 };
 
-export const qualityGatePatternExecutors = Object.freeze({
-  [GATED_AGENT_LOOP_CAPABILITY]: executeGatedAgentLoopPattern
-} satisfies Record<string, WorkflowPatternExecutor>);
+export function createQualityGatePatternExecutors(
+  dependencies: QualityGatePatternDependencies
+): Readonly<Record<string, WorkflowPatternExecutor>> {
+  return Object.freeze({
+    [GATED_AGENT_LOOP_CAPABILITY]: (input) =>
+      executeGatedAgentLoopPattern(input, dependencies)
+  });
+}
 
 const ValidationCommandsInputSchema = z
   .object({
@@ -81,7 +77,8 @@ export async function executeGatedAgentLoopPattern({
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
   readonly input: unknown;
-}): Promise<unknown> {
+}, dependencies: QualityGatePatternDependencies
+): Promise<unknown> {
   const source = requireGatedAgentLoopSource(node);
   const cwd = workspacePath(runtimeContext.workspace) ?? requireAgentDefaults(
     input,
@@ -123,9 +120,13 @@ export async function executeGatedAgentLoopPattern({
           cwd
         }),
       runValidation: async () =>
-        await runValidationForGate(cwd, await validationConfig()),
+        await runValidationForGate(
+          cwd,
+          await validationConfig(),
+          dependencies.runValidationCommands
+        ),
       collectDiffSummary: async () =>
-        await collectWorktreeDiff({
+        await dependencies.collectDiffSummary({
           cwd,
           maxDiffBytes: (await validationConfig())?.max_output_bytes ?? DEFAULT_DIFF_BYTES
         }),
@@ -258,7 +259,8 @@ async function resolveValidationConfig({
 
 async function runValidationForGate(
   cwd: string,
-  config: { readonly commands: readonly ValidationCommand[]; readonly max_output_bytes: number } | undefined
+  config: { readonly commands: readonly ValidationCommand[]; readonly max_output_bytes: number } | undefined,
+  runValidationCommands: QualityGatePatternDependencies["runValidationCommands"]
 ): Promise<ValidationResult> {
   if (config === undefined) {
     return { passed: true };
@@ -387,91 +389,6 @@ async function resolveGateInput({
   });
 }
 
-async function runPatternAgent({
-  input,
-  nodeId,
-  agentId,
-  agentInput,
-  runtimeContext,
-  cwd
-}: {
-  readonly input: RunWorkflowInput;
-  readonly nodeId: string;
-  readonly agentId: string;
-  readonly agentInput: RunGatedWorkerInput | unknown;
-  readonly runtimeContext: WorkflowRuntimeContext;
-  readonly cwd: string;
-}): Promise<unknown> {
-  const defaults = requireAgentDefaults(input, nodeId, nodeId, agentId);
-  if (defaults.output_schema === undefined) {
-    throw runtimeError("Pattern agent requires projected output schema", "runtime_state_invalid", {
-      details: { node_id: nodeId, agent_id: agentId }
-    });
-  }
-
-  const outputSchema = requireJsonSchema(defaults.output_schema, nodeId, agentId);
-  const result = await runAgentNode({
-    runtime: input.agentRuntime,
-    run: input.run,
-    node_id: nodeId,
-    agent: requireAgentProjection({
-      defaults,
-      agentId
-    }),
-    input: requireWorkflowAgentTaskInput({
-      input: agentInput,
-      nodeId,
-      agentId,
-      message: "Pattern agent input must resolve to a JSON object"
-    }),
-    output_schema: outputSchema,
-    model_profile: defaults.model_profile,
-    tools: defaults.tools,
-    skills: await resolveAgentSkills({
-      skillSources: defaults.skill_sources,
-      workspace: runtimeContext.workspace
-    }),
-    cwd,
-    runtime_requirements: runtimeRequirementsForDefaults(defaults),
-    signal: defaults.signal,
-    events: defaults.events,
-    observabilitySummary: input.observabilitySummary,
-    emitEvent: workflowAgentEventEmitter(input)
-  });
-
-  return result.output;
-}
-
-function requireJsonSchema(
-  schema: unknown,
-  nodeId: string,
-  agentId: string
-): JsonSchemaLike {
-  if (typeof schema === "object" && schema !== null && !Array.isArray(schema)) {
-    return schema as JsonSchemaLike;
-  }
-
-  throw runtimeError("Pattern agent output schema must be a JSON schema object", "runtime_state_invalid", {
-    details: { node_id: nodeId, agent_id: agentId }
-  });
-}
-
-function requireAgentDefaults(
-  input: RunWorkflowInput,
-  key: string,
-  nodeId: string,
-  agentId: string
-): QualityGateWorkflowAgentDefaults {
-  const defaults = input.agentInputs?.[key];
-  if (defaults === undefined) {
-    throw runtimeError("Pattern agent requires projected runtime input", "runtime_state_invalid", {
-      details: { node_id: nodeId, agent_id: agentId, agent_input_key: key }
-    });
-  }
-
-  return defaults as QualityGateWorkflowAgentDefaults;
-}
-
 function reviewAgentFromGateInput(
   nodeId: string,
   gate: ParsedWorkflowGate,
@@ -490,17 +407,6 @@ function reviewAgentFromGateInput(
   throw runtimeError("Agent review gate requires review_agent input", "runtime_state_invalid", {
     details: { node_id: nodeId, gate_id: gate.id }
   });
-}
-
-function runtimeRequirementsForDefaults(
-  defaults: WorkflowAgentDefaults
-): AgentRuntimeRequirement[] {
-  return [
-    ...new Set([
-      ...(defaults.runtime_requirements ?? []),
-      ...defaults.tools.runtime_requirements
-    ])
-  ] as AgentRuntimeRequirement[];
 }
 
 function runtimeRoot({

@@ -12,7 +12,7 @@ import {
 } from "../../../src/core/tools/resolved-catalog.js";
 import type { AnyLunaToolDefinition } from "../../../src/core/tools/contracts.js";
 import { officialCapabilityRegistry } from "../../../src/capabilities/registry.js";
-import { lunaToolCatalog } from "../../../src/core/tools/catalog.js";
+import { lunaToolCatalog } from "../../../src/capabilities/repository/tool-catalog.js";
 
 const schema = {
   type: "object",
@@ -75,8 +75,8 @@ describe("resolved tool catalog", () => {
     );
 
     expect(source).toContain("repository-contracts");
-    expect(source).not.toContain("../../core/tools/catalog");
-    expect(source).not.toContain("../../core/tools/repository.js");
+    expect(source).not.toContain("../../capabilities/repository/tool-catalog");
+    expect(source).not.toContain("../../capabilities/repository/repository.js");
   });
 
   it("combines capability-registered local tools with local contracts", () => {

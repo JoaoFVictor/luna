@@ -1,9 +1,5 @@
-import type {
-  ImplementationLifecycleEvidence
-} from "../write-mode/lifecycle.js";
 import type { Invocation } from "../router/invocation.js";
 import type { RunIdentity } from "../invocation/types.js";
-import type { WorkspaceRecord } from "../write-mode/types.js";
 import {
   RepositoryConfigSchema,
   type AppConfig,
@@ -25,7 +21,7 @@ export type WorkflowState = {
 export type WorkflowRuntimeState = WorkflowState & {
   invocation: Invocation;
   config: {
-    implementation?: import("../write-mode/types.js").ImplementationConfig["implementation"];
+    implementation?: unknown;
   };
   repository?: RepositoryConfig;
   run: RunIdentity;
@@ -35,8 +31,8 @@ export type WorkflowRuntimeState = WorkflowState & {
   };
   workspaceRoot: AppConfig["workspace"]["root"];
   agentsRoot: string;
-  workspace?: WorkspaceRecord;
-  lifecycleEvidence?: ImplementationLifecycleEvidence;
+  workspace?: unknown;
+  lifecycleEvidence?: unknown;
 };
 
 export function repositoryConfigFromState(

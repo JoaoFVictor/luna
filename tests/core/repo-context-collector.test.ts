@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { githubPullRequestContextFrom } from "../../src/providers/github/pull-request-context.js";
-import { collectRepoContext } from "../../src/core/git/diff/repo-context.js";
+import { collectRepoContext } from "../../src/capabilities/git/diff/repo-context.js";
 import {
   FileExcerptSchema,
   RepoContextSchema
-} from "../../src/core/git/diff/types.js";
+} from "../../src/capabilities/git/diff/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 type FakeGitCall = {

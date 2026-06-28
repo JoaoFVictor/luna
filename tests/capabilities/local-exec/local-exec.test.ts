@@ -10,13 +10,13 @@ import {
 import { manifest } from "../../../src/capabilities/local-exec/manifest.js";
 import {
   createLocalExecCommandBuiltIn
-} from "../../../src/core/local-exec/built-ins.js";
+} from "../../../src/capabilities/local-exec/built-ins.js";
 import type { BuiltInStepDependencies } from "../../../src/core/built-ins/types.js";
 import type {
   LocalCommandPort,
   LocalExecArtifactPublisher,
   LocalExecEventSink
-} from "../../../src/core/local-exec/contracts.js";
+} from "../../../src/capabilities/local-exec/contracts.js";
 
 const state = {
   invocation: {},
@@ -107,7 +107,7 @@ describe("local-exec capability", () => {
     expect(commandPort.run).not.toHaveBeenCalled();
   });
 
-  it("executes through the command port in trusted-write mode", async () => {
+  it("executes through the command port in trusted local write mode", async () => {
     const commandPort: LocalCommandPort = {
       run: vi.fn(async () => ({
         exit_code: 0,
@@ -377,13 +377,13 @@ describe("local-exec capability", () => {
   it("keeps local-exec leaf files free of provider, Git, shell, and runtime leaks", async () => {
     const repositoryRoot = process.cwd();
     const files = [
-      "src/core/local-exec/contracts.ts",
+      "src/capabilities/local-exec/contracts.ts",
       "src/capabilities/local-exec/manifest.ts",
-      "src/core/local-exec/built-ins.ts"
+      "src/capabilities/local-exec/built-ins.ts"
     ];
     const forbiddenPatterns = [
       /node:child_process|child_process/,
-      /src\/core\/git|src\/core\/write-mode|simple-git/,
+      /src\/core\/git|src\/core\/repository-change|simple-git/,
       /change-request|changeRequest|ChangeRequest/,
       /src\/providers|src\/core\/providers|@octokit|jira\.js|node-fetch/,
       /langgraph|LangGraph|@langchain/

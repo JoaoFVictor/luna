@@ -3,9 +3,9 @@ import {
   executionSummaryJson,
   executionSummaryMarkdownLines,
   type ExecutionSummaryJson
-} from "../../core/reports/execution-summary.js";
+} from "../../capabilities/reports/execution-summary.js";
 import type { Invocation } from "../../core/router/invocation.js";
-import type { WorkspaceRecord } from "../../core/write-mode/types.js";
+import type { WorkspaceRecord } from "../../capabilities/repository-change/types.js";
 import type { Finding } from "../../core/findings/types.js";
 import type { AcceptanceDecision } from "../../core/decisions/types.js";
 import type { ObservabilitySummary } from "../../core/observability/summary.js";

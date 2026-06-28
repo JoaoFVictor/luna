@@ -12,7 +12,7 @@ import {
   ModelsConfigSchema,
   type RepositoryConfig
 } from "../../core/config/schemas.js";
-import { lunaToolCatalog } from "../../core/tools/catalog.js";
+import { lunaToolCatalog } from "../../capabilities/repository/tool-catalog.js";
 import { resolveToolCatalog } from "../../core/tools/resolved-catalog.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import type { WorkflowAgentInputMap } from "../../core/workflow/execution-contracts.js";

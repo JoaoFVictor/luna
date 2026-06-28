@@ -7,9 +7,9 @@ import type {
   GitPushBranchResult,
   GitStatusInput,
   GitStatusResult
-} from "../../core/git/contracts.js";
-import { runGit as defaultRunGit } from "../../core/git/client.js";
-import { remoteUrlMatches } from "../../core/git/remote-url.js";
+} from "../../capabilities/git/contracts.js";
+import { runGit as defaultRunGit } from "../../capabilities/git/client.js";
+import { remoteUrlMatches } from "../../capabilities/git/remote-url.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 

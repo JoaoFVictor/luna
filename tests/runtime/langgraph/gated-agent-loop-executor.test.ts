@@ -24,13 +24,19 @@ import {
   gatedAgentGateKey,
   gatedAgentWorkerKey
 } from "../../../src/capabilities/quality-gates/gated-agent-loop-keys.js";
-import { qualityGatePatternExecutors } from "../../../src/capabilities/quality-gates/workflow-pattern-executor.js";
+import { collectWorktreeDiff } from "../../../src/capabilities/git/diff/worktree-diff.js";
+import { createQualityGatePatternExecutors } from "../../../src/capabilities/quality-gates/workflow-pattern-executor.js";
+import { runValidationCommands } from "../../../src/capabilities/validation/command-runner.js";
 import {
   runCompiledWorkflow,
   type WorkflowAgentDefaults
 } from "../../../src/runtime/langgraph/workflow-runner.js";
 
 const execFileAsync = promisify(execFile);
+const qualityGatePatternExecutors = createQualityGatePatternExecutors({
+  runValidationCommands,
+  collectDiffSummary: collectWorktreeDiff
+});
 
 const registry = createCapabilityRegistry([
   capabilityManifest({

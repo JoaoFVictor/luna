@@ -29,7 +29,8 @@ describe("native Luna platform", () => {
     );
     expect(Object.keys(nativeLunaPlatform.agentRuntimeFactories)).toEqual(["pi"]);
     expect(Object.keys(nativeLunaPlatform.workflowRuntimeFactories)).toEqual(["langgraph"]);
-    expect(nativeLunaPlatform.capabilityRegistry).toBe(officialCapabilityRegistry);
+    expect(nativeLunaPlatform.capabilityRegistry.has("pull-request-workspace")).toBe(true);
+    expect(officialCapabilityRegistry.has("pull-request-workspace")).toBe(false);
     expect(nativeLunaPlatform.runWorkflow).toBe(runNativeWorkflowTarget);
   });
 

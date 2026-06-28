@@ -5,8 +5,8 @@ import {
   markValidationResult,
   recordWorkflowNodeLifecycle,
   type ImplementationLifecycleEvidence
-} from "../../src/core/write-mode/lifecycle.js";
-import { workspaceLifecycleDecision } from "../../src/core/write-mode/workspace-lifecycle.js";
+} from "../../src/capabilities/repository-change/lifecycle.js";
+import { workspaceLifecycleDecision } from "../../src/capabilities/repository-change/workspace-lifecycle.js";
 
 function evidence(
   overrides: Partial<ImplementationLifecycleEvidence> = {}

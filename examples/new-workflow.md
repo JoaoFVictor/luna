@@ -13,11 +13,11 @@ For the smallest runnable read-only reference, see
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:example-minimal-agent --from github-pr-url https://github.com/org/repo/pull/123
 ```
 
-For a runnable write-mode reference that uses the full example agent, see
+For a runnable repository-change reference that uses the full example agent, see
 `workflows/example-complete-agent/`.
 
 This recipe starts with a read-only workflow that operates on a GitHub PR and
-local git repository context. Luna also includes a write-mode implementation
+local git repository context. Luna also includes a repository-change implementation
 workflow for external tasks such as Jira and Plane issues. A workflow for a
 different domain may need a new input adapter, new built-in steps, or both.
 
@@ -40,6 +40,9 @@ input_schema: input.schema.json
 output_schema: output.schema.json
 capabilities:
   - runtime
+  - pull-request-workspace
+  - repository-diff
+  - findings
   - repository-workspace
   - context
   - agents
@@ -74,7 +77,7 @@ nodes:
 
   - id: repo_context
     type: built_in
-    uses: runtime.collect_repo_context
+    uses: repository-diff.collect_context
     artifacts:
       - path: repo-context.json
         publisher: artifacts.manifest_publisher
@@ -173,29 +176,28 @@ Graph rules:
 
 - `change-request.create`
 - `context.collect_context`
+- `findings.validate_evidence`
 - `git.commit`
 - `git.push_branch`
 - `git.status`
+- `pull-request-workspace.prepare_worktree`
 - `local-exec.command.read`
 - `local-exec.command.write`
 - `reports.final_report`
+- `repository-diff.collect_context`
 - `repository-workspace.capture`
-- `runtime.collect_repo_context`
-- `runtime.collect_task_context`
-- `runtime.collect_worktree_diff`
-- `runtime.final_code_review_report`
-- `runtime.final_implementation_report`
 - `runtime.preflight`
-- `runtime.prepare_commit`
-- `runtime.prepare_implementation_worktree`
-- `runtime.prepare_push`
-- `runtime.prepare_worktree`
-- `runtime.record_acceptance_decision`
-- `runtime.record_commit_lifecycle`
-- `runtime.record_implementation_validation`
-- `runtime.record_push_lifecycle`
-- `runtime.run_validation_commands`
-- `runtime.validate_code_review_findings`
+- `task-context.collect`
+- `task-context.final_report`
+- `validation.run_commands`
+- `repository-change.collect_worktree_diff`
+- `repository-change.prepare_commit`
+- `repository-change.prepare_push`
+- `repository-change.prepare_worktree`
+- `repository-change.record_acceptance_decision`
+- `repository-change.record_commit_lifecycle`
+- `repository-change.record_push_lifecycle`
+- `repository-change.record_validation`
 
 Some built-ins are workflow-specific. If a workflow needs a new local
 capability, add a built-in in TypeScript and then reference it from YAML.

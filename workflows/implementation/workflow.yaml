@@ -5,6 +5,9 @@ input_schema: input.schema.json
 output_schema: output.schema.json
 capabilities:
   - runtime
+  - repository-change
+  - task-context
+  - validation
   - context
   - agents
   - artifacts
@@ -30,7 +33,7 @@ nodes:
 
   - id: workspace
     type: built_in
-    uses: runtime.prepare_implementation_worktree
+    uses: repository-change.prepare_worktree
     input:
       subject:
         key:
@@ -48,7 +51,7 @@ nodes:
 
   - id: task_context
     type: built_in
-    uses: runtime.collect_task_context
+    uses: task-context.collect
     artifacts:
       - path: task-context.json
         publisher: artifacts.manifest_publisher
@@ -157,7 +160,7 @@ nodes:
 
   - id: implementation_validation
     type: built_in
-    uses: runtime.record_implementation_validation
+    uses: repository-change.record_validation
     input:
       implementation:
         expression: "$.steps.implementation"
@@ -177,7 +180,7 @@ nodes:
 
   - id: worktree_diff
     type: built_in
-    uses: runtime.collect_worktree_diff
+    uses: repository-change.collect_worktree_diff
     artifacts:
       - path: diff.json
         publisher: artifacts.manifest_publisher
@@ -189,7 +192,7 @@ nodes:
 
   - id: prepare_commit
     type: built_in
-    uses: runtime.prepare_commit
+    uses: repository-change.prepare_commit
     input:
       validation:
         expression: "$.steps.implementation_validation.validation"
@@ -228,7 +231,7 @@ nodes:
 
   - id: commit_lifecycle
     type: built_in
-    uses: runtime.record_commit_lifecycle
+    uses: repository-change.record_commit_lifecycle
     input:
       commit:
         expression: "$.steps.commit"
@@ -243,7 +246,7 @@ nodes:
 
   - id: prepare_push
     type: built_in
-    uses: runtime.prepare_push
+    uses: repository-change.prepare_push
     input:
       commit:
         expression: "$.steps.commit_lifecycle"
@@ -276,7 +279,7 @@ nodes:
 
   - id: push_lifecycle
     type: built_in
-    uses: runtime.record_push_lifecycle
+    uses: repository-change.record_push_lifecycle
     input:
       push:
         expression: "$.steps.push"
@@ -324,7 +327,7 @@ nodes:
 
   - id: final_report
     type: built_in
-    uses: runtime.final_implementation_report
+    uses: task-context.final_report
     input:
       commit:
         expression: "$.steps.commit_lifecycle"

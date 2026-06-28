@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { officialCapabilityRegistry } from "../../src/capabilities/registry.js";
 import { createCapabilityRegistry } from "../../src/core/capabilities/registry.js";
 import { capabilityManifest } from "../../src/core/capabilities/manifest.js";
-import type { ChangeRequestProviderPort } from "../../src/core/change-request/contracts.js";
+import type { ChangeRequestProviderPort } from "../../src/capabilities/change-request/contracts.js";
 import type { AppConfig } from "../../src/core/config/schemas.js";
 import {
   assertNativeWorkflowExecutorCoverage,

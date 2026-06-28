@@ -16,15 +16,11 @@ import type {
   RegisteredInputAdapter
 } from "../../adapters/types.js";
 import type { BuiltInStep } from "../../core/built-ins/types.js";
-import type { ChangeRequestProviderFactory } from "../../core/change-request/contracts.js";
+import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import { githubPrUrlAdapter } from "../../providers/github/input-adapter.js";
-import {
-  collectRepoContextBuiltIn,
-  finalCodeReviewReportBuiltIn,
-  prepareWorktreeBuiltIn,
-  validateCodeReviewFindingsBuiltIn
-} from "../../providers/github/built-ins.js";
-import { preflightBuiltIn } from "../../core/built-ins/preflight.js";
+import { prepareWorktreeBuiltIn } from "../../providers/github/built-ins.js";
+import { manifest as githubReviewManifest } from "../../providers/github/manifest.js";
+import { preflightBuiltIn } from "../../capabilities/runtime/built-ins.js";
 import { createGitHubChangeRequestProviderFactory } from "../../providers/github/change-request/factory.js";
 import { jiraTaskUrlAdapter } from "../../providers/jira/input-adapter.js";
 import {
@@ -39,7 +35,9 @@ import {
 import type { TaskProviderBuiltIns } from "../../providers/built-ins.js";
 import { piAgentRuntimeFactory } from "../../agent-runtimes/pi/factory.js";
 import { langGraphWorkflowRuntimeFactory } from "../../runtime/langgraph/workflow-runner.js";
-import { qualityGatePatternExecutors } from "../../capabilities/quality-gates/workflow-pattern-executor.js";
+import { collectWorktreeDiff } from "../../capabilities/git/diff/worktree-diff.js";
+import { createQualityGatePatternExecutors } from "../../capabilities/quality-gates/workflow-pattern-executor.js";
+import { runValidationCommands } from "../../capabilities/validation/command-runner.js";
 
 export type NativeWorkflowBuiltIns = {
   readonly beforeContext?: readonly BuiltInStep[];
@@ -226,18 +224,18 @@ export const nativePlatformPluginDefinitions = [
   },
   {
     id: "quality-gates",
-    patternExecutors: qualityGatePatternExecutors
+    patternExecutors: createQualityGatePatternExecutors({
+      runValidationCommands,
+      collectDiffSummary: collectWorktreeDiff
+    })
   },
   {
     id: "github",
+    capabilityManifests: [githubReviewManifest],
     inputAdapters: [githubPrUrlAdapter],
     workflowBuiltIns: {
       beforeContext: [preflightBuiltIn, prepareWorktreeBuiltIn],
-      afterContext: [
-        collectRepoContextBuiltIn,
-        validateCodeReviewFindingsBuiltIn,
-        finalCodeReviewReportBuiltIn
-      ]
+      afterContext: []
     },
     changeRequestProviderFactories: [createGitHubChangeRequestProviderFactory({})]
   },

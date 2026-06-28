@@ -4,7 +4,7 @@ import {
   buildFinalReportMarkdown
 } from "../../src/providers/github/report-builder.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
-import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
+import type { WorkspaceRecord } from "../../src/capabilities/repository-change/types.js";
 import type { Finding } from "../../src/core/findings/types.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";

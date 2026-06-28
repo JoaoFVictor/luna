@@ -2,7 +2,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { collectWorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
+import { collectWorktreeDiff } from "../../src/capabilities/git/diff/worktree-diff.js";
 
 type GitCall = {
   cwd: string;

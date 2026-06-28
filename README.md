@@ -136,7 +136,7 @@ Read the report:
 .runs/code-review/<run-id>/final-report.md
 ```
 
-For the starter write-mode implementation workflow, configure Jira or Plane
+For the starter repository-change implementation workflow, configure Jira or Plane
 credentials, repository remote allowlists, validation commands, and optional
 publishing gates first. See [Implement a Jira task](examples/implementation-jira-task.md)
 or the workflow authoring guides.
@@ -150,7 +150,7 @@ shape:
 - `agents/example-minimal-agent/`
 
 Use the complete pair when you need to inspect skills, tools, subagents,
-trusted write mode, validation, and optional artifacts:
+trusted repository changes, validation, and optional artifacts:
 
 - `workflows/example-complete-agent/`
 - `agents/example-complete-agent/`
@@ -245,7 +245,7 @@ Core config lives in `config/`:
 - `mcp.yaml`: MCP server policy and allowlists.
 - `jira.yaml`: Jira instance and repository hint field mapping.
 - `plane.yaml`: Plane instance and repository hint label mapping.
-- `implementation.yaml`: write-mode branch, validation, commit, push, and draft
+- `implementation.yaml`: repository-change branch, validation, commit, push, and draft
   PR gates.
 
 Secrets are not committed:
@@ -287,29 +287,28 @@ Built-in steps:
 
 - `change-request.create`
 - `context.collect_context`
+- `findings.validate_evidence`
 - `git.commit`
 - `git.push_branch`
 - `git.status`
+- `pull-request-workspace.prepare_worktree`
 - `local-exec.command.read`
 - `local-exec.command.write`
 - `reports.final_report`
+- `repository-diff.collect_context`
 - `repository-workspace.capture`
-- `runtime.collect_repo_context`
-- `runtime.collect_task_context`
-- `runtime.collect_worktree_diff`
-- `runtime.final_code_review_report`
-- `runtime.final_implementation_report`
 - `runtime.preflight`
-- `runtime.prepare_commit`
-- `runtime.prepare_implementation_worktree`
-- `runtime.prepare_push`
-- `runtime.prepare_worktree`
-- `runtime.record_acceptance_decision`
-- `runtime.record_commit_lifecycle`
-- `runtime.record_implementation_validation`
-- `runtime.record_push_lifecycle`
-- `runtime.run_validation_commands`
-- `runtime.validate_code_review_findings`
+- `task-context.collect`
+- `task-context.final_report`
+- `validation.run_commands`
+- `repository-change.collect_worktree_diff`
+- `repository-change.prepare_commit`
+- `repository-change.prepare_push`
+- `repository-change.prepare_worktree`
+- `repository-change.record_acceptance_decision`
+- `repository-change.record_commit_lifecycle`
+- `repository-change.record_push_lifecycle`
+- `repository-change.record_validation`
 
 Local tools:
 
@@ -365,7 +364,7 @@ instance id used in `config/jira.yaml` or `config/plane.yaml`.
 
 `expected_remote_urls_missing`
 
-The `implementation` workflow is a write-mode workflow. Add
+The `implementation` workflow is a repository-change workflow. Add
 `expected_remote_urls` to the matching repository entry.
 
 `Unknown input adapter`

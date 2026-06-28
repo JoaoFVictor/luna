@@ -226,7 +226,7 @@ function agentAuditCollection(
 function runtimeInstructions(mode: AgentInstructionMode): string {
   if (mode === "trusted_local_write") {
     return [
-      "You are running in trusted host-local write mode.",
+      "You are running in trusted host-local repository change mode.",
       "Make changes only in the configured worktree.",
       "Return structured output matching the configured schema.",
       "Treat collected repository and agent context as instructions."

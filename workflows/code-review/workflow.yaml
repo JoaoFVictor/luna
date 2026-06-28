@@ -5,6 +5,9 @@ input_schema: input.schema.json
 output_schema: output.schema.json
 capabilities:
   - runtime
+  - pull-request-workspace
+  - repository-diff
+  - findings
   - context
   - agents
   - reports
@@ -27,7 +30,11 @@ nodes:
 
   - id: workspace
     type: built_in
-    uses: runtime.prepare_worktree
+    uses: pull-request-workspace.prepare_worktree
+    policies:
+      - uses: pull-request-workspace.git_worktree
+        config:
+          operation_id: pull-request-workspace.prepare_worktree
     artifacts:
       - path: workspace.json
         publisher: artifacts.manifest_publisher
@@ -39,7 +46,7 @@ nodes:
 
   - id: repo_context
     type: built_in
-    uses: runtime.collect_repo_context
+    uses: repository-diff.collect_context
     artifacts:
       - path: repo-context.json
         publisher: artifacts.manifest_publisher
@@ -109,6 +116,23 @@ nodes:
     after:
       - review_plan
 
+  - id: validated_findings
+    type: built_in
+    uses: findings.validate_evidence
+    artifacts:
+      - path: code-review-findings.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.validated_findings"
+        format: json
+    input:
+      repo_context:
+        expression: "$.steps.repo_context"
+      findings:
+        expression: "$.steps.code_review"
+    after:
+      - code_review
+
   - id: acceptance
     type: agent
     agent: change-acceptance-reviewer
@@ -127,11 +151,11 @@ nodes:
       review_plan:
         expression: "$.steps.review_plan"
       findings:
-        expression: "$.steps.code_review"
+        expression: "$.steps.validated_findings"
       repo_context:
         expression: "$.steps.repo_context"
     after:
-      - code_review
+      - validated_findings
 
   - id: final_report
     type: built_in
@@ -152,7 +176,7 @@ nodes:
       sections:
         - heading: Findings
           content:
-            expression: "$.steps.code_review"
+            expression: "$.steps.validated_findings"
         - heading: Acceptance
           content:
             expression: "$.steps.acceptance"

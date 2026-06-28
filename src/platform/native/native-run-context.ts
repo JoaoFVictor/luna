@@ -11,7 +11,7 @@ import {
   type AppConfig,
   type RepositoryConfig
 } from "../../core/config/schemas.js";
-import { ImplementationConfigSchema } from "../../core/write-mode/types.js";
+import { ImplementationConfigSchema } from "../../capabilities/repository-change/types.js";
 import { createRunIdentity } from "../../core/invocation/run-identity.js";
 import {
   assertCheckpointJsonValue,

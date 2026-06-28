@@ -131,7 +131,7 @@ export function lifecycleStepMapViolations(
   }
 
   function visit(node: ts.Node): void {
-    if (relativePath === "src/core/write-mode/lifecycle.ts") {
+    if (relativePath === "src/capabilities/repository-change/lifecycle.ts") {
       if (
         ts.isPropertyAccessExpression(node) &&
         node.expression.getText(sourceFile) === "result" &&
@@ -188,8 +188,8 @@ export function lifecycleStepMapViolations(
 
     if (
       [
-        "src/core/write-mode/lifecycle.ts",
-        "src/core/write-mode/workspace-lifecycle.ts",
+        "src/capabilities/repository-change/lifecycle.ts",
+        "src/capabilities/repository-change/workspace-lifecycle.ts",
         "src/core/workflow/runner.ts"
       ].includes(relativePath)
     ) {

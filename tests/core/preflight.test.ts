@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { githubPullRequestContextFrom } from "../../src/providers/github/pull-request-context.js";
-import { runPreflight } from "../../src/core/preflight/runner.js";
+import { runPreflight } from "../../src/capabilities/runtime/preflight-runner.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
-import type { ImplementationConfig } from "../../src/core/write-mode/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 const pullRequest = githubPullRequestContextFrom(gitInvocation);
@@ -46,24 +45,6 @@ const jiraInvocation: Invocation = {
       status: "To Do",
       issue_type: "Task"
     }
-  }
-};
-
-const implementationConfig: ImplementationConfig["implementation"] = {
-  branch_pattern: "feature/{slug}",
-  commit: { enabled: true },
-  push: { enabled: true, remote: "origin" },
-  change_request: {
-    enabled: true,
-    provider: "github",
-    draft: true,
-    base_ref: "main"
-  },
-  sandbox: { type: "trusted_host_local", env_allowlist: [] },
-  validation: {
-    repair_attempts: 1,
-    max_output_bytes: 200000,
-    commands: [{ cmd: "npm", args: ["test"], timeout_ms: 120000 }]
   }
 };
 
@@ -201,7 +182,6 @@ describe("preflight", () => {
         expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
       },
       workflow: { mode: "trusted_local_write" },
-      implementation: implementationConfig,
       runGit: async (_cwd, args) => {
         if (args[0] === "remote") {
           return "git@github.com:octo-org/hello-world.git\n";
@@ -235,7 +215,6 @@ describe("preflight", () => {
         expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
       },
       workflow: { mode: "trusted_local_write" },
-      implementation: implementationConfig,
       runGit: async (_cwd, args) => {
         if (args[0] === "remote") {
           return "git@github.com:octo-org/hello-world.git\n";
@@ -259,7 +238,6 @@ describe("preflight", () => {
         expected_remote_urls: ["https://github.com/octo-org/hello-world.git"]
       },
       workflow: { mode: "trusted_local_write" },
-      implementation: implementationConfig,
       runGit: async (_cwd, args) => {
         if (args[0] === "remote") {
           return "git@github.com:octo-org/hello-world.git\n";
@@ -284,7 +262,6 @@ describe("preflight", () => {
           expected_remote_urls: ["https://github.com/octo-org/hello-world.git"]
         },
         workflow: { mode: "trusted_local_write" },
-        implementation: implementationConfig,
         runGit: async (_cwd, args) =>
           args[0] === "remote"
             ? "https://token@github.com/octo-org/hello-world.git?x=1#frag\n"
@@ -300,7 +277,6 @@ describe("preflight", () => {
         invocation: jiraInvocation,
         repository: gitRepository,
         workflow: { mode: "trusted_local_write" },
-        implementation: implementationConfig,
         runGit: async (_cwd, args) =>
           args[0] === "remote"
             ? "git@github.com:octo-org/hello-world.git\n"
@@ -308,24 +284,6 @@ describe("preflight", () => {
         stat: async () => ({ isDirectory: () => true })
       })
     ).rejects.toMatchObject({ code: "expected_remote_urls_missing" });
-  });
-
-  it("throws implementation_config_missing for trusted_local_write without implementation config", async () => {
-    await expect(
-      runPreflight({
-        invocation: jiraInvocation,
-        repository: {
-          ...gitRepository,
-          expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
-        },
-        workflow: { mode: "trusted_local_write" },
-        runGit: async (_cwd, args) =>
-          args[0] === "remote"
-            ? "git@github.com:octo-org/hello-world.git\n"
-            : "true\n",
-        stat: async () => ({ isDirectory: () => true })
-      })
-    ).rejects.toMatchObject({ code: "implementation_config_missing" });
   });
 
   it("throws remote_url_mismatch when trusted_local_write remote URL is not expected", async () => {
@@ -337,7 +295,6 @@ describe("preflight", () => {
           expected_remote_urls: ["git@github.com:octo-org/other.git"]
         },
         workflow: { mode: "trusted_local_write" },
-        implementation: implementationConfig,
         runGit: async (_cwd, args) =>
           args[0] === "remote"
             ? "git@github.com:octo-org/hello-world.git\n"
@@ -347,51 +304,4 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "remote_url_mismatch" });
   });
 
-  it("throws push_requires_commit when push is enabled without commit", async () => {
-    await expect(
-      runPreflight({
-        invocation: jiraInvocation,
-        repository: {
-          ...gitRepository,
-          expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
-        },
-        workflow: { mode: "trusted_local_write" },
-        implementation: {
-          ...implementationConfig,
-          commit: { enabled: false },
-          push: { enabled: true, remote: "origin" },
-          change_request: { ...implementationConfig.change_request, enabled: false }
-        },
-        runGit: async (_cwd, args) =>
-          args[0] === "remote"
-            ? "git@github.com:octo-org/hello-world.git\n"
-            : "true\n",
-        stat: async () => ({ isDirectory: () => true })
-      })
-    ).rejects.toMatchObject({ code: "push_requires_commit" });
-  });
-
-  it("throws change_request_requires_push when PR is enabled without push", async () => {
-    await expect(
-      runPreflight({
-        invocation: jiraInvocation,
-        repository: {
-          ...gitRepository,
-          expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
-        },
-        workflow: { mode: "trusted_local_write" },
-        implementation: {
-          ...implementationConfig,
-          commit: { enabled: true },
-          push: { enabled: false, remote: "origin" },
-          change_request: { ...implementationConfig.change_request, enabled: true }
-        },
-        runGit: async (_cwd, args) =>
-          args[0] === "remote"
-            ? "git@github.com:octo-org/hello-world.git\n"
-            : "true\n",
-        stat: async () => ({ isDirectory: () => true })
-      })
-    ).rejects.toMatchObject({ code: "change_request_requires_push" });
-  });
 });

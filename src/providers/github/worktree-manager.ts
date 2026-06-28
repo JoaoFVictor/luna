@@ -2,10 +2,10 @@ import {
   mkdir as fsMkdir
 } from "node:fs/promises";
 import path from "node:path";
-import { runGit as defaultRunGit } from "../../core/git/client.js";
+import { runGit as defaultRunGit } from "../../capabilities/git/client.js";
 import { safeJoin } from "../../core/security/path.js";
 import type { Invocation } from "../../core/router/invocation.js";
-import type { WorkspaceRecord } from "../../core/write-mode/types.js";
+import type { WorkspaceRecord } from "../../capabilities/repository-change/types.js";
 import type { RepositoryConfig } from "../../core/config/schemas.js";
 import { githubPullRequestContextFrom } from "./pull-request-context.js";
 

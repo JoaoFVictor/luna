@@ -61,9 +61,9 @@ export function defineTaskProviderBuiltIns(
 
 export function createCollectTaskContextBuiltIn(
   taskProviderBuiltIns: Readonly<Record<string, TaskProviderBuiltIns>>
-): BuiltInStep<"runtime.collect_task_context"> {
+): BuiltInStep<"task-context.collect"> {
   return defineBuiltInStep({
-    name: "runtime.collect_task_context",
+    name: "task-context.collect",
     run(options) {
       const source = invocationSourceFrom(options.state);
       const provider = taskProviderBuiltIns[source];
@@ -82,9 +82,9 @@ export function createCollectTaskContextBuiltIn(
 
 export function createFinalImplementationReportBuiltIn(
   taskProviderBuiltIns: Readonly<Record<string, TaskProviderBuiltIns>>
-): BuiltInStep<"runtime.final_implementation_report"> {
+): BuiltInStep<"task-context.final_report"> {
   return defineBuiltInStep({
-    name: "runtime.final_implementation_report",
+    name: "task-context.final_report",
     metadata: finalReportMetadata,
     run(options) {
       const source = invocationSourceFrom(options.state);

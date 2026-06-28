@@ -8,9 +8,9 @@ point. Use `../docs/` when you need the deeper architecture behind the recipe.
 | Goal | Start With | Why |
 | --- | --- | --- |
 | Run the smallest read-only workflow | `workflows/example-minimal-agent/` | Shows workflow, context intake, one agent, and artifacts without advanced capabilities. |
-| See every currently runnable agent capability in one place | `agents/example-complete-agent/` and `workflows/example-complete-agent/` | Shows skills, tools, subagents, trusted write mode, validation, and optional artifacts. |
+| See every currently runnable agent capability in one place | `agents/example-complete-agent/` and `workflows/example-complete-agent/` | Shows skills, tools, subagents, trusted repository change, validation, and optional artifacts. |
 | Review a GitHub PR | [review-pr.md](review-pr.md) | End-to-end user recipe for the bundled code review workflow. |
-| Implement a Jira task | [implementation-jira-task.md](implementation-jira-task.md) | End-to-end write-mode recipe with validation and optional publishing gates. |
+| Implement a Jira task | [implementation-jira-task.md](implementation-jira-task.md) | End-to-end repository-change recipe with validation and optional publishing gates. |
 | Add a new reusable role | [new-agent.md](new-agent.md) | Agent file layout, output schema, context, skills, tools, MCP, and subagents. |
 | Add a new orchestration shape | [new-workflow.md](new-workflow.md) | Workflow YAML, node types, state references, artifacts, and gates. |
 | Accept a new external input | [new-adapter.md](new-adapter.md) | Input adapter boundary and normalized invocation shape. |

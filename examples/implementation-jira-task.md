@@ -90,7 +90,7 @@ repositories:
         - README.md
 ```
 
-`expected_remote_urls` is required for write-mode workflows. Luna checks the
+`expected_remote_urls` is required for repository-change workflows. Luna checks the
 configured remote before creating the implementation worktree.
 
 ## 5. Configure Implementation Gates
@@ -131,7 +131,7 @@ The implementer agent declares `trusted_local_write`.
 Commit, push, and change request creation are optional and disabled by default.
 Enabling push requires commit, and enabling a change request requires push. If
 commit is disabled, validation fails, acceptance rejects the change, or a
-publishing gate fails, Luna preserves the write worktree for inspection.
+publishing gate fails, Luna preserves the repository change worktree for inspection.
 
 ## 6. Run The Workflow
 
@@ -157,7 +157,7 @@ Important files:
 
 - `final-report.md`: human-readable implementation report.
 - `final-report.json`: structured final report.
-- `workspace.json`: write worktree path and preservation state.
+- `workspace.json`: repository change worktree path and preservation state.
 - `implementation-plan.json`: planner agent output.
 - `implementation-attempts.json`: implementer attempts and repair loop history.
 - `validation.json`: validation command output.
@@ -180,4 +180,4 @@ The Jira repository field does not match a `provider: github` entry in
 `expected_remote_urls_missing`
 
 Add `expected_remote_urls` to the matching repository entry before running the
-write-mode `implementation` workflow.
+repository-change `implementation` workflow.

@@ -2,7 +2,7 @@ import path from "node:path";
 import { officialCapabilityRegistry } from "../../capabilities/registry.js";
 import { createChangeRequestProviderRegistry } from "../../capabilities/change-request/provider-registry.js";
 import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
-import type { ChangeRequestProviderFactory } from "../../core/change-request/contracts.js";
+import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import type { TaskProviderBuiltIns } from "../../providers/built-ins.js";
 import type { AppConfig } from "../../core/config/schemas.js";
 import { runtimeError } from "../../core/runtime/errors.js";

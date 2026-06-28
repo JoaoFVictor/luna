@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createChangeRequestCreateBuiltIn,
   changeRequestPortsFromBuiltInOptions
-} from "../../../src/core/change-request/built-ins.js";
+} from "../../../src/capabilities/change-request/built-ins.js";
 import type {
   ChangeRequestProviderFactory,
   ChangeRequestProviderPort
-} from "../../../src/core/change-request/contracts.js";
+} from "../../../src/capabilities/change-request/contracts.js";
 import { manifest } from "../../../src/capabilities/change-request/manifest.js";
 import { createChangeRequestProviderRegistry } from "../../../src/capabilities/change-request/provider-registry.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
@@ -247,9 +247,9 @@ describe("change-request capability", () => {
 
   it("keeps generic change-request leaves free of provider schema leakage", async () => {
     const genericFiles = [
-      "src/core/change-request/contracts.ts",
+      "src/capabilities/change-request/contracts.ts",
       "src/capabilities/change-request/manifest.ts",
-      "src/core/change-request/built-ins.ts",
+      "src/capabilities/change-request/built-ins.ts",
       "src/capabilities/change-request/provider-registry.ts"
     ];
 

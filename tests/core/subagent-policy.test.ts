@@ -33,7 +33,7 @@ describe("subagent policy", () => {
           allow_tools: ["repository.status"]
         }
       )
-    ).toThrow("Subagent write mode is not allowed by workflow policy");
+    ).toThrow("Subagent trusted local write mode is not allowed by workflow policy");
     expect(() =>
       resolveSubagentPolicy(
         { allow_write: false },

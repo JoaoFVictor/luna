@@ -2,8 +2,8 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { expect } from "vitest";
 import YAML from "yaml";
-import { officialCapabilityManifests } from "../../src/capabilities/registry.js";
-import { lunaToolCatalog } from "../../src/core/tools/catalog.js";
+import { nativeLunaPlatform } from "../../src/platform/native/native-platform.js";
+import { lunaToolCatalog } from "../../src/capabilities/repository/tool-catalog.js";
 
 async function readText(repoRoot: string, relativePath: string): Promise<string> {
   return readFile(path.join(repoRoot, relativePath), "utf8");
@@ -106,7 +106,7 @@ async function workflowIdsFromDefinitions(repoRoot: string): Promise<string[]> {
 }
 
 async function officialAuthoringBuiltIns(): Promise<string[]> {
-  return officialCapabilityManifests
+  return nativeLunaPlatform.capabilityManifests
     .flatMap((manifest) => Object.keys("built_ins" in manifest ? manifest.built_ins ?? {} : {}))
     .sort();
 }
@@ -165,7 +165,7 @@ export async function assertDocsCatalogDriftGuardrail(repoRoot: string): Promise
   const commandViolations: string[] = [];
 
   expect(builtIns, "runtime built-in inventory from capability manifests").not.toEqual([]);
-  expect(toolIds, "runtime tool inventory from src/core/tools/catalog.ts").not.toEqual([]);
+  expect(toolIds, "runtime tool inventory from src/capabilities/repository/tool-catalog.ts").not.toEqual([]);
   expect(workflowIds, "workflow id inventory from workflows/*/workflow.yaml").not.toEqual([]);
 
   for (const relativePath of ["README.md"]) {

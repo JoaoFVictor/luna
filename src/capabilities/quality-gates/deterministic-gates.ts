@@ -1,5 +1,5 @@
 import type { ParsedWorkflowGate } from "../../core/workflow/definition-types.js";
-import type { ValidationResult } from "../../core/validation/runner.js";
+import type { ValidationResult } from "../../core/validation/types.js";
 
 export const VALIDATION_GATE = "quality-gates.validation_commands";
 export const NON_EMPTY_DIFF_GATE = "quality-gates.non_empty_diff";

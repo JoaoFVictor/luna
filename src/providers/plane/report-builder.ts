@@ -8,11 +8,11 @@ import type {
   ImplementationReportCommonJson,
   ImplementationReportInput,
   ImplementationTaskSummary
-} from "../../core/reports/implementation-report.js";
+} from "../../capabilities/repository-change/report-builder.js";
 import {
   buildImplementationReportCommonJson,
   buildImplementationReportMarkdown as buildCommonImplementationReportMarkdown
-} from "../../core/reports/implementation-report.js";
+} from "../../capabilities/repository-change/report-builder.js";
 
 export type PlaneImplementationReportJson =
   ImplementationReportCommonJson<"plane"> & {

@@ -672,28 +672,28 @@ describe("refactor guardrails", () => {
       },
       {
         name: "raw result output",
-        relativePath: "src/core/write-mode/lifecycle.ts",
+        relativePath: "src/capabilities/repository-change/lifecycle.ts",
         content: [
           "function record(result: { output?: unknown }) {",
           "  return result[\"output\"];",
           "}"
         ].join("\n"),
         expectedViolation:
-          "src/core/write-mode/lifecycle.ts:2 reads raw lifecycle output"
+          "src/capabilities/repository-change/lifecycle.ts:2 reads raw lifecycle output"
       },
       {
         name: "WorkflowNodeRunResult type",
-        relativePath: "src/core/write-mode/lifecycle.ts",
+        relativePath: "src/capabilities/repository-change/lifecycle.ts",
         content: "type WorkflowNodeRunResult = { output: unknown };",
         expectedViolation:
-          "src/core/write-mode/lifecycle.ts:1 contains agent/loop lifecycle metadata"
+          "src/capabilities/repository-change/lifecycle.ts:1 contains agent/loop lifecycle metadata"
       },
       {
         name: "WorkflowNodeStepResult type",
-        relativePath: "src/core/write-mode/lifecycle.ts",
+        relativePath: "src/capabilities/repository-change/lifecycle.ts",
         content: "type WorkflowNodeStepResult = { output: unknown };",
         expectedViolation:
-          "src/core/write-mode/lifecycle.ts:1 contains agent/loop lifecycle metadata"
+          "src/capabilities/repository-change/lifecycle.ts:1 contains agent/loop lifecycle metadata"
       }
     ];
 

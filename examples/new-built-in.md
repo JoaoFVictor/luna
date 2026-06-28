@@ -13,24 +13,28 @@ filesystem/git operations, repository context, artifact shaping, validation, or
 state plumbing. Use an agent when the work is model-driven. Use an adapter when
 the work only converts external input into a Luna invocation.
 
-## 1. Choose The Domain File
+## 1. Choose The Capability File
 
-Runtime-neutral built-ins live under `src/core/built-ins/`. Provider-specific
-built-ins live under `src/providers/<provider>/built-ins.ts` and are wired
-through an explicit composition registry.
+Reusable built-ins live under the capability that owns the responsibility.
+Provider-specific built-ins live under `src/providers/<provider>/built-ins.ts`
+and are wired through an explicit composition registry. Shared built-in
+contracts, metadata, and catalog mechanics stay under `src/core/built-ins/`.
 
 Current domain files:
 
-- `src/providers/github/built-ins.ts` for GitHub PR review steps.
+- `src/capabilities/repository-diff/built-ins.ts` for reusable diff context.
+- `src/capabilities/findings/built-ins.ts` for reusable finding validation.
+- `src/capabilities/repository-change/prepare-worktree-built-in.ts` for repository change worktree setup.
+- `src/capabilities/repository-change/commit-built-ins.ts` for commit preparation and lifecycle.
+- `src/capabilities/repository-change/push-built-ins.ts` for push preparation and lifecycle.
+- `src/capabilities/validation/built-ins.ts` for command validation.
+- `src/capabilities/task-context/manifest.ts` for task context contracts.
 - `src/providers/jira/built-ins.ts` for Jira task context and reports.
 - `src/providers/plane/built-ins.ts` for Plane task context and reports.
-- `src/core/built-ins/implementation.ts` for write-mode implementation steps;
-  supporting write-mode services live under `src/core/write-mode/`.
 
-Create a new domain file only when the capability does not belong to an
-existing domain. If you create a new domain file, create a matching focused
-test file under `tests/core/`, for example
-`tests/core/built-ins-my-domain.test.ts`.
+Create a new capability file only when the responsibility does not belong to an
+existing capability. If you create a new file, create a matching focused test
+file under `tests/capabilities/<capability>/`.
 
 ## 2. Define The Step
 
@@ -93,10 +97,10 @@ behavior must come from metadata.
 
 ## 4. Register It In A Composition Registry
 
-Add provider-facing steps through the provider-owned composition root:
+Add reusable steps through the native composition root:
 
 ```ts
-import { myNewStepBuiltIn } from "../../providers/my-provider/built-ins.js";
+import { myNewStepBuiltIn } from "../../capabilities/my-capability/built-ins.js";
 
 export const defaultBuiltInSteps = Object.freeze([
   // existing steps...
@@ -104,10 +108,9 @@ export const defaultBuiltInSteps = Object.freeze([
 ] as const);
 ```
 
-Runtime-neutral built-ins and shared catalog helpers stay under
-`src/core/built-ins/`. The native workflow factory injects the provider built-in
-registry, so YAML validation and runtime execution must see the same active
-registry.
+Provider-specific steps should still be registered by the provider plugin or
+native composition root. YAML validation and runtime execution must see the
+same active registry.
 
 ## 5. Import Direct Owners
 
@@ -138,7 +141,7 @@ Create or update the focused domain test:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { myNewStepBuiltIn } from "../../src/core/built-ins/my-domain.js";
+import { myNewStepBuiltIn } from "../../src/capabilities/my-capability/built-ins.js";
 
 describe("my domain built-ins", () => {
   it("runs my_new_step", async () => {

@@ -2,10 +2,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  createGitCommitBuiltIn,
-  createGitPushBranchBuiltIn,
+  createGitCommitBuiltIn
+} from "../../../src/capabilities/git/commit.js";
+import {
+  createGitPushBranchBuiltIn
+} from "../../../src/capabilities/git/push.js";
+import {
   createGitStatusBuiltIn
-} from "../../../src/core/git/built-ins.js";
+} from "../../../src/capabilities/git/status.js";
 import { manifest } from "../../../src/capabilities/git/manifest.js";
 import { manifest as repositoryWorkspaceManifest } from "../../../src/capabilities/repository-workspace/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
@@ -19,7 +23,7 @@ import type {
   GitCommitState,
   GitRepositoryPort,
   GitStatusResult
-} from "../../../src/core/git/contracts.js";
+} from "../../../src/capabilities/git/contracts.js";
 
 const workspace = {
   operation_id: "repository-workspace.capture",
@@ -629,15 +633,18 @@ describe("git capability", () => {
   it("keeps git capability leaf files free of provider and change-request leaks", async () => {
     const repositoryRoot = process.cwd();
     const files = [
-      "src/core/git/contracts.ts",
+      "src/capabilities/git/contracts.ts",
       "src/capabilities/git/manifest.ts",
-      "src/core/git/built-ins.ts"
+      "src/capabilities/git/shared.ts",
+      "src/capabilities/git/status.ts",
+      "src/capabilities/git/commit.ts",
+      "src/capabilities/git/push.ts"
     ];
     const forbiddenPatterns = [
       /change-request|changeRequest|ChangeRequest/,
       /src\/providers|src\/core\/providers|@octokit|jira\.js|plane/i,
       /pull_request|merge_request|issue_url|github|jira|linear/i,
-      /src\/core\/git|src\/core\/write-mode|simple-git/
+      /src\/core\/git|src\/core\/repository-change|simple-git/
     ];
 
     for (const file of files) {

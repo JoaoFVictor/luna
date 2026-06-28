@@ -9,7 +9,7 @@ import { builtInError } from "../../core/built-ins/errors.js";
 import {
   implementationReportInputFrom,
   implementationReportRenderersFrom
-} from "../../core/built-ins/implementation-report.js";
+} from "../../capabilities/repository-change/report.js";
 import type { BuiltInStepRunOptions } from "../../core/built-ins/types.js";
 
 function jiraIssueInvocationFrom(state: { invocation?: unknown }): Invocation {

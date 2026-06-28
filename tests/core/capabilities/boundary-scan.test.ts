@@ -71,7 +71,7 @@ describe("core capability boundary scanner", () => {
     );
     await writeFileInRoot(
       root,
-      "src/core/git/client.ts",
+      "src/core/workflow/git.ts",
       'import git from "simple-git";'
     );
 

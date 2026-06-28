@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ModelProfile } from "../config/schemas.js";
 import type { RunHandle } from "../runtime/run-handle.js";
 import type { ResolvedToolCatalog } from "../tools/resolved-catalog.js";
-import { ValidationResultSchema } from "../validation/runner.js";
+import { ValidationResultSchema } from "../validation/types.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 

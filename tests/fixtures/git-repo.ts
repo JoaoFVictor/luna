@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runGit } from "../../src/core/git/client.js";
+import { runGit } from "../../src/capabilities/git/client.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 

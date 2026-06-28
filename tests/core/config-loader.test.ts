@@ -19,7 +19,7 @@ import {
   RepositoriesConfigSchema
 } from "../../src/core/config/schemas.js";
 import { RouterDefinitionSchema } from "../../src/core/router/router-definition.js";
-import { ImplementationConfigSchema } from "../../src/core/write-mode/types.js";
+import { ImplementationConfigSchema } from "../../src/capabilities/repository-change/types.js";
 import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "../../src/core/workflow/repair-attempts.js";
 
 const configSchemas = {

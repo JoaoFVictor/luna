@@ -222,11 +222,10 @@ describe("built-in step registry", () => {
   it("exports default built-in names from the catalog", () => {
     expect(builtInStepNames).toEqual([
       "runtime.preflight",
-      "runtime.prepare_worktree",
+      "pull-request-workspace.prepare_worktree",
       "context.collect_context",
-      "runtime.collect_repo_context",
-      "runtime.validate_code_review_findings",
-      "runtime.final_code_review_report",
+      "repository-diff.collect_context",
+      "findings.validate_evidence",
       "reports.final_report",
       "local-exec.command.read",
       "local-exec.command.write",
@@ -235,17 +234,17 @@ describe("built-in step registry", () => {
       "git.commit",
       "git.push_branch",
       "change-request.create",
-      "runtime.prepare_implementation_worktree",
-      "runtime.collect_task_context",
-      "runtime.run_validation_commands",
-      "runtime.record_implementation_validation",
-      "runtime.collect_worktree_diff",
-      "runtime.record_acceptance_decision",
-      "runtime.prepare_commit",
-      "runtime.record_commit_lifecycle",
-      "runtime.prepare_push",
-      "runtime.record_push_lifecycle",
-      "runtime.final_implementation_report"
+      "repository-change.prepare_worktree",
+      "task-context.collect",
+      "validation.run_commands",
+      "repository-change.record_validation",
+      "repository-change.collect_worktree_diff",
+      "repository-change.record_acceptance_decision",
+      "repository-change.prepare_commit",
+      "repository-change.record_commit_lifecycle",
+      "repository-change.prepare_push",
+      "repository-change.record_push_lifecycle",
+      "task-context.final_report"
     ]);
     expect(isBuiltInStepName("runtime.preflight")).toBe(true);
     expect(isBuiltInStepName("preflight")).toBe(false);
@@ -268,9 +267,9 @@ describe("built-in step registry", () => {
 
   it("keeps built-in metadata immutable in the default catalog", () => {
     const prepareWorktree =
-      defaultProviderBuiltInStepRegistry.require("runtime.prepare_worktree");
+      defaultProviderBuiltInStepRegistry.require("pull-request-workspace.prepare_worktree");
     const finalReport = defaultProviderBuiltInStepRegistry.require(
-      "runtime.final_code_review_report"
+      "reports.final_report"
     );
 
     expect(prepareWorktree.metadata).toEqual({
@@ -296,11 +295,11 @@ describe("built-in step registry", () => {
     );
 
     expect(lockedNames).toEqual([
-      "runtime.prepare_worktree",
+      "pull-request-workspace.prepare_worktree",
       "git.commit",
       "git.push_branch",
       "change-request.create",
-      "runtime.prepare_implementation_worktree"
+      "repository-change.prepare_worktree"
     ]);
 
     for (const name of lockedNames) {
@@ -320,15 +319,15 @@ describe("built-in step registry", () => {
 
     expect(repositoryRequiredNames).toEqual([
       "runtime.preflight",
-      "runtime.prepare_worktree",
+      "pull-request-workspace.prepare_worktree",
       "context.collect_context",
-      "runtime.collect_repo_context",
+      "repository-diff.collect_context",
       "repository-workspace.capture",
       "git.status",
       "git.commit",
       "git.push_branch",
       "change-request.create",
-      "runtime.prepare_implementation_worktree"
+      "repository-change.prepare_worktree"
     ]);
   });
 
@@ -478,7 +477,7 @@ describe("built-in step registry", () => {
   it("dispatches implementation task built-ins for Plane invocations", async () => {
     await expect(
       runBuiltInStep({
-        uses: "runtime.collect_task_context",
+        uses: "task-context.collect",
         state: planeImplementationState
       })
     ).resolves.toMatchObject({
@@ -497,7 +496,7 @@ describe("built-in step registry", () => {
 
     await expect(
       runBuiltInStep({
-        uses: "runtime.final_implementation_report",
+        uses: "task-context.final_report",
         state: planeImplementationState
       })
     ).resolves.toMatchObject({
@@ -545,7 +544,7 @@ describe("built-in step registry", () => {
 
     await expect(
       runBuiltInStep({
-        uses: "runtime.collect_task_context",
+        uses: "task-context.collect",
         state
       })
     ).resolves.toMatchObject({
@@ -564,7 +563,7 @@ describe("built-in step registry", () => {
 
     await expect(
       runBuiltInStep({
-        uses: "runtime.final_implementation_report",
+        uses: "task-context.final_report",
         state
       })
     ).resolves.toMatchObject({

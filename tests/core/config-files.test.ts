@@ -5,6 +5,7 @@ import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import { officialCapabilityRegistry } from "../../src/capabilities/registry.js";
 import { loadWorkflowDefinition } from "../../src/core/workflow/definition.js";
+import { nativeLunaPlatform } from "../../src/platform/native/native-platform.js";
 import { compileNativeWorkflow } from "../../src/platform/native/native-workflow-runner.js";
 
 type AgentConfig = {
@@ -649,6 +650,7 @@ describe("config definition files", () => {
       "context",
       "review_plan",
       "code_review",
+      "validated_findings",
       "acceptance",
       "final_report"
     ]);
@@ -674,7 +676,7 @@ describe("config definition files", () => {
     for (const workflowId of ["code-review", "implementation"]) {
       const workflow = await loadWorkflowDefinition("workflows", workflowId, {
         agentsRoot: "agents",
-        capabilityRegistry: officialCapabilityRegistry
+        capabilityRegistry: nativeLunaPlatform.capabilityRegistry
       });
 
       await expect(

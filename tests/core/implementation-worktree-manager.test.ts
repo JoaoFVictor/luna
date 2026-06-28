@@ -3,11 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { implementationBranchMetadata } from "../../src/core/write-mode/branch.js";
+import { implementationBranchMetadata } from "../../src/capabilities/repository-change/branch.js";
 import {
   prepareImplementationWorktree
-} from "../../src/core/write-mode/worktree.js";
-import type { LocalTransactionJournalEntry } from "../../src/core/write-mode/transaction-journal.js";
+} from "../../src/capabilities/repository-change/worktree.js";
+import type { LocalTransactionJournalEntry } from "../../src/capabilities/repository-change/transaction-journal.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 
 type GitCall = {

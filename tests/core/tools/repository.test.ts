@@ -6,7 +6,7 @@ import {
   repositoryDeleteFileTool,
   repositoryReadFileTool,
   repositoryWriteFileTool
-} from "../../../src/core/tools/repository.js";
+} from "../../../src/capabilities/repository/repository.js";
 
 async function tempRepository(): Promise<string> {
   return await mkdtemp(path.join(os.tmpdir(), "luna-repository-tools-"));

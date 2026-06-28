@@ -91,7 +91,7 @@ export const lunaToolCatalog = {
 
 Use `read_only` only when the tool is safe for read-only agents. Reserve
 `trusted_local_write` for tools that are useful only inside a trusted local
-write worktree. Do not import runtime SDKs from `src/core/tools/**`;
+repository change worktree. Do not import runtime SDKs from `src/core/tools/**`;
 `src/agent-runtimes/pi/adapter.ts` owns Pi-specific tool materialization.
 
 ## 4. Attach The Tool To An Agent

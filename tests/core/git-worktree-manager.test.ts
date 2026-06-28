@@ -2,10 +2,10 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { cleanup } from "../../src/core/git/worktree-cleanup.js";
+import { cleanup } from "../../src/capabilities/repository-change/worktree-cleanup.js";
 import { prepare } from "../../src/providers/github/worktree-manager.js";
 import { githubPullRequestContextFrom } from "../../src/providers/github/pull-request-context.js";
-import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
+import type { WorkspaceRecord } from "../../src/capabilities/repository-change/types.js";
 import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
 
 const pullRequest = githubPullRequestContextFrom(gitInvocation);

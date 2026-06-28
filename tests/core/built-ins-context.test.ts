@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { collectContextBuiltIn } from "../../src/core/built-ins/context.js";
+import { collectContextBuiltIn } from "../../src/capabilities/context/built-ins.js";
 import { collectContextIntake } from "../../src/capabilities/context/collect-context.js";
 import type { WorkflowState } from "../../src/core/workflow/state.js";
 

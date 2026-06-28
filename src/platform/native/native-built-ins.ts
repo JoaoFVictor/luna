@@ -2,35 +2,40 @@ import { collectContextIntake } from "../../capabilities/context/collect-context
 import {
   changeRequestPortsFromBuiltInOptions,
   createChangeRequestCreateBuiltIn
-} from "../../core/change-request/built-ins.js";
+} from "../../capabilities/change-request/built-ins.js";
 import {
-  createGitCommitBuiltIn,
-  createGitPushBranchBuiltIn,
-  createGitStatusBuiltIn,
   gitPortsFromBuiltInOptions
-} from "../../core/git/built-ins.js";
+} from "../../capabilities/git/shared.js";
+import { createGitCommitBuiltIn } from "../../capabilities/git/commit.js";
+import { runGit } from "../../capabilities/git/client.js";
+import { createGitPushBranchBuiltIn } from "../../capabilities/git/push.js";
+import { createGitStatusBuiltIn } from "../../capabilities/git/status.js";
 import {
   createLocalExecCommandBuiltIn,
   localExecPortsFromBuiltInOptions
-} from "../../core/local-exec/built-ins.js";
+} from "../../capabilities/local-exec/built-ins.js";
 import {
   createRepositoryWorkspaceCaptureBuiltIn,
   repositoryWorkspacePortsFromBuiltInOptions
-} from "../../core/repository-workspace/built-ins.js";
+} from "../../capabilities/repository-workspace/built-ins.js";
+import { recordAcceptanceDecisionBuiltIn } from "../../capabilities/repository-change/acceptance-built-in.js";
 import {
-  collectWorktreeDiffBuiltIn,
   prepareCommitBuiltIn,
-  prepareImplementationWorktreeBuiltIn,
+  recordCommitLifecycleBuiltIn
+} from "../../capabilities/repository-change/commit-built-ins.js";
+import { collectWorktreeDiffBuiltIn } from "../../capabilities/repository-change/diff-built-in.js";
+import { prepareImplementationWorktreeBuiltIn } from "../../capabilities/repository-change/prepare-worktree-built-in.js";
+import {
   preparePushBuiltIn,
-  recordAcceptanceDecisionBuiltIn,
-  recordCommitLifecycleBuiltIn,
-  recordImplementationValidationBuiltIn,
-  recordPushLifecycleBuiltIn,
-  runValidationCommandsBuiltIn
-} from "../../core/built-ins/implementation.js";
-import { collectContextBuiltIn } from "../../core/built-ins/context.js";
+  recordPushLifecycleBuiltIn
+} from "../../capabilities/repository-change/push-built-ins.js";
+import { recordImplementationValidationBuiltIn } from "../../capabilities/repository-change/validation-built-in.js";
+import { runValidationCommandsBuiltIn } from "../../capabilities/validation/built-ins.js";
+import { collectContextBuiltIn } from "../../capabilities/context/built-ins.js";
+import { validateFindingEvidenceBuiltIn } from "../../capabilities/findings/built-ins.js";
 import { createBuiltInStepCatalog } from "../../core/built-ins/catalog.js";
-import { finalReportBuiltIn } from "../../core/reports/final-report.js";
+import { collectRepoContextBuiltIn } from "../../capabilities/repository-diff/built-ins.js";
+import { finalReportBuiltIn } from "../../capabilities/reports/final-report.js";
 import {
   createCollectTaskContextBuiltIn,
   createFinalImplementationReportBuiltIn,
@@ -111,11 +116,13 @@ export function createNativeProviderBuiltIns({
   );
 
   return createProviderBuiltIns({
-    dependencies: { collectContextIntake },
+    dependencies: { collectContextIntake, runGit },
     steps: [
       ...(workflowBuiltIns.beforeContext ?? []),
       collectContextBuiltIn,
       ...(workflowBuiltIns.afterContext ?? []),
+      collectRepoContextBuiltIn,
+      validateFindingEvidenceBuiltIn,
       ...(workflowBuiltIns.builtIns ?? []),
       finalReportBuiltIn,
       localExecReadCommandBuiltIn,

@@ -1,20 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  collectRepoContextBuiltIn,
-  finalCodeReviewReportBuiltIn,
-  prepareWorktreeBuiltIn,
-  validateCodeReviewFindingsBuiltIn
-} from "../../src/providers/github/built-ins.js";
-import { preflightBuiltIn } from "../../src/core/built-ins/preflight.js";
+import { collectRepoContextBuiltIn } from "../../src/capabilities/repository-diff/built-ins.js";
+import { validateFindingEvidenceBuiltIn } from "../../src/capabilities/findings/built-ins.js";
+import { prepareWorktreeBuiltIn } from "../../src/providers/github/built-ins.js";
+import { preflightBuiltIn } from "../../src/capabilities/runtime/built-ins.js";
 import type {
   WorkspaceRecord
-} from "../../src/core/write-mode/types.js";
-import type { RepoContext } from "../../src/core/git/diff/types.js";
+} from "../../src/capabilities/repository-change/types.js";
+import type { RepoContext } from "../../src/capabilities/git/diff/types.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 import type { Finding } from "../../src/core/findings/types.js";
-import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
-import type { ImplementationConfig } from "../../src/core/write-mode/types.js";
+import type { ImplementationConfig } from "../../src/capabilities/repository-change/types.js";
 import type { WorkflowState } from "../../src/core/workflow/state.js";
 
 const invocation: Invocation = {
@@ -122,13 +118,6 @@ const finding: Finding = {
   recommendation: "Fix it."
 };
 
-const acceptance: AcceptanceDecision = {
-  status: "rejected",
-  summary: "One issue remains.",
-  blocking_reasons: ["Issue"],
-  recommended_action: "request_changes"
-};
-
 const implementationConfig: ImplementationConfig["implementation"] = {
   branch_pattern: "feature/{slug}",
   commit: {
@@ -190,8 +179,7 @@ describe("code review built-ins", () => {
     expect(runPreflight).toHaveBeenCalledWith({
       invocation,
       repository,
-      workflow: { mode: "read_only" },
-      implementation: implementationConfig
+      workflow: { mode: "read_only" }
     });
   });
 
@@ -205,7 +193,7 @@ describe("code review built-ins", () => {
       })
     ).resolves.toEqual(workspace);
 
-    expect(prepareWorktreeBuiltIn.name).toBe("runtime.prepare_worktree");
+    expect(prepareWorktreeBuiltIn.name).toBe("pull-request-workspace.prepare_worktree");
     expect(prepareWorktreeBuiltIn.metadata).toEqual({
       capturesWorkspace: true,
       requiresRepository: true,
@@ -219,7 +207,7 @@ describe("code review built-ins", () => {
     });
   });
 
-  it("runs collect_repo_context with the workspace path overriding repository path", async () => {
+  it("runs repository diff context collection with the workspace path overriding repository path", async () => {
     const collectRepoContext = vi.fn(async () => repoContext);
 
     await expect(
@@ -239,12 +227,12 @@ describe("code review built-ins", () => {
     });
   });
 
-  it("runs validate_code_review_findings and preserves the summary", async () => {
+  it("runs validate_finding_evidence and preserves the summary", async () => {
     const validatedFinding = { ...finding, confidence: "low" as const };
     const validateFindingEvidence = vi.fn(() => [validatedFinding]);
 
     await expect(
-      validateCodeReviewFindingsBuiltIn.run({
+      validateFindingEvidenceBuiltIn.run({
         state: workflowState({
           steps: {
             repo_context: repoContext,
@@ -265,62 +253,38 @@ describe("code review built-ins", () => {
     expect(validateFindingEvidence).toHaveBeenCalledWith(repoContext, [finding]);
   });
 
-  it("runs final_code_review_report through injected dependencies and declares deferral metadata", async () => {
-    const buildFinalReportJson = vi.fn(() => ({ findings: [] }));
-    const buildFinalReportMarkdown = vi.fn(() => "# Report\n");
+  it("collects repo context for non-GitHub invocations when explicit refs are provided", async () => {
+    const collectRepoContext = vi.fn(async () => repoContext);
 
     await expect(
-      finalCodeReviewReportBuiltIn.run({
+      collectRepoContextBuiltIn.run({
         state: workflowState({
-          steps: {
-            validated_findings: { findings: [finding] },
-            acceptance
-          }
+          invocation: jiraInvocation
         }),
         input: {
-          findings: { findings: [finding] },
-          acceptance
+          base_sha: "base-from-input",
+          head_sha: "head-from-input"
         },
-        dependencies: { buildFinalReportJson, buildFinalReportMarkdown }
+        dependencies: { collectRepoContext }
       })
-    ).resolves.toEqual({
-      json: { findings: [] },
-      markdown: "# Report\n"
-    });
+    ).resolves.toEqual(repoContext);
 
-    expect(finalCodeReviewReportBuiltIn.metadata).toEqual({
-      deferredLifecycle: "final_report"
-    });
-    expect(buildFinalReportJson).toHaveBeenCalledWith({
-      acceptance,
-      findings: [finding],
-      workspace
-    });
-    expect(buildFinalReportMarkdown).toHaveBeenCalledWith({
-      invocation,
-      findings: [finding],
-      acceptance
+    expect(collectRepoContext).toHaveBeenCalledWith({
+      repository: {
+        ...repository,
+        path: workspace.path
+      },
+      baseSha: "base-from-input",
+      headSha: "head-from-input"
     });
   });
 
-  it.each([
-    prepareWorktreeBuiltIn,
-    collectRepoContextBuiltIn,
-    finalCodeReviewReportBuiltIn
-  ])("rejects Jira invocations for %s", async (builtIn) => {
+  it("rejects Jira invocations for review worktree preparation", async () => {
     await expect(
-      builtIn.run({
+      prepareWorktreeBuiltIn.run({
         state: workflowState({
-          invocation: jiraInvocation,
-          steps: {
-            validated_findings: { findings: [finding] },
-            acceptance
-          }
-        }),
-        input: {
-          findings: { findings: [finding] },
-          acceptance
-        }
+          invocation: jiraInvocation
+        })
       })
     ).rejects.toMatchObject({
       code: "built_in_unsupported",
@@ -328,9 +292,9 @@ describe("code review built-ins", () => {
     });
   });
 
-  it("throws a typed error when validate_code_review_findings is missing findings", async () => {
+  it("throws a typed error when validate_finding_evidence is missing findings", async () => {
     await expect(
-      validateCodeReviewFindingsBuiltIn.run({
+      validateFindingEvidenceBuiltIn.run({
         state: workflowState(),
         input: {
           repo_context: repoContext,
@@ -343,9 +307,9 @@ describe("code review built-ins", () => {
     });
   });
 
-  it("throws a typed error when validate_code_review_findings is missing repo_context", async () => {
+  it("throws a typed error when validate_finding_evidence is missing repo_context", async () => {
     await expect(
-      validateCodeReviewFindingsBuiltIn.run({
+      validateFindingEvidenceBuiltIn.run({
         state: workflowState(),
         input: {
           findings: { findings: [finding], summary: "Reviewed." }
@@ -357,9 +321,9 @@ describe("code review built-ins", () => {
     });
   });
 
-  it("throws a typed error when validate_code_review_findings receives malformed findings", async () => {
+  it("throws a typed error when validate_finding_evidence receives malformed findings", async () => {
     await expect(
-      validateCodeReviewFindingsBuiltIn.run({
+      validateFindingEvidenceBuiltIn.run({
         state: workflowState(),
         input: {
           repo_context: repoContext,
@@ -382,7 +346,7 @@ describe("code review built-ins", () => {
       "workspaceRoot"
     ],
     [
-      "collect_repo_context",
+      "repository-diff.collect_context",
       collectRepoContextBuiltIn,
       { workspace: undefined },
       "workspace"

@@ -2,7 +2,7 @@ import { capabilityManifest } from "../../core/capabilities/manifest.js";
 import {
   finalReportInputSchema,
   finalReportOutputSchema
-} from "../../core/reports/final-report.js";
+} from "./final-report.js";
 
 export const manifest = capabilityManifest({
   id: "reports",

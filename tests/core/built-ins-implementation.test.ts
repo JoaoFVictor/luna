@@ -1,36 +1,38 @@
 import { describe, expect, it, vi } from "vitest";
+import { recordAcceptanceDecisionBuiltIn } from "../../src/capabilities/repository-change/acceptance-built-in.js";
 import {
-  collectWorktreeDiffBuiltIn,
   prepareCommitBuiltIn,
-  prepareImplementationWorktreeBuiltIn,
+  recordCommitLifecycleBuiltIn
+} from "../../src/capabilities/repository-change/commit-built-ins.js";
+import { collectWorktreeDiffBuiltIn } from "../../src/capabilities/repository-change/diff-built-in.js";
+import { prepareImplementationWorktreeBuiltIn } from "../../src/capabilities/repository-change/prepare-worktree-built-in.js";
+import {
   preparePushBuiltIn,
-  recordAcceptanceDecisionBuiltIn,
-  recordCommitLifecycleBuiltIn,
-  recordImplementationValidationBuiltIn,
-  recordPushLifecycleBuiltIn,
-  runValidationCommandsBuiltIn
-} from "../../src/core/built-ins/implementation.js";
+  recordPushLifecycleBuiltIn
+} from "../../src/capabilities/repository-change/push-built-ins.js";
+import { recordImplementationValidationBuiltIn } from "../../src/capabilities/repository-change/validation-built-in.js";
+import { runValidationCommandsBuiltIn } from "../../src/capabilities/validation/built-ins.js";
 import {
   collectTaskContext as collectJiraTaskContext,
   finalImplementationReport as finalJiraImplementationReport
 } from "../../src/providers/jira/built-ins.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
-import type { WorkspaceRecord } from "../../src/core/write-mode/types.js";
+import type { WorkspaceRecord } from "../../src/capabilities/repository-change/types.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";
 import type { AcceptanceDecision } from "../../src/core/decisions/types.js";
-import type { ValidationResult } from "../../src/core/validation/runner.js";
+import type { ValidationResult } from "../../src/capabilities/validation/command-runner.js";
 import type {
   CommitChangesArtifact,
   ImplementationConfig,
   PushBranchArtifact
-} from "../../src/core/write-mode/types.js";
-import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
-import type { ImplementationWorktreeRecord } from "../../src/core/write-mode/worktree.js";
-import type { WorktreeDiff } from "../../src/core/git/diff/worktree-diff.js";
+} from "../../src/capabilities/repository-change/types.js";
+import type { ChangeRequestArtifact } from "../../src/capabilities/change-request/contracts.js";
+import type { ImplementationWorktreeRecord } from "../../src/capabilities/repository-change/worktree.js";
+import type { WorktreeDiff } from "../../src/capabilities/git/diff/worktree-diff.js";
 import type { BuiltInStepRunOptions } from "../../src/core/built-ins/types.js";
 import type { WorkflowState } from "../../src/core/workflow/state.js";
-import type { ImplementationReportInput } from "../../src/core/reports/implementation-report.js";
-import { implementationReportRenderersFrom } from "../../src/core/built-ins/implementation-report.js";
+import type { ImplementationReportInput } from "../../src/capabilities/repository-change/report-builder.js";
+import { implementationReportRenderersFrom } from "../../src/capabilities/repository-change/report.js";
 
 const githubInvocation: Invocation = {
   version: "2026-06",
@@ -717,7 +719,6 @@ describe("implementation built-ins", () => {
 
   it.each([
     prepareImplementationWorktreeBuiltIn,
-    runValidationCommandsBuiltIn,
     collectWorktreeDiffBuiltIn,
     prepareCommitBuiltIn,
     preparePushBuiltIn,
@@ -740,6 +741,17 @@ describe("implementation built-ins", () => {
     ).rejects.toMatchObject({
       code: "built_in_state_missing",
       message: expect.stringContaining("config.implementation")
+    });
+  });
+
+  it("rejects missing validation commands when input and config fallback are absent", async () => {
+    await expect(
+      runBuiltIn(runValidationCommandsBuiltIn, {
+        state: implementationState({ config: undefined })
+      })
+    ).rejects.toMatchObject({
+      code: "built_in_input_missing",
+      message: expect.stringContaining("commands")
     });
   });
 

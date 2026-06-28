@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import { manifest } from "../../../src/capabilities/repository-workspace/manifest.js";
 import {
   createRepositoryWorkspaceCaptureBuiltIn
-} from "../../../src/core/repository-workspace/built-ins.js";
+} from "../../../src/capabilities/repository-workspace/built-ins.js";
 import type {
   RepositoryWorkspaceEventSink,
   RepositoryWorkspaceManagerPort,
   RepositoryWorkspaceManagerRecord
-} from "../../../src/core/repository-workspace/contracts.js";
+} from "../../../src/capabilities/repository-workspace/contracts.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import {
   defaultBuiltInCatalog,
@@ -357,9 +357,9 @@ describe("repository-workspace capability", () => {
   it("keeps repository-workspace leaf files free of provider, Git, and change-request leaks", async () => {
     const repositoryRoot = process.cwd();
     const files = [
-      "src/core/repository-workspace/contracts.ts",
+      "src/capabilities/repository-workspace/contracts.ts",
       "src/capabilities/repository-workspace/manifest.ts",
-      "src/core/repository-workspace/built-ins.ts"
+      "src/capabilities/repository-workspace/built-ins.ts"
     ];
     const forbidden = [
       "github",

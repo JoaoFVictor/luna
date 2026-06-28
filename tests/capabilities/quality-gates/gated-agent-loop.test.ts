@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { runGatedAgentLoopStateMachine } from "../../../src/capabilities/quality-gates/gated-agent-loop.js";
 import { GatedAgentLoopResultSchema } from "../../../src/core/agent-runtime/contracts.js";
-import type { ValidationResult } from "../../../src/core/validation/runner.js";
+import type { ValidationResult } from "../../../src/capabilities/validation/command-runner.js";
 
 const passedValidation: ValidationResult = { passed: true };
 const failedValidation: ValidationResult = { passed: false };

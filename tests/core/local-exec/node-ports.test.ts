@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createNodeLocalExecPorts } from "../../../src/core/local-exec/node-ports.js";
+import { createNodeLocalExecPorts } from "../../../src/capabilities/local-exec/node-ports.js";
 
 describe("node local-exec ports", () => {
   it("runs commands from the project root and publishes oversized output artifacts", async () => {

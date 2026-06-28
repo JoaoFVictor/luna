@@ -143,8 +143,8 @@ function classifyForbiddenImport(
   }
   if (
     importPath === "simple-git" ||
-    resolvedProjectPath?.startsWith("src/core/git/") ||
-    resolvedProjectPath?.startsWith("src/core/write-mode/")
+    resolvedProjectPath?.startsWith("src/capabilities/git/") ||
+    resolvedProjectPath?.startsWith("src/capabilities/repository-change/")
   ) {
     return "no-core-git-import";
   }

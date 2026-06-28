@@ -1,5 +1,5 @@
 import type { GatedAgentLoopAttempt } from "../../core/agent-runtime/contracts.js";
-import type { ValidationResult } from "../../core/validation/runner.js";
+import type { ValidationResult } from "../../core/validation/types.js";
 import { MAX_WORKFLOW_ATTEMPTS } from "../../core/workflow/repair-attempts.js";
 
 export type GatedAgentLoopPhase = "initial" | "repair";

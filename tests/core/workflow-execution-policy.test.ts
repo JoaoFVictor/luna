@@ -161,8 +161,16 @@ describe("workflow execution policy", () => {
   it("serializes workspace capture decisions", () => {
     const plan = selectReadyBatchWithPolicy({
       ready: [
-        { id: "workspace_a", type: "built_in", uses: "runtime.prepare_worktree" },
-        { id: "workspace_b", type: "built_in", uses: "runtime.prepare_worktree" },
+        {
+          id: "workspace_a",
+          type: "built_in",
+          uses: "pull-request-workspace.prepare_worktree"
+        },
+        {
+          id: "workspace_b",
+          type: "built_in",
+          uses: "pull-request-workspace.prepare_worktree"
+        },
         builtInNode("free")
       ],
       maxConcurrency: 3,
@@ -187,7 +195,7 @@ describe("workflow execution policy", () => {
   it("carries deferred final report decisions and rejects invalid dependents", () => {
     const nodes = [
       { id: "main", type: "built_in", uses: "runtime.preflight" },
-      { id: "final", type: "built_in", uses: "runtime.final_code_review_report" }
+      { id: "final", type: "built_in", uses: "reports.final_report" }
     ] satisfies WorkflowNode[];
 
     const split = splitDeferredFinalReportNodesByPolicy({
@@ -204,7 +212,7 @@ describe("workflow execution policy", () => {
     expect(() =>
       splitDeferredFinalReportNodesByPolicy({
         nodes: [
-          { id: "final", type: "built_in", uses: "runtime.final_code_review_report" },
+          { id: "final", type: "built_in", uses: "reports.final_report" },
           {
             id: "after_final",
             type: "built_in",

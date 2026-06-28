@@ -6,7 +6,7 @@ import {
 import {
   createRuntimeCompositionForWorkflow
 } from "../../runtime/composition/runtime-composition.js";
-import type { ChangeRequestProviderFactory } from "../../core/change-request/contracts.js";
+import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
 import type {
   NativeWorkflowRunInput

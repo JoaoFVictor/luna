@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   runValidationCommands,
   ValidationResultSchema
-} from "../../src/core/validation/runner.js";
+} from "../../src/capabilities/validation/command-runner.js";
 
 describe("validation runner", () => {
   it("accepts implementation runtime validation result artifacts", () => {

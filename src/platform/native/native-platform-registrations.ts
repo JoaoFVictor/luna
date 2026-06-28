@@ -9,7 +9,7 @@ import {
 } from "../../core/capabilities/registry.js";
 import type { CapabilityManifest } from "../../core/capabilities/manifest.js";
 import type { TaskProviderBuiltIns } from "../../providers/built-ins.js";
-import type { ChangeRequestProviderFactory } from "../../core/change-request/contracts.js";
+import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import type {
   ResumeWorkflowInput,
   RunWorkflowInput,

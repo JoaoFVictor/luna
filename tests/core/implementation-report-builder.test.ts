@@ -8,12 +8,12 @@ import {
   buildImplementationReportMarkdown as buildPlaneImplementationReportMarkdown
 } from "../../src/providers/plane/report-builder.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
-import type { ValidationResult } from "../../src/core/validation/runner.js";
+import type { ValidationResult } from "../../src/capabilities/validation/command-runner.js";
 import type {
   CommitChangesArtifact,
   PushBranchArtifact
-} from "../../src/core/write-mode/types.js";
-import type { ChangeRequestArtifact } from "../../src/core/change-request/contracts.js";
+} from "../../src/capabilities/repository-change/types.js";
+import type { ChangeRequestArtifact } from "../../src/capabilities/change-request/contracts.js";
 import { createObservabilitySummary } from "../../src/core/observability/summary.js";
 
 const invocation: Invocation = {
