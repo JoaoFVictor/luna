@@ -18,7 +18,7 @@ server:
   port: 4012
   body_limit_bytes: 1048576
 queue:
-  name: "luna:webhooks"
+  name: "luna-webhooks"
   redis_url: "redis://127.0.0.1:6379"
   dedupe_ttl_seconds: 604800
   remove_on_complete:
@@ -54,7 +54,7 @@ describe("webhook config", () => {
         body_limit_bytes: 1048576
       },
       queue: {
-        name: "luna:webhooks",
+        name: "luna-webhooks",
         redis_url: "redis://127.0.0.1:6379",
         dedupe_ttl_seconds: 604800,
         remove_on_complete: {
@@ -102,6 +102,25 @@ describe("webhook config", () => {
       await writeFile(
         join(root, "webhooks.yaml"),
         `${baseConfig}\nworker:\n  concurrency: 0\n`,
+        "utf8"
+      );
+
+      await expect(loadWebhookConfig(root)).rejects.toMatchObject({
+        code: "config_schema_invalid",
+        path: join(root, "webhooks.yaml")
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects queue names containing colons before BullMQ construction", async () => {
+    const root = await mkdtemp(join(tmpdir(), "luna-webhook-config-"));
+
+    try {
+      await writeFile(
+        join(root, "webhooks.yaml"),
+        baseConfig.replace('name: "luna-webhooks"', 'name: "luna:webhooks"'),
         "utf8"
       );
 

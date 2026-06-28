@@ -29,7 +29,7 @@ const config: WebhookConfig = {
     body_limit_bytes: 1048576
   },
   queue: {
-    name: "luna:webhooks",
+    name: "luna-webhooks",
     redis_url: "redis://127.0.0.1:6379",
     dedupe_ttl_seconds: 604800,
     remove_on_complete: {
@@ -278,5 +278,22 @@ describe("webhook queue", () => {
         url: config.queue.redis_url
       }
     });
+  });
+
+  it("matches BullMQ queue-name constructor constraints", async () => {
+    const { Queue } = await vi.importActual<typeof import("bullmq")>("bullmq");
+    const safeQueue = new Queue("luna-webhooks", {
+      connection: { url: "redis://127.0.0.1:6379" }
+    });
+
+    try {
+      expect(() => {
+        new Queue("luna:webhooks", {
+          connection: { url: "redis://127.0.0.1:6379" }
+        });
+      }).toThrow("Queue name cannot contain :");
+    } finally {
+      await safeQueue.close();
+    }
   });
 });

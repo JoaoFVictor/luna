@@ -9,6 +9,11 @@ const WebhookProviderConfigSchema = z
   })
   .strict();
 
+const BullMqQueueNameSchema = z.string().min(1).refine(
+  (name) => !name.includes(":"),
+  { message: 'BullMQ queue names cannot contain ":"' }
+);
+
 export const WebhookConfigSchema = z
   .object({
     version: z.literal("2026-06"),
@@ -21,7 +26,7 @@ export const WebhookConfigSchema = z
       .strict(),
     queue: z
       .object({
-        name: z.string().min(1),
+        name: BullMqQueueNameSchema,
         redis_url: z.string().url(),
         dedupe_ttl_seconds: z.number().int().min(1),
         remove_on_complete: z

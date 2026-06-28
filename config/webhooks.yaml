@@ -4,7 +4,7 @@ server:
   port: 4012
   body_limit_bytes: 1048576
 queue:
-  name: "luna:webhooks"
+  name: "luna-webhooks"
   redis_url: "redis://127.0.0.1:6379"
   # MVP dedupe uses deterministic BullMQ job ids. This TTL is reserved for a
   # future explicit BullMQ deduplication mode and is not operative yet.
