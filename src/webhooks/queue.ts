@@ -43,7 +43,7 @@ type RedisUrlConnectionOptions = Pick<RedisOptions, "lazyConnect"> & {
   url: string;
 };
 
-function redisConnectionOptions(
+export function webhookRedisConnectionOptions(
   config: WebhookConfig,
   env: WebhookQueueEnv
 ): RedisUrlConnectionOptions {
@@ -57,7 +57,7 @@ export function createWebhookQueue(
   env: WebhookQueueEnv = process.env
 ): Queue<WebhookInvocationJob> {
   return new Queue<WebhookInvocationJob>(config.queue.name, {
-    connection: redisConnectionOptions(config, env)
+    connection: webhookRedisConnectionOptions(config, env)
   });
 }
 
@@ -66,7 +66,7 @@ export function createWebhookQueueEvents(
   env: WebhookQueueEnv = process.env
 ): QueueEvents {
   return new QueueEvents(config.queue.name, {
-    connection: redisConnectionOptions(config, env)
+    connection: webhookRedisConnectionOptions(config, env)
   });
 }
 
