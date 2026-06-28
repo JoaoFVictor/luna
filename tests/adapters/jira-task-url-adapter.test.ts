@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
@@ -34,8 +34,10 @@ async function writeContextFiles() {
     "utf8"
   );
 
+  const authRoot = join(projectRoot, ".luna", "auth");
+  await mkdir(authRoot, { recursive: true });
   await writeFile(
-    join(configRoot, "luna.auth.json"),
+    join(authRoot, "luna.auth.json"),
     JSON.stringify({
       providers: {
         jira: {

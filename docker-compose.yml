@@ -1,0 +1,46 @@
+name: luna-webhooks
+
+x-luna-app: &luna-app
+  build:
+    context: .
+  image: luna-webhooks:local
+  init: true
+  environment:
+    LUNA_CONFIG_ROOT: /app/config
+    LUNA_AUTH_ROOT: /app/.luna/auth
+    REDIS_URL: redis://redis:6379
+    GH_CONFIG_DIR: /app/.luna/auth/gh
+    GH_PROMPT_DISABLED: "1"
+  volumes:
+    - ./config:/app/config:ro
+    - ./.runs:/app/.runs
+    - type: bind
+      source: ${LUNA_AUTH_ROOT:-./.luna/auth}
+      target: /app/.luna/auth
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ${LUNA_REPOSITORIES_ROOT:-./repositories}
+      target: /repositories
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  webhook-server:
+    <<: *luna-app
+    command: ["node", "dist/src/cli.js", "webhook-server", "--host", "0.0.0.0"]
+    ports:
+      - "4012:4012"
+
+  webhook-worker:
+    <<: *luna-app
+    command: ["node", "dist/src/cli.js", "webhook-worker"]

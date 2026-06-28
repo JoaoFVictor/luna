@@ -96,8 +96,9 @@ A provider does not own:
 - generic context intake.
 - generic capability contracts.
 
-Shared provider helpers may read `luna.auth.json` as unknown provider data.
-Provider-specific validation belongs in the owning provider module.
+Shared provider helpers may read `.luna/auth/luna.auth.json` as unknown
+provider data. Provider-specific validation belongs in the owning provider
+module.
 
 ## Current Providers
 
@@ -105,20 +106,21 @@ GitHub:
 
 - Parses GitHub PR URLs.
 - Uses `gh api` through `executeJson`.
-- Uses `gh` authentication, not `luna.auth.json`.
+- Uses `gh` authentication from `GH_CONFIG_DIR` under the Luna auth root, not
+  `luna.auth.json`.
 - Provides GitHub change-request publishing.
 
 Jira:
 
 - Reads `config/jira.yaml`.
-- Reads credentials from `luna.auth.json` under the active config root.
+- Reads credentials from `.luna/auth/luna.auth.json`.
 - Fetches Jira issue data and optional repository hints from configured fields.
 - Renders task context/final implementation reports for Jira issues.
 
 Plane:
 
 - Reads `config/plane.yaml`.
-- Reads API keys from `luna.auth.json` under the active config root.
+- Reads API keys from `.luna/auth/luna.auth.json`.
 - Supports browse and project issue URLs.
 - Fetches Plane issue data and optional repository hints from labels.
 - Renders task context/final implementation reports for Plane issues.
@@ -145,5 +147,5 @@ Leaf modules should stay in their lane.
 - CLI: `src/cli.ts`
 - Native platform plugins: `src/platform/native/native-platform-plugins.ts`
 - Repository resolution: `src/core/workflow/workspace-resolver.ts`
-- Shared provider auth reader: `src/providers/auth.ts`
+- Shared auth root and file reader: `src/core/auth/`
 - Repository hint parser: `src/providers/repository-hints/repository-reference.ts`

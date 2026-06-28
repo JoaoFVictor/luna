@@ -1,0 +1,8 @@
+{
+  "openai-codex": {
+    "type": "oauth",
+    "access": "redacted-access-token",
+    "refresh": "redacted-refresh-token",
+    "expires": 4102444800000
+  }
+}

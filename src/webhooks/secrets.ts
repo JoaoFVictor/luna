@@ -1,9 +1,13 @@
-import { loadLunaAuthFile } from "../providers/auth.js";
+import type { LunaAuthEnv } from "../core/auth/root.js";
+import { loadLunaAuthFile } from "../core/auth/luna-auth-file.js";
 import { webhookConfigInvalid } from "./errors.js";
 
-export async function loadWebhookSecrets(projectRoot: string): Promise<unknown> {
+export async function loadWebhookSecrets(
+  projectRoot: string,
+  env: LunaAuthEnv = process.env
+): Promise<unknown> {
   try {
-    return await loadLunaAuthFile(projectRoot);
+    return await loadLunaAuthFile(projectRoot, env);
   } catch (cause) {
     throw webhookConfigInvalid("Failed to load webhook secrets", cause);
   }
@@ -35,8 +39,9 @@ export function resolveSecretRef(root: unknown, ref: string): string {
 export async function resolveProviderWebhookSecret(args: {
   projectRoot: string;
   secretRef: string;
+  env?: LunaAuthEnv;
 }): Promise<string> {
-  const secrets = await loadWebhookSecrets(args.projectRoot);
+  const secrets = await loadWebhookSecrets(args.projectRoot, args.env);
 
   return resolveSecretRef(secrets, args.secretRef);
 }

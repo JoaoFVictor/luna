@@ -39,16 +39,19 @@ writable worktree.
 
 ## Provider Auth Fails
 
-GitHub adapters and publishing use `gh` authentication. Jira and Plane read
-provider credentials from `luna.auth.json` under the active config root.
+GitHub adapters and publishing use `gh` authentication from the Luna auth root
+through `GH_CONFIG_DIR`. Jira and Plane read provider credentials from
+`.luna/auth/luna.auth.json`.
 
 Pi model authentication is separate:
 
 ```bash
-npx @earendil-works/pi-ai login openai-codex
+mkdir -p .luna/auth/pi-ai
+# create .luna/auth/pi-ai/auth.json from .luna/auth/pi-ai/auth.example.json
 ```
 
-Do not put Pi model credentials in `luna.auth.json`.
+Do not put Pi model credentials in `luna.auth.json`; keep them at
+`.luna/auth/pi-ai/auth.json`.
 
 ## Context Looks Empty
 

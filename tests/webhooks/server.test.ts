@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Queue } from "bullmq";
@@ -426,8 +426,10 @@ describe("webhook runtime provider registry", () => {
     };
 
     try {
+      const authRoot = join(projectRoot, ".luna", "auth");
+      await mkdir(authRoot, { recursive: true });
       await writeFile(
-        join(projectRoot, "luna.auth.json"),
+        join(authRoot, "luna.auth.json"),
         JSON.stringify({
           providers: {
             webhooks: {

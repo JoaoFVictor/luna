@@ -1,0 +1,27 @@
+{
+  "providers": {
+    "jira": {
+      "company": {
+        "base_url": "https://company.atlassian.net",
+        "auth_type": "basic_api_token",
+        "email": "user@example.com",
+        "api_token": "redacted-jira-api-token"
+      }
+    },
+    "plane": {
+      "company": {
+        "base_url": "https://app.plane.so",
+        "auth_type": "api_key",
+        "api_key": "redacted-plane-api-key"
+      }
+    },
+    "webhooks": {
+      "github": {
+        "secret": "redacted-github-webhook-secret"
+      },
+      "plane": {
+        "secret": "redacted-plane-webhook-secret"
+      }
+    }
+  }
+}

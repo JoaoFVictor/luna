@@ -1,0 +1,6 @@
+github.com:
+  git_protocol: ssh
+  users:
+    octocat:
+  user: octocat
+  oauth_token: redacted-github-token

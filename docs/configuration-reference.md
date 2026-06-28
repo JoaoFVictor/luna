@@ -55,6 +55,15 @@ Important fields:
 Repository hints from invocations are matched against this config. Provider
 payloads are not authoritative config.
 
+When running with Docker Compose, set repository `path` values to container
+paths under `/repositories`, for example `/repositories/repo`. The host parent
+directory is mounted with `LUNA_REPOSITORIES_ROOT`.
+
+For local-only tests with real repositories, keep this committed file generic.
+Use ignored local overrides instead: `docker-compose.override.yml` can mount
+`.luna/local-config/repositories.yaml` over `/app/config/repositories.yaml`,
+and `.env` can point `LUNA_REPOSITORIES_ROOT` at the host repositories parent.
+
 ## `models.yaml`
 
 Defines named model profiles used by agents.
@@ -134,7 +143,8 @@ Fields:
 - optional `repository_hint` field mapping.
 - optional acceptance criteria field mapping.
 
-Jira credentials are stored in `luna.auth.json` under the active config root.
+Jira credentials are stored in `.luna/auth/luna.auth.json` under the Luna auth
+root.
 
 ## `plane.yaml`
 
@@ -146,7 +156,8 @@ Fields:
 - `base_url`
 - optional repository hint label mapping.
 
-Plane API keys are stored in `luna.auth.json` under the active config root.
+Plane API keys are stored in `.luna/auth/luna.auth.json` under the Luna auth
+root.
 
 ## `webhooks.yaml`
 
@@ -181,6 +192,11 @@ providers:
 override `queue.redis_url` at process startup. Worker concurrency defaults to
 `8`; use `webhook-worker --concurrency <n>` for a process-local override.
 
+The bundled `docker-compose.yml` uses that override to point webhook processes at the
+Redis service with `REDIS_URL=redis://redis:6379`. It keeps `LUNA_CONFIG_ROOT`
+at `/app/config`, sets `LUNA_AUTH_ROOT=/app/.luna/auth`, mounts `./config`
+read-only, and expects Luna-owned auth at `/app/.luna/auth/luna.auth.json`.
+
 `dedupe_ttl_seconds` is reserved for future explicit BullMQ deduplication. The
 current MVP dedupes repeated deliveries with deterministic BullMQ job ids and
 retains completed jobs according to `remove_on_complete`.
@@ -190,15 +206,17 @@ retains completed jobs according to `remove_on_complete`.
 Do not commit secrets.
 
 - Pi model auth is created by `npx @earendil-works/pi-ai login openai-codex`
-  and stored by Pi, normally under `~/.config/pi-ai/auth.json`.
-- Jira and Plane provider auth live in `luna.auth.json` under the active config
-  root.
-- GitHub provider auth uses `gh`; Luna does not define `github.yaml` or GitHub
-  entries in `luna.auth.json`.
+  and stored for Luna under `.luna/auth/pi-ai/auth.json`.
+- Jira and Plane provider auth live in `.luna/auth/luna.auth.json`.
+- GitHub provider auth uses `gh` with `GH_CONFIG_DIR` under `.luna/auth/gh`;
+  Luna does not define `github.yaml` or GitHub entries in `luna.auth.json`.
+
+When running with Compose, `${LUNA_AUTH_ROOT:-./.luna/auth}` is mounted at
+`/app/.luna/auth` and used by Luna, Pi, GitHub CLI, and SSH.
 
 Webhook provider signing secrets are separate from provider API auth. They use
-the `providers.webhooks` namespace in `luna.auth.json` and are resolved through
-the `secret_ref` fields in `config/webhooks.yaml`:
+the `providers.webhooks` namespace in `.luna/auth/luna.auth.json` and are
+resolved through the `secret_ref` fields in `config/webhooks.yaml`:
 
 ```json
 {
@@ -216,3 +234,6 @@ the `secret_ref` fields in `config/webhooks.yaml`:
 The CLI resolves config root from `LUNA_CONFIG_ROOT` or the default config
 location. Runtime composition validates backend selections and JSON options.
 Provider modules validate only their own provider config/auth slices.
+
+`LUNA_AUTH_ROOT` resolves the single auth root. Relative values resolve from
+the project root. The default is `.luna/auth`.

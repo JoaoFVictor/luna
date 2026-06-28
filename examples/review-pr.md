@@ -14,15 +14,16 @@ npm install
 The default `config/models.yaml` uses Pi's `openai-codex/...` provider.
 
 ```bash
-npx @earendil-works/pi-ai login openai-codex
+mkdir -p .luna/auth/pi-ai
+# create .luna/auth/pi-ai/auth.json from .luna/auth/pi-ai/auth.example.json
 ```
 
-This creates `~/.config/pi-ai/auth.json`. Luna reads it at runtime.
+Luna reads Pi credentials from `.luna/auth/pi-ai/auth.json`.
 
 ## 3. Authenticate GitHub
 
 ```bash
-gh auth status
+GH_CONFIG_DIR=.luna/auth/gh gh auth status
 ```
 
 For private repositories, the authenticated account must have access to the PR.
@@ -30,7 +31,7 @@ For private repositories, the authenticated account must have access to the PR.
 ## 4. Clone The Target Repository
 
 ```bash
-git clone git@github.com:org/repo.git /path/to/local/repo
+git clone git@github.com:org/repo.git /repositories/repo
 ```
 
 Luna reviews code from the local clone. The GitHub adapter fetches PR metadata
@@ -46,7 +47,7 @@ repositories:
     provider: github
     owner: org
     name: repo
-    path: /path/to/local/repo
+    path: /repositories/repo
     remote: origin
     context:
       files:
@@ -119,14 +120,14 @@ Git fetch fails
 Check the local clone's remote:
 
 ```bash
-git -C /path/to/local/repo remote -v
+git -C /repositories/repo remote -v
 ```
 
 For private repositories, make sure SSH or HTTPS git auth works outside Luna.
 
-`~/.config/pi-ai/auth.json` is missing
+`.luna/auth/pi-ai/auth.json` is missing
 
-Run `npx @earendil-works/pi-ai login openai-codex`.
+Create `.luna/auth/pi-ai/auth.json` from `.luna/auth/pi-ai/auth.example.json`.
 
 `WebSocket closed 1006`
 

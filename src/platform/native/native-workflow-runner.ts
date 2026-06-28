@@ -243,6 +243,7 @@ async function prepareNativeWorkflowExecution({
   >;
 }> {
   await platform.agentRuntimeFactories[runtimeConfig.agent_runtime.id]?.prepare?.({
+    projectRoot,
     configRoot,
     workflow,
     options: runtimeConfig.agent_runtime.options,

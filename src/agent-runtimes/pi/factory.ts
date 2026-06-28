@@ -19,12 +19,12 @@ function optionalPositiveInteger(value: unknown, label: string): number | undefi
 
 export const piAgentRuntimeFactory = {
   id: "pi",
-  async prepare({ configRoot, hasAgents }) {
+  async prepare({ projectRoot, configRoot, hasAgents }) {
     if (!hasAgents) {
       return;
     }
 
-    await registerConfiguredPiOAuthProviders({ configRoot });
+    await registerConfiguredPiOAuthProviders({ projectRoot, configRoot });
   },
   create: (options: JsonObject) =>
     createPiAgentRuntimeAdapter({

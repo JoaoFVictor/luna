@@ -105,6 +105,40 @@ node dist/src/cli.js webhook-server
 node dist/src/cli.js webhook-worker
 ```
 
+For a containerized local runtime, use Compose:
+
+```bash
+docker compose up --build
+```
+
+This starts Redis, `webhook-server`, and `webhook-worker`. The containers use
+`REDIS_URL=redis://redis:6379`, keep Redis on the internal Compose network,
+expose the HTTP server on host port `4012`, mount `./config` read-only, mount
+`${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth`, and write run
+artifacts to `./.runs`. The auth root is writable because the Pi runtime can
+refresh OAuth credentials.
+
+The Compose file also mounts auth and repository state needed by real runs:
+
+- `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth` for all auth files.
+- `.luna/auth/luna.auth.json` for Jira, Plane, and webhook secrets.
+- `.luna/auth/pi-ai/auth.json` for Pi model auth.
+- `.luna/auth/gh` for GitHub CLI auth through `GH_CONFIG_DIR`.
+- `.luna/auth/ssh` for SSH repository remotes.
+- `${LUNA_REPOSITORIES_ROOT:-./repositories}` at `/repositories` for all
+  configured repositories.
+
+Create `.luna/auth/luna.auth.json` before starting Compose. For a different
+repository layout, either update `config/repositories.yaml` or set
+`LUNA_REPOSITORIES_ROOT` to the host directory that should appear as
+`/repositories`.
+
+For local smoke tests against personal repositories, prefer ignored local
+overrides over committing real repository names. A `docker-compose.override.yml`
+can mount `.luna/local-config/repositories.yaml` over
+`/app/config/repositories.yaml`, while `.env` sets `LUNA_REPOSITORIES_ROOT` to
+the host parent directory.
+
 The queue name and Redis URL come from `config/webhooks.yaml`, with `REDIS_URL`
 available as a runtime override. Jobs use deterministic BullMQ job ids for
 delivery dedupe. Worker concurrency defaults to `8` and can be overridden in
@@ -115,8 +149,8 @@ exponential backoff. Permanent failures such as invalid job data or no matching
 route are marked unrecoverable so they do not retry repeatedly.
 
 Unsigned example payloads live under `examples/webhooks/`. For local smoke
-tests, compute signatures with the same secret configured in `luna.auth.json`;
-do not disable verification.
+tests, compute signatures with the same secret configured in
+`.luna/auth/luna.auth.json`; do not disable verification.
 
 ```bash
 curl -X POST http://127.0.0.1:4012/webhooks/github \

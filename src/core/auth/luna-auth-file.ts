@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { z, ZodError } from "zod";
+import {
+  resolveLunaAuthFilePath,
+  type LunaAuthEnv
+} from "./root.js";
 
 export const LunaAuthFileSchema = z
   .object({
@@ -27,9 +30,10 @@ export function lunaAuthError(
 }
 
 export async function loadLunaAuthFile(
-  projectRoot = process.cwd()
+  projectRoot = process.cwd(),
+  env: LunaAuthEnv = process.env
 ): Promise<LunaAuthFile> {
-  const authPath = path.join(projectRoot, "luna.auth.json");
+  const authPath = resolveLunaAuthFilePath(projectRoot, env);
   let content: string;
 
   try {

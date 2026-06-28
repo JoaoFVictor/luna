@@ -25,7 +25,7 @@ repositories:
     provider: github
     owner: org
     name: repo
-    path: /path/to/local/repo
+    path: /repositories/repo
     remote: origin
     expected_remote_urls:
       - git@github.com:org/repo.git
@@ -64,13 +64,15 @@ github:org/repo
 
 ## 4. Add Provider Auth
 
-Create `luna.auth.json` under the active config root:
+Create `.luna/auth/luna.auth.json` under the Luna auth root:
 
 ```json
 {
   "providers": {
     "plane": {
       "company": {
+        "base_url": "https://app.plane.so",
+        "auth_type": "api_key",
         "api_key": "plane-api-key"
       }
     }

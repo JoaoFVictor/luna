@@ -268,7 +268,10 @@ async function loadPlaneTaskUrlInvocation(
     PlaneConfigSchema
   );
   const instance = findPlaneInstance(plane, parsed);
-  const auth = planeAuthForInstance(await loadPlaneAuth(context.configRoot), instance.id);
+  const auth = planeAuthForInstance(
+    await loadPlaneAuth(context.projectRoot, context.env),
+    instance.id
+  );
   const issueResponse = await defaultFetchIssue({
     instance,
     workspaceSlug,

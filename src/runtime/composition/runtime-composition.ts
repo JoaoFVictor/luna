@@ -233,6 +233,7 @@ export type AgentRuntimeFactory = {
 };
 
 export type AgentRuntimePrepareInput = {
+  readonly projectRoot: string;
   readonly configRoot: string;
   readonly workflow: Pick<WorkflowDefinition, "id" | "mode" | "graph">;
   readonly options: JsonObject;

@@ -3,7 +3,8 @@ import {
   loadLunaAuthFile,
   lunaAuthError,
   type LunaAuthError
-} from "../auth.js";
+} from "../../core/auth/luna-auth-file.js";
+import type { LunaAuthEnv } from "../../core/auth/root.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -52,9 +53,10 @@ function planeAuthError(
 }
 
 export async function loadPlaneAuth(
-  projectRoot = process.cwd()
+  projectRoot = process.cwd(),
+  env: LunaAuthEnv = process.env
 ): Promise<PlaneLunaAuthConfig> {
-  const authFile = await loadLunaAuthFile(projectRoot);
+  const authFile = await loadLunaAuthFile(projectRoot, env);
 
   try {
     return PlaneLunaAuthConfigSchema.parse(authFile);

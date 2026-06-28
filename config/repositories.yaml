@@ -1,14 +1,24 @@
 repositories:
-  - id: swg-front-nuxt
+  # Example repository entry. Replace this with the repositories Luna may read
+  # or edit. In Docker Compose, repository paths should be container paths under
+  # /repositories; the host parent is mounted with LUNA_REPOSITORIES_ROOT.
+  - id: example-repo
+    # Source provider id used by invocation repository matching.
     provider: github
-    owner: swinggo-dev
-    name: swg-front-nuxt
-    path: ../swinggo/swg-front-nuxt
+    # Provider repository owner/organization.
+    owner: example-org
+    # Provider repository name.
+    name: example-repo
+    # Local clone path. Compose mounts LUNA_REPOSITORIES_ROOT at /repositories.
+    path: /repositories/example-repo
+    # Git remote name used for repository operations.
     remote: origin
+    # Allowed remote URLs for trusted write workflows.
     expected_remote_urls:
-      - git@github.com:swinggo-dev/swg-front-nuxt.git
-      - https://github.com/swinggo-dev/swg-front-nuxt.git
+      - git@github.com:example-org/example-repo.git
+      - https://github.com/example-org/example-repo.git
     context:
+      # Repository files collected into explicit runtime context when present.
       files:
         - AGENTS.md
         - README.md

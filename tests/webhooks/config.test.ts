@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -154,8 +154,10 @@ describe("webhook secrets", () => {
     const root = await mkdtemp(join(tmpdir(), "luna-webhook-auth-"));
 
     try {
+      const authRoot = join(root, ".luna", "auth");
+      await mkdir(authRoot, { recursive: true });
       await writeFile(
-        join(root, "luna.auth.json"),
+        join(authRoot, "luna.auth.json"),
         JSON.stringify({
           providers: {
             webhooks: {
