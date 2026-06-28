@@ -8,6 +8,7 @@ import type { Invocation } from "../../src/core/router/invocation.js";
 import { createInitialRuntimeState } from "../../src/core/runtime/state.js";
 import type { WorkflowRunResult } from "../../src/core/workflow/execution-contracts.js";
 import type { LunaPlatform } from "../../src/platform/native/native-platform.js";
+import { defineWebhookProviderAdapterFactories } from "../../src/webhooks/provider-registry.js";
 import {
   findProjectRoot,
   loadRoutingDefinition,
@@ -75,6 +76,82 @@ function succeededWorkflowResult(): WorkflowRunResult {
   };
 }
 
+async function writeCliProjectConfig({
+  projectRoot,
+  configRoot,
+  workerConcurrency = 8
+}: {
+  projectRoot: string;
+  configRoot: string;
+  workerConcurrency?: number;
+}): Promise<void> {
+  await mkdir(configRoot, { recursive: true });
+  await writeFile(
+    path.join(configRoot, "app.yaml"),
+    [
+      "workspace:",
+      "  strategy: git_worktree",
+      `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
+      "  preserve_on_success: false",
+      "  preserve_on_failure: true",
+      "artifacts:",
+      `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(configRoot, "routing.yaml"),
+    [
+      "type: router",
+      "version: \"2026-06\"",
+      "rules:",
+      "  - id: cli_webhook_route",
+      "    when:",
+      "      expression: \"true\"",
+      "    target: workflow:implementation",
+      ""
+    ].join("\n")
+  );
+  await writeFile(
+    path.join(configRoot, "webhooks.yaml"),
+    [
+      "version: \"2026-06\"",
+      "server:",
+      "  host: 127.0.0.1",
+      "  port: 3000",
+      "  body_limit_bytes: 1048576",
+      "queue:",
+      "  name: luna-webhooks",
+      "  redis_url: redis://localhost:6379",
+      "  dedupe_ttl_seconds: 86400",
+      "  remove_on_complete:",
+      "    age_seconds: 3600",
+      "    count: 1000",
+      "  remove_on_fail: true",
+      "worker:",
+      `  concurrency: ${workerConcurrency}`,
+      "providers: {}",
+      ""
+    ].join("\n")
+  );
+}
+
+function webhookPlatform(): Pick<
+  LunaPlatform,
+  "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+> {
+  return {
+    inputAdapterRegistry: registryWith({
+      id: "unused",
+      description: "Unused",
+      load: vi.fn()
+    }),
+    runWorkflow: vi.fn(async () => undefined),
+    resumeWorkflow: vi.fn(async () => succeededWorkflowResult()),
+    webhookProviderRegistry: defineWebhookProviderAdapterFactories([])
+  };
+}
+
 describe("Luna CLI", () => {
   it("rejects invalid or workflow-specific command shapes", () => {
     expect(() => parseCliArgs(["run", "--workflow", "code-review"])).toThrow(
@@ -108,6 +185,44 @@ describe("Luna CLI", () => {
       interrupt: "interrupt-run-1-approval",
       decision: { approved: true }
     });
+  });
+
+  it("parses generic webhook server arguments", () => {
+    expect(
+      parseCliArgs([
+        "webhook-server",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080"
+      ])
+    ).toEqual({
+      command: "webhook-server",
+      host: "0.0.0.0",
+      port: 8080
+    });
+  });
+
+  it("parses generic webhook worker arguments", () => {
+    expect(
+      parseCliArgs([
+        "webhook-worker",
+        "--concurrency",
+        "4"
+      ])
+    ).toEqual({
+      command: "webhook-worker",
+      concurrency: 4
+    });
+  });
+
+  it("rejects unknown webhook flags", () => {
+    expect(() => parseCliArgs(["webhook-server", "--config", "config"])).toThrow(
+      expect.objectContaining({ code: "unsupported_flag" })
+    );
+    expect(() => parseCliArgs(["webhook-worker", "--port", "8080"])).toThrow(
+      expect.objectContaining({ code: "unsupported_flag" })
+    );
   });
 
   it("finds the project root from compiled dist paths", async () => {
@@ -185,8 +300,12 @@ describe("Luna CLI", () => {
     const platform = {
       inputAdapterRegistry: registryWith(adapter),
       runWorkflow: vi.fn(async () => undefined),
-      resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
-    } satisfies Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">;
+      resumeWorkflow: vi.fn(async () => succeededWorkflowResult()),
+      webhookProviderRegistry: defineWebhookProviderAdapterFactories([])
+    } satisfies Pick<
+      LunaPlatform,
+      "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+    >;
 
     await expect(
       main(
@@ -237,8 +356,12 @@ describe("Luna CLI", () => {
         load: vi.fn()
       }),
       runWorkflow: vi.fn(async () => undefined),
-      resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
-    } satisfies Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">;
+      resumeWorkflow: vi.fn(async () => succeededWorkflowResult()),
+      webhookProviderRegistry: defineWebhookProviderAdapterFactories([])
+    } satisfies Pick<
+      LunaPlatform,
+      "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+    >;
 
     await expect(
       main(
@@ -273,6 +396,86 @@ describe("Luna CLI", () => {
       interrupt_id: "interrupt-run-1-approval",
       decision: { approved: true }
     });
+  });
+
+  it("starts the webhook server with resolved config and CLI overrides", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-webhook-server-"));
+    const configRoot = path.join(projectRoot, "config");
+    const platform = webhookPlatform();
+    const startWebhookServer = vi.fn(async () => undefined);
+    await writeCliProjectConfig({ projectRoot, configRoot });
+
+    await expect(
+      main(
+        [
+          "webhook-server",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "9001"
+        ],
+        {
+          platform,
+          projectRoot,
+          env: { LUNA_CONFIG_ROOT: configRoot },
+          startWebhookServer
+        }
+      )
+    ).resolves.toBe(0);
+
+    expect(startWebhookServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectRoot,
+        configRoot,
+        webhookProviderRegistry: platform.webhookProviderRegistry,
+        config: expect.objectContaining({
+          server: expect.objectContaining({
+            host: "0.0.0.0",
+            port: 9001
+          })
+        })
+      })
+    );
+  });
+
+  it("starts the webhook worker with resolved config and CLI overrides", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-webhook-worker-"));
+    const configRoot = path.join(projectRoot, "config");
+    const platform = webhookPlatform();
+    const targetExecutor = { execute: vi.fn(async () => 0) };
+    const startWebhookWorker = vi.fn(async () => undefined);
+    await writeCliProjectConfig({ projectRoot, configRoot, workerConcurrency: 2 });
+
+    await expect(
+      main(
+        [
+          "webhook-worker",
+          "--concurrency",
+          "6"
+        ],
+        {
+          platform,
+          projectRoot,
+          env: { LUNA_CONFIG_ROOT: configRoot },
+          targetExecutor,
+          startWebhookWorker
+        }
+      )
+    ).resolves.toBe(0);
+
+    expect(startWebhookWorker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectRoot,
+        configRoot,
+        targetExecutor,
+        routing: expect.objectContaining({
+          rules: [expect.objectContaining({ id: "cli_webhook_route" })]
+        }),
+        config: expect.objectContaining({
+          worker: { concurrency: 6 }
+        })
+      })
+    );
   });
 
 });

@@ -26,6 +26,15 @@ import {
 import type { AdapterContext } from "./adapters/types.js";
 import type { LunaPlatform } from "./platform/native/native-platform.js";
 import { loadNativeLunaPlatform } from "./platform/native/native-platform-loader.js";
+import { loadWebhookConfig, type WebhookConfig } from "./webhooks/config.js";
+import {
+  startWebhookServer,
+  type StartWebhookServerDeps
+} from "./webhooks/server.js";
+import {
+  startWebhookWorker,
+  type StartWebhookWorkerDeps
+} from "./webhooks/worker.js";
 import {
   InvocationSchema,
   type Invocation,
@@ -49,6 +58,28 @@ export type CliArgs = {
   checkpoint: string;
   interrupt: string;
   decision: JsonValue;
+} | {
+  command: "webhook-server";
+  host?: string;
+  port?: number;
+} | {
+  command: "webhook-worker";
+  concurrency?: number;
+};
+
+export type ResolvedWebhookServerDeps = StartWebhookServerDeps & {
+  projectRoot: string;
+  configRoot: string;
+  config: WebhookConfig;
+  webhookProviderRegistry: LunaPlatform["webhookProviderRegistry"];
+};
+
+export type ResolvedWebhookWorkerDeps = StartWebhookWorkerDeps & {
+  projectRoot: string;
+  configRoot: string;
+  config: WebhookConfig;
+  routing: RouterDefinition;
+  targetExecutor: TargetExecutor;
 };
 
 export type MainDependencies = {
@@ -56,7 +87,12 @@ export type MainDependencies = {
   routeInvocation?: typeof routeInvocation;
   routing?: RouterDefinition;
   adapterContext?: AdapterContext;
-  platform?: Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow">;
+  platform?: Pick<
+    LunaPlatform,
+    "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+  >;
+  startWebhookServer?: (deps: ResolvedWebhookServerDeps) => Promise<void>;
+  startWebhookWorker?: (deps: ResolvedWebhookWorkerDeps) => Promise<void>;
   projectRoot?: string;
   env?: { LUNA_CONFIG_ROOT?: string };
 };
@@ -106,6 +142,63 @@ export async function findProjectRoot(startPath = process.cwd()): Promise<string
 
 export function parseCliArgs(args: string[]): CliArgs {
   const [command, ...rest] = args;
+
+  if (command === "webhook-server") {
+    const allowedFlags = new Set(["--host", "--port"]);
+    const unsupportedFlag = rest.find(
+      (argument) => argument.startsWith("--") && !allowedFlags.has(argument)
+    );
+    if (unsupportedFlag !== undefined) {
+      throw cliError(
+        "unsupported_flag",
+        `Unsupported webhook-server flag: ${unsupportedFlag}`
+      );
+    }
+
+    const hostFlagIndex = rest.indexOf("--host");
+    const host = hostFlagIndex >= 0
+      ? requiredFlag(rest, "--host", "Missing required --host <host>")
+      : undefined;
+    const portFlagIndex = rest.indexOf("--port");
+    const port = portFlagIndex >= 0
+      ? parsePositiveIntegerFlag(
+          requiredFlag(rest, "--port", "Missing required --port <port>"),
+          "--port"
+        )
+      : undefined;
+
+    return {
+      command,
+      ...(host === undefined ? {} : { host }),
+      ...(port === undefined ? {} : { port })
+    };
+  }
+
+  if (command === "webhook-worker") {
+    const allowedFlags = new Set(["--concurrency"]);
+    const unsupportedFlag = rest.find(
+      (argument) => argument.startsWith("--") && !allowedFlags.has(argument)
+    );
+    if (unsupportedFlag !== undefined) {
+      throw cliError(
+        "unsupported_flag",
+        `Unsupported webhook-worker flag: ${unsupportedFlag}`
+      );
+    }
+
+    const concurrencyFlagIndex = rest.indexOf("--concurrency");
+    const concurrency = concurrencyFlagIndex >= 0
+      ? parsePositiveIntegerFlag(
+          requiredFlag(rest, "--concurrency", "Missing required --concurrency <n>"),
+          "--concurrency"
+        )
+      : undefined;
+
+    return {
+      command,
+      ...(concurrency === undefined ? {} : { concurrency })
+    };
+  }
 
   if (command === "run") {
     const allowedFlags = new Set(["--target", "--input", "--from"]);
@@ -189,7 +282,10 @@ export function parseCliArgs(args: string[]): CliArgs {
     };
   }
 
-  throw cliError("unknown_command", "Expected command: run or resume");
+  throw cliError(
+    "unknown_command",
+    "Expected command: run, resume, webhook-server, or webhook-worker"
+  );
 }
 
 function requiredFlag(args: string[], flag: string, message: string): string {
@@ -200,6 +296,18 @@ function requiredFlag(args: string[], flag: string, message: string): string {
   }
 
   return value;
+}
+
+function parsePositiveIntegerFlag(value: string, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw cliError(
+      "invalid_flag",
+      `Invalid ${flag} value "${value}". Expected a positive integer.`
+    );
+  }
+
+  return parsed;
 }
 
 export function parseWorkflowTarget(value: string): RouteTarget {
@@ -272,7 +380,10 @@ export async function main(
     );
     return app;
   };
-  let loadedPlatform: Pick<LunaPlatform, "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow"> | undefined;
+  let loadedPlatform: Pick<
+    LunaPlatform,
+    "inputAdapterRegistry" | "runWorkflow" | "resumeWorkflow" | "webhookProviderRegistry"
+  > | undefined;
   const loadPlatform = async () => {
     loadedPlatform ??= deps.platform ?? await loadNativeLunaPlatform({
       projectRoot,
@@ -282,6 +393,61 @@ export async function main(
     return loadedPlatform;
   };
   let invocation: Invocation;
+
+  if (parsedArgs.command === "webhook-server") {
+    const platform = await loadPlatform();
+    const loadedConfig = await loadWebhookConfig(configRoot);
+    const config: WebhookConfig = {
+      ...loadedConfig,
+      server: {
+        ...loadedConfig.server,
+        ...(parsedArgs.host === undefined ? {} : { host: parsedArgs.host }),
+        ...(parsedArgs.port === undefined ? {} : { port: parsedArgs.port })
+      }
+    };
+    const starter = deps.startWebhookServer ?? startWebhookServer;
+    await starter({
+      projectRoot,
+      configRoot,
+      config,
+      webhookProviderRegistry: platform.webhookProviderRegistry
+    });
+
+    return 0;
+  }
+
+  if (parsedArgs.command === "webhook-worker") {
+    const platform = await loadPlatform();
+    const loadedConfig = await loadWebhookConfig(configRoot);
+    const config: WebhookConfig = {
+      ...loadedConfig,
+      worker: {
+        ...loadedConfig.worker,
+        ...(parsedArgs.concurrency === undefined
+          ? {}
+          : { concurrency: parsedArgs.concurrency })
+      }
+    };
+    const routing =
+      deps.routing ?? (await loadRoutingDefinition(projectRoot, deps.env, await loadApp()));
+    const targetExecutor =
+      deps.targetExecutor ??
+      createLunaTargetExecutor({
+        projectRoot,
+        configRoot,
+        runWorkflow: platform.runWorkflow
+      });
+    const starter = deps.startWebhookWorker ?? startWebhookWorker;
+    await starter({
+      projectRoot,
+      configRoot,
+      config,
+      routing,
+      targetExecutor
+    });
+
+    return 0;
+  }
 
   if (parsedArgs.command === "resume") {
     const platform = await loadPlatform();
