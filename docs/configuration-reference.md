@@ -159,6 +159,20 @@ Do not commit secrets.
 - GitHub provider auth uses `gh`; Luna does not define `github.yaml` or GitHub
   entries in `luna.auth.json`.
 
+Webhook provider secrets use the `providers.webhooks` namespace in
+`luna.auth.json`:
+
+```json
+{
+  "providers": {
+    "webhooks": {
+      "github": { "secret": "..." },
+      "plane": { "secret": "..." }
+    }
+  }
+}
+```
+
 ## Config Loading
 
 The CLI resolves config root from `LUNA_CONFIG_ROOT` or the default config
