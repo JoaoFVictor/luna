@@ -218,6 +218,19 @@ async function defaultListen(
   await app.listen(options);
 }
 
+async function closeQueueAfterPrimaryFailure(
+  queue: Pick<Queue<WebhookInvocationJob>, "close">,
+  primaryError: unknown
+): Promise<never> {
+  try {
+    await queue.close();
+  } catch {
+    // Preserve the original lifecycle failure; cleanup failures are secondary.
+  }
+
+  throw primaryError;
+}
+
 export function createWebhookServer(
   deps: CreateWebhookServerDeps
 ): FastifyInstance {
@@ -396,7 +409,7 @@ export async function startWebhookServer({
     });
   } catch (error) {
     if (ownsQueue) {
-      await webhookQueue.close();
+      await closeQueueAfterPrimaryFailure(webhookQueue, error);
     }
     throw error;
   }
@@ -407,7 +420,15 @@ export async function startWebhookServer({
 
   return {
     async close(): Promise<void> {
-      await app.close();
+      try {
+        await app.close();
+      } catch (error) {
+        if (ownsQueue) {
+          await closeQueueAfterPrimaryFailure(webhookQueue, error);
+        }
+        throw error;
+      }
+
       if (ownsQueue) {
         await webhookQueue.close();
       }

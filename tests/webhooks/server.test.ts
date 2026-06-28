@@ -16,6 +16,7 @@ import {
   defineWebhookProviderAdapterFactories,
   defineWebhookProviderAdapters
 } from "../../src/webhooks/provider-registry.js";
+import { webhookJobId } from "../../src/webhooks/queue.js";
 import {
   buildWebhookRuntimeProviderRegistry,
   createWebhookServer,
@@ -332,6 +333,7 @@ describe("webhook HTTP server", () => {
 
   it("returns success for duplicate retained deliveries", async () => {
     const { server } = createServer();
+    const expectedJobId = webhookJobId("github", "delivery-1");
 
     const first = await server.inject({
       method: "POST",
@@ -348,9 +350,17 @@ describe("webhook HTTP server", () => {
 
     expect(first.statusCode).toBe(202);
     expect(second.statusCode).toBe(202);
-    expect(await parseJson(second)).toMatchObject({
+    const firstBody = await parseJson(first);
+    const secondBody = await parseJson(second);
+    expect(firstBody).toMatchObject({
       status: "queued",
-      delivery_id: "delivery-1"
+      delivery_id: "delivery-1",
+      job_id: expectedJobId
+    });
+    expect(secondBody).toMatchObject({
+      status: "queued",
+      delivery_id: "delivery-1",
+      job_id: expectedJobId
     });
   });
 
@@ -497,6 +507,28 @@ describe("webhook server lifecycle", () => {
     expect(queue.close).toHaveBeenCalledOnce();
   });
 
+  it("closes an owned queue when app close fails and preserves the app close error", async () => {
+    const queue = {
+      add: vi.fn(),
+      close: vi.fn(async () => undefined)
+    } as unknown as Queue<WebhookInvocationJob>;
+    const closeError = new Error("fastify close failed");
+
+    const handle = await startWebhookServer({
+      config,
+      registry: defineWebhookProviderAdapters([createAdapter()]),
+      createQueue: () => queue,
+      logger,
+      listen: async (app) => {
+        vi.spyOn(app, "close").mockRejectedValue(closeError);
+      }
+    });
+
+    await expect(handle.close()).rejects.toThrow(closeError);
+
+    expect(queue.close).toHaveBeenCalledOnce();
+  });
+
   it("closes an owned queue when startup listen fails", async () => {
     const queue = {
       add: vi.fn(),
@@ -513,6 +545,28 @@ describe("webhook server lifecycle", () => {
         throw startupError;
       }
     })).rejects.toThrow(startupError);
+
+    expect(queue.close).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the startup error when owned queue cleanup fails after listen fails", async () => {
+    const queue = {
+      add: vi.fn(),
+      close: vi.fn(async () => {
+        throw new Error("queue close failed");
+      })
+    } as unknown as Queue<WebhookInvocationJob>;
+    const startupError = new Error("port unavailable");
+
+    await expect(startWebhookServer({
+      config,
+      registry: defineWebhookProviderAdapters([createAdapter()]),
+      createQueue: () => queue,
+      logger,
+      listen: async () => {
+        throw startupError;
+      }
+    })).rejects.toBe(startupError);
 
     expect(queue.close).toHaveBeenCalledOnce();
   });
