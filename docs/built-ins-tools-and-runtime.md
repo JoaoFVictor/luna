@@ -1,183 +1,183 @@
-# Built-Ins, Tools, And Runtime
+# Capabilities, Tools, And Runtime
 
-This document explains deterministic workflow steps, local tools, write-mode
-services, provider-facing built-ins, and the current Pi runtime adapter.
+Luna exposes deterministic workflow and agent behavior through capability
+manifests. Runtime composition then wires those registrations to concrete
+ports, backends, and runtimes.
+
+## Capabilities
+
+Capability manifests live under `src/capabilities/<id>/manifest.ts` and are
+assembled by `src/capabilities/registry.ts`.
+
+A manifest can register:
+
+- built-ins
+- patterns
+- gates
+- local tools
+- ports
+- artifact publishers
+- schemas
+- side-effect policies
+- re-exports and dependencies
+
+The core registry validates duplicate ids, dependency order, unresolved
+references, undeclared cross-capability references, policy metadata, and write
+side-effect operation ids.
+
+Add public deterministic behavior in a capability, not as an unregistered
+helper and not as a scattered public name list.
 
 ## Built-Ins
 
-Built-ins are deterministic workflow nodes. They are TypeScript steps registered
-in the built-in registry and referenced by YAML workflow graphs.
+Built-ins are deterministic workflow nodes. They are referenced by `uses:` in
+workflow YAML and registered through capability manifests plus native platform
+executors.
 
-A built-in owns:
+Built-in metadata can express runtime behavior such as:
 
-- a stable name.
-- input handling for one deterministic operation.
-- output data for later workflow nodes.
-- scheduling metadata.
+- repository requirement.
+- exclusive repository locks.
+- workspace capture.
+- lifecycle phase.
+- deferred final report.
 
-Built-in metadata is part of the runtime contract. It tells the runner
-whether a step requires a repository, captures a workspace, needs repository
-locks, participates in implementation lifecycle evidence, or should be deferred
-until final-report time.
+Runner behavior should come from metadata, policies, and manifests, not ad hoc
+string checks.
 
-Use metadata instead of ad hoc name checks. If runner behavior changes based
-on a built-in, the built-in metadata should say so.
+Common built-in families:
 
-## Runtime-Neutral And Provider-Facing Built-Ins
+- `runtime.preflight`
+- `context.collect_context`
+- `repository-diff.collect_context`
+- `repository-workspace.capture`
+- `task-context.collect` and `task-context.final_report`
+- `validation.run_commands`
+- `findings.validate_evidence`
+- `reports.final_report`
+- `local-exec.command.read` and `local-exec.command.write`
+- `git.status`, `git.commit`, `git.push_branch`
+- `change-request.create`
+- `repository-change.*` lifecycle steps
 
-Runtime-neutral built-ins live under `src/core/built-ins/`. They should not
-know provider auth, provider payload shapes, provider URLs, or Pi details.
-
-Provider-facing built-ins are composed through
-`src/providers/built-ins.ts`. That composition root can dispatch to
-provider-owned code under `src/providers/<provider>/` based on
-`invocation.source`.
-
-For example, source providers can render task context or final reports in their
-own format while keeping the generic workflow graph stable.
-
-## Built-In Categories
-
-The current built-ins fall into these categories:
-
-- preflight and repository preparation.
-- context collection.
-- code review repository context and report generation.
-- implementation worktree creation.
-- task context collection for source providers.
-- validation command execution.
-- implementation validation and acceptance evidence.
-- worktree diff collection.
-- commit, push, and change-request gates.
-- final reports.
-
-The exact inventory is listed in `README.md` and checked against the runtime
-catalog by the docs drift guardrail.
+For the exact current set, inspect `src/capabilities/*/manifest.ts` and
+`src/capabilities/registry.ts`.
 
 ## Local Tools
 
-Local tools are different from built-ins. A built-in is a workflow node. A
-local tool is a small function an agent can call inside its model session.
+Local tools are not workflow nodes. They are functions an agent can call during
+a model session.
 
-Local tool contracts live in `src/core/tools/contracts.ts`. The catalog lives
-in `src/core/tools/catalog.ts`. Pi materialization lives only in
-`src/agent-runtimes/pi/adapter.ts`.
+Repository tools are registered by the `repository` capability. Current ids
+include:
 
-A tool definition includes:
+- `repository.status`
+- `repository.diff-summary`
+- `repository.read-file`
+- `repository.write-file`
+- `repository.delete-file`
 
-- id and description.
-- input schema.
-- safety metadata.
-- allowed agent modes.
-- a handler factory bound to a cwd.
+`status`, `diff-summary`, and `read-file` are available to read-only and
+trusted write agents. `write-file` and `delete-file` are trusted-local-write
+tools. Tool resolution checks capability registration, protocol, contract,
+requested ids, and agent mode.
 
-The current repository tools are read-only. They run from the prepared
-repository or workspace cwd and expose focused git inspection to agents.
+Tool implementations are bound to a cwd and must keep filesystem access inside
+that cwd.
 
-Tools do not orchestrate workflows, normalize external inputs, choose
-providers, or call Pi directly.
+## MCP Status
 
-## MCP Tools
+MCP policy and schemas exist in config/tool resolution. Resolving MCP tools
+adds runtime requirements such as `mcp_tools`.
 
-MCP servers are configured in `config/mcp.yaml`. Luna reads server URLs and
-headers from environment variables, enforces `allowed_agent_modes`, filters
-configured `allowed_tools`, adapts tool names for the model, and returns a
-close hook for open connections.
+The bundled Pi adapter currently advertises only local tool support. Do not
+document MCP tool execution as working with Pi until the runtime adapter
+materializes MCP tools.
 
-Agent config references MCP server ids. Workflows do not attach MCP tools
-directly.
+## Local Exec And Validation
 
-## Write-Mode Services
+`local-exec.command.read` and `local-exec.command.write` run host commands
+through a process runner using `spawn(cmd, args)` with no shell. Read-only
+workflows cannot use write operations. Large outputs can be written as
+artifacts.
 
-Trusted local write behavior is split between workflow graphs, built-ins,
-agent mode, and write-mode services.
+`validation.run_commands` uses the command runner and passes only when every
+command exits 0 and does not time out.
 
-Write-mode services under `src/core/write-mode/` handle branch naming,
-worktree creation, git safety gates, lifecycle evidence, cleanup decisions, and
-append-only transaction journals.
+These features run on the host and must be treated as trusted host-local
+execution.
 
-Important safety checks include:
+## Runtime Composition
 
-- repository entries must declare `expected_remote_urls`.
-- the configured remote URL must match the allowlist.
-- base ancestry is checked before write work begins.
-- commit, push, and change-request publishing are separate gates.
-- staging uses literal pathspecs.
-- rollback journals are append-only.
-- failed validation, failed acceptance, disabled publishing, or publish failure
-  can preserve the worktree for inspection.
+Runtime composition lives in `src/runtime/composition/**`. It selects:
 
-Agents should edit the worktree during trusted loops. They should not commit,
-push, or open change requests themselves. Deterministic built-ins own those
-publishing gates.
+- artifact, event, interrupt, checkpoint, and runtime-log backends.
+- workflow runtime factory.
+- agent runtime factory.
+- interrupt authorization policy.
+- capability ports.
+- artifact publisher and observability sinks.
 
-The default change-request provider is GitHub through provider-owned actions
-and the GitHub CLI.
+Default app config uses filesystem stores for artifacts/events/interrupts/logs,
+SQLite checkpoints, LangGraph workflow runtime, and Pi agent runtime.
 
-## Pi Runtime Adapter
+Memory backends exist for tests and non-durable runs. Durable checkpointing is
+required for resumable human interrupts in real runs.
 
-The current runtime adapter lives in `src/agent-runtimes/pi/`. It is the
-only place that should know how to materialize Luna runtime concepts into Pi.
+## Pi Agent Runtime
+
+The Pi adapter lives in `src/agent-runtimes/pi/**`.
 
 It owns:
 
 - model profile projection.
-- Pi OAuth provider registration.
-- Pi agent sessions.
+- Pi auth bridge.
+- agent session execution.
 - local tool materialization.
-- usage and log bridging.
-- trusted local gated loop execution.
+- model-facing tool name conversion.
+- tool call loop limits.
+- usage/log bridging.
+- JSON final-output parsing.
 
-It does not own:
+It currently supports:
 
-- generic workflow definitions.
-- generic built-in contracts.
-- provider schemas.
-- provider auth.
-- routing policy.
-- repository configuration semantics.
+- tool protocol: `local`.
+- runtime requirement: `tool_calling`.
 
-Model profiles live in `config/models.yaml`. Agents reference model profile
-names; transport settings belong in model profiles, not in agent instructions
-or workflow graphs.
+It does not own workflow routing, provider auth, provider payload parsing, or
+generic capability contracts.
 
-## What This Layer Does
+## Trusted Write Mechanics
 
-- Gives workflows deterministic TypeScript steps.
-- Gives agents small explicit local tools.
-- Keeps provider-specific built-ins behind provider composition.
-- Keeps trusted write mutation behind deterministic services and gates.
-- Keeps Pi-specific materialization out of generic core modules.
+Trusted write workflows combine several layers:
 
-## What This Layer Does Not Do
+- workflow mode: `trusted_local_write`.
+- trusted write agent mode.
+- repository tools allowed only in write mode.
+- `quality-gates.gated_agent_loop`.
+- validation and review gates.
+- `human_gate` approval.
+- deterministic git commit/push/change-request built-ins.
+- side-effect policies and lifecycle records.
 
-- It does not ask models to decide deterministic workflow behavior.
-- It does not put provider-specific auth in generic built-ins.
-- It does not register tools outside `src/core/tools/catalog.ts`.
-- It does not let read-only workflows use write lifecycle built-ins.
-- It does not make prompt replay safe for trusted local writes.
+Agents edit the prepared worktree. Deterministic built-ins commit, push, and
+open change requests after gates approve.
+
+Trusted host-local execution can access local filesystem, credentials, network,
+and CLIs. Keep that warning visible in reports and docs.
 
 ## Source Map
 
+- Capability manifest type: `src/core/capabilities/manifest.ts`
+- Capability registry: `src/core/capabilities/registry.ts`
+- Official capabilities: `src/capabilities/registry.ts`
 - Built-in contracts: `src/core/built-ins/types.ts`
-- Built-in catalog: `src/core/built-ins/catalog.ts`
-- Built-in metadata: `src/core/built-ins/metadata.ts`
-- Implementation built-ins: `src/core/built-ins/implementation.ts`
-- Provider built-in composition: `src/providers/built-ins.ts`
-- Provider-owned implementations: `src/providers/<provider>/`
-- Tool contracts: `src/core/tools/contracts.ts`
-- Tool catalog: `src/core/tools/catalog.ts`
-- Repository tools: `src/core/tools/repository.ts`
-- Pi adapter: `src/agent-runtimes/pi/adapter.ts`
-- Pi auth: `src/agent-runtimes/pi/auth.ts`
-- Pi observability: `src/agent-runtimes/pi/observability.ts`
-- Write-mode services: `src/core/write-mode/`
-- Provider change-request actions:
-  `src/providers/<provider>/change-request/`
-
-Useful tests include `tests/core/built-ins-registry.test.ts`,
-`tests/core/built-ins-implementation.test.ts`,
-`tests/agent-runtimes/pi/adapter.test.ts`,
-`tests/core/pi-auth.test.ts`, `tests/core/observability.test.ts`,
-implementation git action tests, `tests/core/workspace-lifecycle.test.ts`,
-and `tests/core/workflow-execution-policy.test.ts`.
+- Built-in registry mechanics: `src/core/built-ins/registry.ts`
+- Tool resolution: `src/core/tools/resolved-catalog.ts`
+- Repository tools: `src/capabilities/repository/**`
+- Local exec: `src/capabilities/local-exec/**`
+- Validation runner: `src/capabilities/validation/**`
+- Runtime composition: `src/runtime/composition/**`
+- Runtime backends: `src/runtime/backends/**`
+- Workflow runtime adapter: `src/runtime/langgraph/**`
+- Pi adapter: `src/agent-runtimes/pi/**`

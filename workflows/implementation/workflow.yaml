@@ -1,5 +1,8 @@
 id: implementation
 type: workflow
+# Trusted local write workflow for Jira/Plane task implementation. It prepares
+# an isolated worktree, plans, runs a gated writer loop, then performs the full
+# deterministic publish chain through GitHub change request creation.
 mode: trusted_local_write
 input_schema: input.schema.json
 output_schema: output.schema.json
@@ -12,16 +15,18 @@ capabilities:
   - agents
   - artifacts
   - quality-gates
-  - hitl
   - reports
   - git
   - change-request
 requires:
   repository: true
 execution:
+  # Safe independent work may overlap, but agent sessions, protected side
+  # effects, and workspace-sensitive nodes are constrained by runtime policy.
   max_concurrency: 2
   lock_timeout_ms: 120000
 nodes:
+  # Runtime/config sanity check before creating a worktree or calling agents.
   - id: preflight
     type: built_in
     uses: runtime.preflight
@@ -32,6 +37,8 @@ nodes:
           expression: "$.steps.preflight"
         format: json
 
+  # Creates or prepares the trusted local write workspace from the target
+  # repository. Later write, validation, git, and CR steps use this workspace.
   - id: workspace
     type: built_in
     uses: repository-change.prepare_worktree
@@ -50,6 +57,8 @@ nodes:
     after:
       - preflight
 
+  # Normalizes provider task data into text/body fields that planner,
+  # implementer, final report, and change request creation can share.
   - id: task_context
     type: built_in
     uses: task-context.collect
@@ -62,6 +71,8 @@ nodes:
     after:
       - preflight
 
+  # Collects repository and agent context for every model role used in this
+  # workflow. Context is audited and rendered as runtime instructions.
   - id: context
     type: built_in
     uses: context.collect_context
@@ -80,6 +91,8 @@ nodes:
     after:
       - workspace
 
+  # Planner agent converts task context plus repository guidance into a concrete
+  # implementation plan before any writer gets control of the worktree.
   - id: implementation_plan
     type: agent
     agent: implementation-planner
@@ -101,6 +114,9 @@ nodes:
       - context
       - task_context
 
+  # Trusted writer loop. The worker may edit the worktree; each attempt is
+  # checked by deterministic validation, non-empty diff, review, and acceptance
+  # gates. Gate feedback loops back according to repair.attempts.
   - id: implementation
     type: pattern
     uses: quality-gates.gated_agent_loop
@@ -123,6 +139,7 @@ nodes:
       task_context:
         expression: "$.steps.task_context"
     gates:
+      # Runs configured validation commands from config/implementation.yaml.
       - id: validation
         type: quality-gates.validation_commands
         input:
@@ -130,9 +147,11 @@ nodes:
             expression: "$.config.implementation.validation.commands"
           max_output_bytes:
             expression: "$.config.implementation.validation.max_output_bytes"
+      # Prevents a "successful" implementation that changed nothing.
       - id: diff
         type: quality-gates.non_empty_diff
         input: {}
+      # Technical review gate. A failed decision blocks and returns feedback.
       - id: review
         type: quality-gates.agent_review
         input:
@@ -143,6 +162,7 @@ nodes:
           expression: "$.gate.decision = 'fail'"
         feedback:
           expression: "$.gate.feedback"
+      # Acceptance gate maps the produced change back to the task requirements.
       - id: acceptance
         type: quality-gates.agent_review
         input:
@@ -159,6 +179,8 @@ nodes:
     after:
       - implementation_plan
 
+  # Extracts gate results from the pattern output into stable artifacts consumed
+  # by publishing preparation.
   - id: implementation_validation
     type: built_in
     uses: repository-change.record_validation
@@ -179,35 +201,8 @@ nodes:
     after:
       - implementation
 
-  - id: implementation_approval
-    type: human_gate
-    uses: hitl.approval
-    artifacts:
-      - path: implementation-approval.json
-        publisher: artifacts.manifest_publisher
-        source:
-          expression: "$.steps.implementation_approval"
-        format: json
-    input:
-      prompt: Approve the implementation before diff, commit, push, and change request?
-    after:
-      - implementation_validation
-
-  - id: implementation_approval_enforced
-    type: built_in
-    uses: hitl.require_approval
-    input:
-      decision:
-        expression: "$.steps.implementation_approval"
-    artifacts:
-      - path: implementation-approval-enforced.json
-        publisher: artifacts.manifest_publisher
-        source:
-          expression: "$.steps.implementation_approval_enforced"
-        format: json
-    after:
-      - implementation_approval
-
+  # Collects the gated worktree diff before commit preparation. The automated
+  # validation/review gates above are the publish boundary for this workflow.
   - id: worktree_diff
     type: built_in
     uses: repository-change.collect_worktree_diff
@@ -218,8 +213,10 @@ nodes:
           expression: "$.steps.worktree_diff"
         format: json
     after:
-      - implementation_approval_enforced
+      - implementation_validation
 
+  # Computes commit eligibility and message from validation, acceptance, diff,
+  # and task title before the git side effect runs.
   - id: prepare_commit
     type: built_in
     uses: repository-change.prepare_commit
@@ -241,6 +238,8 @@ nodes:
     after:
       - worktree_diff
 
+  # External side effect: creates the git commit when enabled/eligible. The
+  # explicit side-effect policy lets runtime safety checks reason about it.
   - id: commit
     type: built_in
     uses: git.commit
@@ -259,6 +258,8 @@ nodes:
     after:
       - prepare_commit
 
+  # Records commit lifecycle in a provider-neutral shape for reports and later
+  # push preparation.
   - id: commit_lifecycle
     type: built_in
     uses: repository-change.record_commit_lifecycle
@@ -274,6 +275,8 @@ nodes:
     after:
       - commit
 
+  # Computes push eligibility and target remote/branch from commit lifecycle and
+  # implementation config.
   - id: prepare_push
     type: built_in
     uses: repository-change.prepare_push
@@ -289,6 +292,8 @@ nodes:
     after:
       - commit_lifecycle
 
+  # External side effect: pushes the implementation branch when enabled and
+  # eligible.
   - id: push
     type: built_in
     uses: git.push_branch
@@ -307,6 +312,8 @@ nodes:
     after:
       - prepare_push
 
+  # Records push lifecycle in a stable shape for change-request creation and
+  # final reporting.
   - id: push_lifecycle
     type: built_in
     uses: repository-change.record_push_lifecycle
@@ -322,6 +329,8 @@ nodes:
     after:
       - push
 
+  # External side effect: creates the configured provider change request, usually
+  # a draft GitHub PR. This depends on successful push lifecycle.
   - id: change_request
     type: built_in
     uses: change-request.create
@@ -355,6 +364,8 @@ nodes:
     after:
       - push_lifecycle
 
+  # Terminal implementation report. Final output comes from this node and
+  # summarizes commit, push, and change-request outcomes.
   - id: final_report
     type: built_in
     uses: task-context.final_report

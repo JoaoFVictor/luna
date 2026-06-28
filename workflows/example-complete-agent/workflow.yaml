@@ -1,13 +1,22 @@
 id: example-complete-agent
 type: workflow
+# Complete authoring showcase: trusted-write mode, worktree preparation,
+# context collection, gated writer loop, HITL, publishing chain, runtime-log
+# projection, retry config, artifacts, and subagent policy. This is
+# intentionally richer than production workflows need to be.
 mode: trusted_local_write
 input_schema: input.schema.json
 output_schema: output.schema.json
 capabilities:
+  - runtime
+  - repository-change
   - context
   - agents
   - artifacts
   - quality-gates
+  - hitl
+  - git
+  - change-request
 execution:
   max_concurrency: 2
   lock_timeout_ms: 120000
@@ -21,10 +30,46 @@ observability:
       enabled: true
       required: false
 subagent_policy:
+  # Trusted write subagents are disabled here even though the workflow itself is
+  # trusted-write. This keeps delegation explicit and easy to audit.
   allow_write: false
 requires:
   repository: true
 nodes:
+  # Runtime/config sanity check before creating a worktree or calling agents.
+  - id: preflight
+    type: built_in
+    uses: runtime.preflight
+    artifacts:
+      - path: example-preflight.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.preflight"
+        format: json
+
+  # Prepare the trusted local write workspace so the example can demonstrate
+  # repository-change, git, and change-request lifecycle nodes.
+  - id: workspace
+    type: built_in
+    uses: repository-change.prepare_worktree
+    input:
+      subject:
+        key:
+          expression: "$.invocation.subject.id"
+        title:
+          expression: "$.invocation.subject.title"
+    artifacts:
+      - path: example-workspace.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.workspace"
+        format: json
+    after:
+      - preflight
+
+  # Collect repository skills/context and both agents' context before any model
+  # step. The result is rendered into runtime instructions with context_audit in
+  # task input.
   - id: context
     type: built_in
     uses: context.collect_context
@@ -38,7 +83,12 @@ nodes:
       agents:
         - example-complete-agent
         - change-acceptance-reviewer
+        - change-reviewer
+    after:
+      - workspace
 
+  # Demonstrates the reusable gated-agent-loop pattern. The worker can write,
+  # then deterministic gates decide whether feedback should loop back.
   - id: example_run
     type: pattern
     uses: quality-gates.gated_agent_loop
@@ -64,6 +114,8 @@ nodes:
         expression: "$.workspace"
       goal: Demonstrate a trusted local write gated agent loop using the configured repository context. Keep any edits minimal and explain what was exercised.
     gates:
+      # Minimal deterministic validation gate for the example: prove the
+      # repository is still inspectable after the worker runs.
       - id: validation
         type: quality-gates.validation_commands
         input:
@@ -73,11 +125,243 @@ nodes:
                 - status
                 - --short
           max_output_bytes: 200000
+      # Optional review gate for the showcase. It proves agent-review gates are
+      # configured on the workflow, not hidden inside the reusable agent.
+      - id: review
+        type: quality-gates.agent_review
+        input:
+          review_agent: change-reviewer
+          subject:
+            expression: "$.gate"
+        block_when:
+          expression: "$.gate.decision = 'fail'"
+        feedback:
+          expression: "$.gate.feedback"
+      # Acceptance gate gives publishing preparation a structured decision.
+      - id: acceptance
+        type: quality-gates.agent_review
+        input:
+          review_agent: change-acceptance-reviewer
+          subject:
+            expression: "$.gate"
+        block_when:
+          expression: "$.gate.status != 'accepted'"
+        feedback:
+          expression: "$.gate.summary & '\n' & $join($.gate.blocking_reasons, '\n')"
     repair:
       attempts: 1
     after:
       - context
 
+  # Extract validation and acceptance from the gated loop for commit
+  # preparation. This mirrors the production implementation lifecycle.
+  - id: example_validation
+    type: built_in
+    uses: repository-change.record_validation
+    input:
+      implementation:
+        expression: "$.steps.example_run"
+    artifacts:
+      - path: example-validation.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_validation.validation"
+        format: json
+      - path: example-gate-acceptance.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_validation.acceptance"
+        format: json
+    after:
+      - example_run
+
+  # Human approval showcase. This is where HITL lives in the examples: operators
+  # can inspect the writer/gate outputs before publishing nodes run.
+  - id: example_approval
+    type: human_gate
+    uses: hitl.approval
+    artifacts:
+      - path: example-approval.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_approval"
+        format: json
+    input:
+      prompt: Approve the example-complete publishing showcase?
+    after:
+      - example_validation
+
+  # Converts the raw interrupt decision into deterministic approval output for
+  # downstream nodes.
+  - id: example_approval_enforced
+    type: built_in
+    uses: hitl.require_approval
+    input:
+      decision:
+        expression: "$.steps.example_approval"
+    artifacts:
+      - path: example-approval-enforced.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_approval_enforced"
+        format: json
+    after:
+      - example_approval
+
+  # Collect the approved diff before publishing. If the example worker changed
+  # nothing, later commit preparation will skip safely.
+  - id: example_diff
+    type: built_in
+    uses: repository-change.collect_worktree_diff
+    artifacts:
+      - path: example-diff.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_diff"
+        format: json
+    after:
+      - example_approval_enforced
+
+  # Prepare, execute, and record the commit lifecycle. Config can still disable
+  # commit/push/CR, so this remains a runnable showcase instead of a forced side
+  # effect.
+  - id: example_prepare_commit
+    type: built_in
+    uses: repository-change.prepare_commit
+    input:
+      validation:
+        expression: "$.steps.example_validation.validation"
+      acceptance:
+        expression: "$.steps.example_validation.acceptance"
+      diff:
+        expression: "$.steps.example_diff"
+      message: Example complete agent showcase
+    artifacts:
+      - path: example-prepared-commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_prepare_commit"
+        format: json
+    after:
+      - example_diff
+
+  - id: example_commit
+    type: built_in
+    uses: git.commit
+    policies:
+      - uses: git.commit_side_effect
+        config:
+          operation_id: git.commit
+    input:
+      expression: "$.steps.example_prepare_commit"
+    artifacts:
+      - path: example-git-commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_commit"
+        format: json
+    after:
+      - example_prepare_commit
+
+  - id: example_commit_lifecycle
+    type: built_in
+    uses: repository-change.record_commit_lifecycle
+    input:
+      commit:
+        expression: "$.steps.example_commit"
+    artifacts:
+      - path: example-commit.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_commit_lifecycle"
+        format: json
+    after:
+      - example_commit
+
+  # Prepare, execute, and record push lifecycle.
+  - id: example_prepare_push
+    type: built_in
+    uses: repository-change.prepare_push
+    input:
+      commit:
+        expression: "$.steps.example_commit_lifecycle"
+    artifacts:
+      - path: example-prepared-push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_prepare_push"
+        format: json
+    after:
+      - example_commit_lifecycle
+
+  - id: example_push
+    type: built_in
+    uses: git.push_branch
+    policies:
+      - uses: git.push_branch_side_effect
+        config:
+          operation_id: git.push_branch
+    input:
+      expression: "$.steps.example_prepare_push"
+    artifacts:
+      - path: example-git-push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_push"
+        format: json
+    after:
+      - example_prepare_push
+
+  - id: example_push_lifecycle
+    type: built_in
+    uses: repository-change.record_push_lifecycle
+    input:
+      push:
+        expression: "$.steps.example_push"
+    artifacts:
+      - path: example-push.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_push_lifecycle"
+        format: json
+    after:
+      - example_push
+
+  # Demonstrates provider-backed change request creation. Usually this creates
+  # or adopts a draft GitHub PR when previous publishing stages succeeded.
+  - id: example_change_request
+    type: built_in
+    uses: change-request.create
+    policies:
+      - uses: change-request.create_side_effect
+        config:
+          operation_id: change-request.create
+    input:
+      enabled:
+        expression: "$.config.implementation.change_request.enabled"
+      provider_id:
+        expression: "$.config.implementation.change_request.provider"
+      repository_path:
+        expression: "$.steps.workspace.path"
+      title: Example complete agent showcase
+      description: Demonstrates Luna HITL and publishing lifecycle nodes.
+      source:
+        expression: "$.steps.example_push_lifecycle"
+      target_branch:
+        expression: "$.config.implementation.change_request.base_ref"
+      draft:
+        expression: "$.config.implementation.change_request.draft"
+    artifacts:
+      - path: example-change-request.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.example_change_request"
+        format: json
+    after:
+      - example_push_lifecycle
+
+  # Demonstrates a normal agent node after a pattern node. Retry is configured
+  # for transient runtime/provider errors, not for schema or logic failures.
   - id: example_acceptance
     type: agent
     agent: change-acceptance-reviewer
@@ -117,5 +401,9 @@ nodes:
         expression: "$.steps.context"
       example_result:
         expression: "$.steps.example_run"
+      approval:
+        expression: "$.steps.example_approval_enforced"
+      publishing:
+        expression: "$.steps.example_change_request"
     after:
-      - example_run
+      - example_change_request

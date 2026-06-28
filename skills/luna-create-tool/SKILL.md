@@ -1,72 +1,55 @@
 ---
 name: luna-create-tool
-description: Use when creating or modifying Luna local tools for agents, including src/core/tools contracts/catalog, agent.yaml tools entries, agent mode restrictions, repository-bound cwd behavior, and Pi adapter materialization tests.
+description: Use when creating or modifying Luna local tools for agents, including capability tool registrations, core tool contracts/resolution, agent.yaml tools entries, mode restrictions, repository-bound cwd behavior, and Pi materialization tests.
 ---
 
 # Luna Create Tool
 
-Read `examples/new-tool.md` first. Local tools are deterministic TypeScript
-functions defined in Luna's runtime-neutral tool catalog and materialized for
-Pi at the runtime adapter boundary.
+Local tools are functions an agent can call during a model session. They are
+not workflow nodes.
 
-## Boundary
+## Ownership
 
-Use a tool for small local capabilities an agent can call, such as git status or
-diff summary. Do not use tools for workflow orchestration or input
-normalization.
+- Public tool registration belongs in a capability manifest.
+- Tool contracts/resolution live under `src/core/tools/**`.
+- Domain implementations live with the owning capability, such as
+  `src/capabilities/repository/**`.
+- Runtime materialization lives under `src/agent-runtimes/<runtime>/`.
 
-Good tools:
+Do not register a tool by only adding it to an agent. The id must resolve
+through capability registration and the local contract catalog.
 
-- receive a bound `cwd` from Luna;
-- validate parameters with Valibot;
-- return compact model-readable output;
-- are allowed only for suitable agent modes.
-- declare explicit safety metadata.
+## Tool Rules
 
-## Provider Boundaries
+- Bind execution to the cwd Luna provides.
+- Keep filesystem paths inside cwd.
+- Validate input and return compact JSON.
+- Declare which agent modes may use the tool.
+- Keep provider-specific auth/config/payload parsing out of neutral tools.
 
-Tools under `src/core/tools/` are runtime-neutral by default. Do not put
-provider-specific auth, config, schemas, URLs, or payload parsing into a
-generic tool module. If a tool truly needs provider behavior, keep the
-provider-specific code under the owning `src/providers/<provider>/` module and
-expose only a neutral tool contract through `src/core/tools/`.
+Repository tools currently include read tools available in both modes and
+write/delete tools restricted to `trusted_local_write`.
 
-Never reuse another provider's module as a convenience wrapper. Plane behavior
-does not belong in Jira modules, Jira behavior does not belong in Plane
-modules, and the same rule applies to every provider pair.
+## Runtime Status
 
-## Files
-
-Local tools are owned by `src/core/tools/`. Do not add tool implementations
-under unsupported tool paths.
-
-- Define runtime-neutral tool contracts in `src/core/tools/contracts.ts`.
-- Implement domain tools under `src/core/tools/`.
-- Register public tool IDs in `src/core/tools/catalog.ts`.
-- Materialize Pi tools only in `src/agent-runtimes/pi/adapter.ts`.
-- Attach IDs in `agents/<id>/agent.yaml`.
-
-Tool IDs may contain dots, like `repository.status`. The Pi adapter converts
-them into safe model-facing names, like `repository_status`. Do not import
-runtime SDKs from `src/core/tools/**`; that belongs only at the concrete runtime
-adapter boundary.
-
-Keep Pi-specific tests and imports pointed at `src/agent-runtimes/pi/**`.
-Do not add forwarding files for runtime-specific tool materialization.
+The bundled Pi adapter supports local tools and `tool_calling`. It does not
+support MCP tool execution today. Adding MCP execution requires runtime adapter
+work, not only config changes.
 
 ## Testing
 
-Update `tests/core/tools/resolved-catalog.test.ts` and
-`tests/agent-runtimes/pi/adapter.test.ts`. Cover resolution, execution, unknown
-tool ids, and agent mode restrictions.
+Cover:
 
-Run:
+- capability registration.
+- unknown tool ids.
+- mode restrictions.
+- cwd path safety.
+- Pi materialization if the selected runtime should expose the tool.
 
-```sh
-npm test -- tests/core/tools/resolved-catalog.test.ts tests/agent-runtimes/pi/adapter.test.ts
+Then run:
+
+```bash
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused
 ```
-
-Update README/examples when adding reusable public tools.

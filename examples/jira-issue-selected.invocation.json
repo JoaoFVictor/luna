@@ -1,0 +1,31 @@
+{
+  "version": "2026-06",
+  "source": "jira",
+  "event": "issue.selected",
+  "action": "selected",
+  "target": {
+    "type": "workflow",
+    "id": "implementation"
+  },
+  "repository": {
+    "provider": "github",
+    "owner": "org",
+    "name": "repo"
+  },
+  "subject": {
+    "type": "jira_issue",
+    "id": "ABC-123",
+    "url": "https://company.atlassian.net/browse/ABC-123",
+    "title": "Implement account export"
+  },
+  "actor": {
+    "display_name": "Product Manager"
+  },
+  "references": {
+    "jira_instance": "company"
+  },
+  "payload": {
+    "description": "Add account export support.",
+    "acceptance_criteria": "Exports include account id, name, status, and creation date."
+  }
+}

@@ -1,190 +1,94 @@
-# Create A New Built-In Step
+# Create A New Built-In
 
-Built-ins are deterministic local capabilities that workflow YAML can call with:
+Built-ins are deterministic workflow operations exposed by a capability
+manifest and called from workflow YAML with `type: built_in`.
+
+Use a built-in for deterministic behavior: validation, git operations, context
+collection, report shaping, provider task context, local command execution, or
+runtime state plumbing. Use an agent for model judgment. Use an adapter only to
+normalize external input into an invocation.
+
+## 1. Pick The Owning Capability
+
+Add reusable behavior under `src/capabilities/<capability>/`. Provider-specific
+behavior belongs under `src/providers/<provider>/` and is wired through native
+platform/provider composition.
+
+Shared contracts and registry mechanics live under `src/core/built-ins/**`;
+they are not the ownership home for new public domain behavior.
+
+Create a new capability only when the behavior does not fit an existing one.
+
+## 2. Register The Public Id
+
+Update the owning `manifest.ts` with the new built-in id, schemas, required
+ports, and side-effect policy when needed.
+
+Example shape:
+
+```ts
+built_ins: {
+  "my-capability.do_thing": {
+    id: "my-capability.do_thing",
+    input_schema: { type: "object", additionalProperties: false },
+    output_schema: { type: "object", additionalProperties: true },
+    required_ports: []
+  }
+}
+```
+
+Side-effecting operations need a policy in the manifest and a matching workflow
+`policies:` entry.
+
+## 3. Implement The Step
+
+Use the existing built-in definition pattern in the owning capability. Keep the
+step small and return checkpoint-safe JSON.
+
+Do not import provider auth/config/payloads into neutral capabilities. Do not
+import runtime SDKs into built-in code.
+
+## 4. Wire Execution
+
+Make sure native workflow executors can find the built-in. Provider-specific
+steps should be exposed through the provider/plugin composition root. Generic
+capability steps should be wired where existing capability built-ins are
+assembled.
+
+Workflow validation and runtime execution must see the same active
+registration.
+
+## 5. Use It In Workflow YAML
 
 ```yaml
 - id: my_step
   type: built_in
-  uses: my_new_step
-```
-
-Use a built-in when the workflow needs deterministic TypeScript behavior:
-filesystem/git operations, repository context, artifact shaping, validation, or
-state plumbing. Use an agent when the work is model-driven. Use an adapter when
-the work only converts external input into a Luna invocation.
-
-## 1. Choose The Capability File
-
-Reusable built-ins live under the capability that owns the responsibility.
-Provider-specific built-ins live under `src/providers/<provider>/built-ins.ts`
-and are wired through an explicit composition registry. Shared built-in
-contracts, metadata, and catalog mechanics stay under `src/core/built-ins/`.
-
-Current domain files:
-
-- `src/capabilities/repository-diff/built-ins.ts` for reusable diff context.
-- `src/capabilities/findings/built-ins.ts` for reusable finding validation.
-- `src/capabilities/repository-change/prepare-worktree-built-in.ts` for repository change worktree setup.
-- `src/capabilities/repository-change/commit-built-ins.ts` for commit preparation and lifecycle.
-- `src/capabilities/repository-change/push-built-ins.ts` for push preparation and lifecycle.
-- `src/capabilities/validation/built-ins.ts` for command validation.
-- `src/capabilities/task-context/manifest.ts` for task context contracts.
-- `src/providers/jira/built-ins.ts` for Jira task context and reports.
-- `src/providers/plane/built-ins.ts` for Plane task context and reports.
-
-Create a new capability file only when the responsibility does not belong to an
-existing capability. If you create a new file, create a matching focused test
-file under `tests/capabilities/<capability>/`.
-
-## 2. Define The Step
-
-Export each built-in individually with `defineBuiltInStep`:
-
-```ts
-import { defineBuiltInStep } from "./registry.js";
-import { requiredState, resolvedInput } from "./state.js";
-
-export const myNewStepBuiltIn = defineBuiltInStep({
-  name: "my_new_step",
-  async run({ state, input, dependencies = {} }) {
-    const resolved = resolvedInput(input, state);
-    const run = requiredState(state.run, "run");
-
-    return {
-      run_id: run.run_id,
-      value: resolved.value ?? "default"
-    };
-  }
-});
-```
-
-Keep the step small. If several built-ins need the same state parsing, add a
-helper to `state.ts`. If the helper executes domain behavior, keep it in the
-domain file instead.
-
-## 3. Add Metadata Only When The Runner Needs It
-
-Most built-ins do not need metadata.
-
-Use `capturesWorkspace` only when the step returns a `WorkspaceRecord` that
-should become `state.workspace`:
-
-```ts
-export const prepareSomethingBuiltIn = defineBuiltInStep({
-  name: "prepare_something",
-  metadata: { capturesWorkspace: true },
-  async run() {
-    return workspaceRecord;
-  }
-});
-```
-
-Use `deferredLifecycle: "final_report"` only for final report steps that must
-run after Luna decides whether to preserve or clean a worktree:
-
-```ts
-export const finalSomethingReportBuiltIn = defineBuiltInStep({
-  name: "final_something_report",
-  metadata: { deferredLifecycle: "final_report" },
-  run() {
-    return { json: {}, markdown: "# Report\n" };
-  }
-});
-```
-
-Do not add name checks to `src/runtime/langgraph/workflow-runner.ts`. Runner
-behavior must come from metadata.
-
-## 4. Register It In A Composition Registry
-
-Add reusable steps through the native composition root:
-
-```ts
-import { myNewStepBuiltIn } from "../../capabilities/my-capability/built-ins.js";
-
-export const defaultBuiltInSteps = Object.freeze([
-  // existing steps...
-  myNewStepBuiltIn
-] as const);
-```
-
-Provider-specific steps should still be registered by the provider plugin or
-native composition root. YAML validation and runtime execution must see the
-same active registry.
-
-## 5. Import Direct Owners
-
-Do not add new barrel exports for built-in domain files. Runtime registration
-comes from the active provider registry; tests and other internal consumers
-should import the domain file that owns the step directly.
-
-## 6. Use It From Workflow YAML
-
-Add a node to `workflows/<workflow-id>/workflow.yaml` under `nodes:`:
-
-```yaml
-- id: my_step
-  type: built_in
-  uses: my_new_step
+  uses: my-capability.do_thing
   input:
-    value: $.steps.previous.value
+    previous:
+      expression: "$.steps.previous"
+  artifacts:
+    - path: my-step.json
+      publisher: artifacts.manifest_publisher
+      source:
+        expression: "$.steps.my_step"
+      format: json
   after:
     - previous
 ```
 
-`input` values can reference workflow state through JSON-path-like expressions
-resolved by Luna before the built-in runs.
+Plain strings are literals. Use `{ expression: "..." }` for state references.
 
-## 7. Test It Directly
+## 6. Test
 
-Create or update the focused domain test:
+Add focused tests under `tests/capabilities/<capability>/` when possible. Also
+cover workflow definition validation if the manifest, schema, policy, or
+capability declaration behavior changes.
 
-```ts
-import { describe, expect, it } from "vitest";
-import { myNewStepBuiltIn } from "../../src/capabilities/my-capability/built-ins.js";
+Run:
 
-describe("my domain built-ins", () => {
-  it("runs my_new_step", async () => {
-    await expect(
-      myNewStepBuiltIn.run({
-        state: {
-          run: { run_id: "run-1" },
-          steps: {}
-        },
-        input: { value: "ok" }
-      })
-    ).resolves.toEqual({
-      run_id: "run-1",
-      value: "ok"
-    });
-  });
-});
-```
-
-For registry/catalog changes, also update
-`tests/core/built-ins-registry.test.ts`.
-
-If the built-in becomes part of Luna's public inventory, update `README.md` so
-workflow authors can discover it.
-
-## 8. Verify
-
-Run the focused tests:
-
-```sh
-npm test -- tests/core/built-ins-registry.test.ts tests/core/built-ins-code-review.test.ts tests/core/built-ins-implementation.test.ts
-npm test -- tests/core/workflow/definition.test.ts tests/core/workflow/runner.test.ts
+```bash
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused
-```
-
-Run the full suite before committing:
-
-```sh
-npm test
-npm run typecheck
-npm run typecheck:unused-src
-npm run lint:unused
-npm run build
 ```

@@ -24,4 +24,3 @@ agent_runtime:
 # locks:
 #   root: .runs/locks
 #   timeout_ms: 300000
-#   stale_after_ms: 900000

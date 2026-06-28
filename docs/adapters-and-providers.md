@@ -1,170 +1,134 @@
 # Adapters And Providers
 
-This document separates input adapters, provider modules, routing, and the
-current Pi runtime adapter.
+This document covers input adapters, provider modules, routing, and provider
+auth boundaries.
 
-## Two Adapter Meanings
+## Input Adapter Contract
 
-Luna uses the word adapter in two different places.
+The shared adapter contract is small:
 
-Input adapters live under `src/adapters/<id>/`. They turn an external input,
-such as a GitHub PR URL or Jira task URL, into Luna's normalized invocation
-shape.
+- `src/adapters/types.ts`: `AdapterInput`, `AdapterContext`, `InputAdapter`.
+- `src/adapters/registry.ts`: registry helpers and default CLI context.
 
-The runtime adapter currently lives under `src/agent-runtimes/pi/`. It
-materializes Luna agent nodes into Pi model calls, local tools, usage records,
-and logs. It rejects unsupported runtime requirements, such as MCP tools, until
-the matching native materialization exists.
+`AdapterInput` is currently CLI-shaped: `{ kind: "cli"; value: string }`.
+`AdapterContext` supplies `projectRoot`, `configRoot`, `env`, `fetch`, and
+`executeJson`.
 
-Keep those concepts separate. A URL input adapter should not know how Pi
-materializes an agent session, and the Pi runtime adapter should not own a
-provider's source API schema.
+Adapters return the strict invocation schema from
+`src/core/router/invocation.ts`.
 
-## Invocation Shape
+## Provider-Owned Adapters
 
-Input adapters return `InvocationSchema`. The schema is strict and versioned.
-It contains source, event, action, optional target, repository hints, subject,
-actor, references, and payload.
+Concrete adapters are provider-owned today:
 
-Adapters normalize provider-specific source data into that shape. They may
-fetch source metadata, parse URLs, map repository hints, and return coded
-errors. They should preserve provider payloads where later provider-owned code
-needs them.
+- GitHub PR URL adapter: `src/providers/github/input-adapter.ts`
+- Jira task URL adapter: `src/providers/jira/input-adapter.ts`
+- Plane task URL adapter: `src/providers/plane/input-adapter.ts`
 
-Adapters do not:
+They are registered through native platform plugins in
+`src/platform/native/native-platform-plugins.ts`, then flattened into the
+adapter registry in `src/platform/native/native-platform-registrations.ts`.
 
-- run Pi.
-- choose workflows with an LLM.
-- create worktrees.
-- write run artifacts.
-- commit, push, or open change requests.
-- prove that repository config exists.
+This means `src/adapters/**` is shared plumbing, not where every concrete
+provider adapter necessarily lives.
 
-Repository hints from an adapter are only hints. `config/repositories.yaml`
-remains authoritative, and repository resolution happens later in the workflow
-runner.
+## Invocation Boundary
 
-## CLI And Routing
+Invocation is the provider/data boundary. It has fixed top-level fields such as
+`source`, `event`, `action`, optional `target`, repository hint, subject,
+actor, references, and generic `payload`.
 
-The CLI supports one shape:
+Provider-specific data can remain under `payload`, but provider-owned later
+steps must parse it strictly before using it. Do not let generic workflow or
+core modules depend on raw provider payload shapes.
 
-```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<id> --from <adapter> <value>
-```
+Repository hints are not configuration authority. Workflow execution resolves
+the repository against `config/repositories.yaml`.
 
-For tests and automation, use normalized JSON:
+## Routing
 
-```bash
-LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:<id> --input path/to/invocation.json
-```
+Routing is deterministic, first-match JSONata over `{ invocation }` in
+`config/routing.yaml`.
 
-The CLI target override sets `invocation.target`. URL adapters should usually
-omit `target`; routing can then come from the CLI override, an invocation target
-provided by another caller, or `config/routing.yaml`.
+The CLI flow is:
 
-Routing is ordered and deterministic. `routeInvocation` iterates
-`config/routing.yaml` and never asks a model which workflow to run. The
-advertised precedence depends on keeping the explicit-target route first in
-the routing config.
+1. Load invocation from `--input`, or load an adapter from `--from`.
+2. Apply `--target workflow:<id>` as an invocation target when supplied.
+3. Route with `config/routing.yaml`.
+4. Execute the workflow target.
 
-There is no workflow-specific command such as a special PR-review command.
-Everything goes through `run` plus a target, input adapter, or JSON invocation.
+The default routing config puts explicit target first, GitHub PR events to
+`workflow:code-review`, and Jira/Plane issue selections to
+`workflow:implementation`.
 
 ## Provider Ownership
-
-Provider-specific code belongs under `src/providers/<provider>/` or the
-matching provider-owned input adapter.
 
 A provider owns:
 
 - provider auth validation.
 - provider config schema.
-- source API payload interpretation.
+- URL parsing and source API calls.
+- provider payload interpretation.
 - task or PR context rendering.
-- provider-specific report rendering.
-- change-request actions for that provider.
+- provider-specific final reports.
+- change-request publishing for that provider.
 
 A provider does not own:
 
-- generic workflow definitions.
-- another provider's auth or schema.
+- generic workflow contracts.
+- another provider's auth/config/schema/payload.
+- runtime adapter behavior.
 - generic context intake.
-- generic tool contracts.
-- the Pi runtime adapter.
+- generic capability contracts.
 
-Shared provider helpers may handle neutral mechanics, such as reading
-`luna.auth.json` as unknown provider data. Provider-specific validation belongs
-inside the provider module.
+Shared provider helpers may read `luna.auth.json` as unknown provider data.
+Provider-specific validation belongs in the owning provider module.
 
-Current source providers include GitHub, Jira, and Plane. GitHub owns PR
-review preflight, repository context, and GitHub change-request actions. Jira
-and Plane own task context and final implementation report rendering for their
-task sources.
+## Current Providers
 
-## Config And Secrets
+GitHub:
 
-Core project config lives in `config/`.
+- Parses GitHub PR URLs.
+- Uses `gh api` through `executeJson`.
+- Uses `gh` authentication, not `luna.auth.json`.
+- Provides GitHub change-request publishing.
 
-`~/.config/pi-ai/auth.json` is runtime/model auth created by Pi login.
+Jira:
 
-`luna.auth.json` is Luna provider auth. Jira credentials are keyed by the
-instance id in `config/jira.yaml`; Plane API keys are keyed by the instance id
-in `config/plane.yaml`.
+- Reads `config/jira.yaml`.
+- Reads credentials from `luna.auth.json` under the active config root.
+- Fetches Jira issue data and optional repository hints from configured fields.
+- Renders task context/final implementation reports for Jira issues.
 
-Do not mix those files in docs or code. Runtime model auth and source-provider
-auth are separate concerns.
+Plane:
+
+- Reads `config/plane.yaml`.
+- Reads API keys from `luna.auth.json` under the active config root.
+- Supports browse and project issue URLs.
+- Fetches Plane issue data and optional repository hints from labels.
+- Renders task context/final implementation reports for Plane issues.
 
 ## Composition Roots
 
-Some files intentionally compose generic and provider-specific pieces:
+Provider/generic wiring belongs in explicit composition roots:
 
-- `src/adapters/registry.ts`
+- `src/platform/native/native-platform-plugins.ts`
+- `src/platform/native/native-platform-registrations.ts`
+- `src/platform/native/native-workflow-executors.ts`
 - `src/providers/built-ins.ts`
-- `src/providers/native-workflow-runner.ts`
-- `src/runtime/composition/runtime-composition.ts`
-- `src/core/change-request/default-registry.ts`
+- `src/capabilities/change-request/provider-registry.ts`
 
-Composition belongs there, not in leaf modules. A generic built-in should not
-import a Jira schema. A Plane provider module should not borrow a GitHub config
-type. A Pi adapter should not parse a Jira URL.
-
-## What This Layer Does
-
-- Converts external inputs into normalized invocations.
-- Keeps source-provider API details inside provider-owned code.
-- Keeps deterministic routing visible in config.
-- Separates model runtime auth from provider source auth.
-- Gives the workflow runner enough normalized data to resolve repositories and
-  execute graphs.
-
-## What This Layer Does Not Do
-
-- It does not choose workflows with model judgment.
-- It does not create workflow artifacts.
-- It does not mutate repositories.
-- It does not use repository hints as configuration authority.
-- It does not let one provider validate another provider's payload.
+Leaf modules should stay in their lane.
 
 ## Source Map
 
-- Input adapter contract: `src/adapters/types.ts`
-- Input adapter registry: `src/adapters/registry.ts`
-- Invocation envelope: `src/core/router/invocation.ts`
-- Router definition: `src/core/router/router-definition.ts`
+- Adapter contract: `src/adapters/types.ts`
+- Adapter registry helpers: `src/adapters/registry.ts`
+- Invocation schema: `src/core/router/invocation.ts`
 - Router evaluator: `src/core/router/router.ts`
+- Router definition schema: `src/core/router/router-definition.ts`
 - CLI: `src/cli.ts`
-- Runtime composition: `src/runtime/composition/runtime-composition.ts`
-- Native workflow runner: `src/providers/native-workflow-runner.ts`
-- Provider built-in composition: `src/providers/built-ins.ts`
-- Shared provider auth loader: `src/providers/auth.ts`
+- Native platform plugins: `src/platform/native/native-platform-plugins.ts`
 - Repository resolution: `src/core/workflow/workspace-resolver.ts`
-
-Useful tests include `tests/core/cli.test.ts`,
-`tests/adapters/input-adapter-registry.test.ts`,
-`tests/adapters/github-pr-url-adapter.test.ts`,
-`tests/adapters/jira-task-url-adapter.test.ts`,
-`tests/adapters/plane-task-url-adapter.test.ts`,
-`tests/core/router/router.test.ts`, `tests/core/router/invocation.test.ts`,
-`tests/core/invocation-helpers.test.ts`,
-`tests/core/workspace-resolver.test.ts`, `tests/core/config-loader.test.ts`,
-and provider auth/context tests under `tests/core/`.
+- Shared provider auth reader: `src/providers/auth.ts`
+- Repository hint parser: `src/providers/repository-hints/repository-reference.ts`

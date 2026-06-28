@@ -1,137 +1,71 @@
 # Create A New Local Tool
 
-Local tools are deterministic Luna-native TypeScript functions that can be
-materialized for the current agent runtime. Use a tool when an agent needs a
-small, explicit capability such as reading git status, summarizing a diff, or
-querying a local system through controlled code.
+Local tools are deterministic functions an agent can call during a model
+session. They are not workflow nodes.
 
-Local tool contracts, implementations, and catalog registration live under
-`src/core/tools/`. The current Pi runtime adapter materializes those tools
-under `src/agent-runtimes/pi/`.
+Use a tool when an agent needs a small local capability, such as reading a file
+from the bound worktree or summarizing git status. Use a built-in when the
+workflow itself needs a deterministic step.
 
-Do not use a tool for orchestration. Workflow order belongs in `workflow.yaml`
-`nodes:`.
-Do not use a tool for external input normalization. That belongs in an input
-adapter.
+## 1. Pick The Owning Capability
 
-## 1. Decide The Tool Boundary
+Public tool ids are registered through capability manifests. Domain
+implementations live with the owning capability, such as
+`src/capabilities/repository/**`.
 
-A good local tool:
+Core tool code under `src/core/tools/**` provides contracts, resolution, MCP
+policy, and catalog mechanics.
 
-- has a narrow purpose;
-- receives a bound `cwd` from Luna instead of choosing arbitrary paths;
-- validates parameters with Valibot;
-- returns compact, model-readable output;
-- is allowed only for agent modes that should use it.
-- declares explicit safety metadata.
+Runtime materialization belongs under `src/agent-runtimes/<runtime>/`.
 
-Start with the most conservative safety metadata:
+## 2. Define The Contract
 
-```yaml
-safety:
-  localWrites: false
-  network: false
-  externalSideEffects: false
-```
+A good tool:
 
-Read-only agents may use non-writing tools when the agent declares them.
-Subagents do not receive local tools; use a trusted write subagent with an
-explicit `policy.allow_tools` list or a workflow graph node when delegated work
-needs tools.
+- receives a cwd from Luna.
+- keeps paths inside that cwd.
+- validates JSON input.
+- returns compact JSON.
+- declares allowed agent modes.
+- avoids provider-specific auth/config/payload parsing unless owned by a
+  provider-specific capability.
 
-Current examples live in `src/core/tools/repository.ts`.
+Repository examples:
 
-## 2. Implement The Luna Tool
-
-Add the implementation to an existing file under `src/core/tools/` or create a
-new domain file there:
-
-```ts
-import { runGit } from "../git/client.js";
-import type { LunaToolDefinition } from "./contracts.js";
-
-const emptyParameters = {
-  type: "object",
-  additionalProperties: false
-} as const;
-
-export const repositoryLastCommitTool: LunaToolDefinition<
-  Record<string, never>,
-  string
-> = {
-  id: "repository.last-commit",
-  description: "Return the latest git commit summary for the bound worktree.",
-  parameters: emptyParameters,
-  safety: {
-    localWrites: false,
-    network: false,
-    externalSideEffects: false
-  },
-  modes: ["read_only", "trusted_local_write"],
-  createHandler: ({ cwd }) =>
-    async () => await runGit(cwd, ["log", "-1", "--oneline"])
-};
-```
-
-The id used in `agent.yaml` can contain dots, such as
-`repository.last-commit`. Luna converts it to a model-facing Pi tool name at
-the runtime adapter boundary, such as `repository_last_commit`.
+- `repository.status`, `repository.diff-summary`, `repository.read-file`:
+  read-only and trusted write.
+- `repository.write-file`, `repository.delete-file`: trusted write only.
 
 ## 3. Register The Tool
 
-Add it to `src/core/tools/catalog.ts`:
-
-```ts
-import { repositoryLastCommitTool } from "./repository.js";
-
-export const lunaToolCatalog = {
-  [repositoryLastCommitTool.id]: repositoryLastCommitTool
-};
-```
-
-Use `read_only` only when the tool is safe for read-only agents. Reserve
-`trusted_local_write` for tools that are useful only inside a trusted local
-repository change worktree. Do not import runtime SDKs from `src/core/tools/**`;
-`src/agent-runtimes/pi/adapter.ts` owns Pi-specific tool materialization.
-
-## 4. Attach The Tool To An Agent
-
-In `agents/<agent-id>/agent.yaml`:
+Add the tool registration to the owning capability manifest and local contract
+catalog. The id in `agent.yaml` should match the public id.
 
 ```yaml
 tools:
-  - repository.last-commit
+  - repository.read-file
 ```
 
-Workflows do not declare tools directly. A workflow selects agents; agents bring
-their own tools.
+Workflows do not declare tools directly. Workflows select agents; agents bring
+their allowed tools.
 
-## 5. Test Runtime Materialization
+## 4. Runtime Notes
 
-Update `tests/agent-runtimes/pi/adapter.test.ts` or add a focused tool catalog
-test:
+The bundled Pi adapter supports local tools and `tool_calling`. It converts ids
+such as `repository.read-file` into model-facing names and validates arguments
+before calling the handler.
 
-```ts
-expect(materializedToolName("repository.last-commit")).toBe(
-  "repository_last_commit"
-);
-```
+MCP policy exists, but Pi does not execute MCP tools today.
 
-Also test execution with the underlying dependency mocked, and test mode
-restrictions if the tool is not allowed in every agent mode.
+## 5. Test
 
-Useful commands:
+Cover registration, resolution, mode restriction, cwd/path safety, and runtime
+materialization when relevant.
 
-```sh
-npm test -- tests/core/tools/resolved-catalog.test.ts tests/agent-runtimes/pi/adapter.test.ts
+Run:
+
+```bash
 npm run typecheck
 npm run typecheck:unused-src
 npm run lint:unused
 ```
-
-## 6. Document Public Tools
-
-If the tool is meant to be reused by future agents, update:
-
-- `README.md` current inventory or agent capability notes;
-- the agent guide if it changes the expected authoring pattern.

@@ -1,5 +1,7 @@
 id: code-review
 type: workflow
+# Read-only PR review workflow. It captures repository evidence, plans review
+# scope, runs a reviewer agent, validates evidence, then renders a report.
 mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
@@ -15,9 +17,13 @@ capabilities:
 requires:
   repository: true
 execution:
+  # The scheduler can run independent safe nodes concurrently, while agent
+  # sessions and repository-sensitive work are still serialized by policies.
   max_concurrency: 2
   lock_timeout_ms: 120000
 nodes:
+  # Runtime/config sanity check. Keep this first so failures happen before
+  # repository capture or model calls.
   - id: preflight
     type: built_in
     uses: runtime.preflight
@@ -28,6 +34,8 @@ nodes:
           expression: "$.steps.preflight"
         format: json
 
+  # Captures a read-only repository workspace for the PR. The explicit policy
+  # tells the compiler/runtime this node uses repository workspace mechanics.
   - id: workspace
     type: built_in
     uses: repository-workspace.capture
@@ -44,6 +52,8 @@ nodes:
     after:
       - preflight
 
+  # Builds deterministic PR/repository evidence for agents and later evidence
+  # validation. This is provider-neutral repository diff context.
   - id: repo_context
     type: built_in
     uses: repository-diff.collect_context
@@ -56,6 +66,8 @@ nodes:
     after:
       - workspace
 
+  # Loads repository and agent context/skills for all model roles used by this
+  # workflow. Raw file bodies become instructions; task input gets context_audit.
   - id: context
     type: built_in
     uses: context.collect_context
@@ -73,6 +85,8 @@ nodes:
     after:
       - workspace
 
+  # Planner narrows review scope before the reviewer runs. This keeps the
+  # reviewer focused and gives later report artifacts an explicit plan.
   - id: review_plan
     type: agent
     agent: review-planner
@@ -94,6 +108,8 @@ nodes:
       - context
       - repo_context
 
+  # Reviewer returns structured findings only. It remains read-only and should
+  # cite evidence from repo_context rather than trusting PR prose.
   - id: code_review
     type: agent
     agent: change-reviewer
@@ -116,6 +132,8 @@ nodes:
     after:
       - review_plan
 
+  # Deterministic evidence validator filters/normalizes model findings against
+  # captured repository evidence before acceptance or reporting.
   - id: validated_findings
     type: built_in
     uses: findings.validate_evidence
@@ -133,6 +151,8 @@ nodes:
     after:
       - code_review
 
+  # Acceptance reviewer checks whether the findings are useful and complete
+  # from the requested review perspective.
   - id: acceptance
     type: agent
     agent: change-acceptance-reviewer
@@ -157,6 +177,8 @@ nodes:
     after:
       - validated_findings
 
+  # Terminal report node. Final workflow output is derived from this terminal
+  # node, and artifacts publish both structured JSON and markdown.
   - id: final_report
     type: built_in
     uses: reports.final_report

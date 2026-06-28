@@ -200,7 +200,7 @@ Add an agent node to a workflow `workflow.yaml` under `nodes:`:
 - id: my_step
   type: agent
   agent: my-agent
-  output_schema: my_output
+  output_schema: output.schema.json
   artifacts:
     - path: my-step.json
       publisher: artifacts.manifest_publisher
