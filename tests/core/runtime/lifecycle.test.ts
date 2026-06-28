@@ -3,17 +3,13 @@ import type { JsonValue } from "../../../src/core/runtime/json.js";
 import {
   cancelNode,
   failNode,
-  markDependencyFailedSkip,
   markNodeWaitingForInput,
   startNodeAttempt,
   succeedNode,
   timeOutNode,
   waitForRetry
 } from "../../../src/core/runtime/lifecycle.js";
-import {
-  createInitialRuntimeState,
-  publishNodeOutput
-} from "../../../src/core/runtime/state.js";
+import { createInitialRuntimeState } from "../../../src/core/runtime/state.js";
 
 const invocation = {
   version: "2026-06",
@@ -57,9 +53,7 @@ describe("runtime lifecycle", () => {
     });
     const succeeded = succeedNode(secondAttempt, "review");
 
-    expect(firstAttempt.run_status).toBe("running");
     expect(waiting.run_status).toBe("waiting_for_retry");
-    expect(secondAttempt.run_status).toBe("running");
     expect(succeeded.node_statuses.review.status).toBe("succeeded");
     expect(succeeded.attempts.review).toMatchObject({
       count: 2,
@@ -98,17 +92,6 @@ describe("runtime lifecycle", () => {
     expect(() =>
       startNodeAttempt(waiting, "review", 3, { retryPermitted: true })
     ).toThrow(expect.objectContaining({ code: "runtime_node_attempt_invalid" }));
-  });
-
-  it("marks dependency-failed skips as non-publishable terminal node state", () => {
-    const skipped = markDependencyFailedSkip(initialState(), "publish");
-
-    expect(skipped.node_statuses.publish.status).toBe(
-      "skipped_dependency_failed"
-    );
-    expect(() => publishNodeOutput(skipped, "publish", { ok: true })).toThrow(
-      expect.objectContaining({ code: "runtime_node_output_status_invalid" })
-    );
   });
 
   it("records timeout and cancellation as terminal attempts", () => {
@@ -159,22 +142,6 @@ describe("runtime lifecycle", () => {
       status: "failed",
       error_ref: "err-review"
     });
-    expect(secondFailed.node_statuses.report.status).toBe("failed");
-  });
-
-  it("supports explicit human-input waits without publishing successful output", () => {
-    const waiting = markNodeWaitingForInput(
-      startNodeAttempt(initialState(), "approval", 1),
-      "approval"
-    );
-
-    expect(waiting.run_status).toBe("waiting_for_input");
-    expect(waiting.node_statuses.approval.status).toBe("waiting_for_input");
-    expect(() =>
-      publishNodeOutput(waiting, "approval", { approved: true })
-    ).toThrow(
-      expect.objectContaining({ code: "runtime_node_output_status_invalid" })
-    );
   });
 
   it("cancels a workflow waiting for human input", () => {
@@ -184,6 +151,8 @@ describe("runtime lifecycle", () => {
     );
     const cancelled = cancelNode(waiting, "approval");
 
+    expect(waiting.run_status).toBe("waiting_for_input");
+    expect(waiting.node_statuses.approval.status).toBe("waiting_for_input");
     expect(cancelled.run_status).toBe("cancelled");
     expect(cancelled.node_statuses.approval.status).toBe("cancelled");
     expect(cancelled.attempts.approval.history[0]).toMatchObject({

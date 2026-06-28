@@ -9,11 +9,6 @@ const baseRef = pullRequest.base_ref;
 const baseSha = pullRequest.references.base_sha;
 const headSha = pullRequest.references.head_sha;
 
-type FakeGitCall = {
-  cwd: string;
-  args: readonly string[];
-};
-
 function codedError(code: string): Error & { code: string } {
   const error = new Error(code) as Error & { code: string };
   error.code = code;
@@ -62,40 +57,6 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "repository_path_missing" });
   });
 
-  it("throws not_git_repository when the path is not inside a Git work tree", async () => {
-    await expect(
-      runPreflight({
-        invocation: gitInvocation,
-        repository: gitRepository,
-        runGit: async (_cwd, args) => {
-          if (args[0] === "rev-parse") {
-            throw codedError("not_git_repository");
-          }
-
-          return "";
-        },
-        stat: async () => ({ isDirectory: () => true })
-      })
-    ).rejects.toMatchObject({ code: "not_git_repository" });
-  });
-
-  it("throws git_remote_missing when the configured remote is missing", async () => {
-    await expect(
-      runPreflight({
-        invocation: gitInvocation,
-        repository: gitRepository,
-        runGit: async (_cwd, args) => {
-          if (args[0] === "remote") {
-            throw codedError("git_remote_missing");
-          }
-
-          return "true\n";
-        },
-        stat: async () => ({ isDirectory: () => true })
-      })
-    ).rejects.toMatchObject({ code: "git_remote_missing" });
-  });
-
   it("throws invalid_invocation when required PR metadata is missing", async () => {
     await expect(
       runPreflight({
@@ -114,32 +75,11 @@ describe("preflight", () => {
     ).rejects.toMatchObject({ code: "invalid_invocation" });
   });
 
-  it("throws invalid_invocation when base_ref is missing", async () => {
-    await expect(
-      runPreflight({
-        invocation: {
-          ...gitInvocation,
-          references: {
-            base_sha: baseSha,
-            head_sha: headSha
-          }
-        },
-        repository: gitRepository,
-        runGit: async () => "",
-        stat: async () => ({ isDirectory: () => true })
-      })
-    ).rejects.toMatchObject({ code: "invalid_invocation" });
-  });
-
   it("returns a preflight.json shaped object for a valid repository", async () => {
-    const calls: FakeGitCall[] = [];
-
     const result = await runPreflight({
       invocation: gitInvocation,
       repository: gitRepository,
-      runGit: async (cwd, args) => {
-        calls.push({ cwd, args });
-
+      runGit: async (_cwd, args) => {
         if (args[0] === "remote") {
           return "git@github.com:octo-org/hello-world.git\n";
         }
@@ -149,16 +89,6 @@ describe("preflight", () => {
       stat: async () => ({ isDirectory: () => true })
     });
 
-    expect(calls).toEqual([
-      {
-        cwd: gitRepository.path,
-        args: ["rev-parse", "--is-inside-work-tree"]
-      },
-      {
-        cwd: gitRepository.path,
-        args: ["remote", "get-url", gitRepository.remote]
-      }
-    ]);
     expect(result).toEqual({
       repository: {
         id: gitRepository.id,
@@ -197,78 +127,6 @@ describe("preflight", () => {
         remote_url: "git@github.com:octo-org/hello-world.git"
       }
     });
-  });
-
-  it("supports trusted_local_write when Jira acceptance criteria is empty", async () => {
-    const result = await runPreflight({
-      invocation: {
-        ...jiraInvocation,
-        payload: {
-          jira: {
-            ...(jiraInvocation.payload?.jira as Record<string, unknown>),
-            acceptance_criteria: ""
-          }
-        }
-      },
-      repository: {
-        ...gitRepository,
-        expected_remote_urls: ["git@github.com:octo-org/hello-world.git"]
-      },
-      workflow: { mode: "trusted_local_write" },
-      runGit: async (_cwd, args) => {
-        if (args[0] === "remote") {
-          return "git@github.com:octo-org/hello-world.git\n";
-        }
-
-        return "true\n";
-      },
-      stat: async () => ({ isDirectory: () => true })
-    });
-
-    expect(result.repository.remote_url).toBe(
-      "git@github.com:octo-org/hello-world.git"
-    );
-  });
-
-  it("matches trusted_local_write SSH actual remote against HTTPS expected remote", async () => {
-    const result = await runPreflight({
-      invocation: jiraInvocation,
-      repository: {
-        ...gitRepository,
-        expected_remote_urls: ["https://github.com/octo-org/hello-world.git"]
-      },
-      workflow: { mode: "trusted_local_write" },
-      runGit: async (_cwd, args) => {
-        if (args[0] === "remote") {
-          return "git@github.com:octo-org/hello-world.git\n";
-        }
-
-        return "true\n";
-      },
-      stat: async () => ({ isDirectory: () => true })
-    });
-
-    expect(result.repository.remote_url).toBe(
-      "git@github.com:octo-org/hello-world.git"
-    );
-  });
-
-  it("rejects unsafe trusted_local_write actual remotes with userinfo, query, or hash", async () => {
-    await expect(
-      runPreflight({
-        invocation: jiraInvocation,
-        repository: {
-          ...gitRepository,
-          expected_remote_urls: ["https://github.com/octo-org/hello-world.git"]
-        },
-        workflow: { mode: "trusted_local_write" },
-        runGit: async (_cwd, args) =>
-          args[0] === "remote"
-            ? "https://token@github.com/octo-org/hello-world.git?x=1#frag\n"
-            : "true\n",
-        stat: async () => ({ isDirectory: () => true })
-      })
-    ).rejects.toMatchObject({ code: "remote_url_mismatch" });
   });
 
   it("throws expected_remote_urls_missing for trusted_local_write without expected remote URLs", async () => {

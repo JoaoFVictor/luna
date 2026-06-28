@@ -29,9 +29,6 @@ describe("agent review gate results", () => {
       id: "acceptance",
       type: "agent",
       blockWhen: { expression: "status != 'accepted'" },
-      feedback: {
-        expression: "{ 'status': status, 'blocking_reasons': blocking_reasons }"
-      },
       output: {
         status: "accepted",
         blocking_reasons: []

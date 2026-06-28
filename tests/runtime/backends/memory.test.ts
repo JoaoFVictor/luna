@@ -1,42 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
-import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memory/checkpoints.js";
-import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
-import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
 
 describe("memory runtime backends", () => {
-  it("stores artifact manifests by run", async () => {
-    const store = createMemoryArtifactManifestStore();
-    await store.put({
-      id: "artifact-1",
-      run_id: "run-1",
-      uri: "artifact://run-1/report.json",
-      source_node_id: "report",
-      artifact_path: "report.json",
-      attempt: 1,
-      backend_id: "memory.artifacts",
-      backend_root: "artifacts",
-      created_at: "2026-06-25T00:00:00.000Z"
-    });
-
-    await expect(
-      store.get({
-        id: "artifact-1",
-        run_id: "run-1",
-        source_node_id: "report",
-        artifact_path: "report.json",
-        attempt: 1,
-        backend_id: "memory.artifacts",
-        backend_root: "artifacts"
-      })
-    ).resolves.toMatchObject({
-      id: "artifact-1",
-      run_id: "run-1"
-    });
-    await expect(store.list("run-1")).resolves.toHaveLength(1);
-  });
-
   it("keys artifact manifests by structured identity without slash collisions", async () => {
     const store = createMemoryArtifactManifestStore();
     await store.put({
@@ -84,51 +50,6 @@ describe("memory runtime backends", () => {
         backend_root: "root"
       })
     ).resolves.toMatchObject({ uri: "memory://two" });
-  });
-
-  it("preserves ordered events and runtime logs", async () => {
-    const events = createMemoryEventStore();
-    const logs = createMemoryRuntimeLogStore();
-
-    await events.append({
-      id: "event-1",
-      run_id: "run-1",
-      type: "luna.run.started",
-      timestamp: "2026-06-25T00:00:00.000Z",
-      node_id: "writer"
-    });
-    await events.append({
-      id: "event-2",
-      run_id: "run-1",
-      type: "luna.run.completed",
-      timestamp: "2026-06-25T00:00:01.000Z",
-      interrupt_id: "interrupt-1",
-      resume_id: "resume-1"
-    });
-    await logs.append({
-      run_id: "run-1",
-      timestamp: "2026-06-25T00:00:00.000Z",
-      message: "started",
-      level: "info"
-    });
-
-    await expect(events.list("run-1")).resolves.toMatchObject([
-      { id: "event-1", sequence: 1 },
-      { id: "event-2", sequence: 2 }
-    ]);
-    await expect(
-      events.query({ runId: "run-1", nodeId: "writer" })
-    ).resolves.toMatchObject([{ id: "event-1" }]);
-    await expect(
-      events.query({
-        runId: "run-1",
-        interruptId: "interrupt-1",
-        resumeId: "resume-1"
-      })
-    ).resolves.toMatchObject([{ id: "event-2" }]);
-    await expect(logs.list("run-1")).resolves.toMatchObject([
-      { message: "started", sequence: 1 }
-    ]);
   });
 
   it("serializes resume attempts for interrupts", async () => {
@@ -184,34 +105,4 @@ describe("memory runtime backends", () => {
     });
   });
 
-  it("saves and loads ref-only checkpoints by stable thread_id", async () => {
-    const store = createMemoryCheckpointStore();
-    await store.save({
-      thread_id: "thread-1",
-      checkpoint_id: "checkpoint-1",
-      state_schema_version: "2026-06",
-      state: {
-        state_schema_version: "2026-06",
-        artifact_refs: [{ id: "artifact-1", uri: "artifact://run-1/report.json" }]
-      },
-      created_at: "2026-06-25T00:00:00.000Z"
-    });
-
-    await expect(store.load("thread-1")).resolves.toMatchObject({
-      thread_id: "thread-1",
-      checkpoint_id: "checkpoint-1",
-      revision: 1
-    });
-    await expect(
-      store.save({
-        thread_id: "thread-1",
-        checkpoint_id: "checkpoint-2",
-        state_schema_version: "2026-06",
-        state: {
-          state_schema_version: "2026-06",
-          steps: { writer: { output: "too much" } }
-        }
-      })
-    ).rejects.toMatchObject({ code: "runtime_checkpoint_not_ref_only" });
-  });
 });

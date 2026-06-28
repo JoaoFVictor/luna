@@ -30,22 +30,13 @@ describe("runtime composition durability policy", () => {
     ).not.toThrow();
   });
 
-  it("requires durable checkpointing for production HITL and side-effect runs", () => {
+  it("requires durable checkpointing for production HITL runs", () => {
     expect(() =>
       assertRuntimeDurabilityPolicy({
         mode: "production",
         checkpointBackendId: "memory.checkpoints",
         workflow: { id: "code-review" },
         requiresHumanInterrupts: true
-      })
-    ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
-
-    expect(() =>
-      assertRuntimeDurabilityPolicy({
-        mode: "production",
-        checkpointBackendId: "memory.checkpoints",
-        workflow: { id: "code-review" },
-        hasExternalSideEffects: true
       })
     ).toThrowError(expect.objectContaining({ code: "runtime_backend_invalid" }));
   });

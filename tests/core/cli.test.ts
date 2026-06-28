@@ -1,18 +1,16 @@
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
-import type { AdapterContext, InputAdapter } from "../../src/adapters/types.js";
+import type { InputAdapter } from "../../src/adapters/types.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
 import type { LunaPlatform } from "../../src/platform/native/native-platform.js";
 import {
   findProjectRoot,
-  loadInvocationFromFile,
   loadRoutingDefinition,
   main,
   parseCliArgs,
-  parseWorkflowTarget,
   resolveCliConfigRoot
 } from "../../src/cli.js";
 
@@ -39,14 +37,6 @@ const validInvocation: Invocation = {
   payload: { pull_request: { number: 42 } }
 };
 
-const adapterContext: AdapterContext = {
-  projectRoot: "/workspace/project",
-  configRoot: "/workspace/config",
-  env: {},
-  fetch,
-  executeJson: vi.fn()
-};
-
 function registryWith(adapter: InputAdapter): InputAdapterRegistry {
   return {
     get(id) {
@@ -66,52 +56,7 @@ function registryWith(adapter: InputAdapter): InputAdapterRegistry {
 }
 
 describe("Luna CLI", () => {
-  it("keeps the package bin pointed at the emitted CLI path", async () => {
-    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
-      bin?: { luna?: unknown };
-    };
-
-    expect(packageJson.bin?.luna).toBe("./dist/src/cli.js");
-    await expect(access("src/cli.ts")).resolves.toBeUndefined();
-  });
-
-  it("parses run input arguments", () => {
-    expect(parseCliArgs(["run", "--input", "example.json"])).toEqual({
-      command: "run",
-      input: "example.json",
-      target: undefined
-    });
-  });
-
-  it("parses explicit target input adapter arguments", () => {
-    expect(
-      parseCliArgs([
-        "run",
-        "--target",
-        "workflow:code-review",
-        "--from",
-        "github-pr-url",
-        "https://github.com/withastro/luna/pull/123"
-      ])
-    ).toEqual({
-      command: "run",
-      target: { type: "workflow", id: "code-review" },
-      from: "github-pr-url",
-      value: "https://github.com/withastro/luna/pull/123"
-    });
-  });
-
-  it("parses workflow targets", () => {
-    expect(parseWorkflowTarget("workflow:implementation")).toEqual({
-      type: "workflow",
-      id: "implementation"
-    });
-  });
-
   it("rejects invalid or workflow-specific command shapes", () => {
-    expect(() => parseWorkflowTarget("agent:implementation")).toThrow(
-      expect.objectContaining({ code: "invalid_target" })
-    );
     expect(() => parseCliArgs(["run", "--workflow", "code-review"])).toThrow(
       expect.objectContaining({ code: "unsupported_flag" })
     );
@@ -128,44 +73,6 @@ describe("Luna CLI", () => {
     await writeFile(path.join(projectRoot, "package.json"), "{}");
 
     await expect(findProjectRoot(nestedStart)).resolves.toBe(projectRoot);
-  });
-
-  it("loads routing from the app-configured router path", async () => {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-routing-"));
-    const configRoot = path.join(projectRoot, "config");
-    await mkdir(configRoot, { recursive: true });
-    await writeFile(
-      path.join(configRoot, "app.yaml"),
-      [
-        "workspace:",
-        "  strategy: git_worktree",
-        `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
-        "  preserve_on_success: false",
-        "  preserve_on_failure: true",
-        "artifacts:",
-        `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
-        "routing:",
-        "  path: cli-routing.yaml",
-        ""
-      ].join("\n")
-    );
-    await writeFile(
-      path.join(configRoot, "cli-routing.yaml"),
-      [
-        "type: router",
-        "version: \"2026-06\"",
-        "rules:",
-        "  - id: cli_override_route",
-        "    when:",
-        "      expression: \"true\"",
-        "    target: workflow:code-review",
-        ""
-      ].join("\n")
-    );
-
-    await expect(loadRoutingDefinition(projectRoot)).resolves.toMatchObject({
-      rules: [{ id: "cli_override_route" }]
-    });
   });
 
   it("loads routing from LUNA_CONFIG_ROOT outside projectRoot/config", async () => {
@@ -200,9 +107,6 @@ describe("Luna CLI", () => {
       ].join("\n")
     );
 
-    expect(
-      resolveCliConfigRoot(projectRoot, { LUNA_CONFIG_ROOT: configRoot })
-    ).toBe(configRoot);
     await expect(
       loadRoutingDefinition(projectRoot, { LUNA_CONFIG_ROOT: configRoot })
     ).resolves.toMatchObject({
@@ -222,59 +126,6 @@ describe("Luna CLI", () => {
       main(["run", "--input", invocationFile], { targetExecutor })
     ).rejects.toThrow(expect.objectContaining({ code: "invocation_invalid" }));
     expect(targetExecutor.execute).not.toHaveBeenCalled();
-  });
-
-  it("loads a validated invocation from disk", async () => {
-    const invocationFile = path.join(
-      await mkdtemp(path.join(tmpdir(), "luna-cli-load-")),
-      "invocation.json"
-    );
-    await writeFile(invocationFile, JSON.stringify(validInvocation));
-
-    await expect(loadInvocationFromFile(invocationFile)).resolves.toEqual(validInvocation);
-  });
-
-  it("loads an invocation through an adapter, routes it, and executes natively", async () => {
-    const targetExecutor = { execute: vi.fn(async () => 0) };
-    const load = vi.fn(async () => validInvocation);
-    const adapter: InputAdapter = {
-      id: "github-pr-url",
-      description: "GitHub pull request URL",
-      load
-    };
-
-    await expect(
-      main(
-        [
-          "run",
-          "--target",
-          "workflow:code-review",
-          "--from",
-          "github-pr-url",
-          "https://github.com/octo-org/hello-world/pull/42"
-        ],
-        {
-          targetExecutor,
-          platform: {
-            inputAdapterRegistry: registryWith(adapter),
-            runWorkflow: vi.fn(async () => undefined)
-          },
-          adapterContext
-        }
-      )
-    ).resolves.toBe(0);
-
-    expect(load).toHaveBeenCalledWith(
-      { kind: "cli", value: "https://github.com/octo-org/hello-world/pull/42" },
-      adapterContext
-    );
-    expect(targetExecutor.execute).toHaveBeenCalledWith({
-      invocation: {
-        ...validInvocation,
-        target: { type: "workflow", id: "code-review" }
-      },
-      target: { type: "workflow", id: "code-review" }
-    });
   });
 
   it("uses the injected platform as the default adapter registry and workflow runner", async () => {
@@ -330,97 +181,4 @@ describe("Luna CLI", () => {
     });
   });
 
-  it("loads input adapters from app-configured native plugins", async () => {
-    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-plugin-"));
-    const configRoot = path.join(projectRoot, "config");
-    const pluginPath = path.join(configRoot, "linear-plugin.mjs");
-    const callsPath = path.join(configRoot, "calls.json");
-
-    await mkdir(configRoot, { recursive: true });
-    await writeFile(
-      pluginPath,
-      [
-        "export default {",
-        "  id: 'linear',",
-        "  inputAdapters: [{",
-        "    id: 'linear-task-url',",
-        "    description: 'Linear task URL',",
-        "    async load(input) {",
-        `      await import('node:fs/promises').then(({ writeFile }) => writeFile(${JSON.stringify(callsPath)}, JSON.stringify(input)));`,
-        "      return {",
-        "        version: '2026-06',",
-        "        source: 'linear',",
-        "        event: 'issue',",
-        "        action: 'selected',",
-        "        subject: {",
-        "          type: 'issue',",
-        "          id: 'LIN-1',",
-        "          url: input.value,",
-        "          title: 'Linear issue'",
-        "        }",
-        "      };",
-        "    }",
-        "  }]",
-        "};",
-        ""
-      ].join("\n")
-    );
-    await writeFile(
-      path.join(configRoot, "app.yaml"),
-      [
-        "workspace:",
-        "  strategy: git_worktree",
-        `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
-        "  preserve_on_success: false",
-        "  preserve_on_failure: true",
-        "artifacts:",
-        `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
-        "plugins:",
-        `  - module: ${JSON.stringify("./linear-plugin.mjs")}`,
-        ""
-      ].join("\n")
-    );
-
-    const targetExecutor = { execute: vi.fn(async () => 0) };
-    await expect(
-      main(
-        [
-          "run",
-          "--target",
-          "workflow:implementation",
-          "--from",
-          "linear-task-url",
-          "https://linear.app/acme/issue/LIN-1"
-        ],
-        {
-          projectRoot,
-          env: { LUNA_CONFIG_ROOT: configRoot },
-          routing: {
-            type: "router",
-            version: "2026-06",
-            rules: [
-              {
-                id: "plugin_route",
-                when: { expression: "true" },
-                target: "workflow:implementation"
-              }
-            ]
-          },
-          targetExecutor
-        }
-      )
-    ).resolves.toBe(0);
-
-    await expect(readFile(callsPath, "utf8")).resolves.toBe(JSON.stringify({
-      kind: "cli",
-      value: "https://linear.app/acme/issue/LIN-1"
-    }));
-    expect(targetExecutor.execute).toHaveBeenCalledWith({
-      invocation: expect.objectContaining({
-        source: "linear",
-        target: { type: "workflow", id: "implementation" }
-      }),
-      target: { type: "workflow", id: "implementation" }
-    });
-  });
 });

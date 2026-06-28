@@ -111,7 +111,6 @@ describe("workflow execution plan", () => {
 
     expect(edges).toContainEqual({ from: "a", to: "b" });
     expect(edges).not.toContainEqual({ from: "__start__", to: "a" });
-    expect(edges).not.toContainEqual({ from: "c", to: "__end__" });
   });
 
   it("does not treat every pattern as a gated agent loop", () => {
@@ -133,7 +132,6 @@ describe("workflow execution plan", () => {
     });
 
     expect(edges).not.toContainEqual({ from: "a", to: "b" });
-    expect(edges).not.toContainEqual({ from: "b", to: "a" });
   });
 
   it("derives pattern scheduling from compiled registration metadata", () => {

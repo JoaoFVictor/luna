@@ -1,6 +1,4 @@
-import {
-  realpath as fsRealpath
-} from "node:fs/promises";
+import { realpath as fsRealpath } from "node:fs/promises";
 import path from "node:path";
 import { runGit as defaultRunGit } from "../git/client.js";
 import { isInsideRoot } from "../../core/security/path.js";
@@ -90,7 +88,26 @@ function assertRegisteredWorktree(
   }
 }
 
-export async function cleanup({
+function withCleanedNestedWorkspace<TWorkspaceRecord extends WorkspaceRecord>(
+  workspaceRecord: TWorkspaceRecord,
+  cleaned: TWorkspaceRecord
+): TWorkspaceRecord {
+  const nested = (workspaceRecord as { readonly workspace?: unknown }).workspace;
+  if (typeof nested !== "object" || nested === null || Array.isArray(nested)) {
+    return cleaned;
+  }
+
+  return {
+    ...cleaned,
+    workspace: {
+      ...nested,
+      preserved: false,
+      reason: "success_cleanup"
+    }
+  } as TWorkspaceRecord;
+}
+
+export async function cleanup<TWorkspaceRecord extends WorkspaceRecord>({
   repositoryPath,
   workspaceRoot,
   workspaceRecord,
@@ -100,11 +117,11 @@ export async function cleanup({
 }: {
   repositoryPath: string;
   workspaceRoot: string;
-  workspaceRecord: WorkspaceRecord;
+  workspaceRecord: TWorkspaceRecord;
   persistedWorkspaceRecord?: WorkspaceRecord;
   runGit?: RunGit;
   realpath?: Realpath;
-}): Promise<WorkspaceRecord> {
+}): Promise<TWorkspaceRecord> {
   assertWorkspaceRecordMatches(workspaceRecord, persistedWorkspaceRecord);
   await assertWorkspacePathInsideRoot(workspaceRoot, workspaceRecord.path, realpath);
 
@@ -117,9 +134,9 @@ export async function cleanup({
 
   await runGit(repositoryPath, ["worktree", "remove", workspaceRecord.path]);
 
-  return {
+  return withCleanedNestedWorkspace(workspaceRecord, {
     ...workspaceRecord,
     preserved: false,
     reason: "success_cleanup"
-  };
+  });
 }

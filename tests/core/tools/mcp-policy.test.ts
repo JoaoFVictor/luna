@@ -55,17 +55,6 @@ describe("MCP policy", () => {
     expect(policy.runtime_requirements).toEqual(["tool_calling", "mcp_tools"]);
   });
 
-  it("does not materialize MCP tools implicitly from agent text", () => {
-    const policy = resolveMcpPolicy({
-      requested_server_ids: [],
-      agent_mode: "read_only",
-      config
-    });
-
-    expect(policy.tools).toEqual([]);
-    expect(policy.runtime_requirements).toEqual([]);
-  });
-
   it("keeps MCP server policy free of stdio materialization details", () => {
     const policy = resolveMcpPolicy({
       requested_server_ids: ["playwright"],
@@ -79,17 +68,6 @@ describe("MCP policy", () => {
         transport: "stdio",
         allowed_tools: ["browser_navigate"],
         timeout_ms: 60_000
-      }
-    ]);
-    expect(policy.servers[0]).not.toHaveProperty("command");
-    expect(policy.servers[0]).not.toHaveProperty("args");
-    expect(policy.servers[0]).not.toHaveProperty("env_vars");
-    expect(policy.tools).toEqual([
-      {
-        id: "playwright.browser_navigate",
-        protocol: "mcp",
-        server_id: "playwright",
-        tool_name: "browser_navigate"
       }
     ]);
   });

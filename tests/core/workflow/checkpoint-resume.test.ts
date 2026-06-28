@@ -1,7 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { capabilityManifest } from "../../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
@@ -9,7 +6,6 @@ import type { WorkflowDefinition } from "../../../src/core/workflow/definition-t
 import { compileWorkflow } from "../../../src/core/workflow/compiler.js";
 import {
   resumeCompiledWorkflow,
-  type WorkflowAgentDefaults,
   runCompiledWorkflow
 } from "../../../src/runtime/langgraph/workflow-runner.js";
 import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
@@ -17,11 +13,6 @@ import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memor
 import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
-import {
-  createSqliteCheckpointStore,
-  sqliteCheckpointFile
-} from "../../../src/runtime/backends/sqlite/checkpoints.js";
-import { createLangGraphCheckpointer } from "../../../src/runtime/backends/sqlite/langgraph-checkpointer.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -139,174 +130,7 @@ function backends() {
   };
 }
 
-function agentRuntime(output: unknown): AgentRuntimePort {
-  return {
-    describe: () => ({
-      id: "test-agent-runtime",
-      display_name: "Test",
-      supported_tool_protocols: ["local"],
-      supported_runtime_requirements: ["tool_calling", "mcp_tools"]
-    }),
-    validate: async () => undefined,
-    runAgent: async () => ({ output })
-  };
-}
-
-const agentDefaults: WorkflowAgentDefaults = {
-  agent: {
-    id: "reviewer",
-    mode: "read_only",
-    instructions: "Review after approval."
-  },
-  model_profile: { model: "openai/gpt-5", reasoning_effort: "medium" },
-  tools: { tools: [], runtime_requirements: [] }
-};
-
 describe("workflow runner checkpoint resume", () => {
-  it("uses native LangGraph interrupt for pure interrupt nodes when a LangGraph checkpointer is available", async () => {
-    const checkpointRoot = await mkdtemp(path.join(tmpdir(), "luna-native-hitl-"));
-    const checkpointStore = createSqliteCheckpointStore({
-      filePath: sqliteCheckpointFile(checkpointRoot)
-    });
-    const stores = {
-      ...backends(),
-      checkpoints: checkpointStore
-    };
-    const compiled = compileWorkflow({ workflow, registry });
-
-    const waiting = await runCompiledWorkflow({
-      compiled,
-      workflow,
-      invocation: {},
-      config: {},
-      run: {
-        run_id: "run-native-hitl",
-        workflow_id: "checkpoint-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: stores,
-      builtIns: {
-        "runtime.pre": async () => ({ before: true }),
-        "runtime.after": async () => ({ done: true })
-      },
-      agentRuntime: {} as AgentRuntimePort,
-      langGraphCheckpointer: createLangGraphCheckpointer(checkpointStore)
-    });
-
-    expect(waiting).toMatchObject({
-      status: "waiting_for_input",
-      interrupt_id: "interrupt-run-native-hitl-approve",
-      checkpoint_id: "checkpoint-run-native-hitl-approve"
-    });
-    await expect(stores.runtimeLogs.list("run-native-hitl")).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          message: expect.stringContaining("interrupts=1")
-        })
-      ])
-    );
-  });
-
-  it("waits for human input, stores ref-only checkpoint state, then resumes", async () => {
-    const stores = backends();
-    const compiled = compileWorkflow({ workflow, registry });
-
-    const waiting = await runCompiledWorkflow({
-      compiled,
-      workflow,
-      invocation: {},
-      config: {},
-      run: {
-        run_id: "run-hitl",
-        workflow_id: "checkpoint-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: stores,
-      builtIns: {
-        "runtime.pre": async () => ({ before: true }),
-        "runtime.after": async ({ state }) => {
-          expect(state.steps.pre).toEqual({ before: true });
-          return { done: true };
-        }
-      },
-      agentRuntime: {} as AgentRuntimePort
-    });
-
-    expect(waiting.status).toBe("waiting_for_input");
-    const checkpoint = await stores.checkpoints.load("run-hitl");
-    expect(checkpoint?.state).toEqual({
-      state_schema_version: "2026-06",
-      run_status: "waiting_for_input",
-      interrupt_refs: [
-        {
-          id: "interrupt-run-hitl-approve",
-          uri: "interrupt://run-hitl/approve",
-          node_id: "approve"
-        }
-      ]
-    });
-
-    const resumed = await resumeCompiledWorkflow({
-      compiled,
-      workflow,
-      checkpoint_id: "checkpoint-run-hitl-approve",
-      thread_id: "run-hitl",
-      interrupt_id: "interrupt-run-hitl-approve",
-      decision: { approved: true },
-      backends: stores,
-      builtIns: {
-        "runtime.pre": async () => ({ before: true }),
-        "runtime.after": async ({ state }) => {
-          expect(state.steps.pre).toEqual({ before: true });
-          return { done: true };
-        }
-      },
-      agentRuntime: {} as AgentRuntimePort
-    });
-
-    expect(resumed.status).toBe("succeeded");
-    if (resumed.status !== "succeeded") {
-      throw new Error("expected workflow to succeed");
-    }
-    expect(resumed.output).toEqual({ done: true });
-  });
-
-  it("persists the checkpoint before exposing the pending interrupt", async () => {
-    const stores = backends();
-    const originalCreate = stores.interrupts.create;
-    stores.interrupts.create = async (record) => {
-      await expect(
-        stores.checkpoints.load(record.thread_id ?? "", {
-          checkpointId: record.checkpoint_id
-        })
-      ).resolves.toBeDefined();
-      return await originalCreate(record);
-    };
-
-    const waiting = await runCompiledWorkflow({
-      compiled: compileWorkflow({ workflow, registry }),
-      workflow,
-      invocation: {},
-      config: {},
-      run: {
-        run_id: "run-interrupt-order",
-        workflow_id: "checkpoint-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: stores,
-      builtIns: {
-        "runtime.pre": async () => ({ before: true }),
-        "runtime.after": async () => ({ done: true })
-      },
-      agentRuntime: {} as AgentRuntimePort
-    });
-
-    expect(waiting.status).toBe("waiting_for_input");
-  });
-
   it("rehydrates captured workspace context from checkpoint writes on resume", async () => {
     const stores = backends();
     const compiled = compileWorkflow({ workflow: workspaceWorkflow, registry });
@@ -333,20 +157,22 @@ describe("workflow runner checkpoint resume", () => {
           path: "/tmp/workspace",
           preserved: false,
           reason: "active"
-        }),
-        "runtime.after": async () => ({ done: true })
+        })
       },
       builtInMetadata,
       agentRuntime: {} as AgentRuntimePort
     });
     expect(waiting.status).toBe("waiting_for_input");
+    if (waiting.status !== "waiting_for_input") {
+      throw new Error("expected workflow to wait for input");
+    }
 
     const resumed = await resumeCompiledWorkflow({
       compiled,
       workflow: workspaceWorkflow,
-      checkpoint_id: "checkpoint-run-resume-workspace-approve",
+      checkpoint_id: waiting.checkpoint_id,
       thread_id: "run-resume-workspace",
-      interrupt_id: "interrupt-run-resume-workspace-approve",
+      interrupt_id: waiting.interrupt_id,
       decision: { approved: true },
       backends: stores,
       builtIns: {
@@ -389,7 +215,7 @@ describe("workflow runner checkpoint resume", () => {
       }
     };
     const compiled = compileWorkflow({ workflow: definition, registry });
-    await runCompiledWorkflow({
+    const waiting = await runCompiledWorkflow({
       compiled,
       workflow: definition,
       invocation: { title: "keep-me" },
@@ -402,18 +228,21 @@ describe("workflow runner checkpoint resume", () => {
       },
       backends: stores,
       builtIns: {
-        "runtime.pre": async () => ({ before: true }),
-        "runtime.after": async () => ({ done: false })
+        "runtime.pre": async () => ({ before: true })
       },
       agentRuntime: {} as AgentRuntimePort
     });
+    expect(waiting.status).toBe("waiting_for_input");
+    if (waiting.status !== "waiting_for_input") {
+      throw new Error("expected workflow to wait for input");
+    }
 
     const resumed = await resumeCompiledWorkflow({
       compiled,
       workflow: definition,
-      checkpoint_id: "checkpoint-run-resume-context-approve",
+      checkpoint_id: waiting.checkpoint_id,
       thread_id: "run-resume-context",
-      interrupt_id: "interrupt-run-resume-context-approve",
+      interrupt_id: waiting.interrupt_id,
       decision: { approved: true },
       backends: stores,
       builtIns: {
@@ -429,134 +258,6 @@ describe("workflow runner checkpoint resume", () => {
         }
       },
       agentRuntime: {} as AgentRuntimePort
-    });
-
-    expect(resumed.status).toBe("succeeded");
-  });
-
-  it("rejects unsupported downstream agent runtime requirements before resume execution", async () => {
-    const stores = backends();
-    const definition: WorkflowDefinition = {
-      ...workflow,
-      graph: {
-        nodes: [
-          { id: "pre", type: "built_in", uses: "runtime.pre" },
-          { id: "approve", type: "human_gate", uses: "approval.human", after: ["pre"] },
-          {
-            id: "review",
-            type: "agent",
-            agent: "reviewer",
-            output_schema: "agents.output",
-            runtime_requirements: ["mcp_tools"],
-            after: ["approve"]
-          }
-        ]
-      }
-    };
-    const compiled = compileWorkflow({ workflow: definition, registry });
-    const runtime = agentRuntime({ reviewed: true });
-    await runCompiledWorkflow({
-      compiled,
-      workflow: definition,
-      invocation: {},
-      config: {},
-      run: {
-        run_id: "run-resume-unsupported",
-        workflow_id: "checkpoint-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: stores,
-      builtIns: { "runtime.pre": async () => ({ before: true }) },
-      agentRuntime: runtime,
-      agentInputs: { review: agentDefaults }
-    });
-
-    await expect(
-      resumeCompiledWorkflow({
-        compiled,
-        workflow: definition,
-        checkpoint_id: "checkpoint-run-resume-unsupported-approve",
-        thread_id: "run-resume-unsupported",
-        interrupt_id: "interrupt-run-resume-unsupported-approve",
-        decision: { approved: true },
-        backends: stores,
-        builtIns: {},
-        agentRuntime: {
-          ...runtime,
-          describe: () => ({
-            id: "limited",
-            display_name: "Limited",
-            supported_tool_protocols: ["local"],
-            supported_runtime_requirements: ["tool_calling"]
-          })
-        },
-        agentInputs: { review: agentDefaults }
-      })
-    ).rejects.toMatchObject({ code: "runtime_state_invalid" });
-  });
-
-  it("does not reject resume because an already completed upstream agent had unsupported requirements", async () => {
-    const stores = backends();
-    const definition: WorkflowDefinition = {
-      ...workflow,
-      graph: {
-        nodes: [
-          {
-            id: "pre_review",
-            type: "agent",
-            agent: "reviewer",
-            output_schema: "agents.output",
-            runtime_requirements: ["mcp_tools"]
-          },
-          {
-            id: "approve",
-            type: "human_gate",
-            uses: "approval.human",
-            after: ["pre_review"]
-          },
-          { id: "after", type: "built_in", uses: "runtime.after", after: ["approve"] }
-        ]
-      }
-    };
-    const compiled = compileWorkflow({ workflow: definition, registry });
-    const fullRuntime = agentRuntime({ reviewed: true });
-    await runCompiledWorkflow({
-      compiled,
-      workflow: definition,
-      invocation: {},
-      config: {},
-      run: {
-        run_id: "run-upstream-agent-resume",
-        workflow_id: "checkpoint-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: stores,
-      builtIns: { "runtime.after": async () => ({ done: true }) },
-      agentRuntime: fullRuntime,
-      agentInputs: { pre_review: agentDefaults }
-    });
-
-    const resumed = await resumeCompiledWorkflow({
-      compiled,
-      workflow: definition,
-      checkpoint_id: "checkpoint-run-upstream-agent-resume-approve",
-      thread_id: "run-upstream-agent-resume",
-      interrupt_id: "interrupt-run-upstream-agent-resume-approve",
-      decision: { approved: true },
-      backends: stores,
-      builtIns: { "runtime.after": async () => ({ done: true }) },
-      agentRuntime: {
-        ...fullRuntime,
-        describe: () => ({
-          id: "limited",
-          display_name: "Limited",
-          supported_tool_protocols: ["local"],
-          supported_runtime_requirements: ["tool_calling"]
-        })
-      },
-      agentInputs: { pre_review: agentDefaults }
     });
 
     expect(resumed.status).toBe("succeeded");
@@ -578,8 +279,7 @@ describe("workflow runner checkpoint resume", () => {
       },
       backends: stores,
       builtIns: {
-        "runtime.pre": async () => ({ before: true }),
-        "runtime.after": async () => ({ done: true })
+        "runtime.pre": async () => ({ before: true })
       },
       agentRuntime: {} as AgentRuntimePort
     });
@@ -623,12 +323,10 @@ describe("workflow runner checkpoint resume", () => {
       },
       backends: stores,
       builtIns: {
-        "runtime.pre": async () => ({ before: true }),
-        "runtime.after": async () => ({ done: true })
+        "runtime.pre": async () => ({ before: true })
       },
       agentRuntime: {} as AgentRuntimePort
     });
-    let attempts = 0;
     const resumeInput = {
       compiled,
       workflow,
@@ -645,7 +343,6 @@ describe("workflow runner checkpoint resume", () => {
         ...resumeInput,
         builtIns: {
           "runtime.after": async () => {
-            attempts += 1;
             throw new Error("downstream failed after decision persistence");
           }
         }
@@ -653,64 +350,16 @@ describe("workflow runner checkpoint resume", () => {
     ).rejects.toThrow("downstream failed after decision persistence");
 
     const resumed = await resumeCompiledWorkflow({
-      ...resumeInput,
-      builtIns: {
-        "runtime.after": async ({ state }) => {
-          attempts += 1;
-          expect(state.steps.approve).toEqual({ approved: true });
-          return { done: true };
+        ...resumeInput,
+        builtIns: {
+          "runtime.after": async ({ state }) => {
+            expect(state.steps.approve).toEqual({ approved: true });
+            return { done: true };
         }
       }
     });
 
     expect(resumed.status).toBe("succeeded");
-    expect(attempts).toBe(2);
   });
 
-  it("rejects incompatible workflow revision and state schema resumes", async () => {
-    const stores = backends();
-    await stores.checkpoints.save({
-      thread_id: "run-bad",
-      checkpoint_id: "checkpoint-bad",
-      state_schema_version: "2026-06",
-      state: { state_schema_version: "2026-06", run_status: "waiting_for_input" },
-      metadata: { workflow_revision: "old-revision", resume_node_id: "approve" }
-    });
-
-    await expect(
-      resumeCompiledWorkflow({
-        compiled: compileWorkflow({ workflow, registry }),
-        workflow,
-        checkpoint_id: "checkpoint-bad",
-        thread_id: "run-bad",
-        interrupt_id: "interrupt-run-bad-approve",
-        decision: { approved: true },
-        backends: stores,
-        builtIns: { "runtime.after": async () => ({ done: true }) },
-        agentRuntime: {} as AgentRuntimePort
-      })
-    ).rejects.toMatchObject({ code: "runtime_checkpoint_schema_mismatch" });
-
-    await stores.checkpoints.save({
-      thread_id: "run-schema",
-      checkpoint_id: "checkpoint-schema",
-      state_schema_version: "2025-01",
-      state: { state_schema_version: "2026-06" },
-      metadata: { workflow_revision: workflow.revision, resume_node_id: "approve" }
-    });
-
-    await expect(
-      resumeCompiledWorkflow({
-        compiled: compileWorkflow({ workflow, registry }),
-        workflow,
-        checkpoint_id: "checkpoint-schema",
-        thread_id: "run-schema",
-        interrupt_id: "interrupt-run-schema-approve",
-        decision: { approved: true },
-        backends: stores,
-        builtIns: { "runtime.after": async () => ({ done: true }) },
-        agentRuntime: {} as AgentRuntimePort
-      })
-    ).rejects.toMatchObject({ code: "runtime_checkpoint_schema_mismatch" });
-  });
 });

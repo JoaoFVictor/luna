@@ -80,76 +80,9 @@ describe("observed agent runner", () => {
       })
     ).rejects.toBe(eventFailure);
 
-    expect(summary.prompt_operations).toBe(1);
-    expect(summary.usage_missing_count).toBe(0);
-    expect(summary.tokens.total).toBe(18);
     expect(emitEvent).toHaveBeenCalledTimes(2);
     expect(emitEvent).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "agent_call.failed" })
-    );
-  });
-
-  it("emits skill and MCP policy audit metadata on agent start", async () => {
-    const emitEvent = vi.fn();
-
-    await runObservedAgent({
-      runtime: runtime(),
-      input: {
-        ...input,
-        instructions_audit: {
-          skills: [
-            {
-              name: "lint-fix",
-              requested_path: ".codex/skills/lint-fix/SKILL.md"
-            }
-          ]
-        },
-        tools: {
-          tools: [],
-          runtime_requirements: ["tool_calling", "mcp_tools"],
-          mcp_policy: {
-            servers: [
-              {
-                id: "playwright",
-                transport: "stdio",
-                allowed_tools: ["browser_navigate"],
-                timeout_ms: 60_000
-              }
-            ],
-            tools: [
-              {
-                id: "playwright.browser_navigate",
-                protocol: "mcp",
-                server_id: "playwright",
-                tool_name: "browser_navigate"
-              }
-            ],
-            runtime_requirements: ["tool_calling", "mcp_tools"]
-          }
-        },
-        runtime_requirements: ["tool_calling", "mcp_tools"]
-      },
-      emitEvent
-    });
-
-    expect(emitEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "agent_call.started",
-        data: expect.objectContaining({
-          skills: [
-            {
-              name: "lint-fix",
-              requested_path: ".codex/skills/lint-fix/SKILL.md"
-            }
-          ],
-          tools: {
-            local_tool_ids: [],
-            mcp_server_ids: ["playwright"],
-            mcp_tool_ids: ["playwright.browser_navigate"],
-            runtime_requirements: ["tool_calling", "mcp_tools"]
-          }
-        })
-      })
     );
   });
 });

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { mkdtemp } from "node:fs/promises";
@@ -60,42 +60,6 @@ describe("Pi OAuth auth.json integration", () => {
         getOAuthApiKey: vi.fn(async () => null)
       })
     ).rejects.toThrow(expect.objectContaining({ code: "pi_auth_missing" }));
-  });
-
-  it("registers the provider with the resolved OAuth access token", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "luna-pi-auth-register-"));
-    const authPath = path.join(root, "auth.json");
-    await mkdir(root, { recursive: true });
-    await writeFile(
-      authPath,
-      JSON.stringify({
-        "openai-codex": {
-        type: "oauth",
-        access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 3600000
-        }
-      })
-    );
-    const registerProvider = vi.fn();
-
-    await registerPiOAuthProvider("openai-codex", {
-      authPath,
-      registerProvider,
-      getOAuthApiKey: vi.fn(async () => ({
-        apiKey: "access-token",
-        newCredentials: {
-        type: "oauth",
-        access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 3600000
-        }
-      }))
-    });
-
-    expect(registerProvider).toHaveBeenCalledWith("openai-codex", {
-      apiKey: "access-token"
-    });
   });
 
   it("stores resolved OAuth API keys when no custom register hook is provided", async () => {

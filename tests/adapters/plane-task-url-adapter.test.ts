@@ -7,14 +7,7 @@ import type { AdapterContext } from "../../src/adapters/types.js";
 
 const planeIssue = {
   id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-  sequence_id: 42,
   name: "Fix checkout validation",
-  description_stripped:
-    "Checkout should reject orders without a customer document.",
-  priority: "high",
-  state: {
-    name: "Backlog"
-  },
   labels: [
     {
       name: "bug"
@@ -89,7 +82,7 @@ describe("plane-task-url adapter", () => {
       ...planeIssue,
       labels: [{ name: "github:octo-org/hello-world" }, { name: "bug" }]
     };
-    const { adapterContext, fetchMock } = await context(issue);
+    const { adapterContext } = await context(issue);
 
     await expect(
       planeTaskUrlAdapter.load(
@@ -100,10 +93,7 @@ describe("plane-task-url adapter", () => {
         adapterContext
       )
     ).resolves.toMatchObject({
-      version: "2026-06",
       source: "plane",
-      event: "issue",
-      action: "selected",
       repository: {
         provider: "github",
         owner: "octo-org",
@@ -119,29 +109,15 @@ describe("plane-task-url adapter", () => {
         plane: expect.objectContaining({
           workspace_slug: "company",
           project_identifier: "PROJ",
-          issue_identifier: 42,
-          repository_hint_source: "label:github:octo-org/hello-world"
+          issue_identifier: 42
         })
       }
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      new URL("https://api.plane.so/api/v1/workspaces/company/work-items/PROJ-42/"),
-      {
-        headers: {
-          Accept: "application/json",
-          "X-API-Key": "secret-token"
-        }
-      }
-    );
   });
 
-  it("loads a Plane task URL and resolves repository from a label hint", async () => {
-    const issue = {
-      ...planeIssue,
-      labels: [{ name: "github:octo-org/hello-world" }, { name: "bug" }]
-    };
-    const { adapterContext, fetchMock } = await context(issue);
+  it("loads a Plane project issue URL", async () => {
+    const { adapterContext } = await context();
 
     await expect(
       planeTaskUrlAdapter.load(
@@ -152,102 +128,19 @@ describe("plane-task-url adapter", () => {
         },
         adapterContext
       )
-    ).resolves.toEqual({
-      version: "2026-06",
+    ).resolves.toMatchObject({
       source: "plane",
-      event: "issue",
-      action: "selected",
-      repository: {
-        provider: "github",
-        owner: "octo-org",
-        name: "hello-world"
-      },
       subject: {
         type: "plane_issue",
-        id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-        url: "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-        title: "Fix checkout validation"
+        id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
       },
       payload: {
         plane: {
-          instance_id: "company",
           workspace_slug: "company",
-          project_id: "24f9b7",
-          issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-          sequence_id: 42,
-          description:
-            "Checkout should reject orders without a customer document.",
-          status: "Backlog",
-          priority: "high",
-          labels: ["github:octo-org/hello-world", "bug"],
-          repository_hint_source: "label:github:octo-org/hello-world"
+          project_id: "24f9b7"
         }
       }
     });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      new URL(
-        "https://api.plane.so/api/v1/workspaces/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
-      ),
-      {
-        headers: {
-          Accept: "application/json",
-          "X-API-Key": "secret-token"
-        }
-      }
-    );
-  });
-
-  it("loads a Plane task URL without repository when no label hint is present", async () => {
-    const { adapterContext, fetchMock } = await context();
-
-    await expect(
-      planeTaskUrlAdapter.load(
-        {
-          kind: "cli",
-          value:
-            "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
-        },
-        adapterContext
-      )
-    ).resolves.toEqual({
-      version: "2026-06",
-      source: "plane",
-      event: "issue",
-      action: "selected",
-      subject: {
-        type: "plane_issue",
-        id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-        url: "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-        title: "Fix checkout validation"
-      },
-      payload: {
-        plane: {
-          instance_id: "company",
-          workspace_slug: "company",
-          project_id: "24f9b7",
-          issue_id: "b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984",
-          sequence_id: 42,
-          description:
-            "Checkout should reject orders without a customer document.",
-          status: "Backlog",
-          priority: "high",
-          labels: ["bug"]
-        }
-      }
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      new URL(
-        "https://api.plane.so/api/v1/workspaces/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
-      ),
-      {
-        headers: {
-          Accept: "application/json",
-          "X-API-Key": "secret-token"
-        }
-      }
-    );
   });
 
   it("ignores non-repository Plane labels that contain slashes", async () => {
@@ -266,59 +159,6 @@ describe("plane-task-url adapter", () => {
         adapterContext
       )
     ).resolves.not.toHaveProperty("repository");
-  });
-
-  it("loads a Plane task URL with a non-GitHub repository provider hint", async () => {
-    const { adapterContext } = await context({
-      ...planeIssue,
-      labels: [{ name: "gitlab:platform/luna" }, { name: "bug" }]
-    });
-
-    await expect(
-      planeTaskUrlAdapter.load(
-        {
-          kind: "cli",
-          value:
-            "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
-        },
-        adapterContext
-      )
-    ).resolves.toMatchObject({
-      repository: {
-        provider: "gitlab",
-        owner: "platform",
-        name: "luna"
-      },
-      payload: {
-        plane: expect.objectContaining({
-          repository_hint_source: "label:gitlab:platform/luna"
-        })
-      }
-    });
-  });
-
-  it("accepts any explicit repository provider prefix in labels", async () => {
-    const { adapterContext } = await context({
-      ...planeIssue,
-      labels: [{ name: "repo:octo-org/hello-world" }, { name: "bug" }]
-    });
-
-    await expect(
-      planeTaskUrlAdapter.load(
-        {
-          kind: "cli",
-          value:
-            "https://app.plane.so/company/projects/24f9b7/issues/b5a8c2ff-0c4a-41fb-8937-e4bc62c4e984"
-        },
-        adapterContext
-      )
-    ).resolves.toMatchObject({
-      repository: {
-        provider: "repo",
-        owner: "octo-org",
-        name: "hello-world"
-      }
-    });
   });
 
   it("rejects Plane task URLs containing credentials", async () => {

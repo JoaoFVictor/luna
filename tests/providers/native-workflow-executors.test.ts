@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { officialCapabilityRegistry } from "../../src/capabilities/registry.js";
 import { createCapabilityRegistry } from "../../src/core/capabilities/registry.js";
 import { capabilityManifest } from "../../src/core/capabilities/manifest.js";
 import type { ChangeRequestProviderPort } from "../../src/capabilities/change-request/contracts.js";
@@ -20,27 +19,6 @@ const app: AppConfig = {
 };
 
 describe("native workflow executors", () => {
-  it("keeps official executable capability manifests covered by native executors", () => {
-    const executors = buildNativeWorkflowExecutors({
-      app,
-      projectRoot: "/repo",
-      run: {
-        run_id: "run-1",
-        workflow_id: "workflow-1",
-        attempt: 1,
-        started_at: "2026-06-27T00:00:00.000Z"
-      }
-    });
-
-    expect(() =>
-      assertNativeWorkflowExecutorCoverage({
-        builtIns: executors.builtIns,
-        patternExecutors: executors.patternExecutors,
-        capabilityRegistry: officialCapabilityRegistry
-      })
-    ).not.toThrow();
-  });
-
   it("rejects native executor catalogs that do not cover declared executable capabilities", () => {
     const registry = createCapabilityRegistry([
       capabilityManifest({

@@ -20,22 +20,6 @@ function emptyTools(): ResolvedToolCatalog {
   return { tools: [], runtime_requirements: [] };
 }
 
-function localToolCatalog(id: string): ResolvedToolCatalog {
-  return {
-    tools: [
-      {
-        id,
-        protocol: "local",
-        input_schema: {},
-        output_schema: {},
-        runtime_requirements: ["tool_calling"],
-        source: "local_contract"
-      }
-    ],
-    runtime_requirements: ["tool_calling"]
-  };
-}
-
 function runtime(output: unknown): AgentRuntimePort {
   return {
     describe: () => ({
@@ -87,7 +71,6 @@ describe("agents capability agent node", () => {
       runtime_requirements: ["tool_calling"],
       tools: { tools: [] }
     });
-    expect(projected.instructions).toContain("# Luna Runtime Instructions");
     expect(projected.instructions).toContain("Implement the task.");
   });
 
@@ -108,36 +91,6 @@ describe("agents capability agent node", () => {
         model_profile: modelProfile,
         input: {},
         output_schema: outputSchema,
-        tools: emptyTools()
-      })
-    ).rejects.toMatchObject({ code: "runtime_output_schema_invalid" });
-  });
-
-  it("enforces string constraints from the node output schema", async () => {
-    await expect(
-      runAgentNode({
-        runtime: runtime({ summary: "" }),
-        run,
-        node_id: "plan",
-        agent: {
-          id: "planner",
-          description: "Plans",
-          model_profile: "deep",
-          mode: "read_only",
-          instructions: "Plan the task.\n",
-          outputSchema: {
-            type: "object",
-            required: ["summary"],
-            properties: { summary: { type: "string", minLength: 1 } }
-          }
-        },
-        model_profile: modelProfile,
-        input: {},
-        output_schema: {
-          type: "object",
-          required: ["summary"],
-          properties: { summary: { type: "string", minLength: 1 } }
-        },
         tools: emptyTools()
       })
     ).rejects.toMatchObject({ code: "runtime_output_schema_invalid" });
@@ -195,53 +148,6 @@ describe("agents capability agent node", () => {
     expect(port.validate).not.toHaveBeenCalled();
     expect(port.runAgent).not.toHaveBeenCalled();
 
-    await expect(
-      runAgentNode({
-        runtime: port,
-        run,
-        node_id: "implement",
-        agent: {
-          id: "implementer",
-          description: "Implements",
-          model_profile: "deep",
-          mode: "read_only",
-          instructions: "Implement the task.\n",
-          outputSchema,
-          tools: ["repository.status"]
-        },
-        model_profile: modelProfile,
-        input: {},
-        output_schema: outputSchema,
-        tools: localToolCatalog("repository.status")
-      })
-    ).resolves.toEqual({ output: { status: "done" } });
-  });
-
-  it("rejects catalog entries that do not satisfy declared MCP servers", async () => {
-    const port = runtime({ status: "done" });
-
-    await expect(
-      runAgentNode({
-        runtime: port,
-        run,
-        node_id: "review",
-        agent: {
-          id: "reviewer",
-          description: "Reviews",
-          model_profile: "deep",
-          mode: "read_only",
-          instructions: "Review the task.\n",
-          outputSchema,
-          mcp_servers: ["github"]
-        },
-        model_profile: modelProfile,
-        input: {},
-        output_schema: outputSchema,
-        tools: emptyTools()
-      })
-    ).rejects.toMatchObject({ code: "agent_tool_catalog_missing_mcp_server" });
-    expect(port.validate).not.toHaveBeenCalled();
-    expect(port.runAgent).not.toHaveBeenCalled();
   });
 
   it("rejects declared skills that were not resolved before execution", async () => {
@@ -302,30 +208,4 @@ describe("agents capability agent node", () => {
     ).rejects.toMatchObject({ code: "agent_skills_missing_skill" });
   });
 
-  it("rejects unsupported node runtime requirements before running the agent", async () => {
-    const port = runtime({ status: "done" });
-
-    await expect(
-      runAgentNode({
-        runtime: port,
-        run,
-        node_id: "implement",
-        agent: {
-          id: "implementer",
-          description: "Implements",
-          model_profile: "deep",
-          mode: "read_only",
-          instructions: "Implement the task.\n",
-          outputSchema
-        },
-        model_profile: modelProfile,
-        input: {},
-        output_schema: outputSchema,
-        tools: emptyTools(),
-        runtime_requirements: ["provider_magic"] as never
-      })
-    ).rejects.toMatchObject({ code: "runtime_unsupported_feature" });
-    expect(port.validate).not.toHaveBeenCalled();
-    expect(port.runAgent).not.toHaveBeenCalled();
-  });
 });

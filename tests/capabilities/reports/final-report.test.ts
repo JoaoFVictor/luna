@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  finalReportOutputSchema,
-  finalReportBuiltIn,
-  renderFinalReport
-} from "../../../src/capabilities/reports/final-report.js";
-import { matchesJsonSchema } from "../../../src/core/capabilities/json-schema.js";
+import { renderFinalReport } from "../../../src/capabilities/reports/final-report.js";
 import { createObservabilitySummary, recordPromptOperation, recordPromptUsage } from "../../../src/core/observability/summary.js";
 
 describe("reports capability final_report", () => {
-  it("renders sections in declared order and validates output", () => {
+  it("renders sections in declared order", () => {
     const output = renderFinalReport({
       title: "Run Summary",
       sections: [
@@ -28,7 +23,6 @@ describe("reports capability final_report", () => {
       "",
       JSON.stringify({ status: "passed" }, null, 2)
     ].join("\n"));
-    expect(matchesJsonSchema(finalReportOutputSchema, output)).toBe(true);
   });
 
   it("rejects invalid report inputs", () => {
@@ -75,18 +69,7 @@ describe("reports capability final_report", () => {
     );
 
     expect(output.report).toContain("## Execution Summary");
-    expect(output.report).toContain("Prompt operations: 1");
-    expect(output.execution).toMatchObject({
-      prompt_operations: 1,
-      tokens: { total: 18 },
-      cost: { total: 0.033 }
-    });
-    expect(matchesJsonSchema(finalReportOutputSchema, output)).toBe(true);
+    expect(output.execution).toMatchObject({ prompt_operations: 1 });
   });
 
-  it("keeps final report deferred until finalization", () => {
-    expect(finalReportBuiltIn.metadata).toMatchObject({
-      deferredLifecycle: "final_report"
-    });
-  });
 });

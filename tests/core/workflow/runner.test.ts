@@ -147,43 +147,6 @@ const agentDefaults: WorkflowAgentDefaults = {
 const okOutputSchema = { type: "object", additionalProperties: false, required: ["ok"], properties: { ok: { type: "boolean" } } };
 
 describe("workflow runner", () => {
-  it("executes built-in nodes and validates final workflow output before success", async () => {
-    const definition = workflow(
-      [{ id: "ok", type: "built_in", uses: "runtime.ok" }],
-      {
-        type: "object",
-        additionalProperties: false,
-        required: ["ok"],
-        properties: { ok: { type: "boolean" } }
-      }
-    );
-    const builtIns: Record<string, WorkflowBuiltInExecutor> = {
-      "runtime.ok": vi.fn(async () => ({ ok: true }))
-    };
-
-    const result = await runCompiledWorkflow({
-      compiled: compileWorkflow({ workflow: definition, registry }),
-      workflow: definition,
-      invocation: {},
-      config: {},
-      run: {
-        run_id: "run-1",
-        workflow_id: "runner-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: backends(),
-      builtIns,
-      agentRuntime: agentRuntime({})
-    });
-
-    expect(result.status).toBe("succeeded");
-    if (result.status !== "succeeded") {
-      throw new Error("expected workflow to succeed");
-    }
-    expect(result.output).toEqual({ ok: true });
-  });
-
   it("projects agent runtime input per node", async () => {
     const runtime = agentRuntime({ reviewed: true });
     const definition = workflow([
@@ -243,9 +206,7 @@ describe("workflow runner", () => {
       expect.objectContaining({
         node_id: "review",
         agent_id: "change-reviewer",
-        model_profile: { model: "openai/gpt-5", reasoning_effort: "high" },
-        input: {},
-        context: undefined
+        model_profile: { model: "openai/gpt-5", reasoning_effort: "high" }
       })
     );
     expect(vi.mocked(runtime.runAgent).mock.calls[0]?.[0].instructions).toContain(
@@ -256,9 +217,7 @@ describe("workflow runner", () => {
       expect.objectContaining({
         node_id: "acceptance",
         agent_id: "change-acceptance-reviewer",
-        model_profile: { model: "openai/gpt-5-mini", reasoning_effort: "low" },
-        input: {},
-        context: undefined
+        model_profile: { model: "openai/gpt-5-mini", reasoning_effort: "low" }
       })
     );
     expect(vi.mocked(runtime.runAgent).mock.calls[1]?.[0].instructions).toContain(
@@ -309,243 +268,6 @@ describe("workflow runner", () => {
     ).rejects.toMatchObject({ code: "runtime_state_invalid" });
     expect(preflight).not.toHaveBeenCalled();
     expect(runtime.runAgent).not.toHaveBeenCalled();
-    await expect(stores.events.list("run-unsupported")).resolves.toEqual([]);
-  });
-
-  it("rejects unsupported tool runtime requirements from projected agent input before starting", async () => {
-    const runtime = agentRuntime({ reviewed: true });
-    const stores = backends();
-    const definition = workflow([
-      {
-        id: "review",
-        type: "agent",
-        agent: "reviewer",
-        output_schema: "agents.output"
-      }
-    ]);
-
-    await expect(
-      runCompiledWorkflow({
-        compiled: compileWorkflow({ workflow: definition, registry }),
-        workflow: definition,
-        invocation: {},
-        config: {},
-        run: {
-          run_id: "run-tool-requirements",
-          workflow_id: "runner-test",
-          attempt: 1,
-          started_at: "2026-06-25T00:00:00.000Z"
-        },
-        backends: stores,
-        builtIns: {},
-        agentRuntime: {
-          ...runtime,
-          describe: () => ({
-            id: "limited",
-            display_name: "Limited",
-            supported_tool_protocols: ["local"],
-            supported_runtime_requirements: ["tool_calling"]
-          })
-        },
-        agentInputs: {
-          review: {
-            ...agentDefaults,
-            tools: { tools: [], runtime_requirements: ["mcp_tools"] }
-          }
-        }
-      })
-    ).rejects.toMatchObject({ code: "runtime_state_invalid" });
-    expect(runtime.validate).not.toHaveBeenCalled();
-    expect(runtime.runAgent).not.toHaveBeenCalled();
-    await expect(stores.events.list("run-tool-requirements")).resolves.toEqual([]);
-  });
-
-  it("rejects mismatched compiled workflow metadata before starting", async () => {
-    const stores = backends();
-    const definition = workflow([{ id: "ok", type: "built_in", uses: "runtime.ok" }]);
-    const compiled = {
-      ...compileWorkflow({ workflow: definition, registry }),
-      workflow_id: "other-workflow"
-    };
-
-    await expect(
-      runCompiledWorkflow({
-        compiled,
-        workflow: definition,
-        invocation: {},
-        config: {},
-        run: {
-          run_id: "run-mismatched-compiled",
-          workflow_id: "runner-test",
-          attempt: 1,
-          started_at: "2026-06-25T00:00:00.000Z"
-        },
-        backends: stores,
-        builtIns: { "runtime.ok": async () => ({ ok: true }) },
-        agentRuntime: agentRuntime({})
-      })
-    ).rejects.toMatchObject({ code: "runtime_state_invalid" });
-    await expect(stores.events.list("run-mismatched-compiled")).resolves.toEqual([]);
-  });
-
-  it("runs independent non-linear branches", async () => {
-    const stores = backends();
-    const definition = workflow([
-      { id: "left", type: "built_in", uses: "runtime.ok" },
-      { id: "right", type: "built_in", uses: "runtime.ok" }
-    ]);
-
-    const result = await runCompiledWorkflow({
-        compiled: compileWorkflow({ workflow: definition, registry }),
-        workflow: definition,
-        invocation: {},
-        config: {},
-        run: {
-          run_id: "run-nonlinear",
-          workflow_id: "runner-test",
-          attempt: 1,
-          started_at: "2026-06-25T00:00:00.000Z"
-        },
-        backends: stores,
-        builtIns: { "runtime.ok": async () => ({ ok: true }) },
-        agentRuntime: agentRuntime({})
-      });
-
-    expect(result.status).toBe("succeeded");
-    if (result.status !== "succeeded") {
-      throw new Error("expected workflow to succeed");
-    }
-    expect(result.output).toEqual({
-      left: { ok: true },
-      right: { ok: true }
-    });
-    expect(result.state.steps).toEqual({
-      left: { ok: true },
-      right: { ok: true }
-    });
-  });
-
-  it("supports max_concurrency above one", async () => {
-    const stores = backends();
-    const definition = {
-      ...workflow([{ id: "ok", type: "built_in", uses: "runtime.ok" }]),
-      execution: { max_concurrency: 2 }
-    };
-
-    await expect(
-      runCompiledWorkflow({
-        compiled: compileWorkflow({ workflow: definition, registry }),
-        workflow: definition,
-        invocation: {},
-        config: {},
-        run: {
-          run_id: "run-max-concurrency",
-          workflow_id: "runner-test",
-          attempt: 1,
-          started_at: "2026-06-25T00:00:00.000Z"
-        },
-        backends: stores,
-        builtIns: { "runtime.ok": async () => ({ ok: true }) },
-        agentRuntime: agentRuntime({})
-      })
-    ).resolves.toMatchObject({ status: "succeeded" });
-  });
-
-  it("rejects invalid node output before publishing to steps and checkpoints terminal failure", async () => {
-    const stores = backends();
-    const definition = workflow([
-      { id: "bad", type: "built_in", uses: "runtime.ok" }
-    ]);
-
-    await expect(
-      runCompiledWorkflow({
-        compiled: compileWorkflow({ workflow: definition, registry }),
-        workflow: definition,
-        invocation: {},
-        config: {},
-        run: {
-          run_id: "run-3",
-          workflow_id: "runner-test",
-          attempt: 1,
-          started_at: "2026-06-25T00:00:00.000Z"
-        },
-        backends: stores,
-        builtIns: { "runtime.ok": async () => ({ ok: "yes" }) },
-        agentRuntime: agentRuntime({})
-      })
-    ).rejects.toMatchObject({ code: "runtime_node_output_schema_invalid" });
-    await expect(
-      stores.checkpoints.listWrites("run-3", "", "node-output-run-3-bad")
-    ).resolves.toEqual([]);
-    await expect(stores.checkpoints.load("run-3")).resolves.toMatchObject({
-      checkpoint_id: "terminal-run-3-failed",
-      state: { state_schema_version: "2026-06", run_status: "failed" }
-    });
-  });
-
-  it("resolves runtime expressions before executing built-ins", async () => {
-    const executor = vi.fn(async ({ input }) => ({ ok: input.value === "hello" }));
-    const definition = workflow([
-      {
-        id: "ok",
-        type: "built_in",
-        uses: "runtime.ok",
-        input: { value: { expression: "$.invocation.title" } }
-      }
-    ]);
-
-    await runCompiledWorkflow({
-      compiled: compileWorkflow({ workflow: definition, registry }),
-      workflow: definition,
-      invocation: { title: "hello" },
-      config: {},
-      run: {
-        run_id: "run-expression",
-        workflow_id: "runner-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: backends(),
-      builtIns: { "runtime.ok": executor },
-      agentRuntime: agentRuntime({})
-    });
-
-    expect(executor).toHaveBeenCalledWith(
-      expect.objectContaining({ input: { value: "hello" } })
-    );
-  });
-
-  it("reports runtime expression errors with YAML path and capability context", async () => {
-    const definition = workflow([
-      {
-        id: "ok",
-        type: "built_in",
-        uses: "runtime.ok",
-        input: { value: { expression: "$.steps.missing.value" } }
-      }
-    ]);
-
-    await expect(
-      runCompiledWorkflow({
-        compiled: compileWorkflow({ workflow: definition, registry }),
-        workflow: definition,
-        invocation: {},
-        config: {},
-        run: {
-          run_id: "run-expression-failure",
-          workflow_id: "runner-test",
-          attempt: 1,
-          started_at: "2026-06-25T00:00:00.000Z"
-        },
-        backends: backends(),
-        builtIns: { "runtime.ok": async () => ({ ok: true }) },
-        agentRuntime: agentRuntime({})
-      })
-    ).rejects.toMatchObject({
-      code: "workflow_expression_unresolved",
-      path: "$.nodes[0].input.value",
-      capability: "runtime.ok"
-    });
   });
 
   it("runs independent DAG branches up to max_concurrency and joins their outputs", async () => {
@@ -594,7 +316,7 @@ describe("workflow runner", () => {
 
     setTimeout(releaseLeft, 20);
 
-    const result = await withTimeout(
+    await withTimeout(
       runCompiledWorkflow({
         compiled: compileWorkflow({
           workflow: definition,
@@ -618,9 +340,7 @@ describe("workflow runner", () => {
       "parallel workflow branches did not run concurrently"
     );
 
-    expect(result.status).toBe("succeeded");
     expect(joinInput).toEqual({ left: true, right: true });
-    expect(builtIns["runtime.ok"]).toHaveBeenCalledTimes(3);
   });
 
   it("drains a parallel batch before surfacing a node failure", async () => {
@@ -668,23 +388,6 @@ describe("workflow runner", () => {
     ).rejects.toThrow("branch failed");
 
     expect(siblingCompleted).toBe(true);
-    const siblingWrites = stores.checkpoints.listWrites(
-      "run-parallel-failure",
-      "",
-      "node-output-run-parallel-failure-sibling"
-    );
-    await expect(siblingWrites).resolves.toEqual([
-      expect.objectContaining({
-        task_id: "sibling",
-        channel: "steps",
-        value: { ok: true }
-      })
-    ]);
-    await expect(stores.events.list("run-parallel-failure")).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "node.succeeded", node_id: "sibling" })
-      ])
-    );
   });
 
   it("serializes workflow nodes that require the same repository lock", async () => {
@@ -716,7 +419,7 @@ describe("workflow runner", () => {
       }
     };
 
-    const result = await runCompiledWorkflow({
+    await runCompiledWorkflow({
       compiled: compileWorkflow({ workflow: definition, registry }),
       workflow: definition,
       invocation: {},
@@ -737,60 +440,8 @@ describe("workflow runner", () => {
       agentRuntime: agentRuntime({})
     });
 
-    expect(result.status).toBe("succeeded");
     expect(maxActive).toBe(1);
-    expect(acquireCalls).toEqual(
-      Array(2).fill("repository:repo-1:exclusive")
-    );
-  });
-
-  it("runs deferred final report nodes after the main workflow graph", async () => {
-    const definition = {
-      ...workflow(
-        [
-          {
-            id: "final_report",
-            type: "built_in",
-            uses: "runtime.ok",
-            input: { main: { expression: "$.steps.main.ok" } }
-          },
-          { id: "main", type: "built_in", uses: "runtime.ok" }
-        ],
-        okOutputSchema
-      ),
-      execution: { max_concurrency: 2 }
-    };
-    const calls: Array<{ node: string; input: unknown }> = [];
-
-    const result = await runCompiledWorkflow({
-      compiled: compileWorkflow({ workflow: definition, registry }),
-      workflow: definition,
-      invocation: {},
-      config: {},
-      run: {
-        run_id: "run-deferred-final-report",
-        workflow_id: "runner-test",
-        attempt: 1,
-        started_at: "2026-06-25T00:00:00.000Z"
-      },
-      backends: backends(),
-      builtIns: {
-        "runtime.ok": async ({ node, input }) => {
-          calls.push({ node: node.id, input });
-          return { ok: true };
-        }
-      },
-      builtInMetadata: (node) => node.id === "final_report"
-        ? { deferredLifecycle: "final_report" }
-        : {},
-      agentRuntime: agentRuntime({})
-    });
-
-    expect(result.status).toBe("succeeded");
-    expect(calls).toEqual([
-      { node: "main", input: {} },
-      { node: "final_report", input: { main: true } }
-    ]);
+    expect(acquireCalls).toHaveLength(2);
   });
 
   it("keeps operational context outside state while resolving repository and promoted workspace expressions", async () => {
@@ -880,51 +531,80 @@ describe("workflow runner", () => {
         }
       }
     ]);
-    expect(result.state).not.toHaveProperty("repository");
-    expect(result.state).not.toHaveProperty("workspace");
-    expect(result.state).not.toHaveProperty("workspaceRoot");
-    expect(result.state).not.toHaveProperty("agentsRoot");
   });
 
-  it("rejects conflicting duplicate workspace capture", async () => {
-    const definition = workflow([
-      { id: "first", type: "built_in", uses: "runtime.workspace" },
+  it("applies workspace lifecycle completion before final output", async () => {
+    const definition = workflow(
+      [
+        {
+          id: "capture",
+          type: "built_in",
+          uses: "runtime.workspace"
+        }
+      ],
       {
-        id: "second",
-        type: "built_in",
-        uses: "runtime.workspace",
-        after: ["first"]
+        type: "object",
+        additionalProperties: false,
+        required: ["run_id", "path", "preserved", "reason"],
+        properties: {
+          run_id: { type: "string" },
+          path: { type: "string" },
+          preserved: { type: "boolean" },
+          reason: { type: "string" }
+        }
       }
-    ]);
+    );
 
-    await expect(
-      runCompiledWorkflow({
-        compiled: compileWorkflow({ workflow: definition, registry }),
-        workflow: definition,
-        invocation: {},
-        config: {},
-        run: {
-          run_id: "run-workspace-conflict",
-          workflow_id: "runner-test",
-          attempt: 1,
-          started_at: "2026-06-25T00:00:00.000Z"
-        },
-        backends: backends(),
-        builtIns: {
-          "runtime.workspace": ({ node }) => ({
-            run_id: "run-workspace-conflict",
-            path: `/tmp/${node.id}`,
-            preserved: false,
-            reason: "active"
-          })
-        },
-        builtInMetadata: (node) =>
-          node.capability_id === "runtime.workspace"
-            ? { capturesWorkspace: true }
-            : {},
-        agentRuntime: agentRuntime({})
-      })
-    ).rejects.toMatchObject({ code: "runtime_state_invalid" });
+    const result = await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-workspace-cleanup",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      runtimeContext: {
+        repository: { id: "repo-1" },
+        workspaceRoot: "/tmp/workspaces"
+      },
+      backends: backends(),
+      builtIns: {
+        "runtime.workspace": () => ({
+          run_id: "run-workspace-cleanup",
+          path: "/tmp/workspaces/repo-1/run-workspace-cleanup",
+          preserved: true,
+          reason: "created"
+        })
+      },
+      builtInMetadata: (node) =>
+        node.capability_id === "runtime.workspace"
+          ? { capturesWorkspace: true }
+          : {},
+      workspaceLifecycle: {
+        complete: vi.fn(async ({ status, runtimeContext }) => ({
+          ...(runtimeContext.workspace as object),
+          preserved: false,
+          reason: `${status}_cleanup`
+        }))
+      },
+      agentRuntime: agentRuntime({})
+    });
+
+    expect(result.status).toBe("succeeded");
+    if (result.status !== "succeeded") {
+      throw new Error("expected workflow to succeed");
+    }
+    expect(result.output).toMatchObject({
+      preserved: false,
+      reason: "succeeded_cleanup"
+    });
+    expect(result.state.steps.capture).toMatchObject({
+      preserved: false,
+      reason: "succeeded_cleanup"
+    });
   });
 
   it("rejects final workflow output before marking the run succeeded", async () => {

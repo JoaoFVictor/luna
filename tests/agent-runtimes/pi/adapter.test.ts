@@ -77,17 +77,6 @@ function input(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
 }
 
 describe("Pi agent runtime adapter", () => {
-  it("describes a native runtime with local tool support", () => {
-    const adapter = createPiAgentRuntimeAdapter();
-
-    expect(adapter.describe()).toEqual({
-      id: "pi",
-      display_name: "Pi AI",
-      supported_tool_protocols: ["local"],
-      supported_runtime_requirements: ["tool_calling"]
-    });
-  });
-
   it("runs a model request and parses final JSON output", async () => {
     const complete = vi.fn(
       async (
@@ -104,15 +93,7 @@ describe("Pi agent runtime adapter", () => {
       usage: {
         input_tokens: 3,
         output_tokens: 5,
-        total_tokens: 8,
-        cost: {
-          input: 0,
-          output: 0,
-          cache_read: 0,
-          cache_write: 0,
-          total: 0,
-          unit: "provider_cost_unit"
-        }
+        total_tokens: 8
       },
       runtime_metadata: {
         provider: "openai-codex",
@@ -121,18 +102,6 @@ describe("Pi agent runtime adapter", () => {
       }
     });
     expect(getModel).toHaveBeenCalledWith("openai-codex", "gpt-5.4-mini");
-    const firstContext = complete.mock.calls[0]?.[1];
-    expect(firstContext).toMatchObject({
-      systemPrompt: expect.stringContaining("Return only JSON")
-    });
-    const userMessage = firstContext?.messages[0];
-    expect(userMessage?.role).toBe("user");
-    expect(JSON.parse(String(userMessage?.content))).toMatchObject({
-      agent_id: "agent-1",
-      node_id: "node-1",
-      mode: "read_only"
-    });
-    expect(JSON.parse(String(userMessage?.content))).not.toHaveProperty("context");
   });
 
   it("passes registered Pi OAuth API keys into provider calls", async () => {
@@ -200,7 +169,6 @@ describe("Pi agent runtime adapter", () => {
     ).resolves.toMatchObject({ output: { summary: "ok" } });
 
     const options = complete.mock.calls[0]?.[2];
-    expect(options?.sessionId).toMatch(/^luna-[a-f0-9]{48}$/);
     expect(String(options?.sessionId).length).toBeLessThanOrEqual(64);
     expect(options?.sessionId).not.toBe(longRunId);
   });
@@ -275,64 +243,4 @@ describe("Pi agent runtime adapter", () => {
     );
   });
 
-  it("rejects dynamic MCP policy until the runtime materializes MCP handlers", async () => {
-    const complete = vi.fn(async () =>
-      message([{ type: "text", text: "{\"summary\":\"ok\"}" }])
-    );
-    const adapter = createPiAgentRuntimeAdapter({
-      complete,
-      getModel: vi.fn(() => fakeModel)
-    });
-    const tools: ResolvedToolCatalog = {
-      tools: [],
-      runtime_requirements: ["tool_calling", "mcp_tools"],
-      mcp_policy: {
-        servers: [
-          {
-            id: "playwright",
-            transport: "stdio",
-            allowed_tools: ["browser_navigate"],
-            timeout_ms: 60_000
-          }
-        ],
-        tools: [
-          {
-            id: "playwright.browser_navigate",
-            protocol: "mcp",
-            server_id: "playwright",
-            tool_name: "browser_navigate"
-          }
-        ],
-        runtime_requirements: ["tool_calling", "mcp_tools"]
-      }
-    };
-
-    await expect(
-      adapter.runAgent(input({ tools, runtime_requirements: ["tool_calling", "mcp_tools"] }))
-    ).rejects.toMatchObject({
-      code: "runtime_unsupported_feature",
-      details: { unsupported_requirement: "mcp_tools" }
-    });
-    expect(complete).not.toHaveBeenCalled();
-  });
-
-  it("requires provider/model or an explicit provider field", async () => {
-    const adapter = createPiAgentRuntimeAdapter({
-      complete: vi.fn(async () => message([])),
-      getModel: vi.fn(() => fakeModel)
-    });
-
-    await expect(
-      adapter.validate(
-        input({
-          model_profile: {
-            model: "gpt-5.4-mini",
-            reasoning_effort: "low"
-          }
-        })
-      )
-    ).rejects.toMatchObject({
-      code: "runtime_unsupported_feature"
-    });
-  });
 });

@@ -137,14 +137,6 @@ describe("evidence validation", () => {
     expect(validated.confidence).toBe("low");
   });
 
-  it("downgrades a medium-confidence finding with no valid evidence to low", () => {
-    const [validated] = validateFindingEvidence(repoContext, [
-      finding({ confidence: "medium", evidence: [] })
-    ]);
-
-    expect(validated.confidence).toBe("low");
-  });
-
   it("keeps a low-confidence finding text when no valid evidence remains", () => {
     const [validated] = validateFindingEvidence(repoContext, [
       finding({

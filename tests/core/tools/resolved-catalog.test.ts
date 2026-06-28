@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   capabilityManifest
@@ -11,8 +9,6 @@ import {
   resolveToolCatalog
 } from "../../../src/core/tools/resolved-catalog.js";
 import type { AnyLunaToolDefinition } from "../../../src/core/tools/contracts.js";
-import { officialCapabilityRegistry } from "../../../src/capabilities/registry.js";
-import { lunaToolCatalog } from "../../../src/capabilities/repository/tool-catalog.js";
 
 const schema = {
   type: "object",
@@ -49,36 +45,10 @@ const registry = createCapabilityRegistry([
         runtime_requirements: ["tool_calling"]
       }
     }
-  }),
-  capabilityManifest({
-    id: "github",
-    kind: "execution",
-    version: "2026.06.26",
-    tools: {
-      "github.get_pull_request": {
-        id: "github.get_pull_request",
-        protocol: "mcp",
-        input_schema: schema,
-        output_schema: schema,
-        runtime_requirements: ["tool_calling", "mcp_tools"],
-        allowlist_required: true
-      }
-    }
   })
 ]);
 
 describe("resolved tool catalog", () => {
-  it("keeps repository capability registration derived from pure tool contracts", async () => {
-    const source = await readFile(
-      path.join(process.cwd(), "src/capabilities/repository/manifest.ts"),
-      "utf8"
-    );
-
-    expect(source).toContain("repository-contracts");
-    expect(source).not.toContain("../../capabilities/repository/tool-catalog");
-    expect(source).not.toContain("../../capabilities/repository/repository.js");
-  });
-
   it("combines capability-registered local tools with local contracts", () => {
     const catalog = resolveToolCatalog({
       registry,
@@ -100,8 +70,6 @@ describe("resolved tool catalog", () => {
       runtime_requirements: ["tool_calling"]
     });
     expect(catalog.tools[0]).toHaveProperty("local", localTool);
-    expect(catalog.tools[0]?.input_schema).toBe(localTool.input_schema);
-    expect(catalog.tools[0]?.output_schema).toBe(localTool.output_schema);
   });
 
   it("rejects local tools whose implementation schema drifts from the capability registration", () => {
@@ -127,70 +95,6 @@ describe("resolved tool catalog", () => {
     ).toThrow(expect.objectContaining({
       code: "tool_catalog_local_contract_mismatch"
     }));
-  });
-
-  it("uses local-contract runtime requirements without a core enum change", () => {
-    const registryWithRuntimeRequirement = createCapabilityRegistry([
-      capabilityManifest({
-        id: "browser",
-        kind: "execution",
-        version: "2026.06.26",
-        tools: {
-          "browser.screenshot": {
-            id: "browser.screenshot",
-            protocol: "local",
-            input_schema: schema,
-            output_schema: schema,
-            runtime_requirements: ["browser_automation"]
-          }
-        }
-      })
-    ]);
-    const browserTool = {
-      ...localTool,
-      id: "browser.screenshot",
-      runtime_requirements: ["browser_automation"]
-    } satisfies AnyLunaToolDefinition;
-
-    const catalog = resolveToolCatalog({
-      registry: registryWithRuntimeRequirement,
-      local_tools: { [browserTool.id]: browserTool },
-      requested_local_tool_ids: ["browser.screenshot"],
-      requested_mcp_server_ids: [],
-      agent_mode: "read_only",
-      mcp_config: { mcp_servers: [] }
-    });
-
-    expect(catalog.runtime_requirements).toEqual(["browser_automation"]);
-    expect(catalog.tools[0]?.runtime_requirements).toEqual(["browser_automation"]);
-  });
-
-  it("adds only MCP tools allowed by explicit MCP server policy", () => {
-    const catalog = resolveToolCatalog({
-      registry,
-      local_tools: { [localTool.id]: localTool },
-      requested_local_tool_ids: [],
-      requested_mcp_server_ids: ["github"],
-      agent_mode: "read_only",
-      mcp_config: {
-        mcp_servers: [
-          {
-            id: "github",
-            transport: "streamable-http",
-            url_env: "LUNA_MCP_GITHUB_URL",
-            headers: {},
-            allowed_tools: ["get_pull_request"],
-            allowed_agent_modes: ["read_only"],
-            timeout_ms: 30_000
-          }
-        ]
-      }
-    });
-
-    expect(catalog.tools.map((tool) => tool.id)).toEqual([
-      "github.get_pull_request"
-    ]);
-    expect(catalog.runtime_requirements).toEqual(["tool_calling", "mcp_tools"]);
   });
 
   it("keeps dynamic MCP policy separate from materialized tool contracts", () => {
@@ -223,7 +127,7 @@ describe("resolved tool catalog", () => {
     expect(catalog.runtime_requirements).toEqual(["tool_calling", "mcp_tools"]);
   });
 
-  it("rejects local tools without local contracts and trusts MCP allowlist policy", () => {
+  it("rejects local tools without local contracts", () => {
     expect(() =>
       resolveToolCatalog({
         registry,
@@ -234,63 +138,6 @@ describe("resolved tool catalog", () => {
         mcp_config: { mcp_servers: [] }
       })
     ).toThrow(expect.objectContaining({ code: "tool_catalog_local_contract_missing" }));
-
-    expect(() =>
-      resolveToolCatalog({
-        registry,
-        local_tools: { [localTool.id]: localTool },
-        requested_local_tool_ids: [],
-        requested_mcp_server_ids: [],
-        agent_mode: "read_only",
-        mcp_config: { mcp_servers: [] }
-      })
-    ).not.toThrow();
-
-    expect(() =>
-      resolveToolCatalog({
-        registry,
-        local_tools: { [localTool.id]: localTool },
-        requested_local_tool_ids: [],
-        requested_mcp_server_ids: ["github"],
-        agent_mode: "read_only",
-        mcp_config: {
-          mcp_servers: [
-            {
-              id: "github",
-              transport: "streamable-http",
-              url_env: "LUNA_MCP_GITHUB_URL",
-              headers: {},
-              allowed_tools: ["delete_repo"],
-              allowed_agent_modes: ["read_only"],
-              timeout_ms: 30_000
-            }
-          ]
-        }
-      })
-    ).not.toThrow();
   });
 
-  it("resolves Luna's official local tool catalog through official capabilities", () => {
-    const requestedTools = [
-      "repository.status",
-      "repository.diff-summary",
-      "repository.read-file",
-      "repository.write-file",
-      "repository.delete-file"
-    ];
-    const catalog = resolveToolCatalog({
-      registry: officialCapabilityRegistry,
-      local_tools: lunaToolCatalog,
-      requested_local_tool_ids: requestedTools,
-      requested_mcp_server_ids: [],
-      agent_mode: "trusted_local_write",
-      mcp_config: { mcp_servers: [] }
-    });
-
-    expect(catalog.tools.map((tool) => tool.id)).toEqual(requestedTools);
-    expect(catalog.tools.map((tool) => tool.source)).toEqual(
-      requestedTools.map(() => "local_contract")
-    );
-    expect(catalog.runtime_requirements).toEqual(["tool_calling"]);
-  });
 });

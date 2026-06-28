@@ -5,7 +5,7 @@ input_schema: input.schema.json
 output_schema: output.schema.json
 capabilities:
   - runtime
-  - pull-request-workspace
+  - repository-workspace
   - repository-diff
   - findings
   - context
@@ -30,11 +30,11 @@ nodes:
 
   - id: workspace
     type: built_in
-    uses: pull-request-workspace.prepare_worktree
+    uses: repository-workspace.capture
     policies:
-      - uses: pull-request-workspace.git_worktree
+      - uses: repository-workspace.capture_policy
         config:
-          operation_id: pull-request-workspace.prepare_worktree
+          operation_id: repository-workspace.capture
     artifacts:
       - path: workspace.json
         publisher: artifacts.manifest_publisher

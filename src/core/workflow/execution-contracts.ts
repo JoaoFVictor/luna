@@ -34,6 +34,14 @@ export type WorkflowArtifactPublisherPort = {
   }): Promise<WorkflowArtifactRef>;
 };
 
+export type WorkflowWorkspaceLifecyclePort = {
+  complete(input: {
+    readonly status: "succeeded" | "failed";
+    readonly state: LunaRuntimeState;
+    readonly runtimeContext: WorkflowRuntimeContext;
+  }): Promise<unknown | undefined> | unknown | undefined;
+};
+
 export type WorkflowBuiltInExecutor = (input: {
   readonly node: CompiledWorkflowNode;
   readonly input: unknown;
@@ -87,6 +95,7 @@ export type RunWorkflowInput = {
   readonly agentInputs?: WorkflowAgentInputMap;
   readonly artifactPublisher?: WorkflowArtifactPublisherPort;
   readonly observabilitySummary?: ObservabilitySummary;
+  readonly workspaceLifecycle?: WorkflowWorkspaceLifecyclePort;
 };
 
 export type ResumeWorkflowInput = {
@@ -102,6 +111,7 @@ export type ResumeWorkflowInput = {
   readonly agentInputs?: WorkflowAgentInputMap;
   readonly artifactPublisher?: WorkflowArtifactPublisherPort;
   readonly observabilitySummary?: ObservabilitySummary;
+  readonly workspaceLifecycle?: WorkflowWorkspaceLifecyclePort;
   readonly thread_id: string;
   readonly checkpoint_id: string;
   readonly interrupt_id: string;

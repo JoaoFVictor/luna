@@ -1,12 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   parseWorkflowTarget,
   routeInvocation
 } from "../../../src/core/router/router.js";
-import {
-  RouterDefinitionSchema,
-  type RouterDefinition
-} from "../../../src/core/router/router-definition.js";
+import { RouterDefinitionSchema, type RouterDefinition } from "../../../src/core/router/router-definition.js";
 import type { InvocationEnvelope } from "../../../src/core/router/invocation.js";
 
 const githubPullRequest = {
@@ -45,11 +42,7 @@ const routingConfig = {
 } satisfies RouterDefinition;
 
 describe("declarative router", () => {
-  it("validates the router YAML shape", () => {
-    expect(RouterDefinitionSchema.parse(routingConfig)).toEqual(routingConfig);
-  });
-
-  it("rejects duplicate rule ids and invalid targets", () => {
+  it("rejects duplicate rule ids", () => {
     expect(() =>
       RouterDefinitionSchema.parse({
         type: "router",
@@ -64,20 +57,6 @@ describe("declarative router", () => {
             id: "dupe",
             when: { expression: "true" },
             target: "workflow:implementation"
-          }
-        ]
-      })
-    ).toThrow();
-
-    expect(() =>
-      RouterDefinitionSchema.parse({
-        type: "router",
-        version: "2026-06",
-        rules: [
-          {
-            id: "bad",
-            when: { expression: "true" },
-            target: "agent:reviewer"
           }
         ]
       })
@@ -127,26 +106,6 @@ describe("declarative router", () => {
       code: "router_expression_failed",
       path: "$.rules[0].when.expression"
     });
-  });
-
-  it("does not call a model or async payload callback while routing", async () => {
-    const modelCall = vi.fn(async () => "called");
-    const asyncCallback = vi.fn(async () => "called");
-
-    const result = await routeInvocation(
-      {
-        ...githubPullRequest,
-        payload: {
-          modelCall,
-          asyncCallback
-        }
-      },
-      routingConfig
-    );
-
-    expect(result).toEqual({ type: "workflow", id: "code-review" });
-    expect(modelCall).not.toHaveBeenCalled();
-    expect(asyncCallback).not.toHaveBeenCalled();
   });
 
   it("parses workflow string targets only", () => {

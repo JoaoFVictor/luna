@@ -53,9 +53,11 @@ function workspaceContextFrom(context: unknown): RepositoryWorkspaceContext {
 }
 
 export function createGitHubRepositoryWorkspacePorts({
-  lockManager
+  lockManager,
+  now = () => new Date()
 }: {
   readonly lockManager: WorkflowLockManager;
+  readonly now?: () => Date;
 }): RepositoryWorkspaceBuiltInPorts {
   const releases = new Map<string, WorkflowLockRelease>();
   let nextToken = 0;
@@ -75,7 +77,7 @@ export function createGitHubRepositoryWorkspacePorts({
           ...workspace,
           workspace_id: `${input.repository_id}:${input.run_id}`,
           lifecycle: "active",
-          captured_at: new Date().toISOString()
+          captured_at: now().toISOString()
         };
       }
     },
@@ -91,7 +93,7 @@ export function createGitHubRepositoryWorkspacePorts({
         return {
           token,
           repository_id: input.repository_id,
-          acquired_at: new Date().toISOString()
+          acquired_at: now().toISOString()
         };
       },
       async release(input) {

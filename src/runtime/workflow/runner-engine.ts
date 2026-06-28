@@ -3,7 +3,7 @@ import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import type { WorkflowRunResult } from "../../core/workflow/execution-contracts.js";
 import { runtimeError } from "../../core/runtime/errors.js";
-import { stableJson } from "../../core/runtime/json.js";
+import { assertCheckpointJsonValue, stableJson, type JsonValue } from "../../core/runtime/json.js";
 import {
   LUNA_RUNTIME_STATE_SCHEMA_VERSION,
   createInitialRuntimeState,
@@ -376,9 +376,16 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
   } catch (cause) {
     try {
       const latestCheckpoint = await input.backends.checkpoints.load(input.run.run_id);
+      const failedState = (latestCheckpoint?.state ?? initialState) as LunaRuntimeState;
+      const cleanedState = await completeWorkspaceLifecycle({
+        input,
+        state: failedState,
+        runtimeContext,
+        status: "failed"
+      });
       await saveTerminalCheckpoint({
         input,
-        state: terminalCheckpointSnapshot(latestCheckpoint?.state ?? initialState, "failed")
+        state: terminalCheckpointSnapshot(cleanedState, "failed")
       });
     } catch {
       // Preserve the original workflow failure; the run.failed event remains authoritative.
@@ -388,6 +395,12 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
     throw cause;
   }
 
+  state = await completeWorkspaceLifecycle({
+    input,
+    state,
+    runtimeContext,
+    status: "succeeded"
+  });
   const output = finalWorkflowOutput(input.compiled, state, deferredFinalReportIds);
   if (!matchesJsonSchema(input.workflow.output_schema_content as JsonSchemaLike, output)) {
     throw runtimeError("Final workflow output failed schema validation", "runtime_node_output_schema_invalid", {
@@ -433,4 +446,114 @@ function builtInMetadataForPolicyNode(
   node: WorkflowExecutionPlanPolicyNode
 ): BuiltInStepMetadata {
   return input.builtInMetadata?.(node.compiled) ?? {};
+}
+
+async function completeWorkspaceLifecycle({
+  input,
+  state,
+  runtimeContext,
+  status
+}: {
+  readonly input: RunWorkflowInput;
+  readonly state: LunaRuntimeState;
+  readonly runtimeContext: WorkflowRuntimeContext;
+  readonly status: "succeeded" | "failed";
+}): Promise<LunaRuntimeState> {
+  if (input.workspaceLifecycle === undefined) {
+    return state;
+  }
+
+  const previousWorkspace = runtimeContext.workspace;
+  const completedWorkspace = await input.workspaceLifecycle.complete({
+    status,
+    state,
+    runtimeContext
+  });
+  if (completedWorkspace === undefined) {
+    return state;
+  }
+
+  runtimeContext.workspace = completedWorkspace;
+  return replaceWorkspaceInState(state, previousWorkspace, completedWorkspace);
+}
+
+function replaceWorkspaceInState(
+  state: LunaRuntimeState,
+  previousWorkspace: unknown,
+  completedWorkspace: unknown
+): LunaRuntimeState {
+  if (!isWorkspaceRecord(previousWorkspace) || !isWorkspaceRecord(completedWorkspace)) {
+    return state;
+  }
+
+  const steps: Record<string, JsonValue> = {};
+  for (const [nodeId, value] of Object.entries(state.steps)) {
+    const nextValue = workspaceStepValue(
+      value,
+      previousWorkspace,
+      completedWorkspace
+    );
+    assertCheckpointJsonValue(nextValue, `$.steps.${nodeId}`);
+    steps[nodeId] = nextValue;
+  }
+
+  return { ...state, steps };
+}
+
+function workspaceStepValue(
+  value: unknown,
+  previousWorkspace: WorkspaceRecordLike,
+  completedWorkspace: WorkspaceRecordLike
+): unknown {
+  if (sameWorkspaceIdentity(value, previousWorkspace)) {
+    return completedWorkspace;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+
+  const candidate = value as { readonly workspace?: unknown };
+  if (!sameWorkspaceIdentity(candidate.workspace, previousWorkspace)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    ...(sameWorkspaceIdentity(value, previousWorkspace)
+      ? completedWorkspace
+      : {}),
+    workspace: completedWorkspace
+  };
+}
+
+type WorkspaceRecordLike = {
+  readonly run_id: string;
+  readonly path: string;
+  readonly preserved: boolean;
+  readonly reason: string;
+};
+
+function isWorkspaceRecord(value: unknown): value is WorkspaceRecordLike {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<WorkspaceRecordLike>;
+  return (
+    typeof candidate.run_id === "string" &&
+    typeof candidate.path === "string" &&
+    typeof candidate.preserved === "boolean" &&
+    typeof candidate.reason === "string"
+  );
+}
+
+function sameWorkspaceIdentity(
+  value: unknown,
+  workspace: WorkspaceRecordLike
+): value is WorkspaceRecordLike {
+  return (
+    isWorkspaceRecord(value) &&
+    value.run_id === workspace.run_id &&
+    value.path === workspace.path
+  );
 }

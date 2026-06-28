@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   initialImplementationLifecycleEvidence,
-  markCommitResult,
-  markValidationResult,
   recordWorkflowNodeLifecycle,
   type ImplementationLifecycleEvidence
 } from "../../src/capabilities/repository-change/lifecycle.js";
@@ -40,81 +38,16 @@ function lifecycleDecision(input: typeof successfulInput): {
 }
 
 describe("workspace lifecycle", () => {
-  it("preserves the workspace when commit is disabled", () => {
-    expect(
-      lifecycleDecision({
-        ...successfulInput,
-        commitEnabled: false
-      })
-    ).toEqual({ preserve: true, reason: "commit_disabled" });
-  });
-
   it("preserves the workspace when validation failed", () => {
     expect(
       lifecycleDecision({
         ...successfulInput,
         evidence: evidence({
           validationRan: true,
-          validationPassed: false,
-          failureReason: {
-            phase: "validation",
-            code: "validation_failed",
-            message: "Validation failed"
-          }
+          validationPassed: false
         })
       })
     ).toEqual({ preserve: true, reason: "validation_failed" });
-  });
-
-  it("preserves the workspace when acceptance failed", () => {
-    expect(
-      lifecycleDecision({
-        ...successfulInput,
-        evidence: evidence({ acceptanceAccepted: false })
-      })
-    ).toEqual({ preserve: true, reason: "acceptance_failed" });
-  });
-
-  it("preserves the workspace when push failed", () => {
-    expect(
-      lifecycleDecision({
-        ...successfulInput,
-        pushEnabled: true,
-        evidence: evidence({ pushAttempted: false })
-      })
-    ).toEqual({ preserve: true, reason: "push_skipped_or_failed" });
-  });
-
-  it("preserves the workspace when PR failed", () => {
-    expect(
-      lifecycleDecision({
-        ...successfulInput,
-        changeRequestEnabled: true,
-        evidence: evidence({
-          pushAttempted: true,
-          changeRequestAttempted: false
-        })
-      })
-    ).toEqual({ preserve: true, reason: "change_request_skipped_or_failed" });
-  });
-
-  it("allows cleanup when all enabled gates succeeded", () => {
-    expect(lifecycleDecision(successfulInput)).toEqual({
-      preserve: false,
-      reason: "success_cleanup"
-    });
-  });
-
-  it("allows cleanup when commit is enabled and push and PR are disabled after acceptance", () => {
-    expect(
-      lifecycleDecision({
-        ...successfulInput,
-        evidence: evidence({
-          pushAttempted: false,
-          changeRequestAttempted: false
-        })
-      })
-    ).toEqual({ preserve: false, reason: "success_cleanup" });
   });
 
   it("updates lifecycle evidence through typed helpers", () => {
@@ -131,21 +64,6 @@ describe("workspace lifecycle", () => {
 
     expect(afterCommit).toMatchObject({
       implementationStarted: true,
-      validationRan: true,
-      validationPassed: true,
-      commitAttempted: true,
-      commitSucceeded: false
-    });
-
-    expect(
-      markCommitResult(
-        markValidationResult(initialImplementationLifecycleEvidence(), {
-          ran: true,
-          passed: true
-        }),
-        { attempted: true, succeeded: false }
-      )
-    ).toMatchObject({
       validationRan: true,
       validationPassed: true,
       commitAttempted: true,

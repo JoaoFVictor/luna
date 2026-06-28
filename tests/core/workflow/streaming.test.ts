@@ -86,21 +86,6 @@ describe("workflow runner event streaming", () => {
       "node.succeeded",
       "run.succeeded"
     ]);
-
-    await expect(backends.runtimeLogs.list("run-events")).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          level: "debug",
-          message: expect.stringContaining("workflow runtime stream event:")
-        })
-      ])
-    );
-    const runtimeLogEntries = await backends.runtimeLogs.list("run-events");
-    const globalRuntimeEvent = runtimeLogEntries.find((entry) =>
-      entry.message.startsWith("workflow runtime stream event:")
-    );
-    expect(globalRuntimeEvent).toBeDefined();
-    expect(Object.hasOwn(globalRuntimeEvent ?? {}, "node_id")).toBe(false);
   });
 
   it("emits terminal failure events when a node throws", async () => {

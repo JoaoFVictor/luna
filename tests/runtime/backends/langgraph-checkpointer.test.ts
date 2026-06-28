@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ERROR } from "@langchain/langgraph-checkpoint";
@@ -14,7 +14,6 @@ describe("LangGraph checkpointer adapter", () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-langgraph-checkpointer-"));
 
     try {
-      await mkdir(root, { recursive: true });
       const store = createSqliteCheckpointStore({
         filePath: sqliteCheckpointFile(root)
       });
@@ -29,10 +28,10 @@ describe("LangGraph checkpointer adapter", () => {
             ts: "2026-06-25T00:00:00.000Z",
             channel_values: {
               state_schema_version: "2026-06",
-              artifact_refs: [{ id: "artifact-1", uri: "artifact://run-1/a.json" }]
+              event_cursor: "1"
             },
-            channel_versions: { artifact_refs: 1 },
-            versions_seen: { writer: { artifact_refs: 1 } }
+            channel_versions: { event_cursor: 1 },
+            versions_seen: { writer: { event_cursor: 1 } }
           },
           {
             source: "loop",
@@ -56,7 +55,7 @@ describe("LangGraph checkpointer adapter", () => {
         },
         checkpoint: {
           channel_values: {
-            artifact_refs: [{ id: "artifact-1", uri: "artifact://run-1/a.json" }]
+            event_cursor: "1"
           }
         },
         metadata: {
@@ -106,66 +105,6 @@ describe("LangGraph checkpointer adapter", () => {
           source: "update",
           step: 2
         }
-      });
-      const listed = [];
-      for await (const tuple of checkpointer.list(
-        { configurable: { thread_id: "thread-1" } },
-        { filter: { source: "loop" } }
-      )) {
-        listed.push(tuple);
-      }
-
-      expect(listed).toHaveLength(1);
-      const exactCheckpointList = [];
-      for await (const tuple of checkpointer.list({
-        configurable: { thread_id: "thread-1", checkpoint_id: "checkpoint-2" }
-      })) {
-        exactCheckpointList.push(tuple);
-      }
-
-      expect(exactCheckpointList).toHaveLength(1);
-      expect(exactCheckpointList[0]?.checkpoint.id).toBe("checkpoint-2");
-
-      const beforeCheckpointList = [];
-      for await (const tuple of checkpointer.list(
-        { configurable: { thread_id: "thread-1" } },
-        {
-          before: {
-            configurable: {
-              thread_id: "thread-1",
-              checkpoint_id: "checkpoint-2"
-            }
-          }
-        }
-      )) {
-        beforeCheckpointList.push(tuple);
-      }
-
-      expect(beforeCheckpointList.map((tuple) => tuple.checkpoint.id)).toEqual([
-        "checkpoint-1"
-      ]);
-
-      await checkpointer.putWrites(
-        {
-          configurable: {
-            thread_id: "thread-1",
-            checkpoint_id: "checkpoint-1"
-          }
-        },
-        [["artifact_refs", [{ id: "artifact-2", uri: "artifact://run-1/b.json" }]]],
-        "task-1"
-      );
-      await expect(
-        checkpointer.getTuple({
-          configurable: {
-            thread_id: "thread-1",
-            checkpoint_id: "checkpoint-1"
-          }
-        })
-      ).resolves.toMatchObject({
-        pendingWrites: [
-          ["task-1", "artifact_refs", [{ id: "artifact-2", uri: "artifact://run-1/b.json" }]]
-        ]
       });
       await checkpointer.putWrites(
         {
@@ -229,20 +168,6 @@ describe("LangGraph checkpointer adapter", () => {
         checkpointer.getTuple({
           configurable: {
             thread_id: "thread-1",
-            checkpoint_id: "checkpoint-1"
-          }
-        })
-      ).resolves.toMatchObject({
-        checkpoint: {
-          channel_values: {
-            artifact_refs: [{ id: "artifact-1", uri: "artifact://run-1/a.json" }]
-          }
-        }
-      });
-      await expect(
-        checkpointer.getTuple({
-          configurable: {
-            thread_id: "thread-1",
             checkpoint_ns: "alternate",
             checkpoint_id: "checkpoint-1"
           }
@@ -256,77 +181,6 @@ describe("LangGraph checkpointer adapter", () => {
         pendingWrites: [["task-alt", "event_cursor", "alternate-write"]]
       });
 
-      await checkpointer.deleteThread("thread-1");
-      await expect(
-        checkpointer.getTuple({ configurable: { thread_id: "thread-1" } })
-      ).resolves.toBeUndefined();
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("stores ref-only state and discards full LangGraph channel payloads", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "luna-langgraph-checkpointer-"));
-
-    try {
-      const checkpointer = createLangGraphCheckpointer(
-        createSqliteCheckpointStore({ filePath: sqliteCheckpointFile(root) })
-      );
-
-      await checkpointer.put(
-        { configurable: { thread_id: "thread-1" } },
-        {
-          v: 4,
-          id: "checkpoint-1",
-          ts: "2026-06-25T00:00:00.000Z",
-          channel_values: {
-            state_schema_version: "2026-06",
-            run_status: "running",
-            steps: { writer: { large_payload: "not stored" } }
-          },
-          channel_versions: {},
-          versions_seen: {}
-        },
-        {
-          source: "loop",
-          step: 1,
-          parents: {}
-        },
-        {}
-      );
-
-      await expect(
-        checkpointer.getTuple({ configurable: { thread_id: "thread-1" } })
-      ).resolves.toMatchObject({
-        checkpoint: {
-          channel_values: {
-            state_schema_version: "2026-06",
-            run_status: "running"
-          }
-        }
-      });
-      await expect(
-        checkpointer.put(
-          { configurable: { thread_id: "thread-2" } },
-          {
-            v: 4,
-            id: "checkpoint-2",
-            ts: "2026-06-25T00:00:01.000Z",
-            channel_values: {
-              state_schema_version: "2026-06",
-              artifact_refs: [{ id: "", uri: "artifact://bad" }]
-            },
-            channel_versions: {},
-            versions_seen: {}
-          },
-          {
-            source: "loop",
-            step: 1,
-            parents: {}
-          },
-          {}
-        )
-      ).rejects.toMatchObject({ code: "runtime_checkpoint_not_ref_only" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

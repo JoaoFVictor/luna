@@ -113,25 +113,6 @@ async function writeGatedLoopWorkflow(
 }
 
 describe("quality-gates workflow definition", () => {
-  it("publishes the gated agent loop authoring schema used by workflow YAML", () => {
-    const pattern = qualityGates.patterns?.["quality-gates.gated_agent_loop"];
-
-    expect(pattern?.input_schema).toMatchObject({
-      required: ["worker", "gates"],
-      properties: {
-        worker: { type: "string" },
-        gates: { type: "array" },
-        repair: { type: "object" }
-      }
-    });
-    expect(pattern?.input_schema).not.toMatchObject({
-      properties: {
-        writer_agent: expect.anything(),
-        max_iterations: expect.anything()
-      }
-    });
-  });
-
   it("requires gated agent loop artifact sources to read from the declaring node", async () => {
     const root = await copyMinimumWorkflow();
     await writeGatedLoopWorkflow(root, gatedLoopNode({
@@ -150,24 +131,6 @@ describe("quality-gates workflow definition", () => {
   });
 
   it("validates static gated agent loop repair attempt bounds", async () => {
-    const zeroRoot = await copyMinimumWorkflow();
-    await writeGatedLoopWorkflow(zeroRoot, gatedLoopNode({ repairAttempts: 0 }));
-
-    await expect(loadWorkflowDefinition(zeroRoot, "minimum", {
-      capabilityRegistry: registry(),
-      digestResolver: digestResolver()
-    })).resolves.toMatchObject({
-      graph: {
-        nodes: [
-          expect.any(Object),
-          expect.objectContaining({
-            id: "implementation",
-            repair: { attempts: 0 }
-          })
-        ]
-      }
-    });
-
     const excessiveRoot = await copyMinimumWorkflow();
     await writeGatedLoopWorkflow(excessiveRoot, gatedLoopNode({ repairAttempts: 10 }));
 

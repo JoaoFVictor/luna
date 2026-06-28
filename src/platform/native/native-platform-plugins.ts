@@ -18,8 +18,6 @@ import type {
 import type { BuiltInStep } from "../../core/built-ins/types.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import { githubPrUrlAdapter } from "../../providers/github/input-adapter.js";
-import { prepareWorktreeBuiltIn } from "../../providers/github/built-ins.js";
-import { manifest as githubReviewManifest } from "../../providers/github/manifest.js";
 import { preflightBuiltIn } from "../../capabilities/runtime/built-ins.js";
 import { createGitHubChangeRequestProviderFactory } from "../../providers/github/change-request/factory.js";
 import { jiraTaskUrlAdapter } from "../../providers/jira/input-adapter.js";
@@ -231,10 +229,9 @@ export const nativePlatformPluginDefinitions = [
   },
   {
     id: "github",
-    capabilityManifests: [githubReviewManifest],
     inputAdapters: [githubPrUrlAdapter],
     workflowBuiltIns: {
-      beforeContext: [preflightBuiltIn, prepareWorktreeBuiltIn],
+      beforeContext: [preflightBuiltIn],
       afterContext: []
     },
     changeRequestProviderFactories: [createGitHubChangeRequestProviderFactory({})]

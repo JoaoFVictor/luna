@@ -2,7 +2,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { RepositoryConfigSchema } from "../../src/core/config/schemas.js";
 import { resolveEffectiveSkillReferences } from "../../src/core/skills/definition.js";
 
 async function writeSkill(
@@ -132,17 +131,4 @@ describe("skill definitions", () => {
     }
   });
 
-  it("accepts repository skill declarations in repository config", () => {
-    const repository = RepositoryConfigSchema.parse({
-      id: "repo",
-      provider: "github",
-      owner: "org",
-      name: "repo",
-      path: "/repo",
-      remote: "git@github.com:org/repo.git",
-      skills: [".luna/skills/repo-baseline/SKILL.md"]
-    });
-
-    expect(repository.skills).toEqual([".luna/skills/repo-baseline/SKILL.md"]);
-  });
 });

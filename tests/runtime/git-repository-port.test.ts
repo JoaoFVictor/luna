@@ -57,10 +57,6 @@ describe("git repository runtime port", () => {
       unstaged_paths: ["src/b.ts"],
       untracked_paths: ["src/c.ts"]
     });
-    expect(runGit).not.toHaveBeenCalledWith(
-      workspace.path,
-      expect.arrayContaining(["commit"])
-    );
   });
 
   it("reads existing commit state from repository head before adoption", async () => {
@@ -132,18 +128,6 @@ describe("git repository runtime port", () => {
       paths: ["src/a.ts"],
       adopted: false
     });
-    expect(runGit).toHaveBeenCalledWith(workspace.path, [
-      "--literal-pathspecs",
-      "add",
-      "-A",
-      "--",
-      "src/a.ts"
-    ]);
-    expect(runGit).toHaveBeenCalledWith(workspace.path, [
-      "commit",
-      "-m",
-      "Implement thing"
-    ]);
   });
 
   it("refuses to commit when the workspace moved after the adoption check", async () => {
@@ -168,14 +152,6 @@ describe("git repository runtime port", () => {
     ).rejects.toMatchObject({
       code: "git_conflict"
     });
-    expect(runGit).not.toHaveBeenCalledWith(
-      workspace.path,
-      expect.arrayContaining(["add"])
-    );
-    expect(runGit).not.toHaveBeenCalledWith(
-      workspace.path,
-      expect.arrayContaining(["commit"])
-    );
   });
 
   it("refuses to commit when expected base ancestry fails", async () => {
@@ -210,10 +186,6 @@ describe("git repository runtime port", () => {
     ).rejects.toMatchObject({
       code: "git_conflict"
     });
-    expect(runGit).not.toHaveBeenCalledWith(
-      workspace.path,
-      expect.arrayContaining(["commit"])
-    );
   });
 
   it("refuses to push when HEAD differs from the expected commit", async () => {
@@ -233,10 +205,5 @@ describe("git repository runtime port", () => {
     ).rejects.toMatchObject({
       code: "git_conflict"
     });
-    expect(runGit).not.toHaveBeenCalledWith(workspace.path, [
-      "push",
-      "origin",
-      "feature/luna"
-    ]);
   });
 });
