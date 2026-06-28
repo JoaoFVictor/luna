@@ -18,5 +18,5 @@ rules:
 
   - id: plane_issue_implementation
     when:
-      expression: "$.invocation.source = 'plane' and $.invocation.event = 'issue' and $.invocation.action = 'selected'"
+      expression: "$.invocation.source = 'plane' and $.invocation.event = 'issue' and $.invocation.action in ['selected', 'create', 'update']"
     target: workflow:implementation

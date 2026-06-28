@@ -19,7 +19,34 @@ const ACCEPTED_ISSUE_ACTIONS = new Set(["create", "update"]);
 
 const PlaneIssuePayloadSchema = z
   .object({
+    event: z.string().min(1).optional(),
     action: z.string().min(1),
+    data: z
+      .object({
+        id: z.string().min(1),
+        url: z.string().url().optional(),
+        name: z.string().min(1).optional(),
+        title: z.string().min(1).optional(),
+        project_id: z.string().min(1).optional(),
+        project: z.string().min(1).optional(),
+        workspace_detail: z
+          .object({
+            slug: z.string().min(1).optional(),
+            id: z.string().min(1).optional()
+          })
+          .passthrough()
+          .optional(),
+        project_detail: z
+          .object({
+            slug: z.string().min(1).optional(),
+            id: z.string().min(1).optional(),
+            identifier: z.string().min(1).optional()
+          })
+          .passthrough()
+          .optional()
+      })
+      .passthrough()
+      .optional(),
     issue: z
       .object({
         id: z.string().min(1),
@@ -28,7 +55,8 @@ const PlaneIssuePayloadSchema = z
         title: z.string().min(1).optional(),
         project_id: z.string().min(1).optional()
       })
-      .passthrough(),
+      .passthrough()
+      .optional(),
     workspace: z
       .object({
         slug: z.string().min(1).optional(),
@@ -135,6 +163,7 @@ export function normalizePlaneWebhook(
   }
 
   const payload = parseIssuePayload(input.body);
+  const issue = issueFrom(payload);
   const invocation = InvocationSchema.parse({
     version: "2026-06",
     source: "plane",
@@ -147,11 +176,11 @@ export function normalizePlaneWebhook(
     },
     subject: {
       type: "issue",
-      id: payload.issue.id,
-      ...(payload.issue.url === undefined ? {} : { url: payload.issue.url }),
-      ...((payload.issue.name ?? payload.issue.title) === undefined
+      id: issue.id,
+      ...(issue.url === undefined ? {} : { url: issue.url }),
+      ...((issue.name ?? issue.title) === undefined
         ? {}
-        : { title: payload.issue.name ?? payload.issue.title })
+        : { title: issue.name ?? issue.title })
     },
     payload
   });
@@ -183,8 +212,19 @@ function parseIssuePayload(body: unknown): PlaneIssuePayload {
   return parsed.data;
 }
 
+function issueFrom(payload: PlaneIssuePayload): NonNullable<PlaneIssuePayload["data"]> {
+  const issue = payload.data ?? payload.issue;
+  if (issue === undefined) {
+    throw webhookPayloadInvalid("Plane issue webhook payload is invalid");
+  }
+
+  return issue;
+}
+
 function workspaceSlugOrId(payload: PlaneIssuePayload): string {
   const value =
+    payload.data?.workspace_detail?.slug ??
+    payload.data?.workspace_detail?.id ??
     payload.workspace?.slug ??
     payload.workspace?.id ??
     payload.workspace_slug ??
@@ -198,11 +238,16 @@ function workspaceSlugOrId(payload: PlaneIssuePayload): string {
 
 function projectSlugOrId(payload: PlaneIssuePayload): string {
   const value =
+    payload.data?.project_detail?.slug ??
+    payload.data?.project_detail?.identifier ??
+    payload.data?.project_detail?.id ??
+    payload.data?.project_id ??
+    payload.data?.project ??
     payload.project?.slug ??
     payload.project?.id ??
     payload.project_slug ??
     payload.project_id ??
-    payload.issue.project_id;
+    payload.issue?.project_id;
   if (value === undefined) {
     throw webhookPayloadInvalid("Plane issue webhook project is missing");
   }

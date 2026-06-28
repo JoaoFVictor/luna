@@ -43,6 +43,30 @@ function issuePayload(action: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
+function documentedIssuePayload(
+  action: string,
+  overrides: Record<string, unknown> = {}
+) {
+  return {
+    event: "issue",
+    action,
+    workspace_id: "workspace-1",
+    data: {
+      id: "issue-1",
+      url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
+      name: "Implement webhooks",
+      project_id: "project-1",
+      workspace_detail: {
+        slug: "acme"
+      },
+      project_detail: {
+        identifier: "PROJ"
+      }
+    },
+    ...overrides
+  };
+}
+
 function input(options: {
   event?: string;
   deliveryId?: string;
@@ -155,6 +179,34 @@ describe("Plane webhook adapter normalization", () => {
     }
     expect(InvocationSchema.parse(result.invocation)).toEqual(result.invocation);
     expect(result.invocation.payload).toEqual(issuePayload("create"));
+  });
+
+  it("accepts Plane's documented issue payload shape", () => {
+    const payload = documentedIssuePayload("create");
+    const result = normalizePlaneWebhook(input({ body: payload }));
+
+    expect(result).toMatchObject({
+      kind: "accepted",
+      deliveryId: "delivery-1",
+      invocation: {
+        version: "2026-06",
+        source: "plane",
+        event: "issue",
+        action: "create",
+        repository: {
+          provider: "plane",
+          owner: "acme",
+          name: "PROJ"
+        },
+        subject: {
+          type: "issue",
+          id: "issue-1",
+          url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
+          title: "Implement webhooks"
+        },
+        payload
+      }
+    });
   });
 
   it("accepts issue update", () => {
