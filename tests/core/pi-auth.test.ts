@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { mkdtemp } from "node:fs/promises";
@@ -62,6 +62,40 @@ describe("Pi OAuth auth.json integration", () => {
     ).rejects.toThrow(expect.objectContaining({ code: "pi_auth_missing" }));
   });
 
+  it("loads Pi OAuth credentials from LUNA_AUTH_ROOT/pi-ai/auth.json by default", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-pi-auth-root-"));
+    const authRoot = path.join(projectRoot, ".luna", "auth");
+    const authPath = path.join(authRoot, "pi-ai", "auth.json");
+    await mkdir(path.dirname(authPath), { recursive: true });
+    await writeFile(
+      authPath,
+      JSON.stringify({
+        "openai-codex": {
+          type: "oauth",
+          access: "expired",
+          refresh: "refresh-token",
+          expires: Date.now() - 1000
+        }
+      })
+    );
+    const getOAuthApiKey = vi.fn(async () => ({
+      apiKey: "fresh-access-token",
+      newCredentials: {
+        type: "oauth",
+        access: "fresh-access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 3600000
+      }
+    }));
+
+    await expect(
+      loadPiOAuthApiKey("openai-codex", {
+        env: { LUNA_AUTH_ROOT: authRoot },
+        getOAuthApiKey
+      })
+    ).resolves.toBe("fresh-access-token");
+  });
+
   it("stores resolved OAuth API keys when no custom register hook is provided", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-pi-auth-default-register-"));
     const authPath = path.join(root, "auth.json");
@@ -117,7 +151,10 @@ describe("Pi OAuth auth.json integration", () => {
     });
 
     expect(registerPiOAuthProvider).toHaveBeenCalledTimes(1);
-    expect(registerPiOAuthProvider).toHaveBeenCalledWith("openai-codex");
+    expect(registerPiOAuthProvider).toHaveBeenCalledWith("openai-codex", {
+      projectRoot: expect.any(String),
+      env: {}
+    });
   });
 
   it("does not register OpenAI Codex when model profiles are overridden away", async () => {

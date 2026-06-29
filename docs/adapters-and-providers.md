@@ -32,6 +32,16 @@ adapter registry in `src/platform/native/native-platform-registrations.ts`.
 This means `src/adapters/**` is shared plumbing, not where every concrete
 provider adapter necessarily lives.
 
+Webhook adapters follow the same ownership rule. The HTTP ingress is one
+provider-parametric route, `POST /webhooks/:provider`, implemented by generic
+`src/webhooks/**` plumbing. GitHub and Plane own their signature verification
+and payload normalization under `src/providers/github/` and
+`src/providers/plane/`.
+
+Adding another webhook provider should mean adding a provider-owned webhook
+adapter, registering its factory in native platform plugins, and adding config
+for its `secret_ref`. It should not add another HTTP endpoint.
+
 ## Invocation Boundary
 
 Invocation is the provider/data boundary. It has fixed top-level fields such as
@@ -58,8 +68,13 @@ The CLI flow is:
 4. Execute the workflow target.
 
 The default routing config puts explicit target first, GitHub PR events to
-`workflow:code-review`, and Jira/Plane issue selections to
+`workflow:code-review`, Jira issue selections to `workflow:implementation`, and
+Plane issue selections plus webhook `create`/`update` events to
 `workflow:implementation`.
+
+Plane implementation invocations still need a repository hint. Plane webhook
+normalization reads the same `provider:owner/repo` label shape used by the
+Plane task URL adapter and maps it to the invocation repository.
 
 ## Provider Ownership
 
@@ -81,8 +96,9 @@ A provider does not own:
 - generic context intake.
 - generic capability contracts.
 
-Shared provider helpers may read `luna.auth.json` as unknown provider data.
-Provider-specific validation belongs in the owning provider module.
+Shared provider helpers may read `.luna/auth/luna.auth.json` as unknown
+provider data. Provider-specific validation belongs in the owning provider
+module.
 
 ## Current Providers
 
@@ -90,20 +106,23 @@ GitHub:
 
 - Parses GitHub PR URLs.
 - Uses `gh api` through `executeJson`.
-- Uses `gh` authentication, not `luna.auth.json`.
+- Uses `gh` authentication from `GH_CONFIG_DIR` under the Luna auth root, not
+  `luna.auth.json`.
+- Uses Git commit identity from `.luna/auth/git/config` when trusted write
+  workflows commit in the container runtime.
 - Provides GitHub change-request publishing.
 
 Jira:
 
 - Reads `config/jira.yaml`.
-- Reads credentials from `luna.auth.json` under the active config root.
+- Reads credentials from `.luna/auth/luna.auth.json`.
 - Fetches Jira issue data and optional repository hints from configured fields.
 - Renders task context/final implementation reports for Jira issues.
 
 Plane:
 
 - Reads `config/plane.yaml`.
-- Reads API keys from `luna.auth.json` under the active config root.
+- Reads API keys from `.luna/auth/luna.auth.json`.
 - Supports browse and project issue URLs.
 - Fetches Plane issue data and optional repository hints from labels.
 - Renders task context/final implementation reports for Plane issues.
@@ -130,5 +149,5 @@ Leaf modules should stay in their lane.
 - CLI: `src/cli.ts`
 - Native platform plugins: `src/platform/native/native-platform-plugins.ts`
 - Repository resolution: `src/core/workflow/workspace-resolver.ts`
-- Shared provider auth reader: `src/providers/auth.ts`
+- Shared auth root and file reader: `src/core/auth/`
 - Repository hint parser: `src/providers/repository-hints/repository-reference.ts`

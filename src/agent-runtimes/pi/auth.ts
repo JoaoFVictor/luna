@@ -7,6 +7,10 @@ import {
 import { loadYamlFile } from "../../core/config/loader.js";
 import { resolveModelProfiles } from "../../core/config/models.js";
 import { ModelsConfigSchema } from "../../core/config/schemas.js";
+import {
+  resolveLunaAuthRoot,
+  type LunaAuthEnv
+} from "../../core/auth/root.js";
 
 type CredentialsByProvider = Record<string, OAuthCredentials>;
 
@@ -19,6 +23,27 @@ type RegisterProvider = (
   providerId: string,
   options: { readonly apiKey: string }
 ) => void;
+
+type PiAuthOptions = {
+  readonly authPath?: string;
+  readonly projectRoot?: string;
+  readonly env?: LunaAuthEnv;
+  readonly getOAuthApiKey?: GetOAuthApiKey;
+};
+
+type RegisterPiOAuthProviderOptions = PiAuthOptions & {
+  readonly registerProvider?: RegisterProvider;
+};
+
+type RegisterConfiguredPiOAuthProvidersOptions = {
+  readonly projectRoot?: string;
+  readonly configRoot: string;
+  readonly env?: Record<string, string | undefined>;
+  readonly registerPiOAuthProvider?: (
+    providerId: string,
+    options?: Pick<PiAuthOptions, "projectRoot" | "env">
+  ) => Promise<void>;
+};
 
 const apiKeysByProvider = new Map<string, string>();
 
@@ -34,8 +59,11 @@ class PiAuthError extends Error {
   }
 }
 
-function defaultAuthPath(): string {
-  return path.join(process.env.HOME ?? ".", ".config", "pi-ai", "auth.json");
+function defaultAuthPath(
+  projectRoot = process.cwd(),
+  env: LunaAuthEnv = process.env
+): string {
+  return path.join(resolveLunaAuthRoot(projectRoot, env), "pi-ai", "auth.json");
 }
 
 function isCredentialsByProvider(value: unknown): value is CredentialsByProvider {
@@ -58,12 +86,9 @@ function providerFromModel(model: string): string | undefined {
 
 export async function loadPiOAuthApiKey(
   providerId: string,
-  options: {
-    readonly authPath?: string;
-    readonly getOAuthApiKey?: GetOAuthApiKey;
-  } = {}
+  options: PiAuthOptions = {}
 ): Promise<string> {
-  const authPath = options.authPath ?? defaultAuthPath();
+  const authPath = options.authPath ?? defaultAuthPath(options.projectRoot, options.env);
   const getOAuthApiKey = options.getOAuthApiKey ?? defaultGetOAuthApiKey;
   const credentials = await readCredentials(authPath);
 
@@ -93,11 +118,7 @@ export async function loadPiOAuthApiKey(
 
 export async function registerPiOAuthProvider(
   providerId: string,
-  options: {
-    readonly authPath?: string;
-    readonly getOAuthApiKey?: GetOAuthApiKey;
-    readonly registerProvider?: RegisterProvider;
-  } = {}
+  options: RegisterPiOAuthProviderOptions = {}
 ): Promise<void> {
   const apiKey = await loadPiOAuthApiKey(providerId, options);
   const registerProvider = options.registerProvider ?? registerPiProviderApiKey;
@@ -116,14 +137,11 @@ export function registeredPiProviderApiKey(providerId: string): string | undefin
 }
 
 export async function registerConfiguredPiOAuthProviders({
+  projectRoot = process.cwd(),
   configRoot,
   env = process.env,
   registerPiOAuthProvider: registerProvider = registerPiOAuthProvider
-}: {
-  readonly configRoot: string;
-  readonly env?: Record<string, string | undefined>;
-  readonly registerPiOAuthProvider?: (providerId: string) => Promise<void>;
-}): Promise<void> {
+}: RegisterConfiguredPiOAuthProvidersOptions): Promise<void> {
   const profiles = resolveModelProfiles(
     await loadYamlFile(path.join(configRoot, "models.yaml"), ModelsConfigSchema),
     env
@@ -134,5 +152,7 @@ export async function registerConfiguredPiOAuthProviders({
       .filter((provider): provider is string => provider === "openai-codex")
   );
 
-  await Promise.all([...providers].map((provider) => registerProvider(provider)));
+  await Promise.all(
+    [...providers].map((provider) => registerProvider(provider, { projectRoot, env }))
+  );
 }

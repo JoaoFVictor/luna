@@ -23,10 +23,10 @@ const routingConfig = {
       target: "$.invocation.target"
     },
     {
-      id: "github_pr_review",
+      id: "github_pr_code_review",
       when: {
         expression:
-          "$.invocation.source = 'github' and $.invocation.event = 'pull_request'"
+          "$.invocation.source = 'github' and $.invocation.event = 'pull_request' and $.invocation.action in ['selected', 'opened', 'synchronize', 'reopened']"
       },
       target: "workflow:code-review"
     },
@@ -35,6 +35,14 @@ const routingConfig = {
       when: {
         expression:
           "$.invocation.source = 'jira' and $.invocation.event = 'issue' and $.invocation.action = 'selected'"
+      },
+      target: "workflow:implementation"
+    },
+    {
+      id: "plane_issue_implementation",
+      when: {
+        expression:
+          "$.invocation.source = 'plane' and $.invocation.event = 'issue' and $.invocation.action in ['selected', 'create', 'update']"
       },
       target: "workflow:implementation"
     }
@@ -68,6 +76,31 @@ describe("declarative router", () => {
       type: "workflow",
       id: "code-review"
     });
+  });
+
+  it("routes webhook Plane issue actions to implementation", async () => {
+    await expect(
+      routeInvocation(
+        { version: "2026-06", source: "plane", event: "issue", action: "create" },
+        routingConfig
+      )
+    ).resolves.toEqual({ type: "workflow", id: "implementation" });
+
+    await expect(
+      routeInvocation(
+        { version: "2026-06", source: "plane", event: "issue", action: "update" },
+        routingConfig
+      )
+    ).resolves.toEqual({ type: "workflow", id: "implementation" });
+  });
+
+  it("does not route Plane issue delete webhooks", async () => {
+    await expect(
+      routeInvocation(
+        { version: "2026-06", source: "plane", event: "issue", action: "delete" },
+        routingConfig
+      )
+    ).rejects.toMatchObject({ code: "router_no_match" });
   });
 
   it("uses an explicit invocation target through declarative YAML", async () => {

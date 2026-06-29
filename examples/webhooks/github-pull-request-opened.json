@@ -1,0 +1,38 @@
+{
+  "action": "opened",
+  "repository": {
+    "name": "repo",
+    "full_name": "org/repo",
+    "owner": {
+      "login": "org"
+    }
+  },
+  "pull_request": {
+    "number": 123,
+    "html_url": "https://github.com/org/repo/pull/123",
+    "title": "Add webhook support",
+    "base": {
+      "ref": "main",
+      "sha": "base-sha",
+      "repo": {
+        "name": "repo",
+        "full_name": "org/repo",
+        "owner": {
+          "login": "org"
+        }
+      }
+    },
+    "head": {
+      "ref": "feature/webhooks",
+      "sha": "head-sha",
+      "repo": {
+        "name": "repo",
+        "full_name": "contributor/repo",
+        "fork": true,
+        "owner": {
+          "login": "contributor"
+        }
+      }
+    }
+  }
+}

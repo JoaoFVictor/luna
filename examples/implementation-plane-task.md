@@ -25,7 +25,7 @@ repositories:
     provider: github
     owner: org
     name: repo
-    path: /path/to/local/repo
+    path: /repositories/repo
     remote: origin
     expected_remote_urls:
       - git@github.com:org/repo.git
@@ -62,15 +62,32 @@ Example:
 github:org/repo
 ```
 
+When using Plane webhooks, enable the Plane **Work items** event and move the
+work item to the state configured in `config/webhooks.yaml`. Luna checks the
+Plane activity `new_value`, not just the work item's current state. The bundled
+config uses:
+
+```yaml
+providers:
+  plane:
+    config:
+      issue_state_allowlist:
+        - "In Progress"
+```
+
+Work item activities with any other `new_value` are acknowledged and ignored.
+
 ## 4. Add Provider Auth
 
-Create `luna.auth.json` under the active config root:
+Create `.luna/auth/luna.auth.json` under the Luna auth root:
 
 ```json
 {
   "providers": {
     "plane": {
       "company": {
+        "base_url": "https://app.plane.so",
+        "auth_type": "api_key",
         "api_key": "plane-api-key"
       }
     }

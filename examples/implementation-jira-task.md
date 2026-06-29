@@ -19,10 +19,11 @@ Those profiles use `transport: sse` by default to avoid abnormal Codex
 WebSocket closures during long trusted-local prompts.
 
 ```bash
-npx @earendil-works/pi-ai login openai-codex
+mkdir -p .luna/auth/pi-ai
+# create .luna/auth/pi-ai/auth.json from .luna/auth/pi-ai/auth.example.json
 ```
 
-This creates `~/.config/pi-ai/auth.json`.
+Luna reads Pi credentials from `.luna/auth/pi-ai/auth.json`.
 
 ## 3. Configure Jira
 
@@ -43,7 +44,7 @@ instances:
 The repository field must resolve to a GitHub repository that exists in
 `config/repositories.yaml`.
 
-Create `luna.auth.json` under the active config root:
+Create `.luna/auth/luna.auth.json` under the Luna auth root:
 
 ```json
 {
@@ -60,14 +61,14 @@ Create `luna.auth.json` under the active config root:
 }
 ```
 
-Do not commit `luna.auth.json`.
+Do not commit the real `.luna/auth/luna.auth.json`.
 
 ## 4. Configure The Repository
 
 Clone the target repository locally:
 
 ```bash
-git clone git@github.com:org/repo.git /path/to/local/repo
+git clone git@github.com:org/repo.git /repositories/repo
 ```
 
 Edit `config/repositories.yaml`:
@@ -78,7 +79,7 @@ repositories:
     provider: github
     owner: org
     name: repo
-    path: /path/to/local/repo
+    path: /repositories/repo
     remote: origin
     expected_remote_urls:
       - git@github.com:org/repo.git
@@ -176,10 +177,10 @@ Important files:
 
 ## Troubleshooting
 
-`luna.auth.json` is missing
+`.luna/auth/luna.auth.json` is missing
 
-Create `luna.auth.json` under the active config root with a Jira provider entry
-for the `config/jira.yaml` instance id.
+Create `.luna/auth/luna.auth.json` with a Jira provider entry for the
+`config/jira.yaml` instance id.
 
 `Repository is not configured`
 

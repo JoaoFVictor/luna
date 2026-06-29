@@ -3,7 +3,8 @@ import {
   loadLunaAuthFile,
   lunaAuthError,
   type LunaAuthError
-} from "../auth.js";
+} from "../../core/auth/luna-auth-file.js";
+import type { LunaAuthEnv } from "../../core/auth/root.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -53,9 +54,10 @@ function jiraAuthError(
 }
 
 export async function loadLunaAuth(
-  projectRoot = process.cwd()
+  projectRoot = process.cwd(),
+  env: LunaAuthEnv = process.env
 ): Promise<JiraLunaAuthConfig> {
-  const authFile = await loadLunaAuthFile(projectRoot);
+  const authFile = await loadLunaAuthFile(projectRoot, env);
 
   try {
     return JiraLunaAuthConfigSchema.parse(authFile);

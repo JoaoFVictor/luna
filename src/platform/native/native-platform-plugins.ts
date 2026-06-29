@@ -17,7 +17,9 @@ import type {
 } from "../../adapters/types.js";
 import type { BuiltInStep } from "../../core/built-ins/types.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
+import type { WebhookProviderAdapterFactory } from "../../webhooks/contracts.js";
 import { githubPrUrlAdapter } from "../../providers/github/input-adapter.js";
+import { githubWebhookAdapterFactory } from "../../providers/github/webhook-adapter.js";
 import { preflightBuiltIn } from "../../capabilities/runtime/built-ins.js";
 import { createGitHubChangeRequestProviderFactory } from "../../providers/github/change-request/factory.js";
 import { jiraTaskUrlAdapter } from "../../providers/jira/input-adapter.js";
@@ -26,6 +28,7 @@ import {
   finalImplementationReport as finalJiraImplementationReport
 } from "../../providers/jira/built-ins.js";
 import { planeTaskUrlAdapter } from "../../providers/plane/input-adapter.js";
+import { planeWebhookAdapterFactory } from "../../providers/plane/webhook-adapter.js";
 import {
   collectTaskContext as collectPlaneTaskContext,
   finalImplementationReport as finalPlaneImplementationReport
@@ -70,6 +73,7 @@ export type NativePlatformPlugin = {
   readonly taskBuiltIns?: TaskProviderBuiltIns;
   readonly patternExecutors?: Readonly<Record<string, WorkflowPatternExecutor>>;
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
+  readonly webhookAdapterFactories?: readonly WebhookProviderAdapterFactory[];
 };
 
 export type NativePlatformPluginRegistration = Omit<
@@ -97,6 +101,7 @@ export function defineNativePlatformPlugins(
   const agentRuntimeIds = new Set<string>();
   const workflowRuntimeIds = new Set<string>();
   const patternExecutorIds = new Set<string>();
+  const webhookProviderIds = new Set<string>();
   const taskSources = new Set<string>();
   const registrations: NativePlatformPluginRegistration[] = [];
 
@@ -121,6 +126,12 @@ export function defineNativePlatformPlugins(
     assertUniqueRecordIds(plugin.agentRuntimeFactories, agentRuntimeIds, "agent runtime");
     assertUniqueRecordIds(plugin.workflowRuntimeFactories, workflowRuntimeIds, "workflow runtime");
     assertUniqueRecordIds(plugin.patternExecutors, patternExecutorIds, "pattern executor");
+    for (const factory of plugin.webhookAdapterFactories ?? []) {
+      if (webhookProviderIds.has(factory.id)) {
+        throw nativePlatformPluginError(`Duplicate native webhook provider: ${factory.id}`);
+      }
+      webhookProviderIds.add(factory.id);
+    }
 
     const inputAdapters = (plugin.inputAdapters ?? []).map((entry) => {
       const { adapter, source } = normalizeInputAdapter(entry, plugin.id);
@@ -174,6 +185,9 @@ export function defineNativePlatformPlugins(
       ...(plugin.changeRequestProviderFactories === undefined
         ? {}
         : { changeRequestProviderFactories: plugin.changeRequestProviderFactories }),
+      ...(plugin.webhookAdapterFactories === undefined
+        ? {}
+        : { webhookAdapterFactories: plugin.webhookAdapterFactories }),
       ...(inputAdapters.length === 0 ? {} : { inputAdapters })
     }));
   }
@@ -234,7 +248,8 @@ export const nativePlatformPluginDefinitions = [
       beforeContext: [preflightBuiltIn],
       afterContext: []
     },
-    changeRequestProviderFactories: [createGitHubChangeRequestProviderFactory({})]
+    changeRequestProviderFactories: [createGitHubChangeRequestProviderFactory({})],
+    webhookAdapterFactories: [githubWebhookAdapterFactory]
   },
   {
     id: "jira",
@@ -250,7 +265,8 @@ export const nativePlatformPluginDefinitions = [
     taskBuiltIns: {
       collectTaskContext: collectPlaneTaskContext,
       finalImplementationReport: finalPlaneImplementationReport
-    }
+    },
+    webhookAdapterFactories: [planeWebhookAdapterFactory]
   }
 ] satisfies readonly NativePlatformPlugin[];
 

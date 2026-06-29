@@ -22,6 +22,22 @@ delegates to `platform.runWorkflow`. The native runner owns workflow loading,
 repository resolution, run identity, compilation, agent inputs, executor
 wiring, and runtime composition.
 
+Webhook ingress uses a split runtime shape:
+
+```text
+POST /webhooks/:provider
+  -> provider-owned verification and normalization
+  -> BullMQ job in Redis
+  -> webhook worker
+  -> deterministic routeInvocation
+  -> target executor
+```
+
+The HTTP process does not route or execute workflows inline. It only checks
+readiness, verifies signatures, normalizes an invocation, and enqueues a
+BullMQ job. The worker process consumes jobs, routes the invocation with the
+same deterministic router used by the CLI, and calls the target executor.
+
 ## Native Platform
 
 The native platform is the composition root for bundled runtime behavior.
@@ -76,6 +92,95 @@ agent_runtime:
 
 For production-like runs, Luna uses filesystem artifacts/events/interrupts/logs
 and SQLite checkpoints under `.runs`. Memory backends exist for tests.
+
+## Webhook Queue Runtime
+
+Webhook server and worker processes require Redis because MVP ingress uses
+BullMQ for durable asynchronous handoff.
+
+```bash
+redis-server
+npm run build
+node dist/src/cli.js webhook-server
+node dist/src/cli.js webhook-worker
+```
+
+For a containerized local runtime, use Compose:
+
+```bash
+docker compose up --build
+```
+
+This starts Redis, `webhook-server`, and `webhook-worker`. The containers use
+`REDIS_URL=redis://redis:6379`, keep Redis on the internal Compose network,
+expose the HTTP server on host port `4012`, mount `./dist` and `./config`
+read-only, mount
+`${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth`, and write run
+artifacts to `./.runs`. The auth root is writable because the Pi runtime can
+refresh OAuth credentials. Compose also prepares `./.runs` before the app
+containers start so the non-root worker can write artifacts.
+
+Run `npm run build` before restarting app services after TypeScript changes so
+the mounted `dist/` matches the mounted configuration.
+
+The Compose file also mounts auth and repository state needed by real runs:
+
+- `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth` for all auth files.
+- `.luna/auth/luna.auth.json` for Jira, Plane, and webhook secrets.
+- `.luna/auth/pi-ai/auth.json` for Pi model auth.
+- `.luna/auth/gh` for GitHub CLI auth through `GH_CONFIG_DIR`.
+- `.luna/auth/ssh` for SSH repository remotes.
+- `.luna/auth/git/config` for Git commit identity through
+  `GIT_CONFIG_GLOBAL`.
+- `${LUNA_REPOSITORIES_ROOT:-./repositories}` at `/repositories` for all
+  configured repositories.
+
+Create `.luna/auth/luna.auth.json` and `.luna/auth/git/config` before starting
+Compose. For a different repository layout, either update
+`config/repositories.yaml` or set `LUNA_REPOSITORIES_ROOT` to the host
+directory that should appear as `/repositories`.
+
+For local smoke tests against personal repositories, prefer ignored local
+overrides over committing real repository names. A `docker-compose.override.yml`
+can mount `.luna/local-config/repositories.yaml` over
+`/app/config/repositories.yaml`, while `.env` sets `LUNA_REPOSITORIES_ROOT` to
+the host parent directory.
+
+The queue name and Redis URL come from `config/webhooks.yaml`, with `REDIS_URL`
+available as a runtime override. Jobs use deterministic BullMQ job ids for
+delivery dedupe. Worker concurrency defaults to `8` and can be overridden in
+config or with `webhook-worker --concurrency <n>`.
+
+Webhook jobs retry transient execution failures with BullMQ attempts and
+exponential backoff. Permanent failures such as invalid job data or no matching
+route are marked unrecoverable so they do not retry repeatedly.
+
+Unsigned example payloads live under `examples/webhooks/`. For local smoke
+tests, compute signatures with the same secret configured in
+`.luna/auth/luna.auth.json`; do not disable verification.
+
+For Plane, enable the Work items event in Plane and use
+`/webhooks/plane`. The bundled config only enqueues implementation runs when the
+work item is moved to `In Progress`; other activities return `200` with an
+ignored result so Plane delivery retries are not triggered.
+
+```bash
+curl -X POST http://127.0.0.1:4012/webhooks/github \
+  -H "content-type: application/json" \
+  -H "X-GitHub-Event: pull_request" \
+  -H "X-GitHub-Delivery: local-delivery-1" \
+  -H "X-Hub-Signature-256: sha256=<computed>" \
+  --data @examples/webhooks/github-pull-request-opened.json
+```
+
+```bash
+curl -X POST http://127.0.0.1:4012/webhooks/plane \
+  -H "content-type: application/json" \
+  -H "X-Plane-Event: issue" \
+  -H "X-Plane-Delivery: local-delivery-2" \
+  -H "X-Plane-Signature: <computed>" \
+  --data @examples/webhooks/plane-issue-state-updated.json
+```
 
 ## Durability Rules
 

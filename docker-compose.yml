@@ -1,0 +1,62 @@
+name: luna-webhooks
+
+x-luna-app: &luna-app
+  build:
+    context: .
+  image: luna-webhooks:local
+  init: true
+  environment:
+    LUNA_CONFIG_ROOT: /app/config
+    LUNA_AUTH_ROOT: /app/.luna/auth
+    REDIS_URL: redis://redis:6379
+    GH_CONFIG_DIR: /app/.luna/auth/gh
+    GH_PROMPT_DISABLED: "1"
+    GIT_CONFIG_GLOBAL: /app/.luna/auth/git/config
+    HOME: /home/node
+  volumes:
+    # Keep local code and config from drifting when developing the webhook stack.
+    # Run `npm run build` before restarting app services after TypeScript edits.
+    - ./dist:/app/dist:ro
+    - ./config:/app/config:ro
+    - ./.runs:/app/.runs
+    - type: bind
+      source: ${LUNA_AUTH_ROOT:-./.luna/auth}
+      target: /app/.luna/auth
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ${LUNA_REPOSITORIES_ROOT:-./repositories}
+      target: /repositories
+  depends_on:
+    runtime-permissions:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+
+services:
+  runtime-permissions:
+    build:
+      context: .
+    image: luna-webhooks:local
+    command: ["sh", "-c", "mkdir -p /app/.runs && chmod 0777 /app/.runs"]
+    user: "0:0"
+    volumes:
+      - ./.runs:/app/.runs
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  webhook-server:
+    <<: *luna-app
+    command: ["node", "dist/src/cli.js", "webhook-server", "--host", "0.0.0.0"]
+    ports:
+      - "4012:4012"
+
+  webhook-worker:
+    <<: *luna-app
+    command: ["node", "dist/src/cli.js", "webhook-worker"]

@@ -31,7 +31,7 @@ Default rules:
 2. GitHub PR selected/opened/synchronized/reopened events to
    `workflow:code-review`.
 3. Jira selected issues to `workflow:implementation`.
-4. Plane selected issues to `workflow:implementation`.
+4. Plane selected/create/update issues to `workflow:implementation`.
 
 Rules are JSONata expressions evaluated over `{ invocation }`. Do not route
 with model judgment.
@@ -54,6 +54,15 @@ Important fields:
 
 Repository hints from invocations are matched against this config. Provider
 payloads are not authoritative config.
+
+When running with Docker Compose, set repository `path` values to container
+paths under `/repositories`, for example `/repositories/repo`. The host parent
+directory is mounted with `LUNA_REPOSITORIES_ROOT`.
+
+For local-only tests with real repositories, keep this committed file generic.
+Use ignored local overrides instead: `docker-compose.override.yml` can mount
+`.luna/local-config/repositories.yaml` over `/app/config/repositories.yaml`,
+and `.env` can point `LUNA_REPOSITORIES_ROOT` at the host repositories parent.
 
 ## `models.yaml`
 
@@ -134,7 +143,8 @@ Fields:
 - optional `repository_hint` field mapping.
 - optional acceptance criteria field mapping.
 
-Jira credentials are stored in `luna.auth.json` under the active config root.
+Jira credentials are stored in `.luna/auth/luna.auth.json` under the Luna auth
+root.
 
 ## `plane.yaml`
 
@@ -146,21 +156,95 @@ Fields:
 - `base_url`
 - optional repository hint label mapping.
 
-Plane API keys are stored in `luna.auth.json` under the active config root.
+Plane API keys are stored in `.luna/auth/luna.auth.json` under the Luna auth
+root.
+
+## `webhooks.yaml`
+
+Configures generic webhook ingress, queueing, and worker defaults.
+
+```yaml
+version: "2026-06"
+server:
+  host: "127.0.0.1"
+  port: 4012
+  body_limit_bytes: 1048576
+queue:
+  name: "luna-webhooks"
+  redis_url: "redis://127.0.0.1:6379"
+  dedupe_ttl_seconds: 604800
+  remove_on_complete:
+    age_seconds: 86400
+    count: 1000
+  remove_on_fail: false
+worker:
+  concurrency: 8
+providers:
+  github:
+    enabled: true
+    secret_ref: "providers.webhooks.github.secret"
+  plane:
+    enabled: true
+    secret_ref: "providers.webhooks.plane.secret"
+    config:
+      issue_state_allowlist:
+        - "In Progress"
+```
+
+`queue.name` must be BullMQ-safe and must not contain `:`. `REDIS_URL` can
+override `queue.redis_url` at process startup. Worker concurrency defaults to
+`8`; use `webhook-worker --concurrency <n>` for a process-local override.
+
+Provider-specific options live under each provider's `config` object. Plane's
+Work items webhook event can send create, update, delete, cycle, and module
+changes. `config.issue_state_allowlist` keeps Luna from starting implementation
+runs until a Plane state-change activity reports a matching `new_value`. With
+the bundled config, work items are ignored until they are moved to `In Progress`.
+
+The bundled `docker-compose.yml` uses that override to point webhook processes at the
+Redis service with `REDIS_URL=redis://redis:6379`. It keeps `LUNA_CONFIG_ROOT`
+at `/app/config`, sets `LUNA_AUTH_ROOT=/app/.luna/auth`, mounts `./config`
+read-only, and expects Luna-owned auth at `/app/.luna/auth/luna.auth.json`.
+
+`dedupe_ttl_seconds` is reserved for future explicit BullMQ deduplication. The
+current MVP dedupes repeated deliveries with deterministic BullMQ job ids and
+retains completed jobs according to `remove_on_complete`.
 
 ## Secrets
 
 Do not commit secrets.
 
 - Pi model auth is created by `npx @earendil-works/pi-ai login openai-codex`
-  and stored by Pi, normally under `~/.config/pi-ai/auth.json`.
-- Jira and Plane provider auth live in `luna.auth.json` under the active config
-  root.
-- GitHub provider auth uses `gh`; Luna does not define `github.yaml` or GitHub
-  entries in `luna.auth.json`.
+  and stored for Luna under `.luna/auth/pi-ai/auth.json`.
+- Jira and Plane provider auth live in `.luna/auth/luna.auth.json`.
+- GitHub provider auth uses `gh` with `GH_CONFIG_DIR` under `.luna/auth/gh`;
+  Luna does not define `github.yaml` or GitHub entries in `luna.auth.json`.
+- Git commit identity lives in `.luna/auth/git/config` and is mounted into
+  containers with `GIT_CONFIG_GLOBAL`.
+
+When running with Compose, `${LUNA_AUTH_ROOT:-./.luna/auth}` is mounted at
+`/app/.luna/auth` and used by Luna, Pi, GitHub CLI, Git, and SSH.
+
+Webhook provider signing secrets are separate from provider API auth. They use
+the `providers.webhooks` namespace in `.luna/auth/luna.auth.json` and are
+resolved through the `secret_ref` fields in `config/webhooks.yaml`:
+
+```json
+{
+  "providers": {
+    "webhooks": {
+      "github": { "secret": "..." },
+      "plane": { "secret": "..." }
+    }
+  }
+}
+```
 
 ## Config Loading
 
 The CLI resolves config root from `LUNA_CONFIG_ROOT` or the default config
 location. Runtime composition validates backend selections and JSON options.
 Provider modules validate only their own provider config/auth slices.
+
+`LUNA_AUTH_ROOT` resolves the single auth root. Relative values resolve from
+the project root. The default is `.luna/auth`.

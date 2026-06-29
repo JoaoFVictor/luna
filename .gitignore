@@ -8,6 +8,7 @@ build/
 
 # Local runtime artifacts
 .runs/
+repositories/
 docs/*/
 *.log
 
@@ -15,6 +16,7 @@ docs/*/
 .env
 .env.*
 !.env.example
+docker-compose.override.yml
 
 # Coverage and caches
 coverage/
@@ -30,4 +32,30 @@ Thumbs.db
 
 auth.json
 luna.auth.json
-.luna
+
+# Local auth root. Only documentation and redacted examples are tracked.
+.luna/*
+!.luna/auth/
+
+.luna/auth/*
+!.luna/auth/README.md
+!.luna/auth/luna.auth.example.json
+
+!.luna/auth/pi-ai/
+.luna/auth/pi-ai/*
+!.luna/auth/pi-ai/auth.example.json
+
+!.luna/auth/gh/
+.luna/auth/gh/*
+!.luna/auth/gh/hosts.example.yml
+
+!.luna/auth/ssh/
+.luna/auth/ssh/*
+!.luna/auth/ssh/config.example
+
+!.luna/auth/git/
+.luna/auth/git/*
+!.luna/auth/git/config.example
+
+# Local-only config overrides for real repositories or machine-specific smoke tests.
+.luna/local-config/

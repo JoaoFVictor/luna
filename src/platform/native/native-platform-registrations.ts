@@ -10,6 +10,11 @@ import {
 import type { CapabilityManifest } from "../../core/capabilities/manifest.js";
 import type { TaskProviderBuiltIns } from "../../providers/built-ins.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
+import type { WebhookProviderAdapterFactory } from "../../webhooks/contracts.js";
+import {
+  defineWebhookProviderAdapterFactories,
+  type WebhookProviderRegistry
+} from "../../webhooks/provider-registry.js";
 import type {
   ResumeWorkflowInput,
   RunWorkflowInput,
@@ -42,6 +47,7 @@ export type NativeLunaPlatformRegistrations = {
   readonly taskProviderBuiltIns?: Readonly<Record<string, TaskProviderBuiltIns>>;
   readonly patternExecutors?: Readonly<Record<string, WorkflowPatternExecutor>>;
   readonly changeRequestProviderFactories: readonly ChangeRequestProviderFactory[];
+  readonly webhookProviderRegistry: WebhookProviderRegistry<WebhookProviderAdapterFactory>;
   readonly capabilityRegistry: CapabilityRegistry;
   readonly capabilityManifests: readonly CapabilityManifest[];
 };
@@ -96,6 +102,9 @@ export function createNativeLunaPlatformRegistrations({
     ),
     changeRequestProviderFactories: Object.freeze(
       plugins.flatMap((plugin) => plugin.changeRequestProviderFactories ?? [])
+    ),
+    webhookProviderRegistry: defineWebhookProviderAdapterFactories(
+      plugins.flatMap((plugin) => plugin.webhookAdapterFactories ?? [])
     ),
     capabilityRegistry:
       baseCapabilityManifests === officialCapabilityManifests &&

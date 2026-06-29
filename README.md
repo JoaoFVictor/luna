@@ -93,17 +93,27 @@ Install dependencies:
 npm install
 ```
 
-Authenticate the Pi OpenAI Codex provider:
+Prepare Pi OpenAI Codex provider auth in the Luna auth root:
 
 ```bash
-npx @earendil-works/pi-ai login openai-codex
+mkdir -p .luna/auth/pi-ai
+# create .luna/auth/pi-ai/auth.json from .luna/auth/pi-ai/auth.example.json
 ```
 
 For GitHub PR review, authenticate `gh`:
 
 ```bash
-gh auth status
+GH_CONFIG_DIR=.luna/auth/gh gh auth login
+GH_CONFIG_DIR=.luna/auth/gh gh auth status
 ```
+
+Luna uses one auth root. By default it is `./.luna/auth`; override it with
+`LUNA_AUTH_ROOT=/path/to/auth-root`. Luna-owned provider credentials and
+webhook signing secrets live in `.luna/auth/luna.auth.json`. Pi credentials
+live in `.luna/auth/pi-ai/auth.json`. GitHub CLI auth lives in
+`.luna/auth/gh`. SSH config and keys for repository remotes live in
+`.luna/auth/ssh`. Git commit identity lives in `.luna/auth/git/config`.
+Redacted examples are committed under `.luna/auth/`.
 
 Configure a repository in `config/repositories.yaml`:
 
@@ -113,7 +123,7 @@ repositories:
     provider: github
     owner: org
     name: repo
-    path: /path/to/local/repo
+    path: /repositories/repo
     remote: origin
     expected_remote_urls:
       - git@github.com:org/repo.git
@@ -147,6 +157,61 @@ Resume a human interrupt:
 ```bash
 LUNA_CONFIG_ROOT=config npm run dev -- resume --target workflow:implementation --thread <run-id> --checkpoint <checkpoint-id> --interrupt <interrupt-id> --decision '{"approved":true}'
 ```
+
+Run webhook ingress locally:
+
+```bash
+redis-server
+npm run build
+node dist/src/cli.js webhook-server
+node dist/src/cli.js webhook-worker
+```
+
+Or run the webhook API, worker, and Redis with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The Compose setup mounts `${LUNA_AUTH_ROOT:-./.luna/auth}` at
+`/app/.luna/auth` and `${LUNA_REPOSITORIES_ROOT:-./repositories}` at
+`/repositories`. Configure repository paths in `config/repositories.yaml` with
+container paths such as `/repositories/repo`. Compose exposes
+`/app/.luna/auth/git/config` as Git's global config, so commits made by the
+worker use the same identity file as local CLI runs.
+
+For a machine-local repository smoke test, keep the committed
+`config/repositories.yaml` generic and put real repository wiring in ignored
+local files:
+
+```yaml
+# docker-compose.override.yml
+services:
+  webhook-server:
+    volumes:
+      - ./.luna/local-config/repositories.yaml:/app/config/repositories.yaml:ro
+  webhook-worker:
+    volumes:
+      - ./.luna/local-config/repositories.yaml:/app/config/repositories.yaml:ro
+```
+
+```bash
+# .env
+LUNA_REPOSITORIES_ROOT=/path/to/repositories-parent
+```
+
+Create `.luna/auth/git/config` from the host machine before running trusted
+write workflows in Docker:
+
+```bash
+mkdir -p .luna/auth/git
+git config --global user.name | xargs -I{} git config -f .luna/auth/git/config user.name "{}"
+git config --global user.email | xargs -I{} git config -f .luna/auth/git/config user.email "{}"
+```
+
+Configure signing secrets in `.luna/auth/luna.auth.json` under `providers.webhooks` and
+send signed requests to `POST /webhooks/:provider`. The HTTP process enqueues
+only; the worker routes and executes the workflow asynchronously.
 
 Run artifacts are written under:
 
@@ -211,9 +276,10 @@ skills.
 
 ## Provider And Auth Boundaries
 
-GitHub uses the `gh` CLI. Jira and Plane read provider credentials from
-`luna.auth.json` under the active config root. Pi model auth is separate and
-lives in `~/.config/pi-ai/auth.json`.
+GitHub uses the `gh` CLI with `GH_CONFIG_DIR` under the Luna auth root. Git
+uses `.luna/auth/git/config` for commit identity. Jira, Plane, and webhook
+signing secrets read provider credentials from `.luna/auth/luna.auth.json`.
+Pi model auth lives in `.luna/auth/pi-ai/auth.json`.
 
 Provider code belongs under `src/providers/<provider>/`. Generic core and
 capability code must not validate or import provider-specific auth, config,
