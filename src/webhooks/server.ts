@@ -169,6 +169,51 @@ function parseJsonBody(rawBody: Buffer): unknown {
   }
 }
 
+function textField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function recordField(
+  record: Record<string, unknown>,
+  key: string
+): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isJsonObject(value) ? value : undefined;
+}
+
+function labelNames(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((label) => isJsonObject(label) ? textField(label, "name") : undefined)
+    .filter((label): label is string => label !== undefined);
+}
+
+function webhookBodySummary(body: unknown): Record<string, unknown> {
+  if (!isJsonObject(body)) {
+    return { body_type: Array.isArray(body) ? "array" : typeof body };
+  }
+
+  const data = recordField(body, "data");
+  const issue = recordField(body, "issue");
+  const item = data ?? issue ?? body;
+  const state = recordField(item, "state");
+  const activity = recordField(body, "activity");
+
+  return {
+    event: textField(body, "event"),
+    action: textField(body, "action"),
+    activity_field: activity === undefined ? undefined : textField(activity, "field"),
+    activity_new_value:
+      activity === undefined ? undefined : textField(activity, "new_value"),
+    state: state === undefined ? undefined : textField(state, "name"),
+    labels: labelNames(item.labels)
+  };
+}
+
 function isDisabledConfiguredProvider(
   config: WebhookConfig,
   provider: string
@@ -196,7 +241,7 @@ export async function buildWebhookRuntimeProviderRegistry({
       secretRef: providerConfig.secret_ref
     });
 
-    adapters.push(factory.create({ secret }));
+    adapters.push(factory.create({ secret, config: providerConfig.config }));
   }
 
   return defineWebhookProviderAdapters(adapters);
@@ -321,12 +366,29 @@ export function createWebhookServer(
         body: request.body,
         receivedAt: now().toISOString()
       };
+      deps.logger?.info("Webhook request received", {
+        provider,
+        content_type: request.headers["content-type"],
+        user_agent: request.headers["user-agent"],
+        delivery_id:
+          request.headers["x-github-delivery"] ?? request.headers["x-plane-delivery"],
+        event: request.headers["x-github-event"] ?? request.headers["x-plane-event"],
+        has_signature:
+          request.headers["x-hub-signature-256"] !== undefined ||
+          request.headers["x-plane-signature"] !== undefined,
+        body: webhookBodySummary(request.body)
+      });
 
       try {
         await adapter.verify(input);
         const normalized = await adapter.normalize(input);
 
         if (normalized.kind === "ignored") {
+          deps.logger?.info("Webhook request ignored", {
+            provider,
+            delivery_id: normalized.deliveryId,
+            reason: normalized.reason
+          });
           return {
             status: "ignored",
             provider,
@@ -348,6 +410,11 @@ export function createWebhookServer(
           job
         );
 
+        deps.logger?.info("Webhook request queued", {
+          provider,
+          delivery_id: normalized.deliveryId,
+          job_id: enqueued.jobId
+        });
         reply.code(202);
         return {
           status: "queued",
@@ -357,6 +424,12 @@ export function createWebhookServer(
         };
       } catch (error) {
         const mapped = errorResponse(error);
+        deps.logger?.warn("Webhook request rejected", {
+          provider,
+          status_code: mapped.statusCode,
+          code: mapped.body.code,
+          message: mapped.body.message
+        });
         reply.code(mapped.statusCode);
         return mapped.body;
       }

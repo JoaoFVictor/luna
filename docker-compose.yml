@@ -14,6 +14,9 @@ x-luna-app: &luna-app
     GIT_CONFIG_GLOBAL: /app/.luna/auth/git/config
     HOME: /home/node
   volumes:
+    # Keep local code and config from drifting when developing the webhook stack.
+    # Run `npm run build` before restarting app services after TypeScript edits.
+    - ./dist:/app/dist:ro
     - ./config:/app/config:ro
     - ./.runs:/app/.runs
     - type: bind

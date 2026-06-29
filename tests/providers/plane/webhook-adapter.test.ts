@@ -241,7 +241,8 @@ describe("Plane webhook adapter normalization", () => {
           plane: {
             instance_id: "acme",
             workspace_slug: "acme",
-            project_id: "PROJ",
+            project_identifier: "PROJ",
+            issue_identifier: 42,
             issue_id: "issue-1",
             sequence_id: 42,
             description: "Wire webhook ingress.",
@@ -253,6 +254,156 @@ describe("Plane webhook adapter normalization", () => {
           raw: payload
         }
       }
+    });
+  });
+
+  it("accepts Plane's real webhook work item payload without a URL", () => {
+    const payload = documentedIssuePayload("updated", {
+      activity: {
+        field: "state",
+        old_value: "Todo",
+        new_value: "In Progress"
+      },
+      data: {
+        id: "issue-1",
+        name: "Implement webhooks",
+        project_id: "project-1",
+        sequence_id: 42,
+        description_html: "<p>Wire webhook ingress.</p>",
+        state: { name: "In Progress" },
+        priority: "high",
+        labels: [{ name: "github:org/repo" }],
+        workspace_detail: {
+          slug: "acme"
+        },
+        project_detail: {
+          identifier: "PROJ"
+        }
+      }
+    });
+
+    const result = normalizePlaneWebhook(input({ body: payload }), {
+      issue_state_allowlist: ["In Progress"]
+    });
+
+    expect(result).toMatchObject({
+      kind: "accepted",
+      deliveryId: "delivery-1",
+      invocation: {
+        action: "update",
+        subject: {
+          type: "plane_issue",
+          id: "issue-1",
+          url: "https://app.plane.so/acme/browse/PROJ-42",
+          title: "Implement webhooks"
+        },
+        payload: {
+          plane: {
+            instance_id: "acme",
+            workspace_slug: "acme",
+            project_identifier: "PROJ",
+            issue_identifier: 42,
+            issue_id: "issue-1",
+            sequence_id: 42,
+            status: "In Progress",
+            labels: ["github:org/repo"]
+          }
+        }
+      }
+    });
+  });
+
+  it("accepts the Plane state-updated smoke fixture with the configured allowlist", async () => {
+    const payload = JSON.parse(
+      await readFile(
+        path.join(process.cwd(), "examples/webhooks/plane-issue-state-updated.json"),
+        "utf8"
+      )
+    ) as unknown;
+
+    expect(
+      normalizePlaneWebhook(input({ body: payload }), {
+        issue_state_allowlist: ["In Progress"]
+      })
+    ).toMatchObject({
+      kind: "accepted",
+      invocation: {
+        action: "update",
+        subject: {
+          url: "https://app.plane.so/acme/projects/proj/issues/issue-1"
+        },
+        payload: {
+          plane: expect.objectContaining({
+            status: "In Progress"
+          })
+        }
+      }
+    });
+  });
+
+  it("ignores Plane's duplicate state_id update when state allowlist is configured", () => {
+    const payload = documentedIssuePayload("updated", {
+      activity: {
+        field: "state_id",
+        old_value: "state-todo-id",
+        new_value: "state-in-progress-id"
+      },
+      data: {
+        id: "issue-1",
+        url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
+        name: "Implement webhooks",
+        project_id: "project-1",
+        sequence_id: 42,
+        state: { name: "In Progress" },
+        priority: "high",
+        labels: [{ name: "github:org/repo" }],
+        workspace_detail: {
+          slug: "acme"
+        }
+      }
+    });
+
+    expect(
+      normalizePlaneWebhook(input({ body: payload }), {
+        issue_state_allowlist: ["In Progress"]
+      })
+    ).toEqual({
+      kind: "ignored",
+      deliveryId: "delivery-1",
+      reason: "plane_issue_state_ignored"
+    });
+  });
+
+  it("ignores issue updates when activity new_value is outside the configured state allowlist", () => {
+    const payload = documentedIssuePayload("updated", {
+      activity: {
+        field: "state",
+        old_value: "In Progress",
+        new_value: "Todo"
+      },
+      data: {
+        id: "issue-1",
+        url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
+        name: "Implement webhooks",
+        project_id: "project-1",
+        sequence_id: 42,
+        state: { name: "In Progress" },
+        priority: "high",
+        labels: [{ name: "github:org/repo" }],
+        workspace_detail: {
+          slug: "acme"
+        }
+      }
+    });
+
+    expect(
+      normalizePlaneWebhook(input({ body: payload }), {
+        issue_state_allowlist: ["In Progress"]
+      })
+    ).toEqual({
+      kind: "ignored",
+      deliveryId: "delivery-1",
+      reason: "plane_issue_state_ignored"
     });
   });
 
@@ -283,6 +434,79 @@ describe("Plane webhook adapter normalization", () => {
             issue_id: "issue-1"
           }),
           raw: issuePayload("update")
+        }
+      }
+    });
+  });
+
+  it("normalizes Plane's past-tense issue actions", () => {
+    expect(
+      normalizePlaneWebhook(input({ body: issuePayload("created") }))
+    ).toMatchObject({
+      kind: "accepted",
+      invocation: {
+        action: "create"
+      }
+    });
+    expect(
+      normalizePlaneWebhook(input({ body: issuePayload("updated") }))
+    ).toMatchObject({
+      kind: "accepted",
+      invocation: {
+        action: "update"
+      }
+    });
+    expect(normalizePlaneWebhook(input({ body: issuePayload("deleted") }))).toEqual({
+      kind: "ignored",
+      deliveryId: "delivery-1",
+      reason: "plane_issue_delete_ignored"
+    });
+  });
+
+  it("ignores issue updates outside the configured state allowlist", () => {
+    expect(
+      normalizePlaneWebhook(input({ body: issuePayload("update") }), {
+        issue_state_allowlist: ["In Progress"]
+      })
+    ).toEqual({
+      kind: "ignored",
+      deliveryId: "delivery-1",
+      reason: "plane_issue_state_ignored"
+    });
+  });
+
+  it("accepts issue updates inside the configured state allowlist", () => {
+    const body = issuePayload("update", {
+      activity: {
+        field: "state",
+        old_value: "Backlog",
+        new_value: "In Progress"
+      },
+      issue: {
+        id: "issue-1",
+        url: "https://app.plane.so/acme/projects/proj/issues/issue-1",
+        name: "Implement webhooks",
+        sequence_id: 42,
+        description_stripped: "Wire webhook ingress.",
+        state: { name: "In Progress" },
+        priority: "high",
+        labels: [{ name: "github:org/repo" }]
+      }
+    });
+
+    expect(
+      normalizePlaneWebhook(input({ body }), {
+        issue_state_allowlist: ["In Progress"]
+      })
+    ).toMatchObject({
+      kind: "accepted",
+      deliveryId: "delivery-1",
+      invocation: {
+        action: "update",
+        payload: {
+          plane: expect.objectContaining({
+            status: "In Progress"
+          })
         }
       }
     });
@@ -341,19 +565,6 @@ describe("Plane webhook adapter normalization", () => {
   });
 
   it("rejects issue webhooks missing required implementation subject fields", () => {
-    const missingUrl = captureError(() =>
-      normalizePlaneWebhook(
-        input({
-          body: issuePayload("create", {
-            issue: {
-              id: "issue-1",
-              name: "Implement webhooks",
-              labels: [{ name: "github:org/repo" }]
-            }
-          })
-        })
-      )
-    );
     const missingTitle = captureError(() =>
       normalizePlaneWebhook(
         input({
@@ -368,11 +579,6 @@ describe("Plane webhook adapter normalization", () => {
       )
     );
 
-    expect(missingUrl).toMatchObject({
-      code: "webhook_payload_invalid",
-      statusCode: 400,
-      message: "Plane issue webhook URL is missing"
-    });
     expect(missingTitle).toMatchObject({
       code: "webhook_payload_invalid",
       statusCode: 400,
@@ -391,5 +597,14 @@ describe("Plane webhook adapter factory", () => {
       id: "plane",
       description: "Plane webhook adapter"
     });
+  });
+
+  it("rejects unknown Plane webhook config keys", () => {
+    expect(() =>
+      planeWebhookAdapterFactory.create({
+        secret: "plane-secret",
+        config: { issue_state_alllowlist: ["In Progress"] }
+      })
+    ).toThrow();
   });
 });

@@ -113,11 +113,15 @@ docker compose up --build
 
 This starts Redis, `webhook-server`, and `webhook-worker`. The containers use
 `REDIS_URL=redis://redis:6379`, keep Redis on the internal Compose network,
-expose the HTTP server on host port `4012`, mount `./config` read-only, mount
+expose the HTTP server on host port `4012`, mount `./dist` and `./config`
+read-only, mount
 `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth`, and write run
 artifacts to `./.runs`. The auth root is writable because the Pi runtime can
 refresh OAuth credentials. Compose also prepares `./.runs` before the app
 containers start so the non-root worker can write artifacts.
+
+Run `npm run build` before restarting app services after TypeScript changes so
+the mounted `dist/` matches the mounted configuration.
 
 The Compose file also mounts auth and repository state needed by real runs:
 
@@ -155,6 +159,11 @@ Unsigned example payloads live under `examples/webhooks/`. For local smoke
 tests, compute signatures with the same secret configured in
 `.luna/auth/luna.auth.json`; do not disable verification.
 
+For Plane, enable the Work items event in Plane and use
+`/webhooks/plane`. The bundled config only enqueues implementation runs when the
+work item is moved to `In Progress`; other activities return `200` with an
+ignored result so Plane delivery retries are not triggered.
+
 ```bash
 curl -X POST http://127.0.0.1:4012/webhooks/github \
   -H "content-type: application/json" \
@@ -170,7 +179,7 @@ curl -X POST http://127.0.0.1:4012/webhooks/plane \
   -H "X-Plane-Event: issue" \
   -H "X-Plane-Delivery: local-delivery-2" \
   -H "X-Plane-Signature: <computed>" \
-  --data @examples/webhooks/plane-issue-create.json
+  --data @examples/webhooks/plane-issue-state-updated.json
 ```
 
 ## Durability Rules

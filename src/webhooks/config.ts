@@ -5,7 +5,8 @@ import { loadYamlFile } from "../core/config/loader.js";
 const WebhookProviderConfigSchema = z
   .object({
     enabled: z.boolean(),
-    secret_ref: z.string().min(1)
+    secret_ref: z.string().min(1),
+    config: z.record(z.unknown()).optional()
   })
   .strict();
 

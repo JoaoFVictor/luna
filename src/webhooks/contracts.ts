@@ -27,7 +27,7 @@ export type WebhookProviderAdapter = WebhookProviderRegistration & {
 };
 
 export type WebhookProviderAdapterFactory = WebhookProviderRegistration & {
-  create(args: { secret: string }): WebhookProviderAdapter;
+  create(args: { secret: string; config?: unknown }): WebhookProviderAdapter;
 };
 
 export type WebhookInvocationJob = {

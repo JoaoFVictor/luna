@@ -22,3 +22,8 @@ providers:
   plane:
     enabled: true
     secret_ref: "providers.webhooks.plane.secret"
+    config:
+      # Plane sends all work item changes when the Work items event is enabled.
+      # Keep implementation runs gated to explicit development-ready states.
+      issue_state_allowlist:
+        - "In Progress"

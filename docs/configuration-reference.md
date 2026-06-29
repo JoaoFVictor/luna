@@ -186,11 +186,20 @@ providers:
   plane:
     enabled: true
     secret_ref: "providers.webhooks.plane.secret"
+    config:
+      issue_state_allowlist:
+        - "In Progress"
 ```
 
 `queue.name` must be BullMQ-safe and must not contain `:`. `REDIS_URL` can
 override `queue.redis_url` at process startup. Worker concurrency defaults to
 `8`; use `webhook-worker --concurrency <n>` for a process-local override.
+
+Provider-specific options live under each provider's `config` object. Plane's
+Work items webhook event can send create, update, delete, cycle, and module
+changes. `config.issue_state_allowlist` keeps Luna from starting implementation
+runs until a Plane state-change activity reports a matching `new_value`. With
+the bundled config, work items are ignored until they are moved to `In Progress`.
 
 The bundled `docker-compose.yml` uses that override to point webhook processes at the
 Redis service with `REDIS_URL=redis://redis:6379`. It keeps `LUNA_CONFIG_ROOT`

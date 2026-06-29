@@ -32,6 +32,9 @@ providers:
   plane:
     enabled: true
     secret_ref: "providers.webhooks.plane.secret"
+    config:
+      issue_state_allowlist:
+        - "In Progress"
 `;
 
 describe("webhook config", () => {
@@ -69,7 +72,10 @@ describe("webhook config", () => {
         },
         plane: {
           enabled: true,
-          secret_ref: "providers.webhooks.plane.secret"
+          secret_ref: "providers.webhooks.plane.secret",
+          config: {
+            issue_state_allowlist: ["In Progress"]
+          }
         }
       }
     });

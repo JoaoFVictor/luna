@@ -18,10 +18,29 @@ import {
 const PLANE_WEBHOOK_DESCRIPTION = "Plane webhook adapter";
 const ACCEPTED_ISSUE_ACTIONS = new Set(["create", "update"]);
 
+const PlaneWebhookAdapterConfigSchema = z
+  .object({
+    issue_state_allowlist: z.array(z.string().min(1)).min(1).optional()
+  })
+  .strict();
+
+export type PlaneWebhookAdapterConfig = z.infer<
+  typeof PlaneWebhookAdapterConfigSchema
+>;
+const DEFAULT_PLANE_WEBHOOK_ADAPTER_CONFIG: PlaneWebhookAdapterConfig = {};
+
 const PlaneIssuePayloadSchema = z
   .object({
     event: z.string().min(1).optional(),
     action: z.string().min(1),
+    activity: z
+      .object({
+        field: z.string().min(1).optional(),
+        new_value: z.unknown().optional(),
+        old_value: z.unknown().optional()
+      })
+      .passthrough()
+      .optional(),
     data: z
       .object({
         id: z.string().min(1),
@@ -218,7 +237,8 @@ export function verifyPlaneWebhookSignature(
 }
 
 export function normalizePlaneWebhook(
-  input: WebhookAdapterInput
+  input: WebhookAdapterInput,
+  config: PlaneWebhookAdapterConfig = DEFAULT_PLANE_WEBHOOK_ADAPTER_CONFIG
 ): WebhookNormalizeResult {
   const id = deliveryId(input);
   const event = planeEvent(input);
@@ -238,15 +258,15 @@ export function normalizePlaneWebhook(
 
   const payload = parseIssuePayload(input.body);
   const issue = issueFrom(payload);
+  const issueState = nameOf(issue.state);
+  if (!issueStateTransitionAllowed(payload, config.issue_state_allowlist)) {
+    return { kind: "ignored", deliveryId: id, reason: "plane_issue_state_ignored" };
+  }
+
   const labels = labelNames(issue.labels);
   const repositoryHint = repositoryHintFromLabels(labels);
   if (repositoryHint === undefined) {
     throw webhookPayloadInvalid("Plane issue webhook repository hint is missing");
-  }
-
-  const issueUrl = issue.url;
-  if (issueUrl === undefined) {
-    throw webhookPayloadInvalid("Plane issue webhook URL is missing");
   }
 
   const issueTitle = issue.name ?? issue.title;
@@ -255,7 +275,7 @@ export function normalizePlaneWebhook(
   }
 
   const workspace = workspaceSlugOrId(payload);
-  const project = projectSlugOrId(payload);
+  const locator = issueLocator(payload, issue, workspace);
   const invocation = InvocationSchema.parse({
     version: "2026-06",
     source: "plane",
@@ -265,20 +285,20 @@ export function normalizePlaneWebhook(
     subject: {
       type: "plane_issue",
       id: issue.id,
-      url: issueUrl,
+      url: locator.url,
       title: issueTitle
     },
     payload: {
       plane: {
         instance_id: workspace,
         workspace_slug: workspace,
-        project_id: project,
+        ...locator.payload,
         issue_id: issue.id,
         ...(issue.sequence_id === undefined ? {} : { sequence_id: issue.sequence_id }),
         description: compactText(
           issue.description_stripped ?? issue.description_html ?? issue.description
         ),
-        status: nameOf(issue.state),
+        status: issueState,
         priority: issue.priority ?? "",
         labels,
         repository_hint_source: repositoryHint.source
@@ -288,6 +308,51 @@ export function normalizePlaneWebhook(
   });
 
   return { kind: "accepted", deliveryId: id, invocation };
+}
+
+function issueStateTransitionAllowed(
+  payload: PlaneIssuePayload,
+  allowlist: string[] | undefined
+): boolean {
+  if (allowlist === undefined) {
+    return true;
+  }
+
+  if (payload.activity?.field !== "state") {
+    return false;
+  }
+
+  const newValue = nameOf(payload.activity.new_value).trim();
+  return allowlist.some((allowed) => allowed.trim() === newValue);
+}
+
+function issueLocator(
+  payload: PlaneIssuePayload,
+  issue: NonNullable<PlaneIssuePayload["data"]>,
+  workspace: string
+): {
+  url: string;
+  payload:
+    | { project_id: string }
+    | { project_identifier: string; issue_identifier: number };
+} {
+  const projectIdentifier = payload.data?.project_detail?.identifier;
+  if (projectIdentifier !== undefined && issue.sequence_id !== undefined) {
+    const key = `${projectIdentifier}-${issue.sequence_id}`;
+    return {
+      url: issue.url ?? `https://app.plane.so/${encodeURIComponent(workspace)}/browse/${encodeURIComponent(key)}`,
+      payload: {
+        project_identifier: projectIdentifier,
+        issue_identifier: issue.sequence_id
+      }
+    };
+  }
+
+  const project = projectSlugOrId(payload);
+  return {
+    url: issue.url ?? `https://app.plane.so/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}/issues/${encodeURIComponent(issue.id)}`,
+    payload: { project_id: project }
+  };
 }
 
 function issueAction(body: unknown): string {
@@ -302,7 +367,20 @@ function issueAction(body: unknown): string {
     throw webhookPayloadInvalid("Plane issue webhook payload is invalid", parsed.error);
   }
 
-  return parsed.data.action;
+  return normalizeIssueAction(parsed.data.action);
+}
+
+function normalizeIssueAction(action: string): string {
+  switch (action) {
+    case "created":
+      return "create";
+    case "updated":
+      return "update";
+    case "deleted":
+      return "delete";
+    default:
+      return action;
+  }
 }
 
 function parseIssuePayload(body: unknown): PlaneIssuePayload {
@@ -357,7 +435,10 @@ function projectSlugOrId(payload: PlaneIssuePayload): string {
   return value;
 }
 
-export function createPlaneWebhookAdapter(secret: string): WebhookProviderAdapter {
+export function createPlaneWebhookAdapter(
+  secret: string,
+  config: PlaneWebhookAdapterConfig = DEFAULT_PLANE_WEBHOOK_ADAPTER_CONFIG
+): WebhookProviderAdapter {
   return {
     id: "plane",
     description: PLANE_WEBHOOK_DESCRIPTION,
@@ -365,7 +446,7 @@ export function createPlaneWebhookAdapter(secret: string): WebhookProviderAdapte
       verifyPlaneWebhookSignature(input, secret);
     },
     normalize(input) {
-      return normalizePlaneWebhook(input);
+      return normalizePlaneWebhook(input, config);
     }
   };
 }
@@ -373,7 +454,8 @@ export function createPlaneWebhookAdapter(secret: string): WebhookProviderAdapte
 export const planeWebhookAdapterFactory: WebhookProviderAdapterFactory = {
   id: "plane",
   description: PLANE_WEBHOOK_DESCRIPTION,
-  create({ secret }) {
-    return createPlaneWebhookAdapter(secret);
+  create({ secret, config }) {
+    const planeConfig = PlaneWebhookAdapterConfigSchema.parse(config ?? {});
+    return createPlaneWebhookAdapter(secret, planeConfig);
   }
 };
