@@ -149,6 +149,60 @@ describe("strict workflow definition validation", () => {
     expect(agentDigestB.revision).not.toBe(agentDigestA.revision);
   });
 
+  it("loads workflow-declared runtime config metadata and schema content", async () => {
+    const root = await copyWorkflowFixture("minimum");
+    await writeFile(
+      path.join(root, "minimum", "config.schema.json"),
+      JSON.stringify({
+        type: "object",
+        additionalProperties: false,
+        required: ["feature"],
+        properties: {
+          feature: {
+            type: "object",
+            additionalProperties: false,
+            required: ["enabled"],
+            properties: {
+              enabled: { type: "boolean" }
+            }
+          }
+        }
+      }),
+      "utf8"
+    );
+    await patchWorkflow(root, "minimum", (yaml) =>
+      yaml.replace(
+        "output_schema: output.schema.json\n",
+        "output_schema: output.schema.json\nconfig:\n  file: minimum.yaml\n  schema: config.schema.json\n"
+      )
+    );
+
+    const definition = await loadWorkflowDefinition(root, "minimum", {
+      capabilityRegistry: registry(),
+      digestResolver: digestResolver()
+    });
+
+    expect(definition.config).toEqual({
+      file: "minimum.yaml",
+      schema: "config.schema.json",
+      schema_content: {
+        type: "object",
+        additionalProperties: false,
+        required: ["feature"],
+        properties: {
+          feature: {
+            type: "object",
+            additionalProperties: false,
+            required: ["enabled"],
+            properties: {
+              enabled: { type: "boolean" }
+            }
+          }
+        }
+      }
+    });
+  });
+
   it("rejects missing declared capabilities with YAML paths", async () => {
     const capabilityRoot = await copyWorkflowFixture("minimum");
     await patchWorkflow(capabilityRoot, "minimum", (yaml) =>

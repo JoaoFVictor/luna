@@ -86,6 +86,42 @@ and runs the generic Luna workflow entrypoint. URL adapters omit `target`
 unless the CLI override is used; workflow selection comes from
 `--target workflow:<id>`, invocation `target`, or `config/routing.yaml`.
 
+By default the workflow only writes local artifacts. To publish the review back
+to the PR, enable `config/code-review.yaml`:
+
+```yaml
+code_review:
+  pull_request_review:
+    enabled: true
+    provider: github
+    event: request_changes
+    inline_comments: true
+```
+
+Inline comments are created only for validated findings whose evidence maps to
+right-side lines in the captured PR diff. Findings that cannot be placed inline
+are appended to the review body.
+
+The workflow remains read-only for the local repository: agents cannot edit the
+worktree and no commit/push is performed. Publishing is still an external
+GitHub side effect, so it is guarded by the `pull-request-review.publish`
+capability policy and requires working `gh` auth.
+
+Review event behavior:
+
+- `comment`: publish a non-blocking PR review comment.
+- `request_changes`: publish a formal review requesting changes on the PR.
+- `approve`: publish an approval review.
+
+Capability/provider split:
+
+- `workflows/code-review/workflow.yaml` decides when to call
+  `pull-request-review.publish` and what state to pass.
+- `src/capabilities/pull-request-review/` validates the provider-neutral input
+  and derives inline/fallback comments from validated findings.
+- `src/providers/github/pull-request-review/` performs the GitHub API call
+  through the shared `gh` helper.
+
 ## 7. Read The Result
 
 Artifacts are written under:
@@ -103,6 +139,7 @@ Important files:
 - `review-plan.json`: planner agent output.
 - `code-review-findings.json`: validated review findings.
 - `acceptance-review.json`: acceptance agent output.
+- `pull-request-review.json`: PR review publication result when enabled.
 
 ## Troubleshooting
 

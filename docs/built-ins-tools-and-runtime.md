@@ -58,10 +58,17 @@ Common built-in families:
 - `local-exec.command.read` and `local-exec.command.write`
 - `git.status`, `git.commit`, `git.push_branch`
 - `change-request.create`
+- `pull-request-review.publish`
 - `repository-change.*` lifecycle steps
 
 For the exact current set, inspect `src/capabilities/*/manifest.ts` and
 `src/capabilities/registry.ts`.
+
+Provider-backed publishing built-ins still live in provider-neutral
+capabilities. `pull-request-review.publish` turns validated findings and PR
+diff context into a formal review request; the selected provider port owns the
+external API call. `change-request.create` follows the same split for change
+requests.
 
 ## Local Tools
 

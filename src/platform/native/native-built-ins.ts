@@ -4,6 +4,10 @@ import {
   createChangeRequestCreateBuiltIn
 } from "../../capabilities/change-request/built-ins.js";
 import {
+  createPullRequestReviewPublishBuiltIn,
+  pullRequestReviewPortsFromBuiltInOptions
+} from "../../capabilities/pull-request-review/built-ins.js";
+import {
   gitPortsFromBuiltInOptions
 } from "../../capabilities/git/shared.js";
 import { createGitCommitBuiltIn } from "../../capabilities/git/commit.js";
@@ -103,6 +107,10 @@ export const gitPushBranchBuiltIn = createGitPushBranchBuiltIn(
 export const changeRequestCreateBuiltIn = createChangeRequestCreateBuiltIn(
   changeRequestPortsFromBuiltInOptions
 );
+export const pullRequestReviewPublishBuiltIn =
+  createPullRequestReviewPublishBuiltIn(
+    pullRequestReviewPortsFromBuiltInOptions
+  );
 
 export function createNativeProviderBuiltIns({
   workflowBuiltIns = defaultWorkflowBuiltIns,
@@ -134,6 +142,7 @@ export function createNativeProviderBuiltIns({
       gitCommitBuiltIn,
       gitPushBranchBuiltIn,
       changeRequestCreateBuiltIn,
+      pullRequestReviewPublishBuiltIn,
       prepareImplementationWorktreeBuiltIn,
       collectTaskContext,
       runValidationCommandsBuiltIn,

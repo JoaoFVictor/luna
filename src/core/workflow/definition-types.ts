@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { WorkflowSubagentPolicy } from "../agents/subagent-policy.js";
+import type { JsonSchemaLike } from "../capabilities/json-schema-types.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import type { WorkflowExpression } from "./expression.js";
 import type { DefinitionDigestResolver } from "./definition-digests.js";
@@ -13,6 +14,12 @@ export type WorkflowExecution = {
 
 export type WorkflowRequirements = {
   repository: boolean;
+};
+
+export type WorkflowRuntimeConfig = {
+  file: string;
+  schema: string;
+  schema_content: JsonSchemaLike;
 };
 
 export type WorkflowObservabilityConfig = {
@@ -33,6 +40,10 @@ export type WorkflowMetadata = {
   mode?: "read_only" | "trusted_local_write";
   input_schema: string;
   output_schema: string;
+  config?: {
+    file: string;
+    schema: string;
+  };
   capabilities?: string[];
   execution?: WorkflowExecution;
   observability?: WorkflowObservabilityConfig;
@@ -147,6 +158,7 @@ export type WorkflowDefinition = {
   output_schema: string;
   input_schema_content: unknown;
   output_schema_content: unknown;
+  config?: WorkflowRuntimeConfig;
   capabilities: string[];
   graph: WorkflowGraph;
   revision: string;

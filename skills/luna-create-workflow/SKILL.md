@@ -15,6 +15,7 @@ workflows/<workflow-id>/
   workflow.yaml
   input.schema.json
   output.schema.json
+  config.schema.json   # optional when workflow.yaml declares config
 ```
 
 Rules:
@@ -26,6 +27,11 @@ Rules:
   `reports.final_report`.
 - Unknown fields fail.
 - Schema paths must stay inside the workflow directory.
+- Runtime config is optional and workflow-declared:
+  `config.file` points at a YAML file under `config/`, `config.schema` points
+  at `workflows/<workflow-id>/config.schema.json`, and values are available as
+  `$.config`. Full contract: `docs/workflow-runtime-config.md`.
+- Do not add workflow-specific TypeScript loaders or CLI commands for config.
 
 ## Node Types
 

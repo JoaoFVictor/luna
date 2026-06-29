@@ -92,6 +92,62 @@ Defines MCP server policy:
 The current bundled config has `mcp_servers: []`. MCP policy can be resolved,
 but the current Pi runtime does not execute MCP tools.
 
+## Workflow Runtime Config
+
+Workflows that need runtime config declare it in `workflows/<id>/workflow.yaml`:
+
+```yaml
+config:
+  file: <workflow-id>.yaml
+  schema: config.schema.json
+```
+
+The native runtime loads `config/<file>`, validates it with the declared
+workflow schema, and exposes it as `$.config`. Workflows without this block
+receive an empty config object. The runtime does not special case workflow ids.
+See [Workflow runtime config](workflow-runtime-config.md) for the full contract,
+examples, ownership rules, and anti-patterns.
+
+The bundled workflows currently use:
+
+| Workflow | Config file | Schema |
+| --- | --- | --- |
+| `code-review` | `config/code-review.yaml` | `workflows/code-review/config.schema.json` |
+| `implementation` | `config/implementation.yaml` | `workflows/implementation/config.schema.json` |
+
+## `code-review.yaml`
+
+Controls optional pull request review publication for the read-only
+`code-review` workflow.
+
+Fields:
+
+- `pull_request_review.enabled`: whether to publish the validated review back
+  to the PR. The default committed config disables publishing.
+- `pull_request_review.provider`: provider id. The bundled provider is
+  `github`.
+- `pull_request_review.event`: formal PR review event: `comment`,
+  `request_changes`, or `approve`.
+- `pull_request_review.inline_comments`: whether Luna should try to place
+  validated findings as inline PR comments.
+
+Example:
+
+```yaml
+code_review:
+  pull_request_review:
+    enabled: true
+    provider: github
+    event: request_changes
+    inline_comments: true
+```
+
+Inline comments are created only for validated findings whose evidence maps to
+right-side lines in the captured PR diff. Findings that cannot be placed inline
+are appended to the review body. The side effect is performed by the
+provider-neutral `pull-request-review.publish` built-in and the selected
+provider port; GitHub publishing uses `gh` auth under `.luna/auth/gh`.
+
 ## `implementation.yaml`
 
 Controls trusted repository-write publishing gates.

@@ -17,6 +17,7 @@ const TOP_LEVEL_FIELDS = new Set([
   "mode",
   "input_schema",
   "output_schema",
+  "config",
   "capabilities",
   "nodes",
   "execution",

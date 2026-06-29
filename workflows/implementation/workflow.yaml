@@ -6,6 +6,9 @@ type: workflow
 mode: trusted_local_write
 input_schema: input.schema.json
 output_schema: output.schema.json
+config:
+  file: implementation.yaml
+  schema: config.schema.json
 capabilities:
   - runtime
   - repository-change

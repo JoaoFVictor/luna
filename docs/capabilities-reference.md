@@ -48,6 +48,7 @@ uses: reports.final_report
 | `repository-diff` | Read-only repository diff/context collection. |
 | `findings` | Evidence validation for code review findings. |
 | `reports` | Generic final report generation. |
+| `pull-request-review` | Pull request review publication with inline comments. |
 | `quality-gates` | Gated agent loop pattern and automated gates. |
 | `validation` | Validation command execution. |
 | `repository-change` | Trusted write worktree, validation, diff, commit, push lifecycle helpers. |
@@ -69,6 +70,7 @@ Runtime, context, and reports:
 - `repository-diff.collect_context`
 - `findings.validate_evidence`
 - `reports.final_report`
+- `pull-request-review.publish`
 - `task-context.collect`
 - `task-context.final_report`
 
@@ -97,10 +99,16 @@ Host execution and publishing side effects:
 - `git.commit`
 - `git.push_branch`
 - `change-request.create`
+- `pull-request-review.publish`
 
 Provider-specific task context behavior is selected by `invocation.source`
 inside provider/native composition; it does not add separate public built-in ids
 for each provider.
+
+`pull-request-review.publish` is provider-neutral. It receives the PR identity,
+review event, body, validated findings, and repository diff context from
+workflow state. The capability decides which findings can become inline
+comments; provider modules decide how to call the external PR review API.
 
 ## Pattern
 
@@ -137,6 +145,7 @@ Side-effect policies:
 - `git.commit_side_effect`
 - `git.push_branch_side_effect`
 - `change-request.create_side_effect`
+- `pull-request-review.publish_side_effect`
 
 Workflow nodes that use side-effecting built-ins must declare the matching
 policy with `operation_id`.
@@ -204,6 +213,7 @@ Repository/workspace/git ports:
 Provider publishing port:
 
 - `change-request.provider`
+- `pull-request-review.provider`
 
 Ports are selected in runtime composition or native executor wiring, not in
 agent prompts.
@@ -234,6 +244,7 @@ Artifact rules:
 - `raw-code-review-findings.json`
 - `code-review-findings.json`
 - `acceptance-review.json`
+- `pull-request-review.json`
 - `final-report.json`
 - `final-report.md`
 

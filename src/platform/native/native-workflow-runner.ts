@@ -21,6 +21,7 @@ import {
 } from "../../runtime/composition/runtime-composition.js";
 import type { RuntimeCompositionConfig } from "../../runtime/composition/app-config.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
+import type { PullRequestReviewProviderFactory } from "../../capabilities/pull-request-review/contracts.js";
 import type {
   ResumeWorkflowInput,
   RunWorkflowInput,
@@ -58,10 +59,12 @@ export type NativeWorkflowTargetDependencies = {
     | "taskProviderBuiltIns"
     | "patternExecutors"
     | "changeRequestProviderFactories"
+    | "pullRequestReviewProviderFactories"
     | "capabilityRegistry"
     | "capabilityManifests"
   >;
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
+  readonly pullRequestReviewProviderFactories?: readonly PullRequestReviewProviderFactory[];
 };
 
 export type NativeWorkflowResumeInput = {
@@ -256,6 +259,9 @@ async function prepareNativeWorkflowExecution({
     changeRequestProviderFactories:
       dependencies.changeRequestProviderFactories ??
       platform.changeRequestProviderFactories,
+    pullRequestReviewProviderFactories:
+      dependencies.pullRequestReviewProviderFactories ??
+      platform.pullRequestReviewProviderFactories,
     workflowBuiltIns: platform.workflowBuiltIns,
     taskProviderBuiltIns: platform.taskProviderBuiltIns,
     patternExecutors: platform.patternExecutors,

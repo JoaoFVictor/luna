@@ -6,7 +6,7 @@ import type {
   ChangeRequestProviderFactory,
   ChangeRequestProviderPort
 } from "../../../src/capabilities/change-request/contracts.js";
-import { createChangeRequestProviderRegistry } from "../../../src/capabilities/change-request/provider-registry.js";
+import { createProviderRegistry } from "../../../src/core/providers/registry.js";
 
 const state = {
   invocation: {},
@@ -20,6 +20,13 @@ function factoryFor(port: ChangeRequestProviderPort): ChangeRequestProviderFacto
     provider_id: port.provider_id,
     createProvider: () => port
   };
+}
+
+function providerRegistry(factories: readonly ChangeRequestProviderFactory[]) {
+  return createProviderRegistry(factories, {
+    label: "change request",
+    unsupportedCode: "change_request_provider_unsupported"
+  });
 }
 
 describe("change-request capability", () => {
@@ -49,7 +56,7 @@ describe("change-request capability", () => {
       createChangeRequest
     };
     const builtIn = createChangeRequestCreateBuiltIn({
-      providers: createChangeRequestProviderRegistry([factoryFor(provider)])
+      providers: providerRegistry([factoryFor(provider)])
     });
 
     await expect(
@@ -91,7 +98,7 @@ describe("change-request capability", () => {
       }))
     };
     const builtIn = createChangeRequestCreateBuiltIn({
-      providers: createChangeRequestProviderRegistry([factoryFor(provider)])
+      providers: providerRegistry([factoryFor(provider)])
     });
 
     await expect(
@@ -136,7 +143,7 @@ describe("change-request capability", () => {
       })
     };
     const builtIn = createChangeRequestCreateBuiltIn({
-      providers: createChangeRequestProviderRegistry([factoryFor(provider)])
+      providers: providerRegistry([factoryFor(provider)])
     });
 
     await expect(

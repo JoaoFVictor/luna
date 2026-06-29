@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code_review"],
+  "properties": {
+    "code_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pull_request_review"],
+      "properties": {
+        "pull_request_review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "provider", "event", "inline_comments"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "provider": { "type": "string", "minLength": 1 },
+            "event": {
+              "enum": ["comment", "request_changes", "approve"]
+            },
+            "inline_comments": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

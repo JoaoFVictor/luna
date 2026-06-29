@@ -1,0 +1,10 @@
+code_review:
+  pull_request_review:
+    # Publish the validated Luna review back to the GitHub pull request.
+    enabled: false
+    # Pull request review provider id.
+    provider: github
+    # GitHub review event: comment, request_changes, or approve.
+    event: request_changes
+    # Place validated findings inline when their evidence maps to PR diff lines.
+    inline_comments: true

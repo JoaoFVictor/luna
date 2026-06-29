@@ -23,6 +23,7 @@ input adapter or invocation JSON
 | Need | Location |
 | --- | --- |
 | Workflow orchestration | `workflows/<id>/` |
+| Workflow runtime config schema | `workflows/<id>/config.schema.json` plus workflow `config:` |
 | Reusable model role | `agents/<id>/` |
 | Public deterministic capability | `src/capabilities/<id>/` |
 | Provider-owned API/auth/payload/report/publish behavior | `src/providers/<provider>/` |
@@ -57,6 +58,10 @@ input adapter or invocation JSON
 - Do not put Pi/runtime SDK details outside `src/agent-runtimes/<runtime>/`.
 - Register public ids through capability manifests.
 - Keep gate policy in workflow YAML.
+- Keep workflow runtime config declared by the workflow. Use
+  `config.file`/`config.schema`, validate with `workflows/<id>/config.schema.json`,
+  and read values through `$.config`; do not add workflow-id branches in the
+  runtime. Full contract: `docs/workflow-runtime-config.md`.
 - Keep context explicit through `context.collect_context`.
 - Treat MCP as configured policy only unless the selected runtime supports it.
 

@@ -14,5 +14,8 @@
     "unlisted",
     "unresolved",
     "binaries"
+  ],
+  "ignoreBinaries": [
+    "gh"
   ]
 }

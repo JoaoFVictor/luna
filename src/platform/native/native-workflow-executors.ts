@@ -1,8 +1,9 @@
 import path from "node:path";
 import { officialCapabilityRegistry } from "../../capabilities/registry.js";
-import { createChangeRequestProviderRegistry } from "../../capabilities/change-request/provider-registry.js";
 import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
+import type { PullRequestReviewProviderFactory } from "../../capabilities/pull-request-review/contracts.js";
+import { createProviderRegistry } from "../../core/providers/registry.js";
 import type { TaskProviderBuiltIns } from "../../providers/built-ins.js";
 import type { AppConfig, RepositoryConfig } from "../../core/config/schemas.js";
 import { runtimeError } from "../../core/runtime/errors.js";
@@ -33,6 +34,8 @@ export function buildNativeWorkflowExecutors({
   run,
   changeRequestProviderFactories =
     nativeLunaPlatformRegistrations.changeRequestProviderFactories,
+  pullRequestReviewProviderFactories =
+    nativeLunaPlatformRegistrations.pullRequestReviewProviderFactories,
   patternExecutors = nativeLunaPlatformRegistrations.patternExecutors ?? {},
   workflowBuiltIns,
   taskProviderBuiltIns,
@@ -42,6 +45,7 @@ export function buildNativeWorkflowExecutors({
   readonly projectRoot: string;
   readonly run: RunHandle;
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
+  readonly pullRequestReviewProviderFactories?: readonly PullRequestReviewProviderFactory[];
   readonly patternExecutors?: Readonly<Record<string, WorkflowPatternExecutor>>;
   readonly workflowBuiltIns?: NativeWorkflowBuiltIns;
   readonly taskProviderBuiltIns?: Readonly<Record<string, TaskProviderBuiltIns>>;
@@ -61,7 +65,16 @@ export function buildNativeWorkflowExecutors({
     git: createGitRepositoryPorts(),
     repositoryWorkspace: createGitHubRepositoryWorkspacePorts({ lockManager }),
     changeRequest: {
-      providers: createChangeRequestProviderRegistry(changeRequestProviderFactories)
+      providers: createProviderRegistry(changeRequestProviderFactories, {
+        label: "change request",
+        unsupportedCode: "change_request_provider_unsupported"
+      })
+    },
+    pullRequestReview: {
+      providers: createProviderRegistry(pullRequestReviewProviderFactories, {
+        label: "pull request review",
+        unsupportedCode: "pull_request_review_provider_unsupported"
+      })
     }
   });
   assertNativeWorkflowExecutorCoverage({

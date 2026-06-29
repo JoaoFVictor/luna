@@ -5,6 +5,9 @@ type: workflow
 mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
+config:
+  file: code-review.yaml
+  schema: config.schema.json
 capabilities:
   - runtime
   - repository-workspace
@@ -13,6 +16,7 @@ capabilities:
   - context
   - agents
   - reports
+  - pull-request-review
   - artifacts
 requires:
   repository: true
@@ -202,5 +206,51 @@ nodes:
         - heading: Acceptance
           content:
             expression: "$.steps.acceptance"
+        - heading: Pull Request Review Publication
+          content:
+            expression: "$.steps.publish_review"
+    after:
+      - publish_review
+
+  # Optional external side effect: publish the validated review as a formal pull
+  # request review. Inline comments are derived only from validated findings
+  # whose evidence maps to right-side lines in the captured diff.
+  - id: publish_review
+    type: built_in
+    uses: pull-request-review.publish
+    policies:
+      - uses: pull-request-review.publish_side_effect
+        config:
+          operation_id: pull-request-review.publish
+    artifacts:
+      - path: pull-request-review.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.publish_review"
+        format: json
+    input:
+      enabled:
+        expression: "$.config.code_review.pull_request_review.enabled"
+      provider_id:
+        expression: "$.config.code_review.pull_request_review.provider"
+      repository_path:
+        expression: "$.steps.workspace.path"
+      pull_request:
+        owner:
+          expression: "$.invocation.repository.owner"
+        repo:
+          expression: "$.invocation.repository.name"
+        number:
+          expression: "$.invocation.payload.pull_request.number"
+      event:
+        expression: "$.config.code_review.pull_request_review.event"
+      inline_comments:
+        expression: "$.config.code_review.pull_request_review.inline_comments"
+      body:
+        expression: "$.steps.acceptance.summary"
+      findings:
+        expression: "$.steps.validated_findings"
+      repo_context:
+        expression: "$.steps.repo_context"
     after:
       - acceptance

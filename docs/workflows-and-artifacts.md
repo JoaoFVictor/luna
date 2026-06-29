@@ -12,6 +12,7 @@ workflows/<id>/
   workflow.yaml
   input.schema.json
   output.schema.json
+  config.schema.json   # optional, only when workflow.yaml declares config
 ```
 
 `workflow.yaml` is strict. Unknown top-level, node, gate, policy, or artifact
@@ -28,6 +29,22 @@ Important top-level fields:
 - `observability.exporters.runtime_log`: optional runtime log projection.
 - `requires.repository`: whether invocation repository resolution is required.
 - `subagent_policy`: workflow-level delegation policy.
+- `config`: optional workflow runtime config declaration.
+
+Runtime config is generic and workflow-owned:
+
+```yaml
+config:
+  file: code-review.yaml
+  schema: config.schema.json
+```
+
+The native runtime resolves `file` under `config/`, resolves `schema` inside
+the workflow directory, validates the YAML with that JSON Schema, and exposes
+the result as `$.config`. Workflows without `config` receive `{}`. Do not add
+runtime branches like "if workflow id is X load Y"; the workflow declaration is
+the contract. See [Workflow runtime config](workflow-runtime-config.md) for
+complete examples and agent-facing rules.
 
 ## Node Types
 
@@ -70,6 +87,15 @@ Common roots:
 - `$.workspace`
 - `$.steps.<node-id>`
 
+For workflow config, reference the validated shape declared by that workflow's
+`config.schema.json`:
+
+```yaml
+input:
+  enabled:
+    expression: "$.config.code_review.pull_request_review.enabled"
+```
+
 ## Capabilities And Policies
 
 Workflow nodes can only reference ids from declared capabilities. Built-ins,
@@ -91,6 +117,12 @@ requires adoption semantics.
 
 The compiler also rejects protected side-effect operations that are not ordered
 after approval in trusted write flows.
+
+Provider-backed publishing follows the same rule. For example,
+`pull-request-review.publish` is a provider-neutral capability built-in with a
+write side-effect policy. The workflow owns when it runs and what state it
+passes; the provider owns how GitHub, or another source system, performs the
+external API call.
 
 ## Compilation And Scheduling
 
@@ -180,6 +212,10 @@ refs to runtime state.
 Common runtime artifacts include `invocation.json`, `run.json`, `events.jsonl`,
 `trace.jsonl`, `observability-summary.json`, node artifacts, interrupt data,
 and final reports.
+
+The bundled `code-review` workflow also writes `pull-request-review.json` when
+its publish node runs. If publishing is disabled, that artifact records a
+skipped result rather than silently disappearing.
 
 ## Source Map
 

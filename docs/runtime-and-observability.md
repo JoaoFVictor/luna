@@ -50,14 +50,16 @@ It registers:
 - built-in executors.
 - task-provider built-ins.
 - pattern executors.
-- change-request provider factories.
+- provider-backed publishing factories, such as PR review and change-request
+  providers.
 - capability manifests.
 
 Bundled plugins currently wire:
 
 - `runtime`: Pi agent runtime and LangGraph workflow runtime.
 - `quality-gates`: gated-agent-loop pattern executors.
-- `github`: GitHub PR adapter, preflight hook, GitHub change requests.
+- `github`: GitHub PR adapter, preflight hook, GitHub PR review publishing,
+  and GitHub change requests.
 - `jira`: Jira task adapter and task/report built-ins.
 - `plane`: Plane task adapter and task/report built-ins.
 

@@ -17,11 +17,13 @@ import type {
 } from "../../adapters/types.js";
 import type { BuiltInStep } from "../../core/built-ins/types.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
+import type { PullRequestReviewProviderFactory } from "../../capabilities/pull-request-review/contracts.js";
 import type { WebhookProviderAdapterFactory } from "../../webhooks/contracts.js";
 import { githubPrUrlAdapter } from "../../providers/github/input-adapter.js";
 import { githubWebhookAdapterFactory } from "../../providers/github/webhook-adapter.js";
 import { preflightBuiltIn } from "../../capabilities/runtime/built-ins.js";
 import { createGitHubChangeRequestProviderFactory } from "../../providers/github/change-request/factory.js";
+import { createGitHubPullRequestReviewProviderFactory } from "../../providers/github/pull-request-review/factory.js";
 import { jiraTaskUrlAdapter } from "../../providers/jira/input-adapter.js";
 import {
   collectTaskContext as collectJiraTaskContext,
@@ -73,6 +75,7 @@ export type NativePlatformPlugin = {
   readonly taskBuiltIns?: TaskProviderBuiltIns;
   readonly patternExecutors?: Readonly<Record<string, WorkflowPatternExecutor>>;
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
+  readonly pullRequestReviewProviderFactories?: readonly PullRequestReviewProviderFactory[];
   readonly webhookAdapterFactories?: readonly WebhookProviderAdapterFactory[];
 };
 
@@ -185,6 +188,9 @@ export function defineNativePlatformPlugins(
       ...(plugin.changeRequestProviderFactories === undefined
         ? {}
         : { changeRequestProviderFactories: plugin.changeRequestProviderFactories }),
+      ...(plugin.pullRequestReviewProviderFactories === undefined
+        ? {}
+        : { pullRequestReviewProviderFactories: plugin.pullRequestReviewProviderFactories }),
       ...(plugin.webhookAdapterFactories === undefined
         ? {}
         : { webhookAdapterFactories: plugin.webhookAdapterFactories }),
@@ -249,6 +255,9 @@ export const nativePlatformPluginDefinitions = [
       afterContext: []
     },
     changeRequestProviderFactories: [createGitHubChangeRequestProviderFactory({})],
+    pullRequestReviewProviderFactories: [
+      createGitHubPullRequestReviewProviderFactory({})
+    ],
     webhookAdapterFactories: [githubWebhookAdapterFactory]
   },
   {
