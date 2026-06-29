@@ -61,6 +61,28 @@ function jobId(job: Pick<Job<WebhookInvocationJob>, "id">): string | undefined {
   return typeof job.id === "string" ? job.id : undefined;
 }
 
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object"
+    && error !== null
+    && typeof (error as { code?: unknown }).code === "string"
+    ? (error as { code: string }).code
+    : undefined;
+}
+
+function isPermanentExecutionError(error: unknown): boolean {
+  const code = errorCode(error);
+
+  return code === "github_pull_request_context_invalid"
+    || code === "invocation_payload_missing"
+    || code === "invocation_reference_missing"
+    || code === "invocation_repository_missing"
+    || code === "invocation_subject_invalid"
+    || code === "invocation_subject_missing"
+    || code === "repository_config_missing"
+    || code === "repository_config_not_found"
+    || code === "workspace_resolution_failed";
+}
+
 function safeErrorMetadata(error: unknown): {
   name: string;
   code?: string;
@@ -145,10 +167,19 @@ export async function processWebhookInvocationJob(
     target
   });
 
-  const exitCode = await deps.targetExecutor.execute({
-    target,
-    invocation: webhookJob.invocation
-  });
+  let exitCode;
+  try {
+    exitCode = await deps.targetExecutor.execute({
+      target,
+      invocation: webhookJob.invocation
+    });
+  } catch (error) {
+    if (isPermanentExecutionError(error)) {
+      throw unrecoverable("Webhook target execution failed permanently", error);
+    }
+
+    throw error;
+  }
 
   if (exitCode !== 0) {
     throw new Error(

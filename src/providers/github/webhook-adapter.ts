@@ -38,13 +38,36 @@ const GitHubPullRequestPayloadSchema = z
         base: z
           .object({
             ref: z.string().min(1),
-            sha: z.string().min(1)
+            sha: z.string().min(1),
+            repo: z
+              .object({
+                name: z.string().min(1),
+                full_name: z.string().min(1),
+                owner: z
+                  .object({
+                    login: z.string().min(1)
+                  })
+                  .passthrough()
+              })
+              .passthrough()
           })
           .passthrough(),
         head: z
           .object({
             ref: z.string().min(1),
-            sha: z.string().min(1)
+            sha: z.string().min(1),
+            repo: z
+              .object({
+                name: z.string().min(1),
+                full_name: z.string().min(1),
+                fork: z.boolean(),
+                owner: z
+                  .object({
+                    login: z.string().min(1)
+                  })
+                  .passthrough()
+              })
+              .passthrough()
           })
           .passthrough()
       })
@@ -162,7 +185,22 @@ export function normalizeGitHubWebhook(
       head_ref: payload.pull_request.head.ref,
       head_sha: payload.pull_request.head.sha
     },
-    payload
+    payload: {
+      pull_request: {
+        number: payload.pull_request.number
+      },
+      base_repository: {
+        owner: payload.pull_request.base.repo.owner.login,
+        name: payload.pull_request.base.repo.name,
+        full_name: payload.pull_request.base.repo.full_name
+      },
+      head_repository: {
+        owner: payload.pull_request.head.repo.owner.login,
+        name: payload.pull_request.head.repo.name,
+        full_name: payload.pull_request.head.repo.full_name,
+        fork: payload.pull_request.head.repo.fork
+      }
+    }
   });
 
   return { kind: "accepted", deliveryId: id, invocation };

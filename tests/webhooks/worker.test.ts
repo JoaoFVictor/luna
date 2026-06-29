@@ -272,6 +272,42 @@ describe("webhook worker processing", () => {
     ).rejects.toThrow("Webhook target execution failed with exit code 2");
   });
 
+  it("throws unrecoverable errors for permanent target execution failures", async () => {
+    const error = Object.assign(new Error("Invalid GitHub pull request context"), {
+      code: "github_pull_request_context_invalid"
+    });
+
+    await expect(
+      processWebhookInvocationJob(
+        {
+          projectRoot: "/repo",
+          configRoot: "/repo/config",
+          routing,
+          targetExecutor: createTargetExecutor(vi.fn(async () => {
+            throw error;
+          }))
+        },
+        createJob(validJobData)
+      )
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+  });
+
+  it("keeps unknown target execution failures retryable", async () => {
+    await expect(
+      processWebhookInvocationJob(
+        {
+          projectRoot: "/repo",
+          configRoot: "/repo/config",
+          routing,
+          targetExecutor: createTargetExecutor(vi.fn(async () => {
+            throw new Error("network hiccup");
+          }))
+        },
+        createJob(validJobData)
+      )
+    ).rejects.toThrow("network hiccup");
+  });
+
   it("uses worker concurrency default from parsed config", () => {
     createWebhookWorker({
       projectRoot: "/repo",

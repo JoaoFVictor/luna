@@ -74,12 +74,31 @@ function pullRequestPayload(action: string) {
       title: "Add webhook adapter",
       base: {
         ref: "main",
-        sha: "base-sha"
+        sha: "base-sha",
+        repo: {
+          name: "luna",
+          full_name: "acme/luna",
+          owner: {
+            login: "acme"
+          },
+          private: true
+        }
       },
       head: {
         ref: "feature/webhook-server",
-        sha: "head-sha"
-      }
+        sha: "head-sha",
+        repo: {
+          name: "luna",
+          full_name: "contributor/luna",
+          fork: true,
+          owner: {
+            login: "contributor"
+          },
+          private: false
+        }
+      },
+      body: "real GitHub payloads include many extra keys",
+      changed_files: 2
     }
   };
 }
@@ -195,7 +214,22 @@ describe("GitHub webhook adapter normalization", () => {
       throw new Error("Expected accepted result");
     }
     expect(InvocationSchema.parse(result.invocation)).toEqual(result.invocation);
-    expect(result.invocation.payload).toEqual(pullRequestPayload("opened"));
+    expect(result.invocation.payload).toEqual({
+      pull_request: {
+        number: 42
+      },
+      base_repository: {
+        owner: "acme",
+        name: "luna",
+        full_name: "acme/luna"
+      },
+      head_repository: {
+        owner: "contributor",
+        name: "luna",
+        full_name: "contributor/luna",
+        fork: true
+      }
+    });
   });
 
   it("ignores unsupported pull request actions", () => {

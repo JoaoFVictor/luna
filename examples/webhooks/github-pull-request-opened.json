@@ -13,11 +13,26 @@
     "title": "Add webhook support",
     "base": {
       "ref": "main",
-      "sha": "base-sha"
+      "sha": "base-sha",
+      "repo": {
+        "name": "repo",
+        "full_name": "org/repo",
+        "owner": {
+          "login": "org"
+        }
+      }
     },
     "head": {
       "ref": "feature/webhooks",
-      "sha": "head-sha"
+      "sha": "head-sha",
+      "repo": {
+        "name": "repo",
+        "full_name": "contributor/repo",
+        "fork": true,
+        "owner": {
+          "login": "contributor"
+        }
+      }
     }
   }
 }
