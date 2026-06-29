@@ -94,7 +94,7 @@ code_review:
   pull_request_review:
     enabled: true
     provider: github
-    event: request_changes
+    event: auto
     inline_comments: true
 ```
 
@@ -109,9 +109,22 @@ capability policy and requires working `gh` auth.
 
 Review event behavior:
 
+- `auto`: request changes when validated findings exist; otherwise publish a
+  non-blocking PR review comment.
 - `comment`: publish a non-blocking PR review comment.
 - `request_changes`: publish a formal review requesting changes on the PR.
 - `approve`: publish an approval review.
+
+The runtime protects contradictory states before calling the provider:
+`request_changes` with no validated findings becomes `comment`, and `approve`
+with validated findings becomes `comment`.
+
+Published review body:
+
+- Includes the acceptance result: `approved`, `changes requested`,
+  `not accepted`, or `needs human review`.
+- Includes the acceptance summary.
+- Includes blocking reasons when the acceptance result provides them.
 
 Capability/provider split:
 

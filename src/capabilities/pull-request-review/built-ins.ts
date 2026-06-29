@@ -14,8 +14,11 @@ import {
 import { patchHasRightSideLine } from "./diff-lines.js";
 import { PullRequestReviewResolvedInputSchema } from "./contracts.js";
 import type {
+  PullRequestReviewAcceptance,
+  PullRequestReviewConfiguredEvent,
   PullRequestReviewBuiltInPorts,
   PullRequestReviewComment,
+  PullRequestReviewEvent,
   PullRequestReviewFallbackComment,
   PullRequestReviewPublishInput,
   PullRequestReviewSkippedResult
@@ -58,13 +61,38 @@ function resolvePorts(
   return typeof resolver === "function" ? resolver(options) : resolver;
 }
 
-function skipped(reason: string, enabled = true): PullRequestReviewSkippedResult {
+function skipped(
+  reason: string,
+  enabled = true,
+  error?: PullRequestReviewSkippedResult["error"]
+): PullRequestReviewSkippedResult {
   return {
     operation_id: "pull-request-review.publish",
     enabled,
     skipped: true,
-    reason
+    reason,
+    ...(error !== undefined ? { error } : {})
   };
+}
+
+function publishFailure(error: unknown): PullRequestReviewSkippedResult {
+  const candidate = error instanceof Error
+    ? error as Error & { code?: unknown; details?: unknown }
+    : undefined;
+
+  return skipped("publish_failed", true, {
+    ...(typeof candidate?.code === "string" ? { code: candidate.code } : {}),
+    message: candidate?.message ?? "Pull request review publication failed",
+    ...(candidate !== undefined && "details" in candidate
+      ? { details: candidate.details }
+      : {})
+  });
+}
+
+function isPublishFailed(error: unknown): boolean {
+  return typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "pull_request_review_publish_failed";
 }
 
 function readEnabled(input: Record<string, unknown> | undefined): boolean {
@@ -99,6 +127,68 @@ function commentBody(finding: Finding): string {
     "",
     `Recommendation: ${finding.recommendation}`
   ].join("\n");
+}
+
+function reviewResultLabel({
+  acceptance,
+  findings
+}: {
+  readonly acceptance?: PullRequestReviewAcceptance;
+  readonly findings: readonly Finding[];
+}): string {
+  if (
+    findings.length > 0 ||
+    acceptance?.recommended_action === "request_changes"
+  ) {
+    return "changes requested";
+  }
+
+  if (
+    acceptance?.status === "needs_human_review" ||
+    acceptance?.recommended_action === "human_review"
+  ) {
+    return "needs human review";
+  }
+
+  if (
+    acceptance?.status === "accepted" ||
+    acceptance?.recommended_action === "approve"
+  ) {
+    return "approved";
+  }
+
+  if (acceptance?.status === "rejected") {
+    return "not accepted";
+  }
+
+  return "comment";
+}
+
+function reviewBodyFrom({
+  body,
+  acceptance,
+  findings
+}: {
+  readonly body: string;
+  readonly acceptance?: PullRequestReviewAcceptance;
+  readonly findings: readonly Finding[];
+}): string {
+  if (acceptance === undefined) {
+    return body;
+  }
+
+  const result = reviewResultLabel({ acceptance, findings });
+  const lines = [`Review result: ${result}`, "", acceptance.summary];
+
+  if (acceptance.blocking_reasons.length > 0) {
+    lines.push(
+      "",
+      "Blocking reasons:",
+      ...acceptance.blocking_reasons.map((reason) => `- ${reason}`)
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function lineIsRightSidePatchLine(file: ChangedFile | undefined, line: number): boolean {
@@ -145,6 +235,27 @@ function reviewCommentsFrom({
   return { comments, fallbackComments };
 }
 
+function effectiveEvent(
+  requestedEvent: PullRequestReviewConfiguredEvent,
+  findings: readonly Finding[]
+): PullRequestReviewEvent {
+  const hasFindings = findings.length > 0;
+
+  if (requestedEvent === "auto") {
+    return hasFindings ? "request_changes" : "comment";
+  }
+
+  if (requestedEvent === "request_changes" && !hasFindings) {
+    return "comment";
+  }
+
+  if (requestedEvent === "approve" && hasFindings) {
+    return "comment";
+  }
+
+  return requestedEvent;
+}
+
 function publishInputFrom(
   input: Record<string, unknown> | undefined
 ): PullRequestReviewPublishInput | PullRequestReviewSkippedResult {
@@ -156,8 +267,9 @@ function publishInputFrom(
   }
 
   const enabledInput = readEnabledInput(input);
+  const findings = enabledInput.findings?.findings ?? [];
   const { comments, fallbackComments } = reviewCommentsFrom({
-    findings: enabledInput.findings?.findings ?? [],
+    findings,
     repoContext: enabledInput.repo_context
   });
   const effectiveComments = enabledInput.inline_comments ? comments : [];
@@ -176,8 +288,12 @@ function publishInputFrom(
     owner: enabledInput.pull_request.owner,
     repo: enabledInput.pull_request.repo,
     pull_number: enabledInput.pull_request.number,
-    event: enabledInput.event,
-    body: enabledInput.body,
+    event: effectiveEvent(enabledInput.event, findings),
+    body: reviewBodyFrom({
+      body: enabledInput.body,
+      acceptance: enabledInput.acceptance,
+      findings
+    }),
     comments: effectiveComments,
     fallback_comments: effectiveFallbackComments
   };
@@ -200,10 +316,17 @@ export function createPullRequestReviewPublishBuiltIn(
         return input;
       }
 
-      return await resolvePorts(ports, options)
-        .providers
-        .get(input.provider_id)
-        .publishReview(input);
+      const provider = resolvePorts(ports, options).providers.get(input.provider_id);
+
+      try {
+        return await provider.publishReview(input);
+      } catch (error) {
+        if (!isPublishFailed(error)) {
+          throw error;
+        }
+
+        return publishFailure(error);
+      }
     }
   });
 }

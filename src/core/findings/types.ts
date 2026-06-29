@@ -28,10 +28,10 @@ export const FindingSchema = z
   .strict();
 export type Finding = z.infer<typeof FindingSchema>;
 
-export const CodeReviewFindingsSchema = z
+export const FindingsPayloadSchema = z
   .object({
     findings: z.array(FindingSchema),
     summary: z.string().optional()
   })
   .strict();
-export type CodeReviewFindings = z.infer<typeof CodeReviewFindingsSchema>;
+export type FindingsPayload = z.infer<typeof FindingsPayloadSchema>;

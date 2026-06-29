@@ -22,7 +22,7 @@ const objectOrExpressionSchema = {
 } as const;
 
 const eventOrExpressionSchema = {
-  anyOf: [{ enum: ["comment", "request_changes", "approve"] }, expressionSchema]
+  anyOf: [{ enum: ["auto", "comment", "request_changes", "approve"] }, expressionSchema]
 } as const;
 
 export const publishAuthoringInputSchema = {
@@ -37,6 +37,7 @@ export const publishAuthoringInputSchema = {
     pull_request: objectOrExpressionSchema,
     event: eventOrExpressionSchema,
     body: stringOrExpressionSchema,
+    acceptance: objectOrExpressionSchema,
     inline_comments: booleanOrExpressionSchema,
     findings: objectOrExpressionSchema,
     repo_context: objectOrExpressionSchema
@@ -81,7 +82,17 @@ const publishResultSchema = {
         operation_id: { enum: ["pull-request-review.publish"] },
         enabled: { type: "boolean" },
         skipped: { const: true },
-        reason: { type: "string" }
+        reason: { type: "string" },
+        error: {
+          type: "object",
+          additionalProperties: false,
+          required: ["message"],
+          properties: {
+            code: { type: "string" },
+            message: { type: "string" },
+            details: {}
+          }
+        }
       }
     }
   ]

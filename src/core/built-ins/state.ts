@@ -1,5 +1,5 @@
 import type { RepositoryConfig } from "../config/schemas.js";
-import type { CodeReviewFindings, Finding } from "../findings/types.js";
+import type { Finding, FindingsPayload } from "../findings/types.js";
 import type { WorkflowState } from "../workflow/state.js";
 import { builtInError, type BuiltInErrorCode } from "./errors.js";
 
@@ -76,7 +76,7 @@ export function findingsFrom(value: unknown): readonly Finding[] {
     return value as Finding[];
   }
 
-  const findings = (value as CodeReviewFindings | undefined)?.findings;
+  const findings = (value as FindingsPayload | undefined)?.findings;
 
   if (Array.isArray(findings)) {
     return findings;

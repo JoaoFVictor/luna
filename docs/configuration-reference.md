@@ -123,10 +123,10 @@ Controls optional pull request review publication for the read-only
 Fields:
 
 - `pull_request_review.enabled`: whether to publish the validated review back
-  to the PR. The default committed config disables publishing.
+  to the PR.
 - `pull_request_review.provider`: provider id. The bundled provider is
   `github`.
-- `pull_request_review.event`: formal PR review event: `comment`,
+- `pull_request_review.event`: formal PR review event: `auto`, `comment`,
   `request_changes`, or `approve`.
 - `pull_request_review.inline_comments`: whether Luna should try to place
   validated findings as inline PR comments.
@@ -138,15 +138,23 @@ code_review:
   pull_request_review:
     enabled: true
     provider: github
-    event: request_changes
+    event: auto
     inline_comments: true
 ```
 
 Inline comments are created only for validated findings whose evidence maps to
 right-side lines in the captured PR diff. Findings that cannot be placed inline
-are appended to the review body. The side effect is performed by the
-provider-neutral `pull-request-review.publish` built-in and the selected
-provider port; GitHub publishing uses `gh` auth under `.luna/auth/gh`.
+are appended to the review body. The review body also includes the structured
+acceptance result, so a published review can explicitly say `approved`,
+`changes requested`, `not accepted`, or `needs human review` even when there are
+no inline comments. The side effect is performed by the provider-neutral
+`pull-request-review.publish` built-in and the selected provider port; GitHub
+publishing uses `gh` auth under `.luna/auth/gh`.
+
+`auto` requests changes only when validated findings exist. With no findings it
+publishes a regular PR review comment. Luna also prevents contradictory events:
+`request_changes` with no findings becomes `comment`, and `approve` with
+findings becomes `comment`.
 
 ## `implementation.yaml`
 

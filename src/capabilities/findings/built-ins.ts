@@ -1,8 +1,8 @@
 import { validateFindingEvidence as defaultValidateFindingEvidence } from "./evidence-validator.js";
 import type { RepoContext } from "../git/diff/types.js";
 import type {
-  CodeReviewFindings,
-  Finding
+  Finding,
+  FindingsPayload
 } from "../../core/findings/types.js";
 import { defineBuiltInStep } from "../../core/built-ins/registry.js";
 import {
@@ -43,8 +43,8 @@ export const validateFindingEvidenceBuiltIn = defineBuiltInStep<
       ...(typeof findingsPayload === "object" &&
       findingsPayload !== null &&
       !Array.isArray(findingsPayload) &&
-      typeof (findingsPayload as CodeReviewFindings).summary === "string"
-        ? { summary: (findingsPayload as CodeReviewFindings).summary }
+      typeof (findingsPayload as FindingsPayload).summary === "string"
+        ? { summary: (findingsPayload as FindingsPayload).summary }
         : {}),
       findings: validatedFindings
     };

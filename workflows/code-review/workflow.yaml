@@ -248,6 +248,8 @@ nodes:
         expression: "$.config.code_review.pull_request_review.inline_comments"
       body:
         expression: "$.steps.acceptance.summary"
+      acceptance:
+        expression: "$.steps.acceptance"
       findings:
         expression: "$.steps.validated_findings"
       repo_context:

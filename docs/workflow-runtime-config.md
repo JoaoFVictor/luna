@@ -74,7 +74,7 @@ code_review:
   pull_request_review:
     enabled: false
     provider: github
-    event: request_changes
+    event: auto
     inline_comments: true
 ```
 
@@ -99,7 +99,7 @@ code_review:
             "enabled": { "type": "boolean" },
             "provider": { "type": "string", "minLength": 1 },
             "event": {
-              "enum": ["comment", "request_changes", "approve"]
+              "enum": ["auto", "comment", "request_changes", "approve"]
             },
             "inline_comments": { "type": "boolean" }
           }
@@ -122,7 +122,21 @@ input:
     expression: "$.config.code_review.pull_request_review.event"
   inline_comments:
     expression: "$.config.code_review.pull_request_review.inline_comments"
+  acceptance:
+    expression: "$.steps.acceptance"
 ```
+
+For PR reviews, `auto` is the safest operational default: it publishes
+`request_changes` only when validated findings exist and otherwise publishes a
+regular review `comment`. A configured `request_changes` is also downgraded to
+`comment` when there are no validated findings, and a configured `approve` is
+downgraded to `comment` when findings exist.
+
+The optional `acceptance` input lets the provider-neutral
+`pull-request-review.publish` built-in render a clear review result in the PR
+body: `approved`, `changes requested`, `not accepted`, or
+`needs human review`. `body` remains the fallback for workflows that only have a
+plain summary.
 
 ## New Workflow Checklist
 
@@ -206,4 +220,3 @@ Do not:
 | --- | --- | --- |
 | `code-review` | `config/code-review.yaml` | `workflows/code-review/config.schema.json` |
 | `implementation` | `config/implementation.yaml` | `workflows/implementation/config.schema.json` |
-

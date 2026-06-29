@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CodeReviewFindingsSchema } from "../../core/findings/types.js";
+import { FindingsPayloadSchema } from "../../core/findings/types.js";
 import { RepoContextSchema } from "../git/diff/types.js";
 
 const NonEmptyStringSchema = z.string().min(1);
@@ -10,6 +10,35 @@ export const PullRequestReviewEventSchema = z.enum([
   "approve"
 ]);
 export type PullRequestReviewEvent = "comment" | "request_changes" | "approve";
+
+export const PullRequestReviewConfiguredEventSchema = z.enum([
+  "auto",
+  "comment",
+  "request_changes",
+  "approve"
+]);
+export type PullRequestReviewConfiguredEvent =
+  | "auto"
+  | PullRequestReviewEvent;
+
+export const PullRequestReviewAcceptanceSchema = z
+  .object({
+    status: z.enum(["accepted", "rejected", "needs_human_review"]),
+    summary: NonEmptyStringSchema,
+    blocking_reasons: z.array(NonEmptyStringSchema),
+    recommended_action: z.enum([
+      "approve",
+      "comment",
+      "request_changes",
+      "continue",
+      "stop",
+      "human_review"
+    ])
+  })
+  .strict();
+export type PullRequestReviewAcceptance = z.infer<
+  typeof PullRequestReviewAcceptanceSchema
+>;
 
 export const PullRequestReviewResolvedInputSchema = z
   .object({
@@ -24,10 +53,11 @@ export const PullRequestReviewResolvedInputSchema = z
         number: z.number().int().positive()
       })
       .strict(),
-    event: PullRequestReviewEventSchema.default("comment"),
+    event: PullRequestReviewConfiguredEventSchema.default("auto"),
     body: NonEmptyStringSchema,
+    acceptance: PullRequestReviewAcceptanceSchema.optional(),
     inline_comments: z.boolean().default(true),
-    findings: CodeReviewFindingsSchema.optional(),
+    findings: FindingsPayloadSchema.optional(),
     repo_context: RepoContextSchema.optional()
   })
   .strict();
@@ -80,6 +110,11 @@ export type PullRequestReviewSkippedResult = {
   readonly enabled: boolean;
   readonly skipped: true;
   readonly reason: string;
+  readonly error?: {
+    readonly code?: string;
+    readonly message: string;
+    readonly details?: unknown;
+  };
 };
 
 export type PullRequestReviewPublishResult =

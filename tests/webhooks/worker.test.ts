@@ -292,6 +292,48 @@ describe("webhook worker processing", () => {
     ).rejects.toBeInstanceOf(UnrecoverableError);
   });
 
+  it("throws unrecoverable errors for pull request review publish failures", async () => {
+    const error = Object.assign(
+      new Error("Failed to publish GitHub pull request review"),
+      { code: "pull_request_review_publish_failed" }
+    );
+
+    await expect(
+      processWebhookInvocationJob(
+        {
+          projectRoot: "/repo",
+          configRoot: "/repo/config",
+          routing,
+          targetExecutor: createTargetExecutor(vi.fn(async () => {
+            throw error;
+          }))
+        },
+        createJob(validJobData)
+      )
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+  });
+
+  it("throws unrecoverable errors for unknown pull request review publish outcomes", async () => {
+    const error = Object.assign(
+      new Error("GitHub pull request review response did not include id and html_url"),
+      { code: "pull_request_review_unknown_publish_outcome" }
+    );
+
+    await expect(
+      processWebhookInvocationJob(
+        {
+          projectRoot: "/repo",
+          configRoot: "/repo/config",
+          routing,
+          targetExecutor: createTargetExecutor(vi.fn(async () => {
+            throw error;
+          }))
+        },
+        createJob(validJobData)
+      )
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+  });
+
   it("keeps unknown target execution failures retryable", async () => {
     await expect(
       processWebhookInvocationJob(

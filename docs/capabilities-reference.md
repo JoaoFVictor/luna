@@ -106,9 +106,13 @@ inside provider/native composition; it does not add separate public built-in ids
 for each provider.
 
 `pull-request-review.publish` is provider-neutral. It receives the PR identity,
-review event, body, validated findings, and repository diff context from
-workflow state. The capability decides which findings can become inline
-comments; provider modules decide how to call the external PR review API.
+review event, body, optional acceptance result, validated findings, and
+repository diff context from workflow state. The capability renders the PR body,
+decides which findings can become inline comments, and resolves safe review
+event behavior. `auto` requests changes only when validated findings exist;
+no-finding request-change attempts and approvals with findings are published as
+regular review comments. Provider modules decide how to call the external PR
+review API.
 
 ## Pattern
 

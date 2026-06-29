@@ -134,7 +134,7 @@ code_review:
   pull_request_review:
     enabled: true
     provider: github
-    event: request_changes
+    event: auto
     inline_comments: true
 ```
 
@@ -142,6 +142,19 @@ If publishing is disabled, `pull-request-review.json` records a skipped result.
 If publishing is enabled but fails, check `gh auth status` with the Luna
 `GH_CONFIG_DIR`, confirm the authenticated account can review the PR, and
 inspect `repo-context.json` plus `code-review-findings.json`.
+
+`event: auto` publishes `request_changes` only when
+`code-review-findings.json` contains validated findings; with no findings it
+publishes a regular PR review comment. That comment should still include the
+acceptance result from `acceptance-review.json`, such as `approved`,
+`changes requested`, `not accepted`, or `needs human review`. If the provider
+call fails, the workflow records a `publish_failed` result in
+`pull-request-review.json` instead of retrying the webhook job.
+
+If GitHub accepts the request but Luna cannot prove the created review identity
+from the response, the workflow fails with
+`pull_request_review_unknown_publish_outcome`. That failure is non-retryable
+because retrying could create duplicate reviews.
 
 Inline comments are only created for validated findings whose evidence maps to
 right-side lines in the captured PR diff. Other findings are appended to the

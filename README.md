@@ -153,8 +153,8 @@ Run from a normalized invocation JSON:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --input examples/github-pr-opened.invocation.json
 ```
 
-By default, `code-review` writes artifacts only. To publish the validated
-review back to the PR, enable its workflow config:
+`code-review` can publish the validated review back to the PR when its workflow
+config enables PR review publishing:
 
 ```yaml
 # config/code-review.yaml
@@ -162,13 +162,17 @@ code_review:
   pull_request_review:
     enabled: true
     provider: github
-    event: request_changes
+    event: auto
     inline_comments: true
 ```
 
-`event` can be `comment`, `request_changes`, or `approve`. Inline comments are
-created only for validated findings whose evidence maps to right-side PR diff
-lines; the rest are appended to the review body.
+`event` can be `auto`, `comment`, `request_changes`, or `approve`. `auto`
+requests changes only when validated findings exist; otherwise it publishes a
+regular PR review comment. The review body includes the acceptance result
+(`approved`, `changes requested`, `not accepted`, or `needs human review`) plus
+the acceptance summary. Inline comments are created only for validated findings
+whose evidence maps to right-side PR diff lines; the rest are appended to the
+review body.
 
 Resume a human interrupt:
 

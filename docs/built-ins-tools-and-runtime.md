@@ -66,9 +66,12 @@ For the exact current set, inspect `src/capabilities/*/manifest.ts` and
 
 Provider-backed publishing built-ins still live in provider-neutral
 capabilities. `pull-request-review.publish` turns validated findings and PR
-diff context into a formal review request; the selected provider port owns the
-external API call. `change-request.create` follows the same split for change
-requests.
+diff context into a formal review request, and can render a structured
+acceptance result into the PR body. The selected provider port owns the
+external API call. The built-in resolves the effective review event from the
+validated finding state before the provider is called, so provider modules do
+not own review policy. `change-request.create` follows the same split for
+change requests.
 
 ## Local Tools
 

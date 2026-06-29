@@ -16,7 +16,7 @@
             "enabled": { "type": "boolean" },
             "provider": { "type": "string", "minLength": 1 },
             "event": {
-              "enum": ["comment", "request_changes", "approve"]
+              "enum": ["auto", "comment", "request_changes", "approve"]
             },
             "inline_comments": { "type": "boolean" }
           }
