@@ -112,7 +112,8 @@ Luna uses one auth root. By default it is `./.luna/auth`; override it with
 webhook signing secrets live in `.luna/auth/luna.auth.json`. Pi credentials
 live in `.luna/auth/pi-ai/auth.json`. GitHub CLI auth lives in
 `.luna/auth/gh`. SSH config and keys for repository remotes live in
-`.luna/auth/ssh`. Redacted examples are committed under `.luna/auth/`.
+`.luna/auth/ssh`. Git commit identity lives in `.luna/auth/git/config`.
+Redacted examples are committed under `.luna/auth/`.
 
 Configure a repository in `config/repositories.yaml`:
 
@@ -175,7 +176,9 @@ docker compose up --build
 The Compose setup mounts `${LUNA_AUTH_ROOT:-./.luna/auth}` at
 `/app/.luna/auth` and `${LUNA_REPOSITORIES_ROOT:-./repositories}` at
 `/repositories`. Configure repository paths in `config/repositories.yaml` with
-container paths such as `/repositories/repo`.
+container paths such as `/repositories/repo`. Compose exposes
+`/app/.luna/auth/git/config` as Git's global config, so commits made by the
+worker use the same identity file as local CLI runs.
 
 For a machine-local repository smoke test, keep the committed
 `config/repositories.yaml` generic and put real repository wiring in ignored
@@ -195,6 +198,15 @@ services:
 ```bash
 # .env
 LUNA_REPOSITORIES_ROOT=/path/to/repositories-parent
+```
+
+Create `.luna/auth/git/config` from the host machine before running trusted
+write workflows in Docker:
+
+```bash
+mkdir -p .luna/auth/git
+git config --global user.name | xargs -I{} git config -f .luna/auth/git/config user.name "{}"
+git config --global user.email | xargs -I{} git config -f .luna/auth/git/config user.email "{}"
 ```
 
 Configure signing secrets in `.luna/auth/luna.auth.json` under `providers.webhooks` and
@@ -264,10 +276,10 @@ skills.
 
 ## Provider And Auth Boundaries
 
-GitHub uses the `gh` CLI with `GH_CONFIG_DIR` under the Luna auth root. Jira,
-Plane, and webhook signing secrets read provider credentials from
-`.luna/auth/luna.auth.json`. Pi model auth lives in
-`.luna/auth/pi-ai/auth.json`.
+GitHub uses the `gh` CLI with `GH_CONFIG_DIR` under the Luna auth root. Git
+uses `.luna/auth/git/config` for commit identity. Jira, Plane, and webhook
+signing secrets read provider credentials from `.luna/auth/luna.auth.json`.
+Pi model auth lives in `.luna/auth/pi-ai/auth.json`.
 
 Provider code belongs under `src/providers/<provider>/`. Generic core and
 capability code must not validate or import provider-specific auth, config,

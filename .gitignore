@@ -53,5 +53,9 @@ luna.auth.json
 .luna/auth/ssh/*
 !.luna/auth/ssh/config.example
 
+!.luna/auth/git/
+.luna/auth/git/*
+!.luna/auth/git/config.example
+
 # Local-only config overrides for real repositories or machine-specific smoke tests.
 .luna/local-config/

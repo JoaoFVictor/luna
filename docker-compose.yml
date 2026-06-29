@@ -11,6 +11,8 @@ x-luna-app: &luna-app
     REDIS_URL: redis://redis:6379
     GH_CONFIG_DIR: /app/.luna/auth/gh
     GH_PROMPT_DISABLED: "1"
+    GIT_CONFIG_GLOBAL: /app/.luna/auth/git/config
+    HOME: /home/node
   volumes:
     - ./config:/app/config:ro
     - ./.runs:/app/.runs
@@ -23,10 +25,21 @@ x-luna-app: &luna-app
       source: ${LUNA_REPOSITORIES_ROOT:-./repositories}
       target: /repositories
   depends_on:
+    runtime-permissions:
+      condition: service_completed_successfully
     redis:
       condition: service_healthy
 
 services:
+  runtime-permissions:
+    build:
+      context: .
+    image: luna-webhooks:local
+    command: ["sh", "-c", "mkdir -p /app/.runs && chmod 0777 /app/.runs"]
+    user: "0:0"
+    volumes:
+      - ./.runs:/app/.runs
+
   redis:
     image: redis:7-alpine
     healthcheck:

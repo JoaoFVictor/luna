@@ -116,7 +116,8 @@ This starts Redis, `webhook-server`, and `webhook-worker`. The containers use
 expose the HTTP server on host port `4012`, mount `./config` read-only, mount
 `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth`, and write run
 artifacts to `./.runs`. The auth root is writable because the Pi runtime can
-refresh OAuth credentials.
+refresh OAuth credentials. Compose also prepares `./.runs` before the app
+containers start so the non-root worker can write artifacts.
 
 The Compose file also mounts auth and repository state needed by real runs:
 
@@ -125,13 +126,15 @@ The Compose file also mounts auth and repository state needed by real runs:
 - `.luna/auth/pi-ai/auth.json` for Pi model auth.
 - `.luna/auth/gh` for GitHub CLI auth through `GH_CONFIG_DIR`.
 - `.luna/auth/ssh` for SSH repository remotes.
+- `.luna/auth/git/config` for Git commit identity through
+  `GIT_CONFIG_GLOBAL`.
 - `${LUNA_REPOSITORIES_ROOT:-./repositories}` at `/repositories` for all
   configured repositories.
 
-Create `.luna/auth/luna.auth.json` before starting Compose. For a different
-repository layout, either update `config/repositories.yaml` or set
-`LUNA_REPOSITORIES_ROOT` to the host directory that should appear as
-`/repositories`.
+Create `.luna/auth/luna.auth.json` and `.luna/auth/git/config` before starting
+Compose. For a different repository layout, either update
+`config/repositories.yaml` or set `LUNA_REPOSITORIES_ROOT` to the host
+directory that should appear as `/repositories`.
 
 For local smoke tests against personal repositories, prefer ignored local
 overrides over committing real repository names. A `docker-compose.override.yml`

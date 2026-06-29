@@ -210,9 +210,11 @@ Do not commit secrets.
 - Jira and Plane provider auth live in `.luna/auth/luna.auth.json`.
 - GitHub provider auth uses `gh` with `GH_CONFIG_DIR` under `.luna/auth/gh`;
   Luna does not define `github.yaml` or GitHub entries in `luna.auth.json`.
+- Git commit identity lives in `.luna/auth/git/config` and is mounted into
+  containers with `GIT_CONFIG_GLOBAL`.
 
 When running with Compose, `${LUNA_AUTH_ROOT:-./.luna/auth}` is mounted at
-`/app/.luna/auth` and used by Luna, Pi, GitHub CLI, and SSH.
+`/app/.luna/auth` and used by Luna, Pi, GitHub CLI, Git, and SSH.
 
 Webhook provider signing secrets are separate from provider API auth. They use
 the `providers.webhooks` namespace in `.luna/auth/luna.auth.json` and are

@@ -28,10 +28,12 @@ RUN npm run build
 FROM base AS runtime
 
 ENV NODE_ENV=production
+ENV HOME=/home/node
 ENV LUNA_CONFIG_ROOT=/app/config
 ENV LUNA_AUTH_ROOT=/app/.luna/auth
 ENV GH_CONFIG_DIR=/app/.luna/auth/gh
 ENV GH_PROMPT_DISABLED=1
+ENV GIT_CONFIG_GLOBAL=/app/.luna/auth/git/config
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
@@ -42,7 +44,7 @@ COPY --from=build /app/config ./config
 COPY --from=build /app/skills ./skills
 COPY --from=build /app/workflows ./workflows
 
-RUN mkdir -p /app/.runs /app/.luna/auth /home/node \
+RUN mkdir -p /app/.runs /app/.luna/auth/git /home/node \
   && ln -sfn /app/.luna/auth/ssh /home/node/.ssh \
   && chown -R node:node /app /home/node
 

@@ -108,6 +108,8 @@ GitHub:
 - Uses `gh api` through `executeJson`.
 - Uses `gh` authentication from `GH_CONFIG_DIR` under the Luna auth root, not
   `luna.auth.json`.
+- Uses Git commit identity from `.luna/auth/git/config` when trusted write
+  workflows commit in the container runtime.
 - Provides GitHub change-request publishing.
 
 Jira:
