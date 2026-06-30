@@ -8,9 +8,13 @@ import {
   RelatedContextSchema,
   type RelatedContext
 } from "../../../src/capabilities/repository-context/contracts.js";
-import { importTargets } from "../../../src/capabilities/repository-context/file-analysis.js";
-import { symbolNamesFromAnalysis } from "../../../src/capabilities/repository-context/symbol-analysis/index.js";
-import { analyzeJavaScriptLike } from "../../../src/capabilities/repository-context/symbol-analysis/js-ts-vue.js";
+import {
+  fileKind,
+  importTargets
+} from "../../../src/capabilities/repository-context/file-analysis.js";
+import {
+  analyzeJavaScriptLike
+} from "../../../src/capabilities/repository-context/symbol-analysis/js-ts-vue.js";
 import type { WorkflowState } from "../../../src/core/workflow/state.js";
 
 async function write(root: string, filePath: string, content: string): Promise<void> {
@@ -52,35 +56,9 @@ function stateFor(root: string): WorkflowState {
 }
 
 describe("repository-context.related_context", () => {
-  it("keeps symbol references semantic instead of recording every identifier token", () => {
-    const analysis = analyzeJavaScriptLike([
-      "import { computed } from 'vue';",
-      "interface ProfileRules { name: string }",
-      "const displayName = computed(() => user.name);",
-      "export function renderProfile(rules: ProfileRules) {",
-      "  return displayName;",
-      "}"
-    ].join("\n"), "src/ProfileCard.ts");
-
-    expect(analysis.references).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "computed", kind: "variable" }),
-      expect.objectContaining({ name: "ProfileRules", kind: "type" })
-    ]));
-    expect(analysis.references).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "Boolean" }),
-      expect.objectContaining({ name: "const" }),
-      expect.objectContaining({ name: "displayName", kind: "variable" }),
-      expect.objectContaining({ name: "renderProfile", kind: "variable" }),
-      expect.objectContaining({ name: "rules", kind: "variable" })
-    ]));
-    expect(symbolNamesFromAnalysis(analysis)).not.toEqual(expect.arrayContaining([
-      "Boolean",
-      "Map",
-      "code",
-      "const",
-      "key",
-      "ref"
-    ]));
+  it("classifies PHP framework config files as config without reclassifying app PHP", () => {
+    expect(fileKind("config/autoload/dependencies.php")).toBe("config");
+    expect(fileKind("app/Service/Post/PostMountListService.php")).toBe("source");
   });
 
   it("suppresses Vue parser warnings when content is known to be truncated", () => {
@@ -201,7 +179,10 @@ describe("repository-context.related_context", () => {
       await write(root, "src/depB.ts", "export function depB() { return 'b'; }\n");
       await write(root, "src/depC.ts", "export function depC() { return 'c'; }\n");
       await write(root, "src/CheckoutFlow.test.ts", "import { CheckoutFlow } from './CheckoutFlow';\nCheckoutFlow();\n");
-      await write(root, "src/CheckoutFlowDocs.ts", "export const checkoutFlowDocs = 'CheckoutFlow behavior';\n");
+      await write(root, "src/CheckoutFlowDocs.ts", [
+        "import { CheckoutFlow } from './CheckoutFlow';",
+        "export const checkoutFlowDocs = CheckoutFlow.name;"
+      ].join("\n"));
       await write(root, "docs/checkout.md", "CheckoutFlow behavior and review notes.\n");
       await write(root, "package.json", "{\"scripts\":{\"test\":\"vitest\"}}\n");
       await write(root, ".claude/settings.json", "{\"permissions\":{\"allow\":[\"Read\"]}}\n");
@@ -250,6 +231,78 @@ describe("repository-context.related_context", () => {
         "import_dependency",
         "test",
         "reverse_reference"
+      ]));
+      expect(result.files.find((file) => file.path === "src/CheckoutFlowDocs.ts")?.matched_symbols).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^luna \. \. \. `src\/CheckoutFlow\.ts`\/CheckoutFlow\.$/u)
+      ]));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers behavioral collaborators over passive models when dependency budget is tight", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-related-context-path-roles-"));
+
+    try {
+      await write(root, "app/use-cases/GrantPlan.ts", [
+        "import { UserPlan } from '../models/UserPlan';",
+        "import { UserPlanRepository } from '../repositories/UserPlanRepository';",
+        "import { ManageFeatureExpiration } from '../services/ManageFeatureExpiration';",
+        "export function grantPlan(repo: UserPlanRepository, manager: ManageFeatureExpiration, plan: UserPlan) {",
+        "  manager.handle(plan);",
+        "  return repo.save(plan);",
+        "}"
+      ].join("\n"));
+      await write(root, "app/models/UserPlan.ts", "export interface UserPlan { id: string; }\n");
+      await write(root, "app/repositories/UserPlanRepository.ts", [
+        "import type { UserPlan } from '../models/UserPlan';",
+        "export class UserPlanRepository { save(plan: UserPlan) { return plan; } }"
+      ].join("\n"));
+      await write(root, "app/services/ManageFeatureExpiration.ts", [
+        "import type { UserPlan } from '../models/UserPlan';",
+        "export class ManageFeatureExpiration { handle(plan: UserPlan) { return plan.id; } }"
+      ].join("\n"));
+      await write(root, "app/controllers/GrantPlanController.ts", [
+        "import { grantPlan } from '../use-cases/GrantPlan';",
+        "export function handleGrant() { return grantPlan; }"
+      ].join("\n"));
+
+      const result = await relatedContextBuiltIn.run({
+        state: stateFor(root),
+        input: {
+          repo_context: repoContext([
+            {
+              path: "app/use-cases/GrantPlan.ts",
+              status: "modified",
+              additions: 1,
+              deletions: 0,
+              patch: "@@ -4,1 +4,1 @@\n+export function grantPlan() {}\n",
+              excerpt: {
+                start_line: 1,
+                end_line: 7,
+                content: "export function grantPlan() {}\n"
+              }
+            }
+          ]),
+          config: {
+            max_related_files: 4,
+            max_scan_files: 20,
+            max_file_bytes: 8000,
+            max_excerpt_bytes: 400
+          }
+        }
+      }) as RelatedContext;
+
+      const paths = result.files.map((file) => file.path);
+      expect(paths).toEqual(expect.arrayContaining([
+        "app/use-cases/GrantPlan.ts",
+        "app/controllers/GrantPlanController.ts"
+      ]));
+      expect(paths).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^app\/(repositories|services)\//u)
+      ]));
+      expect(paths).not.toEqual(expect.arrayContaining([
+        "app/models/UserPlan.ts"
       ]));
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -444,11 +497,11 @@ describe("repository-context.related_context", () => {
         "json"
       ]));
       expect(result.audit.symbol_engines).toEqual(expect.arrayContaining([
-        "typescript_ast",
+        "typescript_symbol_graph",
         "php_heuristic"
       ]));
       expect(result.audit.warnings).toEqual(expect.arrayContaining([
-        expect.stringContaining("PHP AST bridge unavailable")
+        expect.stringContaining("PHP symbol graph bridge unavailable")
       ]));
       expect(result.truncation.unsupported_files).toEqual([]);
     } finally {
@@ -505,6 +558,115 @@ describe("repository-context.related_context", () => {
       expect(result.audit.skipped_files).toBeGreaterThan(0);
       expect(result.audit.warnings).toEqual(expect.arrayContaining([
         expect.stringContaining("Repository scan skipped")
+      ]));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records omitted ranked paths and only emits edges between selected nodes", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-related-context-omitted-"));
+
+    try {
+      await write(root, "src/Changed.ts", [
+        "import { UsedDependency } from './UsedDependency';",
+        "export function Changed() { return UsedDependency(); }"
+      ].join("\n"));
+      await write(root, "src/UsedDependency.ts", "export function UsedDependency() { return true; }\n");
+      await write(root, "src/Changed.test.ts", "import { Changed } from './Changed';\nChanged();\n");
+      await write(root, "src/ChangedDocs.ts", "import { Changed } from './Changed';\nChanged();\n");
+
+      const result = await relatedContextBuiltIn.run({
+        state: stateFor(root),
+        input: {
+          repo_context: repoContext([
+            {
+              path: "src/Changed.ts",
+              status: "modified",
+              additions: 1,
+              deletions: 0,
+              patch: "@@ -1,1 +1,1 @@\n+export function Changed() {}\n",
+              excerpt: {
+                start_line: 1,
+                end_line: 2,
+                content: "export function Changed() {}\n"
+              }
+            }
+          ]),
+          config: {
+            max_related_files: 2,
+            max_scan_files: 10,
+            max_file_bytes: 8000,
+            max_excerpt_bytes: 400
+          }
+        }
+      }) as RelatedContext;
+
+      const selectedPaths = new Set(result.nodes.map((node) => node.id));
+      expect(result.truncation.omitted_paths.length).toBeGreaterThan(0);
+      expect(result.truncation.omitted_count).toBeGreaterThanOrEqual(result.truncation.omitted_paths.length);
+      expect(result.truncation.omitted_paths).not.toEqual(expect.arrayContaining([...selectedPaths]));
+      for (const edge of result.edges) {
+        expect(selectedPaths.has(edge.from)).toBe(true);
+        expect(selectedPaths.has(edge.to)).toBe(true);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips generated runtime and storage outputs during repository scans", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-related-context-generated-"));
+
+    try {
+      await write(root, "composer.json", "{\"autoload\":{\"psr-4\":{\"App\\\\\":\"app/\"}}}\n");
+      await write(root, "app/Request/Post/PostCreateRequest.php", [
+        "<?php",
+        "namespace App\\Request\\Post;",
+        "class PostCreateRequest {}"
+      ].join("\n"));
+      await write(root, "app/Controller/Post/PostCreateController.php", [
+        "<?php",
+        "namespace App\\Controller\\Post;",
+        "use App\\Request\\Post\\PostCreateRequest;",
+        "class PostCreateController { public function __invoke(PostCreateRequest $request): void {} }"
+      ].join("\n"));
+      await write(root, "runtime/container/proxy/App_Controller_Post_PostCreateController.proxy.php", [
+        "<?php",
+        "use App\\Request\\Post\\PostCreateRequest;",
+        "class App_Controller_Post_PostCreateController_proxy { public function __invoke(PostCreateRequest $request): void {} }"
+      ].join("\n"));
+      await write(root, "storage/swagger/openapi.json", "{\"components\":{}}\n");
+
+      const result = await relatedContextBuiltIn.run({
+        state: stateFor(root),
+        input: {
+          repo_context: repoContext([
+            {
+              path: "app/Request/Post/PostCreateRequest.php",
+              status: "modified",
+              additions: 1,
+              deletions: 0,
+              patch: "@@ -1,1 +1,1 @@\n+class PostCreateRequest {}\n",
+              excerpt: null
+            }
+          ]),
+          config: {
+            max_related_files: 10,
+            max_scan_files: 20,
+            max_file_bytes: 8000,
+            max_excerpt_bytes: 400
+          }
+        }
+      }) as RelatedContext;
+
+      expect(result.files.map((file) => file.path)).toEqual(expect.arrayContaining([
+        "app/Request/Post/PostCreateRequest.php",
+        "app/Controller/Post/PostCreateController.php"
+      ]));
+      expect(result.files.map((file) => file.path)).not.toEqual(expect.arrayContaining([
+        expect.stringMatching(/^runtime\//u),
+        expect.stringMatching(/^storage\//u)
       ]));
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -667,8 +829,8 @@ describe("repository-context.related_context", () => {
 
       expect(() => RelatedContextSchema.parse(result)).not.toThrow();
       expect(result.audit.symbol_engines).toEqual(expect.arrayContaining([
-        "vue_sfc_ast",
-        "typescript_ast"
+        "vue_sfc_symbol_graph",
+        "typescript_symbol_graph"
       ]));
       expect(result.files.map((file) => file.path)).toEqual(expect.arrayContaining([
         "app/components/ProfileCard.vue",
@@ -686,6 +848,63 @@ describe("repository-context.related_context", () => {
           to: "composables/useProfileName.ts",
           type: "imports"
         })
+      ]));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("links reverse references in large Vue SFC files when script imports are late in the file", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-related-context-large-vue-"));
+
+    try {
+      await write(root, "app/components/AccountVerification.vue", [
+        "<template><section>Verify</section></template>",
+        "<script setup lang=\"ts\">",
+        "defineOptions({ name: 'AccountVerification' });",
+        "</script>"
+      ].join("\n"));
+      await write(root, "app/components/DesktopSidebar.vue", [
+        "<template>",
+        "  <aside>",
+        "    <AccountVerification />",
+        "  </aside>",
+        "</template>",
+        ...Array.from({ length: 900 }, (_, index) => `<!-- filler ${index} -->`),
+        "<script setup lang=\"ts\">",
+        "const AccountVerification = defineAsyncComponent(() => import('./AccountVerification.vue'));",
+        "</script>"
+      ].join("\n"));
+
+      const result = await relatedContextBuiltIn.run({
+        state: stateFor(root),
+        input: {
+          repo_context: repoContext([
+            {
+              path: "app/components/AccountVerification.vue",
+              status: "modified",
+              additions: 2,
+              deletions: 0,
+              patch: "@@ -1,2 +1,4 @@\n+defineOptions({ name: 'AccountVerification' });\n",
+              excerpt: null
+            }
+          ]),
+          config: {
+            max_related_files: 4,
+            max_scan_files: 10,
+            max_file_bytes: 160_000,
+            max_excerpt_bytes: 400
+          }
+        }
+      }) as RelatedContext;
+
+      expect(() => RelatedContextSchema.parse(result)).not.toThrow();
+      const sidebar = result.files.find((file) => file.path === "app/components/DesktopSidebar.vue");
+      expect(sidebar).toEqual(expect.objectContaining({
+        relation: "reverse_reference"
+      }));
+      expect(sidebar?.matched_symbols).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^luna \. \. \. `app\/components\/AccountVerification\.vue`\/AccountVerification#$/)
       ]));
     } finally {
       await rm(root, { recursive: true, force: true });

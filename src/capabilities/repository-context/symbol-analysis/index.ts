@@ -1,7 +1,14 @@
 import type { Candidate } from "../file-analysis.js";
 import {
-  importValuesFromAnalysis,
-  symbolNamesFromAnalysis,
+  importValuesFromGraph,
+  primaryDefinitionSymbolsFromGraph,
+  reverseReferenceDefinitionTermsFromGraph,
+  reverseReferenceDefinitionSymbolsFromGraph,
+  reverseReferenceDefinitionSymbolTermsFromGraph,
+  reverseReferenceTermsFromOccurrence,
+  reverseReferenceSymbolsFromGraph,
+  reverseReferenceTermsFromGraph,
+  symbolNamesFromGraph,
   unique,
   wordsFrom
 } from "./common.js";
@@ -11,27 +18,35 @@ import {
   enrichPhpCandidatesWithNikic,
   phpFallbackAnalysis
 } from "./php-bridge.js";
+export { linkProjectSymbolReferences } from "./project-linker.js";
 import type {
-  FileSymbolAnalysis,
-  FileSymbolAnalysisOptions,
+  FileSymbolGraph,
+  FileSymbolGraphOptions,
   SymbolEngine
 } from "./types.js";
 
 export {
   heuristicSymbolNames,
-  importValuesFromAnalysis,
-  symbolNamesFromAnalysis,
+  importValuesFromGraph,
+  primaryDefinitionSymbolsFromGraph,
+  reverseReferenceDefinitionTermsFromGraph,
+  reverseReferenceDefinitionSymbolsFromGraph,
+  reverseReferenceDefinitionSymbolTermsFromGraph,
+  reverseReferenceTermsFromOccurrence,
+  reverseReferenceSymbolsFromGraph,
+  reverseReferenceTermsFromGraph,
+  symbolNamesFromGraph,
   unique,
   wordsFrom
 };
-export type { FileSymbolAnalysis, SymbolEngine };
-export type { FileSymbolAnalysisOptions };
+export type { FileSymbolGraph, SymbolEngine };
+export type { FileSymbolGraphOptions };
 
-export function analyzeFileSymbols(
+export function analyzeFileSymbolGraph(
   content: string,
   filePath: string,
-  options: FileSymbolAnalysisOptions = {}
-): FileSymbolAnalysis {
+  options: FileSymbolGraphOptions = {}
+): FileSymbolGraph {
   if (filePath.endsWith(".php")) {
     return phpFallbackAnalysis(content, filePath);
   }
@@ -41,7 +56,7 @@ export function analyzeFileSymbols(
   return analyzeHeuristically(content, filePath);
 }
 
-export async function enrichCandidatesWithAst(
+export async function enrichCandidatesWithSymbolGraph(
   root: string,
   candidates: readonly Candidate[]
 ): Promise<{

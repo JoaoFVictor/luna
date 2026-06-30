@@ -100,22 +100,31 @@ built-in used by code review. It takes captured `repo_context`, scans a bounded
 set of supported repository files, and emits `luna.related_context.v1` with
 ranked files plus graph `nodes` and `edges`. It skips dependency/build output
 and local agent/editor tool directories, and changed-file excerpts are centered
-on captured diff hunks instead of blindly taking the file prefix. It uses AST
-engines before heuristics: TypeScript for JS/TS, Luna-owned
-`@vue/compiler-sfc` for Vue SFC script extraction, and `nikic/php-parser`
-through the target repository's autoload when available for PHP. If a parser is
-unavailable or fails, the built-in keeps producing deterministic context
-through heuristics and records that in `audit.warnings`. The output also
-records `audit.symbol_engines`, so agents and humans can see whether a run used
-`typescript_ast`, `vue_sfc_ast`, `php_nikic`, `php_heuristic`, or generic
-`heuristic` analysis. It resolves
+on captured diff hunks instead of blindly taking the file prefix. It builds one
+internal Luna symbol graph before ranking context. The graph is SCIP-inspired
+but is not a real `.scip` protobuf index: occurrences use Luna symbol strings,
+SCIP-compatible `symbol_roles` bitsets, typed UTF-16 ranges, and document-local
+symbol metadata. Engines use TypeScript for JS/TS, Luna-owned
+`@vue/compiler-sfc` for Vue SFC script/template extraction, and
+`nikic/php-parser` through the target repository's autoload when available for
+PHP. After import resolution, Luna links references back to resolved definition
+symbols before scoring reverse references. If a parser is unavailable or fails,
+the built-in keeps producing deterministic context through heuristics and
+records that in `audit.warnings`. The output also records
+`audit.symbol_engines`, so agents and humans can see whether a run used
+`typescript_symbol_graph`, `vue_sfc_symbol_graph`, `php_symbol_graph`,
+`php_heuristic`, or generic `heuristic`. It resolves
 relative imports, TypeScript/JavaScript `paths` aliases and `baseUrl` from
 `tsconfig.json` or `jsconfig.json`, common root aliases such as `@/` and `~/`,
 PHP `require`/`include`, Composer PSR-4 namespaces, reverse references,
 tests/specs, config files, docs, same-directory files, and same-name
 abstractions. Docs/config edges are emitted only when they match the specific
 changed seed, not as global edges to every changed file. Budgets and truncation
-are part of the output so agents and humans can see when context was limited.
+are part of the output so agents and humans can see when context was limited:
+`truncation.omitted_paths` lists ranked candidates excluded by
+`max_related_files` up to a bounded sample, `omitted_count` records the full
+excluded count, and `truncated_paths` lists excerpts clipped by file or excerpt
+budgets.
 
 `findings.merge` is the deterministic fan-in for multi-agent review outputs. It
 accepts a `sources` array of named entries shaped as

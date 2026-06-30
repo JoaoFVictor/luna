@@ -200,12 +200,13 @@ const relatedContextOutputSchema = {
     truncation: {
       type: "object",
       additionalProperties: false,
-      required: ["omitted_paths", "truncated_paths", "unsupported_files"],
+      required: ["omitted_paths", "omitted_count", "truncated_paths", "unsupported_files"],
       properties: {
         omitted_paths: {
           type: "array",
           items: { type: "string", minLength: 1 }
         },
+        omitted_count: { type: "integer", minimum: 0 },
         truncated_paths: {
           type: "array",
           items: { type: "string", minLength: 1 }

@@ -115,19 +115,27 @@ receives `repo_context` plus optional budgets and returns
 `luna.related_context.v1`: a small impact graph with `nodes`, `edges`,
 ranked `files`, `budgets`, `truncation`, and `audit` metadata. The built-in is
 language agnostic by contract, but uses stronger engines when they are
-available: TypeScript AST for JS/TS, Luna-owned `@vue/compiler-sfc` plus
-TypeScript AST for Vue SFC script blocks, and `nikic/php-parser` through the
-target repository's PHP autoload for PHP. Missing parser support falls back to
-deterministic heuristics and is visible in `audit.warnings`; the actual engines
-are listed in `audit.symbol_engines`. It skips dependency/build output and
+available. Internally it produces one Luna symbol graph shape inspired by SCIP:
+occurrences use Luna symbol strings, SCIP-compatible `symbol_roles` bitsets,
+typed UTF-16 ranges, and document-local symbol metadata. JS/TS uses TypeScript,
+Vue uses Luna-owned
+`@vue/compiler-sfc` plus TypeScript for SFC script/template blocks, and PHP uses
+`nikic/php-parser` through the target repository's PHP autoload. After import
+resolution, Luna links references back to resolved definition symbols before
+ranking reverse references. Missing parser support falls back to deterministic
+heuristics and is visible in `audit.warnings`; the actual engines are listed in
+`audit.symbol_engines`. It skips dependency/build output and
 local agent/editor tool directories, centers changed-file excerpts on diff
 hunks, and resolves TypeScript/JavaScript
 `paths` aliases and `baseUrl`, common root aliases such as `@/` and `~/`, PHP
 `require`/`include`, Composer PSR-4 namespaces, reverse references, tests,
 configs, docs, same-directory files, and similar abstraction names. Docs/config
 edges are specific to matching changed seeds instead of being global edges to
-every changed file. It is
-review context, not publication evidence; inline PR comments still come from
+every changed file. `truncation.omitted_paths` records a bounded sample of
+ranked candidates excluded by `max_related_files`, and `omitted_count` records
+the full excluded count, so a clean-looking graph can still expose budget
+pressure without flooding agents. It is review context, not publication
+evidence; inline PR comments still come from
 validated findings whose evidence maps to captured PR diff lines.
 
 `review.coverage_plan`, `review.coverage_check`, and `review.quality_check` are
