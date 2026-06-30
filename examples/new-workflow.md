@@ -18,6 +18,10 @@ workflows/my-workflow/
   workflow.yaml
   input.schema.json
   output.schema.json
+  config.schema.json   # optional, only if workflow.yaml declares config
+
+config/
+  my-workflow.yaml      # optional, matching workflow.yaml config.file
 ```
 
 ## 2. Write The YAML
@@ -28,6 +32,9 @@ type: workflow
 mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
+config:
+  file: my-workflow.yaml
+  schema: config.schema.json
 capabilities:
   - runtime
   - repository-workspace
@@ -40,6 +47,10 @@ requires:
   repository: true
 execution:
   max_concurrency: 2
+  # Optional: allow native compilation to run verified read-only agent nodes in
+  # the same scheduler batch. Trusted write agents stay serialized.
+  # agent_sessions:
+  #   read_only: shared
   lock_timeout_ms: 120000
 nodes:
   - id: preflight
@@ -129,6 +140,7 @@ Rules:
 - Side-effecting built-ins need matching `policies:`.
 - Dynamic state references use `{ expression: "..." }`.
 - Plain strings are literals.
+- `config:` is optional. Add it only when the workflow needs runtime config.
 
 ## 3. Add Agents When Needed
 
@@ -177,6 +189,19 @@ validates final workflow output, which is derived from terminal nodes.
 
 Agent structured output schemas remain owned by agents unless the workflow uses
 a capability-provided schema.
+
+If the workflow declares `config:`, `config.schema.json` validates the matching
+YAML file under `config/`. The runtime exposes the parsed value as `$.config`:
+
+```yaml
+input:
+  enabled:
+    expression: "$.config.my_workflow.enabled"
+```
+
+Do not add workflow-specific runtime loaders or CLI commands for config.
+See [Workflow runtime config](../docs/workflow-runtime-config.md) for the full
+file layout, schema/value examples, ownership rules, and anti-patterns.
 
 ## 6. Run
 

@@ -1,6 +1,8 @@
 import { access, readFile } from "node:fs/promises";
 import YAML from "yaml";
 import { ZodError } from "zod";
+import type { JsonSchemaLike } from "../capabilities/json-schema-types.js";
+import { matchesJsonSchema } from "../capabilities/json-schema.js";
 
 export type ParseSchema<T> = {
   parse(value: unknown): T;
@@ -20,6 +22,12 @@ type ConfigError = Error & {
   path: string;
   cause: unknown;
 };
+
+class JsonSchemaConfigValidationError extends Error {
+  constructor(readonly value: unknown) {
+    super("Config value did not match JSON Schema");
+  }
+}
 
 function configError(
   message: string,
@@ -87,7 +95,10 @@ function parseConfig<T>(
   try {
     return schema.parse(parsed);
   } catch (cause) {
-    if (cause instanceof ZodError) {
+    if (
+      cause instanceof ZodError ||
+      cause instanceof JsonSchemaConfigValidationError
+    ) {
       throw configError(
         `Config file failed schema validation: ${path}`,
         "config_schema_invalid",
@@ -107,6 +118,21 @@ export async function loadYamlFile<T>(
   const content = await readConfig(path);
 
   return parseConfig(path, content, YAML.parse, schema);
+}
+
+export async function loadYamlJsonSchemaFile(
+  path: string,
+  schema: JsonSchemaLike
+): Promise<unknown> {
+  return await loadYamlFile(path, {
+    parse(value: unknown): unknown {
+      if (!matchesJsonSchema(schema, value)) {
+        throw new JsonSchemaConfigValidationError(value);
+      }
+
+      return value;
+    }
+  });
 }
 
 export async function loadOptionalYamlFile<T>(

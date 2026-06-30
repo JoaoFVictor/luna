@@ -23,12 +23,14 @@ There is one generic TypeScript workflow entrypoint:
 
 ## Current Extension Points
 
-- `workflows/<id>/`: strict YAML workflow graphs plus JSON schemas.
+- `workflows/<id>/`: strict YAML workflow graphs plus JSON schemas,
+  including optional workflow-owned `config.schema.json`.
 - `agents/<id>/`: reusable model roles and output contracts.
 - `src/capabilities/<capability>/`: capability manifests and deterministic
   built-ins, patterns, gates, tools, ports, policies, and publishers.
 - `src/providers/<provider>/`: provider-owned input adapters, auth/config,
-  payload parsing, task/PR context, reports, and change-request actions.
+  payload parsing, task/PR context, reports, PR review publishing, and
+  change-request actions.
 - `src/platform/native/**`: native plugin registration and workflow execution
   wiring.
 - `src/runtime/**`: runtime backend composition, LangGraph adapter,
@@ -66,6 +68,10 @@ Before changing an area, read the matching project skill:
 - Use capability manifests as the public registry for built-ins, patterns,
   gates, tools, ports, policies, and publishers. Avoid duplicate hand-written
   public id lists.
+- Workflow runtime config is workflow-declared. Use `config.file` and
+  `config.schema` in `workflows/<id>/workflow.yaml`, validate with
+  `workflows/<id>/config.schema.json`, and read values through `$.config`.
+  Do not add workflow-id branches in the runtime.
 - `quality-gates.gated_agent_loop` gates are configured on the pattern node in
   workflow YAML. Gate policy does not belong in `agents/<id>/agent.yaml`.
 - Side-effecting built-ins must declare explicit workflow `policies:` matching
@@ -75,7 +81,8 @@ Before changing an area, read the matching project skill:
 - Skills are explicit runtime guidance. Repository skills live in
   `config/repositories.yaml`; agent skills live in `agents/<id>/agent.yaml`.
 - Provider-specific auth, config, schemas, URLs, payloads, task context,
-  reports, and publishing belong under `src/providers/<provider>/`.
+  reports, PR review publishing, and change-request publishing belong under
+  `src/providers/<provider>/`.
 - Generic `src/core/**` and provider-neutral capabilities must not know
   provider-specific data shapes or runtime SDK details.
 - Pi-specific code belongs under `src/agent-runtimes/pi/**`.
@@ -89,6 +96,7 @@ Before changing an area, read the matching project skill:
 - `README.md`
 - `docs/README.md`
 - `docs/workflows-and-artifacts.md`
+- `docs/workflow-runtime-config.md`
 - `docs/agents-context-and-skills.md`
 - `docs/adapters-and-providers.md`
 - `docs/built-ins-tools-and-runtime.md`

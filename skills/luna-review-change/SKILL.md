@@ -18,12 +18,19 @@ Review Luna changes as architecture, not just text or code.
   policies are registered through capability manifests.
 - Provider-specific auth/config/schema/URL/payload/report/publish code stays
   under `src/providers/<provider>/`.
+- Provider-backed publishing stays provider-neutral at the capability boundary
+  and provider-specific at the implementation boundary. Examples:
+  `pull-request-review.publish` and `change-request.create`.
+- Workflow runtime config is declared with workflow `config.file` and
+  `config.schema`; runtime code should not branch on workflow ids. Check
+  `docs/workflow-runtime-config.md` when this surface changes.
 - Generic core and neutral capabilities do not import provider-specific shapes
   or runtime SDKs.
 - Pi/runtime materialization stays under `src/agent-runtimes/pi/**`.
 - MCP docs do not imply execution support in Pi.
 - Repository tools distinguish read-only tools from trusted write tools.
-- Docs/examples are updated when public behavior or authoring paths change.
+- Docs/examples/skills are updated when public behavior or authoring paths
+  change.
 - Path references and ownership claims match the current capability layout.
 
 ## Verification

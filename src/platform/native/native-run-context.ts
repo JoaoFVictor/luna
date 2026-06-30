@@ -4,19 +4,20 @@ import { loadAgentDefinition } from "../../capabilities/agents/agent-loader.js";
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
 import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import { createCapabilityRegistry } from "../../core/capabilities/registry.js";
-import { loadYamlFile } from "../../core/config/loader.js";
+import { loadYamlFile, loadYamlJsonSchemaFile } from "../../core/config/loader.js";
 import {
   AppConfigSchema,
   RepositoriesConfigSchema,
   type AppConfig,
   type RepositoryConfig
 } from "../../core/config/schemas.js";
-import { ImplementationConfigSchema } from "../../capabilities/repository-change/types.js";
 import { createRunIdentity } from "../../core/invocation/run-identity.js";
 import {
   assertCheckpointJsonValue,
   type JsonValue
 } from "../../core/runtime/json.js";
+import { runtimeError } from "../../core/runtime/errors.js";
+import { isInsideRoot } from "../../core/security/path.js";
 import { compileWorkflow, type CompiledWorkflow } from "../../core/workflow/compiler.js";
 import { loadWorkflowDefinition } from "../../core/workflow/definition.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
@@ -120,21 +121,32 @@ export async function compileNativeWorkflow({
   > = {};
   const nodes = await Promise.all(
     workflow.graph.nodes.map(async (node) => {
-      if (
-        node.type !== "agent" ||
-        !node.output_schema.endsWith(".json")
-      ) {
+      if (node.type !== "agent") {
         return node;
       }
 
+      const agent = await loadAgentDefinition(agentsRoot, node.agent, {
+        capabilityRegistry: platform.capabilityRegistry
+      });
       const schemaId = `workflow-agent-schemas.${workflow.id}.${node.id}`;
-      const agent = await loadAgentDefinition(agentsRoot, node.agent);
-      schemaRegistrations[schemaId] = {
-        id: schemaId,
-        schema: agent.outputSchema as JsonSchemaLike
-      };
+      const outputSchema = node.output_schema.endsWith(".json")
+        ? schemaId
+        : node.output_schema;
+      if (node.output_schema.endsWith(".json")) {
+        schemaRegistrations[schemaId] = {
+          id: schemaId,
+          schema: agent.outputSchema as JsonSchemaLike
+        };
+      }
 
-      return { ...node, output_schema: schemaId };
+      return {
+        ...node,
+        output_schema: outputSchema,
+        ...(workflow.execution.agent_sessions?.read_only === "shared" &&
+        agent.mode === "read_only"
+          ? { agent_session: { isolation: "shared" as const } }
+          : {})
+      };
     })
   );
   const compiledWorkflow = {
@@ -174,17 +186,31 @@ export async function loadWorkflowRuntimeConfig({
   readonly workflow: WorkflowDefinition;
   readonly configRoot: string;
 }): Promise<JsonValue> {
-  if (workflow.mode !== "trusted_local_write") {
+  if (workflow.config === undefined) {
     return {};
   }
 
-  const config = await loadYamlFile(
-    path.join(configRoot, "implementation.yaml"),
-    ImplementationConfigSchema
+  const config = await loadYamlJsonSchemaFile(
+    resolveWorkflowConfigPath(configRoot, workflow.config.file),
+    workflow.config.schema_content
   );
   assertCheckpointJsonValue(config);
 
   return config;
+}
+
+function resolveWorkflowConfigPath(configRoot: string, relativePath: string): string {
+  const root = path.resolve(configRoot);
+  const resolved = path.resolve(root, relativePath);
+  if (!isInsideRoot(root, resolved)) {
+    throw runtimeError(
+      "Workflow config file path escapes config directory",
+      "runtime_state_invalid",
+      { details: { config_root: root, path: relativePath } }
+    );
+  }
+
+  return resolved;
 }
 
 export function runtimeCompositionConfig(

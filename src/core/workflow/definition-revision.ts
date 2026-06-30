@@ -54,6 +54,7 @@ export function computeWorkflowRevision({
   canonicalWorkflow,
   inputSchemaContent,
   outputSchemaContent,
+  configSchemaContent,
   capabilities,
   externalDefinitionDigests,
   capabilityRegistry
@@ -61,6 +62,7 @@ export function computeWorkflowRevision({
   canonicalWorkflow: unknown;
   inputSchemaContent: unknown;
   outputSchemaContent: unknown;
+  configSchemaContent?: unknown;
   capabilities: readonly string[];
   externalDefinitionDigests: Record<string, string>;
   capabilityRegistry?: CapabilityRegistry;
@@ -69,6 +71,7 @@ export function computeWorkflowRevision({
     workflow: canonicalWorkflow,
     input_schema: inputSchemaContent,
     output_schema: outputSchemaContent,
+    config_schema: configSchemaContent,
     capabilities: capabilityVersions(capabilities, capabilityRegistry),
     external_definitions: externalDefinitionDigests,
     compiler_schema_version: LUNA_WORKFLOW_COMPILER_SCHEMA_VERSION,

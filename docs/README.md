@@ -18,6 +18,7 @@ CLI / input adapter
 ## Read First
 
 - [Workflows and artifacts](workflows-and-artifacts.md)
+- [Workflow runtime config](workflow-runtime-config.md)
 - [Agents, context, and skills](agents-context-and-skills.md)
 - [Adapters and providers](adapters-and-providers.md)
 - [Capabilities, tools, and runtime](built-ins-tools-and-runtime.md)
@@ -41,7 +42,7 @@ Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 | Runtime composition | `src/runtime/composition/**` | backend selection, agent/workflow runtime factories, ports, observability |
 | Observability | `src/core/observability/**` | spans, logs, sinks, runtime-log projection, summary artifacts |
 | Capabilities | `src/capabilities/**` | manifests, built-ins, patterns, gates, tools, ports, policies |
-| Providers | `src/providers/**` | source-system adapters, auth/config, payload parsing, reports, publishing |
+| Providers | `src/providers/**` | source-system adapters, auth/config, payload parsing, reports, PR review and change-request publishing |
 | Agents | `agents/<id>/` and `src/capabilities/agents/**` | reusable model roles and agent-node execution contracts |
 | Agent runtimes | `src/agent-runtimes/<runtime>/` | runtime-specific model/tool/materialization logic |
 
@@ -49,6 +50,10 @@ Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 
 Use `workflows/<id>/` when orchestration changes: node order, dependencies,
 gates, artifacts, mode, required capabilities, or final reporting shape.
+Workflow-owned runtime settings are also declared there with `config.file` and
+`config.schema`; the runtime loads the matching file from `config/` and exposes
+validated data as `$.config`. See
+[Workflow runtime config](workflow-runtime-config.md) for the full contract.
 
 Use `agents/<id>/` when a reusable model role changes: instructions, output
 schema, model profile, tools, MCP servers, skills, context, or subagents.
@@ -59,11 +64,12 @@ Register public ids through the capability manifest and official registry.
 
 Use `src/providers/<provider>/` when behavior depends on source-system auth,
 config, URLs, API payloads, task context, report rendering, or change-request
-publishing.
+publishing. This includes provider-specific implementations of
+provider-neutral ports such as pull request review publication.
 
 Use native platform plugin registration when wiring adapters, provider
-built-ins, runtime factories, pattern executors, or change-request providers
-into the running platform.
+built-ins, runtime factories, pattern executors, or provider-backed publishing
+providers into the running platform.
 
 Use `src/agent-runtimes/pi/**` only for Pi-specific materialization:
 model calls, Pi tool conversion, runtime auth, usage/log bridging, and Pi
@@ -86,6 +92,9 @@ summary projection, or external trace bridge contracts.
 - Side-effecting built-ins must declare and use side-effect policies.
 - Agents should not commit, push, or create change requests; deterministic
   built-ins own publishing gates.
+- Do not add workflow-specific runtime config branches. Put the schema under
+  `workflows/<id>/config.schema.json`, the values under `config/<file>.yaml`,
+  and pass values into nodes through workflow expressions.
 
 ## Verification
 

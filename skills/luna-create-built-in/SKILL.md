@@ -48,6 +48,10 @@ Do not hide side effects in prompts or provider modules.
   provider API payloads, or runtime SDKs.
 - Provider-specific built-ins belong under `src/providers/<provider>/` and are
   wired through native/plugin composition.
+- Provider-backed capability built-ins should expose provider-neutral ports and
+  use generic provider registry mechanics from `src/core/providers/registry.ts`
+  in composition. Do not create one-off provider registries per capability
+  unless lookup semantics differ.
 - Runner behavior should come from metadata, manifest registrations, and
   policies, not name checks.
 - Do not add unregistered indirection or barrel exports for paths that are not

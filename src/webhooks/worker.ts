@@ -78,6 +78,8 @@ function isPermanentExecutionError(error: unknown): boolean {
     || code === "invocation_repository_missing"
     || code === "invocation_subject_invalid"
     || code === "invocation_subject_missing"
+    || code === "pull_request_review_publish_failed"
+    || code === "pull_request_review_unknown_publish_outcome"
     || code === "repository_config_missing"
     || code === "repository_config_not_found"
     || code === "workspace_resolution_failed";

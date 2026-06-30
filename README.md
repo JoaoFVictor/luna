@@ -40,12 +40,12 @@ Authoring surfaces:
 - `src/capabilities/<capability>/`: public capability manifests plus
   deterministic built-ins, patterns, gates, tools, ports, policies, and tests.
 - `src/providers/<provider>/`: provider-owned input adapters, auth/config
-  schemas, payload parsing, task/PR context, reports, and change-request
-  actions.
+  schemas, payload parsing, task/PR context, reports, PR review publishing,
+  and change-request actions.
 - `src/agent-runtimes/<runtime>/`: concrete agent runtime adapters. The
   bundled runtime is Pi under `src/agent-runtimes/pi/`.
-- `config/*.yaml`: app, routing, repositories, model profiles, MCP policy, and
-  provider/task settings.
+- `config/*.yaml`: app, routing, repositories, model profiles, MCP policy,
+  provider/task settings, and workflow-declared runtime config files.
 
 ## What Ships
 
@@ -58,7 +58,8 @@ adapters currently live in provider modules:
 
 Workflows:
 
-- `code-review`: read-only GitHub PR review.
+- `code-review`: repository read-only GitHub PR review with optional
+  provider-backed PR review publication.
 - `implementation`: trusted local write implementation loop for Jira/Plane
   tasks, with validation, reviews, commit, push, and optional
   change-request creation.
@@ -74,9 +75,9 @@ Common public ids include:
   `task-context.collect`, `task-context.final_report`,
   `validation.run_commands`, `findings.validate_evidence`,
   `reports.final_report`, `git.status`, `git.commit`, `git.push_branch`,
-  `change-request.create`, `local-exec.command.read`,
-  `local-exec.command.write`, and the `repository-change.*` lifecycle
-  built-ins.
+  `change-request.create`, `pull-request-review.publish`,
+  `local-exec.command.read`, `local-exec.command.write`, and the
+  `repository-change.*` lifecycle built-ins.
 - Pattern: `quality-gates.gated_agent_loop`.
 - Gates: `quality-gates.validation_commands`,
   `quality-gates.agent_review`, `quality-gates.non_empty_diff`,
@@ -151,6 +152,39 @@ Run from a normalized invocation JSON:
 ```bash
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --input examples/github-pr-opened.invocation.json
 ```
+
+`code-review` plans review coverage, builds a deterministic related-context
+impact graph around the changed files, runs general, security, and architecture
+reviewers, merges duplicate findings with deterministic fingerprints and source
+provenance, verifies coverage, validates evidence, and can publish the validated
+review back to the PR when its workflow config enables PR review publishing:
+
+```yaml
+# config/code-review.yaml
+code_review:
+  pull_request_review:
+    enabled: true
+    provider: github
+    event: auto
+    inline_comments: true
+```
+
+The bundled config also declares `review_dimensions`, `related_context`, and
+inline comment policy. See [configuration-reference.md](docs/configuration-reference.md)
+for the complete field contract.
+
+`event` can be `auto`, `comment`, `request_changes`, or `approve`. `auto` uses
+the structured acceptance result with safe downgrades: accepted reviews without
+findings publish an approval, rejected reviews with validated findings or
+blocking reasons request changes, and uncertain reviews publish a regular PR
+review comment. The review body includes the acceptance result
+(`approved`, `changes requested`, `not accepted`, or `needs human review`) plus
+the acceptance summary. Inline comments are created only for validated findings
+whose evidence maps to right-side PR diff lines. By default Luna places the
+primary evidence inline, deduplicates duplicate comment locations within the
+published review, caps inline comments with `max_inline_comments`, and appends
+secondary or unplaceable evidence to the review body. This is not cross-run
+publication idempotency; a later run can still publish a new review.
 
 Resume a human interrupt:
 
@@ -261,6 +295,21 @@ Plain strings are literals, not templates. Final workflow output is derived
 from terminal node outputs; there is no separate `output:` mapping in workflow
 YAML.
 
+Workflows can declare their own runtime config without runtime name checks:
+
+```yaml
+config:
+  file: code-review.yaml
+  schema: config.schema.json
+```
+
+The native runtime loads `config/<file>`, validates it with
+`workflows/<id>/<schema>`, and exposes the result as `$.config`. New workflows
+that need runtime settings should follow this pattern instead of adding
+workflow-specific TypeScript branches. See
+[Workflow runtime config](docs/workflow-runtime-config.md) for the complete
+contract and examples.
+
 ## Context And Skills
 
 Context is explicit. A workflow must run `context.collect_context` and pass its
@@ -284,11 +333,15 @@ Pi model auth lives in `.luna/auth/pi-ai/auth.json`.
 Provider code belongs under `src/providers/<provider>/`. Generic core and
 capability code must not validate or import provider-specific auth, config,
 URL, SDK, or payload shapes. Composition happens in platform/plugin roots.
+Provider-backed publishing is exposed through provider-neutral capabilities,
+such as `pull-request-review.publish` and `change-request.create`, while the
+GitHub API/CLI details remain under `src/providers/github/**`.
 
 ## Documentation
 
 - [Architecture overview](docs/README.md)
 - [Workflows and artifacts](docs/workflows-and-artifacts.md)
+- [Workflow runtime config](docs/workflow-runtime-config.md)
 - [Agents, context, and skills](docs/agents-context-and-skills.md)
 - [Adapters and providers](docs/adapters-and-providers.md)
 - [Capabilities, tools, and runtime](docs/built-ins-tools-and-runtime.md)

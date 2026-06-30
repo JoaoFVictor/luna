@@ -97,6 +97,29 @@ describe("workflow execution policy", () => {
     expect(plan.items[1]?.decision.batchExclusionKeys).toEqual([]);
   });
 
+  it("allows marked read-only agent sessions to share a batch", () => {
+    const plan = selectReadyBatchWithPolicy({
+      ready: [
+        { ...agentNode("agent_a"), agent_session: { isolation: "shared" } },
+        { ...agentNode("agent_b"), agent_session: { isolation: "shared" } },
+        agentNode("trusted_writer")
+      ],
+      maxConcurrency: 3,
+      builtInMetadata: () => ({})
+    });
+
+    expect(plan.items.map((item) => item.node.id)).toEqual([
+      "agent_a",
+      "agent_b",
+      "trusted_writer"
+    ]);
+    expect(plan.items[0]?.decision.batchExclusionKeys).toEqual([]);
+    expect(plan.items[1]?.decision.batchExclusionKeys).toEqual([]);
+    expect(plan.items[2]?.decision.batchExclusionKeys).toEqual([
+      "agent_session"
+    ]);
+  });
+
   it("serializes workspace capture decisions", () => {
     const plan = selectReadyBatchWithPolicy({
       ready: [

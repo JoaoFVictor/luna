@@ -125,6 +125,52 @@ Push depends on commit. Change request creation depends on push. Publishing can
 also be stopped by failed validation, failed acceptance review, side-effect
 policy, missing `gh` auth, or repository remote mismatch.
 
+## Pull Request Review Is Not Published
+
+Check `config/code-review.yaml`:
+
+```yaml
+code_review:
+  review_dimensions:
+    - correctness
+    - security
+    - architecture
+    - reuse_existing_components
+  pull_request_review:
+    enabled: true
+    provider: github
+    event: auto
+    inline_comments: true
+    comment_policy:
+      inline_evidence: primary
+      max_inline_comments: 20
+```
+
+If publishing is disabled, `pull-request-review.json` records a skipped result.
+If publishing is enabled but fails, check `gh auth status` with the Luna
+`GH_CONFIG_DIR`, confirm the authenticated account can review the PR, and
+inspect `repo-context.json`, `related-context.json`, and
+`code-review-findings.json`.
+
+`event: auto` follows `acceptance-review.json` with safe downgrades: accepted
+reviews without findings can publish approvals, rejected reviews with validated
+findings or blocking reasons can request changes, and uncertain reviews publish
+a regular PR review comment. The review body should include the acceptance
+result, such as `approved`, `changes requested`, `not accepted`, or
+`needs human review`. If the provider call fails, the workflow records a
+`publish_failed` result in
+`pull-request-review.json` instead of retrying the webhook job.
+
+If GitHub accepts the request but Luna cannot prove the created review identity
+from the response, the workflow fails with
+`pull_request_review_unknown_publish_outcome`. That failure is non-retryable
+because retrying could create duplicate reviews.
+
+Inline comments are only created for validated findings whose evidence maps to
+right-side lines in the captured PR diff. Other findings are appended to the
+review body, so zero inline comments does not necessarily mean publication
+failed.
+
 ## Runtime Or Observability Backend Is Invalid
 
 Runtime composition validates every selected backend and option object. The
@@ -144,9 +190,14 @@ adapter support before expecting MCP calls in Pi-backed agents.
 
 - `preflight.json`: selected runtime and config preflight.
 - `context-intake.json`: repository and agent context audit.
+- `related-context.json`: code-review related repository graph, budgets, and
+  truncation audit.
+- `review-quality.json`: deterministic code-review quality signals before
+  acceptance and PR publication.
 - `implementation-result.json`: writer attempts and gate outcomes.
 - `validation.json`: validation command results.
 - `acceptance-review.json`: acceptance gate result.
 - `diff.json`: collected worktree diff.
 - `commit.json`, `push.json`, `change-request.json`: publishing lifecycle.
+- `pull-request-review.json`: PR review publication or skipped result.
 - `final-report.md`: operator-facing final summary.

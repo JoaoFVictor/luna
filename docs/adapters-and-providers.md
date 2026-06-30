@@ -86,6 +86,7 @@ A provider owns:
 - provider payload interpretation.
 - task or PR context rendering.
 - provider-specific final reports.
+- pull request review publishing for that provider.
 - change-request publishing for that provider.
 
 A provider does not own:
@@ -100,16 +101,24 @@ Shared provider helpers may read `.luna/auth/luna.auth.json` as unknown
 provider data. Provider-specific validation belongs in the owning provider
 module.
 
+Generic workflow and capability modules should depend on provider-neutral ports,
+not provider-specific factories. For example, the `pull-request-review`
+capability exposes `pull-request-review.publish` and the
+`pull-request-review.provider` port. The GitHub implementation lives under
+`src/providers/github/pull-request-review/` and is registered through native
+platform plugin composition.
+
 ## Current Providers
 
 GitHub:
 
 - Parses GitHub PR URLs.
-- Uses `gh api` through `executeJson`.
+- Uses the shared GitHub CLI helper for provider-owned `gh` calls.
 - Uses `gh` authentication from `GH_CONFIG_DIR` under the Luna auth root, not
   `luna.auth.json`.
 - Uses Git commit identity from `.luna/auth/git/config` when trusted write
   workflows commit in the container runtime.
+- Provides GitHub pull request review publishing.
 - Provides GitHub change-request publishing.
 
 Jira:
@@ -135,9 +144,13 @@ Provider/generic wiring belongs in explicit composition roots:
 - `src/platform/native/native-platform-registrations.ts`
 - `src/platform/native/native-workflow-executors.ts`
 - `src/providers/built-ins.ts`
-- `src/capabilities/change-request/provider-registry.ts`
+- `src/core/providers/registry.ts`
 
 Leaf modules should stay in their lane.
+
+`src/core/providers/registry.ts` is intentionally generic provider-port
+plumbing. Do not create one-off provider registry modules per capability unless
+the capability has genuinely different lookup semantics.
 
 ## Source Map
 

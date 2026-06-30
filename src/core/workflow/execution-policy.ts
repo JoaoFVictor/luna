@@ -5,6 +5,9 @@ export type WorkflowExecutionNode = {
   type: "built_in" | "agent" | "pattern";
   uses?: string;
   after?: string[];
+  agent_session?: {
+    isolation: "exclusive" | "shared";
+  };
   batchExclusionKeys?: readonly string[];
   artifacts?: readonly {
     path: string;
@@ -63,6 +66,10 @@ function isAgentLike(node: WorkflowExecutionNode): boolean {
   return node.type === "agent";
 }
 
+function requiresExclusiveAgentSession(node: WorkflowExecutionNode): boolean {
+  return isAgentLike(node) && node.agent_session?.isolation !== "shared";
+}
+
 function artifactPaths(node: WorkflowExecutionNode): string[] {
   return (node.artifacts ?? []).map((artifact) => artifact.path);
 }
@@ -83,7 +90,7 @@ export function executionPolicyDecisionForNode<
   const locks = metadata.locks ?? [];
   const capturesWorkspace = metadata.capturesWorkspace === true;
   const batchExclusionKeys = [
-    ...(isAgentLike(node) ? ["agent_session"] : []),
+    ...(requiresExclusiveAgentSession(node) ? ["agent_session"] : []),
     ...(node.batchExclusionKeys ?? []),
     ...(capturesWorkspace ? ["workspace_capture"] : [])
   ];

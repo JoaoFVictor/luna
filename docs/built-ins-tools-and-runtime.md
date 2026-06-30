@@ -50,18 +50,82 @@ Common built-in families:
 - `runtime.preflight`
 - `context.collect_context`
 - `repository-diff.collect_context`
+- `repository-context.related_context`
 - `repository-workspace.capture`
+- `review.coverage_plan`
+- `review.coverage_check`
+- `review.quality_check`
 - `task-context.collect` and `task-context.final_report`
 - `validation.run_commands`
+- `findings.merge`
 - `findings.validate_evidence`
 - `reports.final_report`
 - `local-exec.command.read` and `local-exec.command.write`
 - `git.status`, `git.commit`, `git.push_branch`
 - `change-request.create`
+- `pull-request-review.publish`
 - `repository-change.*` lifecycle steps
 
 For the exact current set, inspect `src/capabilities/*/manifest.ts` and
 `src/capabilities/registry.ts`.
+
+Provider-backed publishing built-ins still live in provider-neutral
+capabilities. `pull-request-review.publish` turns validated findings and PR
+diff context into a formal review request, and can render a structured
+acceptance result into the PR body. The selected provider port owns the
+external API call. The built-in resolves the effective review event from the
+validated finding state and optional acceptance result before the provider is
+called, so provider modules do not own review policy. It also applies
+provider-neutral comment noise control: primary-evidence inline placement,
+duplicate comment removal, inline comment caps, and fallback body comments for
+secondary or unplaceable evidence. `change-request.create` follows the same
+split for change requests.
+
+`review.coverage_plan`, `review.coverage_check`, and `review.quality_check` are
+provider-neutral review quality built-ins. The plan extracts
+`expected_review_ranges` from repository diff context and records blocked
+coverage for omitted, truncated, binary, deleted, or uncaptured changes. The
+check compares those ranges against reviewer-reported `reviewed_ranges` and
+returns `missing_review_ranges` so reports and acceptance can distinguish
+complete, partial, and blocked review scope. Reviewer ranges may carry `notes`
+and `risk_tags`, which gives acceptance stronger evidence than a bare range
+declaration. The quality check then combines coverage, related-context audit
+signals, truncation, and publishable finding evidence into a deterministic
+`pass`, `needs_human_review`, or `blocked` status. Coverage is still an
+auditable reviewer declaration checked against captured diff evidence; it is
+not treated as proof that a model semantically understood every changed line.
+
+`repository-context.related_context` is the provider-neutral impact-context
+built-in used by code review. It takes captured `repo_context`, scans a bounded
+set of supported repository files, and emits `luna.related_context.v1` with
+ranked files plus graph `nodes` and `edges`. It skips dependency/build output
+and local agent/editor tool directories, and changed-file excerpts are centered
+on captured diff hunks instead of blindly taking the file prefix. It uses AST
+engines before heuristics: TypeScript for JS/TS, Luna-owned
+`@vue/compiler-sfc` for Vue SFC script extraction, and `nikic/php-parser`
+through the target repository's autoload when available for PHP. If a parser is
+unavailable or fails, the built-in keeps producing deterministic context
+through heuristics and records that in `audit.warnings`. The output also
+records `audit.symbol_engines`, so agents and humans can see whether a run used
+`typescript_ast`, `vue_sfc_ast`, `php_nikic`, `php_heuristic`, or generic
+`heuristic` analysis. It resolves
+relative imports, TypeScript/JavaScript `paths` aliases and `baseUrl` from
+`tsconfig.json` or `jsconfig.json`, common root aliases such as `@/` and `~/`,
+PHP `require`/`include`, Composer PSR-4 namespaces, reverse references,
+tests/specs, config files, docs, same-directory files, and same-name
+abstractions. Docs/config edges are emitted only when they match the specific
+changed seed, not as global edges to every changed file. Budgets and truncation
+are part of the output so agents and humans can see when context was limited.
+
+`findings.merge` is the deterministic fan-in for multi-agent review outputs. It
+accepts a `sources` array of named entries shaped as
+`{ id, result: { findings, reviewed_ranges } }`, computes provider-neutral
+fingerprints, preserves source provenance, keeps the stronger
+severity/confidence when duplicate findings match, unions evidence and reviewed
+ranges, and returns the same `{ summary, findings, reviewed_ranges }` shape
+consumed by downstream review checks. The shared reviewer output schema is
+registered as `findings.review_output` so reviewer agents do not need
+copy-pasted local JSON schemas.
 
 ## Local Tools
 

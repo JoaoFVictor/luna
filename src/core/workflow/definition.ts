@@ -4,12 +4,14 @@ import {
   defaultWorkflowSubagentPolicy,
   type WorkflowSubagentPolicy
 } from "../agents/subagent-policy.js";
+import type { JsonSchemaLike } from "../capabilities/json-schema-types.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import { assertSafeSegment, isInsideRoot } from "../security/path.js";
 import { WorkflowDefinitionError } from "./definition-errors.js";
 import type { WorkflowDefinitionErrorCode } from "./definition-errors.js";
 import {
   assertWorkflowDocument,
+  assertObject,
   normalizeExecution,
   parseWorkflowYaml,
   readCapabilities,
@@ -131,6 +133,7 @@ export async function loadWorkflowDefinitionFromMetadata({
   const outputSchemaPath = requireString(raw.output_schema, "$.output_schema");
   const inputSchemaContent = await readJsonSchema(directory, inputSchemaPath);
   const outputSchemaContent = await readJsonSchema(directory, outputSchemaPath);
+  const config = await readRuntimeConfig(directory, raw.config);
   const capabilities = readCapabilities(raw.capabilities);
   validateDeclaredCapabilities(capabilities, capabilityRegistry);
 
@@ -159,6 +162,7 @@ export async function loadWorkflowDefinitionFromMetadata({
       workflowYaml === undefined ? raw : parseWorkflowYaml(workflowYaml),
     inputSchemaContent,
     outputSchemaContent,
+    configSchemaContent: config?.schema_content,
     capabilities,
     externalDefinitionDigests,
     capabilityRegistry
@@ -173,6 +177,7 @@ export async function loadWorkflowDefinitionFromMetadata({
     output_schema: outputSchemaPath,
     input_schema_content: inputSchemaContent,
     output_schema_content: outputSchemaContent,
+    ...(config === undefined ? {} : { config }),
     capabilities,
     graph: parsedGraph,
     revision,
@@ -184,13 +189,55 @@ export async function loadWorkflowDefinitionFromMetadata({
   };
 }
 
+async function readRuntimeConfig(
+  directory: string,
+  value: unknown
+): Promise<WorkflowDefinition["config"] | undefined> {
+  if (value === undefined) {
+    return undefined;
+  }
+  const raw = assertObject(value, "$.config");
+  for (const key of Object.keys(raw)) {
+    if (key !== "file" && key !== "schema") {
+      throw new WorkflowDefinitionError(
+        "workflow_unknown_field",
+        `Unknown workflow field ${key} at $.config.`,
+        { path: "$.config" }
+      );
+    }
+  }
+  const file = requireString(raw.file, "$.config.file");
+  const schema = requireString(raw.schema, "$.config.schema");
+  assertSafeConfigFilePath(file);
+
+  return {
+    file,
+    schema,
+    schema_content: await readJsonSchema(directory, schema)
+  };
+}
+
+function assertSafeConfigFilePath(relativePath: string): void {
+  if (
+    relativePath.trim() === "" ||
+    path.isAbsolute(relativePath) ||
+    relativePath.split(/[\\/]/).includes("..")
+  ) {
+    throw new WorkflowDefinitionError(
+      "workflow_path_escape",
+      `Workflow config file path escapes config directory: ${relativePath}`,
+      { path: "$.config.file" }
+    );
+  }
+}
+
 async function readJsonSchema(
   directory: string,
   relativePath: string
-): Promise<unknown> {
+): Promise<JsonSchemaLike> {
   const schemaPath = await safeWorkflowPath(directory, relativePath);
   try {
-    return JSON.parse(await readFile(schemaPath, "utf8"));
+    return JSON.parse(await readFile(schemaPath, "utf8")) as JsonSchemaLike;
   } catch (cause) {
     if ((cause as { code?: unknown }).code === "ENOENT") {
       throw new WorkflowDefinitionError(

@@ -1,32 +1,15 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type {
   ChangeRequestCreateInput,
   ChangeRequestCreatedResult,
   ChangeRequestProviderFactory,
   ChangeRequestState
 } from "../../../capabilities/change-request/contracts.js";
+import { runGh as defaultRunGh, type RunGh } from "../gh.js";
 
-type RunGh = (cwd: string, args: readonly string[]) => Promise<string>;
 type ChangeRequestError = Error & {
   code: "change_request_create_failed";
   cause?: unknown;
 };
-
-const execFileAsync = promisify(execFile);
-
-async function defaultRunGh(cwd: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync("gh", [...args], {
-    cwd,
-    env: {
-      ...process.env,
-      GH_PROMPT_DISABLED: "1"
-    },
-    timeout: 60_000
-  });
-
-  return stdout;
-}
 
 function changeRequestError(message: string, cause: unknown): ChangeRequestError {
   const error = new Error(message, { cause }) as ChangeRequestError;
@@ -69,7 +52,7 @@ async function createPullRequest(
 
   let url: string;
   try {
-    url = (await runGh(input.repository_path, args)).trim();
+    url = (await runGh(input.repository_path, args, { timeoutMs: 60_000 })).trim();
   } catch (cause) {
     throw changeRequestError("Failed to create GitHub change request", cause);
   }
@@ -177,7 +160,10 @@ export function createGitHubChangeRequestProviderFactory({
           }
 
           try {
-            return parseFirstPullRequest(await runGh(cwd, args), input);
+            return parseFirstPullRequest(
+              await runGh(cwd, args, { timeoutMs: 60_000 }),
+              input
+            );
           } catch (cause) {
             throw changeRequestError("Failed to read GitHub change request", cause);
           }

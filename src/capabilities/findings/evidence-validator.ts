@@ -1,5 +1,7 @@
 import type { RepoContext } from "../../capabilities/git/diff/types.js";
 import type { Finding } from "../../core/findings/types.js";
+import { rightSideLineRangeContent } from "../../core/repository/diff-hunks.js";
+import { findingFingerprint } from "./fingerprint.js";
 
 function hasValidLineEvidence(
   filesByPath: Map<string, RepoContext["files"][number]>,
@@ -7,18 +9,14 @@ function hasValidLineEvidence(
 ): boolean {
   const changedFile = filesByPath.get(evidence.path);
 
-  if (changedFile === undefined || changedFile.excerpt === null) {
+  if (changedFile === undefined) {
     return false;
   }
 
-  if (
-    evidence.line_start < changedFile.excerpt.start_line ||
-    evidence.line_end > changedFile.excerpt.end_line
-  ) {
-    return false;
-  }
-
-  return true;
+  return (
+    excerptLineRangeContentFor(changedFile, evidence) !== undefined ||
+    rightSideLineRangeContent(changedFile.patch, evidence.line_start, evidence.line_end) !== undefined
+  );
 }
 
 function evidenceWithoutUnmatchedQuote(
@@ -27,20 +25,17 @@ function evidenceWithoutUnmatchedQuote(
 ): Finding["evidence"][number] {
   const changedFile = filesByPath.get(evidence.path);
 
-  if (
-    changedFile?.excerpt === undefined ||
-    changedFile.excerpt === null ||
-    evidence.quote === undefined
-  ) {
+  if (changedFile === undefined || evidence.quote === undefined) {
     return evidence;
   }
 
-  const lineContent = excerptLineRangeContent(
-    changedFile.excerpt.content,
-    changedFile.excerpt.start_line,
-    evidence.line_start,
-    evidence.line_end
-  );
+  const lineContent =
+    excerptLineRangeContentFor(changedFile, evidence) ??
+    rightSideLineRangeContent(changedFile.patch, evidence.line_start, evidence.line_end);
+
+  if (lineContent === undefined) {
+    return evidence;
+  }
 
   if (lineContent.includes(evidence.quote)) {
     return evidence;
@@ -66,6 +61,29 @@ function excerptLineRangeContent(
   return lines.slice(startIndex, endIndex + 1).join("\n");
 }
 
+function excerptLineRangeContentFor(
+  changedFile: RepoContext["files"][number],
+  evidence: Finding["evidence"][number]
+): string | undefined {
+  if (changedFile.excerpt === null) {
+    return undefined;
+  }
+
+  if (
+    evidence.line_start < changedFile.excerpt.start_line ||
+    evidence.line_end > changedFile.excerpt.end_line
+  ) {
+    return undefined;
+  }
+
+  return excerptLineRangeContent(
+    changedFile.excerpt.content,
+    changedFile.excerpt.start_line,
+    evidence.line_start,
+    evidence.line_end
+  );
+}
+
 export function validateFindingEvidence(
   repoContext: RepoContext,
   findings: readonly Finding[]
@@ -74,18 +92,23 @@ export function validateFindingEvidence(
     repoContext.files.map((changedFile) => [changedFile.path, changedFile])
   );
 
-  return findings.map((finding) => {
+  return findings.flatMap((finding) => {
     const evidence = finding.evidence
       .filter((entry) => hasValidLineEvidence(filesByPath, entry))
       .map((entry) => evidenceWithoutUnmatchedQuote(filesByPath, entry));
-    const shouldDowngrade =
-      evidence.length === 0 &&
-      (finding.confidence === "high" || finding.confidence === "medium");
 
-    return {
+    if (evidence.length === 0) {
+      return [];
+    }
+
+    const validatedFinding = {
       ...finding,
-      confidence: shouldDowngrade ? "low" : finding.confidence,
       evidence
     };
+
+    return [{
+      ...validatedFinding,
+      fingerprint: findingFingerprint(validatedFinding)
+    }];
   });
 }

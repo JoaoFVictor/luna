@@ -14,6 +14,11 @@ Add reusable behavior under `src/capabilities/<capability>/`. Provider-specific
 behavior belongs under `src/providers/<provider>/` and is wired through native
 platform/provider composition.
 
+For provider-backed publishing, keep the public operation provider-neutral. The
+capability owns the built-in id, input/output contracts, side-effect policy, and
+port shape. Each provider owns its API/auth/payload implementation. Existing
+examples are `pull-request-review.publish` and `change-request.create`.
+
 Shared contracts and registry mechanics live under `src/core/built-ins/**`;
 they are not the ownership home for new public domain behavior.
 
@@ -40,6 +45,11 @@ built_ins: {
 Side-effecting operations need a policy in the manifest and a matching workflow
 `policies:` entry.
 
+If the operation needs a provider, register a provider-neutral port in the
+manifest and use the shared provider registry mechanics from
+`src/core/providers/registry.ts` in composition code. Do not add a new
+capability-specific provider registry unless lookup behavior truly differs.
+
 ## 3. Implement The Step
 
 Use the existing built-in definition pattern in the owning capability. Keep the
@@ -57,6 +67,10 @@ assembled.
 
 Workflow validation and runtime execution must see the same active
 registration.
+
+For provider-backed capabilities, wire provider factories in
+`src/platform/native/native-platform-plugins.ts` and expose the active provider
+ports through native workflow executor dependencies.
 
 ## 5. Use It In Workflow YAML
 

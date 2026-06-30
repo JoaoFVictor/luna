@@ -1,0 +1,125 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["implementation"],
+  "properties": {
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch_pattern",
+        "commit",
+        "push",
+        "change_request",
+        "sandbox",
+        "validation"
+      ],
+      "properties": {
+        "branch_pattern": { "type": "string", "minLength": 1 },
+        "commit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "push": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "remote"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "remote": { "type": "string", "minLength": 1 }
+          }
+        },
+        "change_request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "provider", "draft", "base_ref"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "provider": { "type": "string", "minLength": 1 },
+            "draft": { "type": "boolean" },
+            "base_ref": { "type": "string", "minLength": 1 }
+          }
+        },
+        "sandbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "env_allowlist"],
+          "properties": {
+            "type": { "const": "trusted_host_local" },
+            "env_allowlist": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repair_attempts", "max_output_bytes", "commands"],
+          "properties": {
+            "repair_attempts": { "type": "integer", "minimum": 0, "maximum": 9 },
+            "max_output_bytes": { "type": "integer", "minimum": 1 },
+            "commands": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["cmd"],
+                "properties": {
+                  "cmd": { "type": "string", "minLength": 1 },
+                  "args": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "timeout_ms": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "commit": {
+                "required": ["enabled"],
+                "properties": {
+                  "enabled": { "const": false }
+                }
+              },
+              "push": {
+                "required": ["enabled"],
+                "properties": {
+                  "enabled": { "const": true }
+                }
+              }
+            }
+          }
+        },
+        {
+          "not": {
+            "properties": {
+              "push": {
+                "required": ["enabled"],
+                "properties": {
+                  "enabled": { "const": false }
+                }
+              },
+              "change_request": {
+                "required": ["enabled"],
+                "properties": {
+                  "enabled": { "const": true }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

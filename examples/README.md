@@ -25,7 +25,7 @@ point. Use `../docs/` when you need the deeper architecture behind the recipe.
 | --- | --- | --- | --- |
 | `example-minimal-agent` | Smallest read-only runnable workflow. | No | context collection, one agent node, JSON/markdown artifacts. |
 | `example-complete-agent` | Agent-authoring and HITL/publishing showcase. | Yes | trusted-write agent config, context, skills, local tools, subagents, gated loop, validation/review/acceptance gates, HITL approval, commit, push, change request, retry, runtime-log projection, artifacts. |
-| `code-review` | Production-style read-only PR review. | No | preflight, workspace capture, repository diff context, planning agent, reviewer agent, evidence validation, acceptance agent, final report. |
+| `code-review` | Production-style PR review. | No | preflight, workspace capture, repository diff context, related repository impact graph, planning agent, general/security/architecture reviewer agents, deterministic findings merge, evidence validation, acceptance agent, optional PR review publication, final report. |
 | `implementation` | Full trusted write implementation workflow. | No | preflight, worktree preparation, task context, planner, gated writer loop, validation, non-empty diff, review/acceptance gates, diff, commit, push, change request, final report. |
 
 The platform-wide "everything" reference is the combination of

@@ -14,5 +14,9 @@
     "unlisted",
     "unresolved",
     "binaries"
+  ],
+  "ignoreBinaries": [
+    "gh",
+    "php"
   ]
 }

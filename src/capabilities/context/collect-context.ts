@@ -103,7 +103,9 @@ export async function collectContextIntake(
   const agents: AgentContextCollection[] = [];
 
   for (const agentId of input.agentIds) {
-    const agent = await loadAgentDefinition(input.agentsRoot, agentId);
+    const agent = await loadAgentDefinition(input.agentsRoot, agentId, {
+      capabilityRegistry: input.capabilityRegistry
+    });
     const collection = await collectFiles({
       root: agent.directory,
       files: agent.context?.files ?? [],

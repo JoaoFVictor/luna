@@ -46,8 +46,10 @@ uses: reports.final_report
 | `context` | Repository and agent context intake. |
 | `runtime` | Runtime preflight. |
 | `repository-diff` | Read-only repository diff/context collection. |
+| `repository-context` | Deterministic related repository impact context. |
 | `findings` | Evidence validation for code review findings. |
 | `reports` | Generic final report generation. |
+| `pull-request-review` | Pull request review publication with inline comments. |
 | `quality-gates` | Gated agent loop pattern and automated gates. |
 | `validation` | Validation command execution. |
 | `repository-change` | Trusted write worktree, validation, diff, commit, push lifecycle helpers. |
@@ -67,8 +69,13 @@ Runtime, context, and reports:
 - `runtime.preflight`
 - `context.collect_context`
 - `repository-diff.collect_context`
+- `repository-context.related_context`
+- `review.coverage_plan`
+- `review.coverage_check`
+- `review.quality_check`
 - `findings.validate_evidence`
 - `reports.final_report`
+- `pull-request-review.publish`
 - `task-context.collect`
 - `task-context.final_report`
 
@@ -97,10 +104,56 @@ Host execution and publishing side effects:
 - `git.commit`
 - `git.push_branch`
 - `change-request.create`
+- `pull-request-review.publish`
 
 Provider-specific task context behavior is selected by `invocation.source`
 inside provider/native composition; it does not add separate public built-in ids
 for each provider.
+
+`repository-context.related_context` is provider-neutral and read-only. It
+receives `repo_context` plus optional budgets and returns
+`luna.related_context.v1`: a small impact graph with `nodes`, `edges`,
+ranked `files`, `budgets`, `truncation`, and `audit` metadata. The built-in is
+language agnostic by contract, but uses stronger engines when they are
+available: TypeScript AST for JS/TS, Luna-owned `@vue/compiler-sfc` plus
+TypeScript AST for Vue SFC script blocks, and `nikic/php-parser` through the
+target repository's PHP autoload for PHP. Missing parser support falls back to
+deterministic heuristics and is visible in `audit.warnings`; the actual engines
+are listed in `audit.symbol_engines`. It skips dependency/build output and
+local agent/editor tool directories, centers changed-file excerpts on diff
+hunks, and resolves TypeScript/JavaScript
+`paths` aliases and `baseUrl`, common root aliases such as `@/` and `~/`, PHP
+`require`/`include`, Composer PSR-4 namespaces, reverse references, tests,
+configs, docs, same-directory files, and similar abstraction names. Docs/config
+edges are specific to matching changed seeds instead of being global edges to
+every changed file. It is
+review context, not publication evidence; inline PR comments still come from
+validated findings whose evidence maps to captured PR diff lines.
+
+`review.coverage_plan`, `review.coverage_check`, and `review.quality_check` are
+provider-neutral review hardening built-ins. `coverage_plan` derives expected
+review ranges from captured diff hunks and marks omitted or truncated changes
+as blocked. `coverage_check` compares those expected ranges with reviewer
+declared `reviewed_ranges`; this is auditable reviewer scope, not proof that a
+model understood every line. `quality_check` converts deterministic review
+quality signals into `pass`, `needs_human_review`, or `blocked`: blocked or
+partial coverage, weak reviewed-range declarations without notes/risk tags,
+related-context warnings/truncation, and unpublishable findings without
+evidence. Acceptance agents should consume this artifact as gate input instead
+of re-inferring review quality from prose.
+
+`pull-request-review.publish` is provider-neutral. It receives the PR identity,
+review event, body, optional acceptance result, validated findings, and
+repository diff context from workflow state. The capability renders the PR body,
+decides which findings can become inline comments, and resolves safe review
+event behavior. `auto` follows the structured acceptance result with safe
+downgrades: accepted reviews without findings can publish approvals, rejected
+reviews with validated findings or blocking reasons can request changes, and
+uncertain reviews publish regular review comments. Explicit no-finding
+request-change attempts and approvals with findings or rejection are published
+as regular review comments. The capability also applies provider-neutral
+comment noise control before the selected provider calls the external PR review
+API.
 
 ## Pattern
 
@@ -137,6 +190,7 @@ Side-effect policies:
 - `git.commit_side_effect`
 - `git.push_branch_side_effect`
 - `change-request.create_side_effect`
+- `pull-request-review.publish_side_effect`
 
 Workflow nodes that use side-effecting built-ins must declare the matching
 policy with `operation_id`.
@@ -204,6 +258,7 @@ Repository/workspace/git ports:
 Provider publishing port:
 
 - `change-request.provider`
+- `pull-request-review.provider`
 
 Ports are selected in runtime composition or native executor wiring, not in
 agent prompts.
@@ -229,11 +284,19 @@ Artifact rules:
 - `preflight.json`
 - `workspace.json`
 - `repo-context.json`
+- `related-context.json`
 - `context-intake.json`
+- `review-coverage-plan.json`
 - `review-plan.json`
 - `raw-code-review-findings.json`
+- `security-review-findings.json`
+- `architecture-review-findings.json`
+- `merged-code-review-findings.json`
+- `review-coverage-check.json`
 - `code-review-findings.json`
+- `review-quality.json`
 - `acceptance-review.json`
+- `pull-request-review.json`
 - `final-report.json`
 - `final-report.md`
 

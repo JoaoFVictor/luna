@@ -6,7 +6,8 @@ import { z } from "zod";
 import {
   loadJsonFile,
   loadOptionalYamlFile,
-  loadYamlFile
+  loadYamlFile,
+  loadYamlJsonSchemaFile
 } from "../../src/core/config/loader.js";
 describe("config loader", () => {
   it("fails invalid YAML shape with config_schema_invalid", async () => {
@@ -22,6 +23,38 @@ describe("config loader", () => {
       });
 
       await expect(loadYamlFile(filePath, schema)).rejects.toMatchObject({
+        code: "config_schema_invalid",
+        path: filePath
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("validates YAML with JSON Schema through the canonical loader", async () => {
+    const root = await mkdtemp(join(tmpdir(), "luna-config-"));
+    const filePath = join(root, "workflow.yaml");
+
+    try {
+      await writeFile(filePath, "review:\n  enabled: nope\n", "utf8");
+
+      await expect(
+        loadYamlJsonSchemaFile(filePath, {
+          type: "object",
+          additionalProperties: false,
+          required: ["review"],
+          properties: {
+            review: {
+              type: "object",
+              additionalProperties: false,
+              required: ["enabled"],
+              properties: {
+                enabled: { type: "boolean" }
+              }
+            }
+          }
+        })
+      ).rejects.toMatchObject({
         code: "config_schema_invalid",
         path: filePath
       });
