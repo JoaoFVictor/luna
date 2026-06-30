@@ -116,6 +116,7 @@ export const RelatedContextSchema = z
     truncation: z
       .object({
         omitted_paths: z.array(NonEmptyStringSchema),
+        omitted_count: z.number().int().nonnegative(),
         truncated_paths: z.array(NonEmptyStringSchema),
         unsupported_files: z.array(NonEmptyStringSchema)
       })

@@ -16,54 +16,34 @@ import {
   walkFiles,
   wordsFrom
 } from "./file-analysis.js";
-import {
-  excerptFrom,
-  type FocusRange
-} from "./excerpts.js";
 import { rightSideRangesFromPatch } from "../../core/repository/diff-hunks.js";
 import {
-  enrichCandidatesWithAst,
+  enrichCandidatesWithSymbolGraph,
+  linkProjectSymbolReferences,
+  reverseReferenceDefinitionSymbolsFromGraph,
   type SymbolEngine
 } from "./symbol-analysis/index.js";
+import {
+  primaryReasonForRelation,
+  scoreCandidates,
+  selectRelatedFiles,
+  sourceFrom,
+  toRelatedFile
+} from "./ranking.js";
 import type {
   RelatedContext,
   RelatedContextEdge,
   RelatedContextConfig,
   RelatedContextFile,
-  RelatedContextNode,
-  RelatedContextRelation
+  RelatedContextNode
 } from "./contracts.js";
-
-type ScoreState = {
-  readonly path: string;
-  readonly language?: string;
-  readonly kind: Candidate["kind"];
-  readonly content: string;
-  readonly truncated: boolean;
-  readonly score_breakdown: Record<string, number>;
-  readonly matched_terms: Set<string>;
-  readonly matched_symbols: Set<string>;
-  readonly reasons: Set<string>;
-};
 
 const DEFAULT_MAX_RELATED_FILES = 12;
 const DEFAULT_MAX_SCAN_FILES = 600;
-const DEFAULT_MAX_FILE_BYTES = 24_000;
+const DEFAULT_MAX_FILE_BYTES = 160_000;
 const DEFAULT_MAX_EXCERPT_BYTES = 4_000;
-const IMPORT_SCORE = 85;
-const REVERSE_REFERENCE_SCORE = 70;
-const TEST_SCORE = 60;
-const SAME_DIRECTORY_SCORE = 28;
-const CONFIG_SCORE = 24;
-const DOCS_SCORE = 16;
-const SIMILAR_ABSTRACTION_SCORE = 12;
-const CHANGED_FILE_SCORE = 100;
-const RESERVED_RELATIONS: readonly RelatedContextRelation[] = [
-  "import_dependency",
-  "reverse_reference",
-  "test",
-  "similar_abstraction"
-];
+const READ_CANDIDATE_CONCURRENCY = 32;
+const MAX_OMITTED_PATHS = 50;
 
 function resolveRelatedContextConfig(
   config: RelatedContextConfig | undefined
@@ -98,100 +78,6 @@ function queryTermsFrom(repoContext: RepoContext): string[] {
   return unique(terms).slice(0, 60);
 }
 
-function addScore(
-  scores: Map<string, ScoreState>,
-  candidate: Candidate,
-  key: string,
-  amount: number,
-  reason: string,
-  terms: readonly string[] = [],
-  symbols: readonly string[] = []
-): void {
-  const current = scores.get(candidate.path) ?? {
-    path: candidate.path,
-    language: candidate.language,
-    kind: candidate.kind,
-    content: candidate.content,
-    truncated: candidate.truncated,
-    score_breakdown: {},
-    matched_terms: new Set<string>(),
-    matched_symbols: new Set<string>(),
-    reasons: new Set<string>()
-  };
-
-  current.score_breakdown[key] = Math.max(current.score_breakdown[key] ?? 0, amount);
-  current.reasons.add(reason);
-  for (const term of terms) {
-    current.matched_terms.add(term);
-  }
-  for (const symbol of symbols) {
-    current.matched_symbols.add(symbol);
-  }
-  scores.set(candidate.path, current);
-}
-
-function relationFrom(scoreBreakdown: Record<string, number>): RelatedContextRelation {
-  const ordered: readonly [RelatedContextRelation, string][] = [
-    ["changed_file", "changed_file"],
-    ["test", "test"],
-    ["config", "config"],
-    ["docs", "docs"],
-    ["import_dependency", "import_dependency"],
-    ["reverse_reference", "reverse_reference"],
-    ["same_directory", "same_directory"],
-    ["similar_abstraction", "similar_abstraction"]
-  ];
-
-  for (const [relation, key] of ordered) {
-    if (scoreBreakdown[key] !== undefined) {
-      return relation;
-    }
-  }
-
-  return "same_directory";
-}
-
-function primaryReasonForRelation(file: RelatedContextFile): string {
-  const byRelation: Record<RelatedContextRelation, readonly string[]> = {
-    changed_file: ["File is changed by the pull request."],
-    import_dependency: ["Changed file imports/includes this file."],
-    reverse_reference: [
-      "File imports/includes changed code.",
-      "File references changed symbols."
-    ],
-    test: ["Test/spec path matches changed code."],
-    same_directory: ["File is near a changed file."],
-    config: ["Repository config can affect changed code review."],
-    docs: ["Documentation mentions changed concepts."],
-    similar_abstraction: ["File has the same abstraction name as changed code."]
-  };
-  const preferred = byRelation[file.relation]
-    .find((reason) => file.reasons.includes(reason));
-
-  return preferred ?? file.reasons[0] ?? "Selected by repository context ranking.";
-}
-
-function toRelatedFile(
-  score: ScoreState,
-  maxExcerptBytes: number,
-  focusRanges: readonly FocusRange[] = []
-): RelatedContextFile {
-  const totalScore = Object.values(score.score_breakdown)
-    .reduce((total, value) => total + value, 0);
-
-  return {
-    path: score.path,
-    relation: relationFrom(score.score_breakdown),
-    ...(score.language === undefined ? {} : { language: score.language }),
-    score: totalScore,
-    score_breakdown: score.score_breakdown,
-    excerpt: excerptFrom(score.content, maxExcerptBytes, score.truncated, focusRanges),
-    matched_terms: [...score.matched_terms].sort(),
-    matched_symbols: [...score.matched_symbols].sort(),
-    reasons: [...score.reasons].sort()
-  };
-}
-
 function confidenceFrom(score: number): "high" | "medium" | "low" {
   if (score >= 70) {
     return "high";
@@ -200,27 +86,6 @@ function confidenceFrom(score: number): "high" | "medium" | "low" {
     return "medium";
   }
   return "low";
-}
-
-function sourceFrom(relation: RelatedContextRelation): string {
-  switch (relation) {
-    case "changed_file":
-      return "diff";
-    case "import_dependency":
-      return "import_scan";
-    case "reverse_reference":
-      return "reverse_scan";
-    case "test":
-      return "test_mapping";
-    case "same_directory":
-      return "path_scan";
-    case "config":
-      return "config_mapping";
-    case "docs":
-      return "doc_mapping";
-    case "similar_abstraction":
-      return "similarity_scan";
-  }
 }
 
 function nodesFrom(files: readonly RelatedContextFile[]): RelatedContextNode[] {
@@ -243,6 +108,10 @@ function edgesFrom(input: {
 }): RelatedContextEdge[] {
   const edges: RelatedContextEdge[] = [];
   const candidateByPath = new Map(input.candidates.map((candidate) => [candidate.path, candidate]));
+  const reverseReferenceDefinitionsByPath = new Map(input.candidates.map((candidate) => [
+    candidate.path,
+    reverseReferenceDefinitionSymbolsFromGraph(candidate.symbol_graph)
+  ]));
   const changedPaths = new Set(input.repoContext.files.map((file) => file.path));
   const changedStems = new Set(input.repoContext.files.map((file) => basenameStem(file.path)));
   const relatedPaths = new Set(input.files.map((file) => file.path));
@@ -298,7 +167,7 @@ function edgesFrom(input: {
         candidate.path,
         input.importResolution
       )
-        .find((target) => changedPaths.has(target));
+        .find((target) => changedPaths.has(target) && relatedPaths.has(target));
       if (matchedChangedPath !== undefined) {
         addEdge({
           from: candidate.path,
@@ -380,9 +249,13 @@ function edgesFrom(input: {
 
     if (file.relation === "reverse_reference") {
       const referencedSeed = input.repoContext.files
-        .find((seed) => file.matched_symbols.some((symbol) =>
-          seed.excerpt?.content.includes(symbol) === true
-        ));
+        .find((seed) => {
+          if (!relatedPaths.has(seed.path)) {
+            return false;
+          }
+          const seedSymbols = reverseReferenceDefinitionsByPath.get(seed.path) ?? [];
+          return file.matched_symbols.some((symbol) => seedSymbols.includes(symbol));
+        });
       if (referencedSeed !== undefined) {
         addEdge({
           from: file.path,
@@ -407,102 +280,6 @@ function includesToken(content: string, token: string): boolean {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function scoreCandidates(input: {
-  readonly candidates: readonly Candidate[];
-  readonly repoContext: RepoContext;
-  readonly queryTerms: readonly string[];
-  readonly includeTests: boolean;
-  readonly includeDocs: boolean;
-  readonly includeConfigs: boolean;
-  readonly importResolution: ProjectImportResolution;
-}): Map<string, ScoreState> {
-  const scores = new Map<string, ScoreState>();
-  const candidateByPath = new Map(input.candidates.map((candidate) => [candidate.path, candidate]));
-  const changedPaths = new Set(input.repoContext.files.map((file) => file.path));
-  const seedDirs = new Set(input.repoContext.files.map((file) => dirnameOf(file.path)));
-  const seedStems = new Set(input.repoContext.files.map((file) => basenameStem(file.path)));
-  const seedSymbols = unique([
-    ...input.candidates
-      .filter((candidate) => changedPaths.has(candidate.path))
-      .flatMap((candidate) => candidate.symbols),
-    ...input.repoContext.files.flatMap((file) =>
-      file.excerpt?.content === undefined ? [] : extractSymbols(file.excerpt.content, file.path)
-    )
-  ]);
-
-  for (const candidate of input.candidates) {
-    if (changedPaths.has(candidate.path)) {
-      addScore(scores, candidate, "changed_file", CHANGED_FILE_SCORE, "File is changed by the pull request.");
-    }
-
-    if (seedDirs.has(dirnameOf(candidate.path)) && !changedPaths.has(candidate.path)) {
-      addScore(scores, candidate, "same_directory", SAME_DIRECTORY_SCORE, "File is near a changed file.");
-    }
-
-    if (input.includeTests && candidate.kind === "test") {
-      const matched = [...seedStems].filter((stem) => candidate.path.toLowerCase().includes(stem.toLowerCase()));
-      if (matched.length > 0) {
-        addScore(scores, candidate, "test", TEST_SCORE, "Test/spec path matches changed code.", matched);
-      }
-    }
-
-    if (input.includeConfigs && candidate.kind === "config") {
-      addScore(scores, candidate, "config", CONFIG_SCORE, "Repository config can affect changed code review.");
-    }
-
-    if (input.includeDocs && candidate.kind === "docs") {
-      const matched = input.queryTerms.filter((term) => includesToken(candidate.content, term)).slice(0, 8);
-      if (matched.length > 0) {
-        addScore(scores, candidate, "docs", DOCS_SCORE, "Documentation mentions changed concepts.", matched);
-      }
-    }
-
-    const canReferenceChangedCode = candidate.kind === "source" || candidate.kind === "test";
-    const matchedSymbols = canReferenceChangedCode
-      ? seedSymbols.filter((symbol) => includesToken(candidate.content, symbol)).slice(0, 12)
-      : [];
-    if (!changedPaths.has(candidate.path) && matchedSymbols.length > 0) {
-      addScore(scores, candidate, "reverse_reference", REVERSE_REFERENCE_SCORE, "File references changed symbols.", [], matchedSymbols);
-    }
-
-    const sameStem = [...seedStems].filter((stem) => basenameStem(candidate.path).toLowerCase() === stem.toLowerCase());
-    if (!changedPaths.has(candidate.path) && canReferenceChangedCode && sameStem.length > 0) {
-      addScore(scores, candidate, "similar_abstraction", SIMILAR_ABSTRACTION_SCORE, "File has the same abstraction name as changed code.", sameStem);
-    }
-  }
-
-  for (const seed of input.candidates.filter((candidate) => changedPaths.has(candidate.path))) {
-    for (const importValue of seed.imports) {
-      for (const target of importTargets(importValue, seed.path, input.importResolution)) {
-        const candidate = candidateByPath.get(target);
-        if (candidate !== undefined) {
-          addScore(scores, candidate, "import_dependency", IMPORT_SCORE, "Changed file imports/includes this file.", [importValue]);
-        }
-      }
-    }
-  }
-
-  for (const candidate of input.candidates) {
-    if (changedPaths.has(candidate.path) || (candidate.kind !== "source" && candidate.kind !== "test")) {
-      continue;
-    }
-
-    for (const importValue of candidate.imports) {
-      const targets = importTargets(
-        importValue,
-        candidate.path,
-        input.importResolution
-      );
-      const matchedChangedPath = targets.find((target) => changedPaths.has(target));
-      if (matchedChangedPath !== undefined) {
-        addScore(scores, candidate, "reverse_reference", REVERSE_REFERENCE_SCORE, "File imports/includes changed code.", [importValue]);
-      }
-    }
-  }
-
-  return scores;
 }
 
 function emptyContext(repoContext: RepoContext, config: Required<RelatedContextConfig>): RelatedContext {
@@ -530,6 +307,7 @@ function emptyContext(repoContext: RepoContext, config: Required<RelatedContextC
     budgets,
     truncation: {
       omitted_paths: [],
+      omitted_count: 0,
       truncated_paths: [],
       unsupported_files: []
     },
@@ -549,7 +327,7 @@ function emptyContext(repoContext: RepoContext, config: Required<RelatedContextC
 }
 
 function symbolEnginesFrom(candidates: readonly Candidate[]): SymbolEngine[] {
-  return [...new Set(candidates.map((candidate) => candidate.symbol_analysis.engine))]
+  return [...new Set(candidates.map((candidate) => candidate.symbol_graph.engine))]
     .sort();
 }
 
@@ -558,7 +336,7 @@ function symbolWarningsFrom(
   selectedPaths: ReadonlySet<string>
 ): string[] {
   return unique(candidates.filter((candidate) => selectedPaths.has(candidate.path)).flatMap((candidate) =>
-    candidate.symbol_analysis.warnings.map((warning) => `${candidate.path}: ${warning}`)
+    candidate.symbol_graph.warnings.map((warning) => `${candidate.path}: ${warning}`)
   )).slice(0, 40);
 }
 
@@ -567,9 +345,26 @@ async function readCandidates(
   files: readonly string[],
   maxFileBytes: number
 ): Promise<Candidate[]> {
-  return (await Promise.all(
-    unique(files).map((file) => readCandidate(root, file, maxFileBytes))
-  )).filter((candidate): candidate is Candidate => candidate !== undefined);
+  const uniqueFiles = unique(files);
+  const candidates: Candidate[] = [];
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < uniqueFiles.length) {
+      const file = uniqueFiles[nextIndex] as string;
+      nextIndex += 1;
+      const candidate = await readCandidate(root, file, maxFileBytes);
+      if (candidate !== undefined) {
+        candidates.push(candidate);
+      }
+    }
+  }
+
+  const workers = Array.from({
+    length: Math.min(READ_CANDIDATE_CONCURRENCY, uniqueFiles.length)
+  }, () => worker());
+  await Promise.all(workers);
+  return candidates.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function directImportTargets(input: {
@@ -588,40 +383,6 @@ function directImportTargets(input: {
     .filter((target) => !candidatePaths.has(target) && isSupportedFile(target));
 
   return unique(targets);
-}
-
-function selectRelatedFiles(
-  rankedFiles: readonly RelatedContextFile[],
-  changedPaths: ReadonlySet<string>,
-  maxFiles: number
-): RelatedContextFile[] {
-  const selected: RelatedContextFile[] = [];
-  const selectedPaths = new Set<string>();
-  function add(file: RelatedContextFile): void {
-    if (selected.length >= maxFiles || selectedPaths.has(file.path)) {
-      return;
-    }
-    selected.push(file);
-    selectedPaths.add(file.path);
-  }
-
-  for (const file of rankedFiles.filter((rankedFile) => changedPaths.has(rankedFile.path))) {
-    add(file);
-  }
-
-  const remaining = rankedFiles.filter((file) => !changedPaths.has(file.path));
-  for (const relation of RESERVED_RELATIONS) {
-    const best = remaining.find((file) => file.relation === relation);
-    if (best !== undefined) {
-      add(best);
-    }
-  }
-
-  for (const file of remaining) {
-    add(file);
-  }
-
-  return selected;
 }
 
 export async function collectRelatedContext({
@@ -649,7 +410,7 @@ export async function collectRelatedContext({
     unique([...files, ...changedPaths.filter(isSupportedFile)]),
     config.max_file_bytes
   );
-  const firstPass = await enrichCandidatesWithAst(repositoryRoot, initialCandidates);
+  const firstPass = await enrichCandidatesWithSymbolGraph(repositoryRoot, initialCandidates);
   const firstImportResolution = projectImportResolutionFrom(firstPass.candidates);
   const directImportPaths = directImportTargets({
     candidates: firstPass.candidates,
@@ -662,16 +423,20 @@ export async function collectRelatedContext({
     directImportPaths.filter((file) => !firstCandidatePaths.has(file)),
     config.max_file_bytes
   );
-  const extraPass = await enrichCandidatesWithAst(repositoryRoot, extraCandidates);
+  const extraPass = await enrichCandidatesWithSymbolGraph(repositoryRoot, extraCandidates);
   const candidates = [
     ...firstPass.candidates,
     ...extraPass.candidates
   ];
-  const astWarnings = [...firstPass.warnings, ...extraPass.warnings];
+  const symbolGraphWarnings = [...firstPass.warnings, ...extraPass.warnings];
   const queryTerms = queryTermsFrom(repoContext);
   const importResolution = projectImportResolutionFrom(candidates);
-  const scores = scoreCandidates({
+  const linkedCandidates = linkProjectSymbolReferences(
     candidates,
+    (importValue, fromPath) => importTargets(importValue, fromPath, importResolution)
+  );
+  const scores = scoreCandidates({
+    candidates: linkedCandidates,
     repoContext,
     queryTerms,
     includeTests: config.include_tests,
@@ -697,10 +462,15 @@ export async function collectRelatedContext({
     new Set(changedPaths),
     config.max_related_files
   );
+  const relatedPaths = new Set(relatedFiles.map((file) => file.path));
+  const allOmittedPaths = rankedFiles
+    .filter((file) => !relatedPaths.has(file.path))
+    .map((file) => file.path);
+  const omittedPaths = allOmittedPaths.slice(0, MAX_OMITTED_PATHS);
   const nodes = nodesFrom(relatedFiles);
   const edges = edgesFrom({
     files: relatedFiles,
-    candidates,
+    candidates: linkedCandidates,
     repoContext,
     importResolution
   });
@@ -734,8 +504,8 @@ export async function collectRelatedContext({
     ...(skipped > 0
       ? [`Repository scan skipped ${skipped} supported files after max_scan_files.`]
       : []),
-    ...astWarnings,
-    ...symbolWarningsFrom(candidates, new Set(relatedFiles.map((file) => file.path)))
+    ...symbolGraphWarnings,
+    ...symbolWarningsFrom(linkedCandidates, new Set(relatedFiles.map((file) => file.path)))
   ];
 
   return {
@@ -745,7 +515,7 @@ export async function collectRelatedContext({
     base_sha: repoContext.base_sha,
     head_sha: repoContext.head_sha,
     ...(repoContext.merge_base === undefined ? {} : { merge_base: repoContext.merge_base }),
-    summary: `Related repository context selected ${relatedFiles.length} files from ${candidates.length} scanned files.`,
+    summary: `Related repository context selected ${relatedFiles.length} files from ${linkedCandidates.length} scanned files.`,
     seed_files: changedPaths,
     changed_files: changedPaths,
     query_terms: queryTerms,
@@ -754,20 +524,21 @@ export async function collectRelatedContext({
     files: relatedFiles,
     budgets,
     truncation: {
-      omitted_paths: [],
+      omitted_paths: omittedPaths,
+      omitted_count: allOmittedPaths.length,
       truncated_paths: truncatedPaths,
       unsupported_files: unsupportedFiles
     },
     audit: {
       enabled: true,
-      scanned_files: candidates.length,
+      scanned_files: linkedCandidates.length,
       skipped_files: skipped,
       max_related_files: config.max_related_files,
       max_scan_files: config.max_scan_files,
       max_file_bytes: config.max_file_bytes,
       max_excerpt_bytes: config.max_excerpt_bytes,
       languages,
-      symbol_engines: symbolEnginesFrom(candidates),
+      symbol_engines: symbolEnginesFrom(linkedCandidates),
       warnings
     }
   };

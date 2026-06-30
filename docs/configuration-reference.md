@@ -133,15 +133,20 @@ Fields:
 - `related_context.max_scan_files`: maximum supported repository files scanned
   for relationships.
 - `related_context.max_file_bytes`: maximum bytes read from any scanned file.
+  The default is `160000`, which keeps symbol analysis useful for larger
+  components/controllers while excerpts remain capped separately by
+  `max_excerpt_bytes`.
 - `related_context.max_excerpt_bytes`: maximum excerpt bytes included per
   related file.
 - `related_context.include_tests`, `include_docs`, and `include_configs`:
   whether test/spec, documentation, and config relationships are included.
-  Symbol parsing does not require configuration: Luna uses TypeScript AST for
-  JS/TS, Luna-owned Vue SFC parsing for `.vue`, and `nikic/php-parser` through
-  the target repository autoload when available. The run records actual engines
-  in `related-context.json` under `audit.symbol_engines` and parser fallback
-  warnings under `audit.warnings`.
+  Symbol parsing does not require configuration. Luna builds internal symbol
+  graphs inspired by SCIP, with Luna symbol strings, SCIP-compatible
+  `symbol_roles`, typed UTF-16 ranges, imports, and document symbols:
+  TypeScript for JS/TS, Luna-owned Vue SFC parsing for `.vue`, and
+  `nikic/php-parser` through the target repository autoload when available.
+  The run records actual engines in `related-context.json` under
+  `audit.symbol_engines` and parser fallback warnings under `audit.warnings`.
 - `pull_request_review.enabled`: whether to publish the validated review back
   to the PR.
 - `pull_request_review.provider`: provider id. The bundled provider is
@@ -172,7 +177,7 @@ code_review:
     enabled: true
     max_related_files: 12
     max_scan_files: 600
-    max_file_bytes: 24000
+    max_file_bytes: 160000
     max_excerpt_bytes: 4000
     include_tests: true
     include_docs: true

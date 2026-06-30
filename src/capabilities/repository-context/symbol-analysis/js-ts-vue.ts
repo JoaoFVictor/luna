@@ -2,41 +2,37 @@ import { parse as parseVueSfc } from "@vue/compiler-sfc";
 import ts from "typescript";
 import path from "node:path";
 import {
-  mergeAnalysis,
-  mergeImports,
-  mergeSymbols,
-  normalizePath
+  lineRange,
+  symbolGraphFromOccurrences,
+  normalizePath,
+  occurrence
 } from "./common.js";
-import { analyzeHeuristically } from "./heuristic.js";
 import type {
-  FileSymbolAnalysis,
-  FileSymbolAnalysisOptions,
-  ImportFact,
-  SymbolFact,
+  FileSymbolGraph,
+  FileSymbolGraphOptions,
+  ImportKind,
+  SymbolOccurrence,
+  SymbolRange,
   SymbolKind
 } from "./types.js";
 
 export function analyzeJavaScriptLike(
   content: string,
   filePath: string,
-  options: FileSymbolAnalysisOptions = {}
-): FileSymbolAnalysis {
+  options: FileSymbolGraphOptions = {}
+): FileSymbolGraph {
   if (filePath.endsWith(".vue")) {
     return analyzeVue(content, filePath, options);
   }
 
-  return mergeAnalysis(
-    analyzeScript(content, filePath, filePath.endsWith(".tsx") || filePath.endsWith(".jsx")),
-    analyzeHeuristically(content, filePath)
-  );
+  return analyzeScript(content, filePath, filePath.endsWith(".tsx") || filePath.endsWith(".jsx"));
 }
 
 function analyzeVue(
   content: string,
   filePath: string,
-  options: FileSymbolAnalysisOptions
-): FileSymbolAnalysis {
-  const fallback = analyzeHeuristically(content, filePath);
+  options: FileSymbolGraphOptions
+): FileSymbolGraph {
   const parsed = parseVueSfc(content, { filename: filePath });
   const warnings = options.truncated === true
     ? []
@@ -48,31 +44,47 @@ function analyzeVue(
     descriptor.script,
     descriptor.scriptSetup
   ].filter((block): block is NonNullable<typeof descriptor.script> => block !== null);
-  const declarations: SymbolFact[] = [{
+  const componentOccurrence = occurrence({
+    filePath,
     name: componentNameFrom(filePath),
-    kind: "component"
-  }];
-  const analyses = blocks.map((block) =>
-    analyzeScript(block.content, filePath, block.lang === "tsx" || block.lang === "jsx")
+    kind: "component",
+    roles: ["definition"]
+  });
+  const occurrences = blocks.flatMap((block) =>
+    offsetBlockOccurrences(
+      content,
+      block.content,
+      block.loc?.start.offset,
+      analyzeScript(block.content, filePath, block.lang === "tsx" || block.lang === "jsx").document.occurrences
+    )
   );
+  const templateOccurrences = descriptor.template === null
+    ? []
+    : offsetBlockOccurrences(
+        content,
+        descriptor.template.content,
+        descriptor.template.loc?.start.offset,
+        collectTemplateComponentReferences(descriptor.template.content, filePath)
+      );
 
-  return mergeAnalysis(
-    {
-      engine: "vue_sfc_ast",
-      declarations: mergeSymbols(declarations, analyses.flatMap((analysis) => analysis.declarations)),
-      references: mergeSymbols(analyses.flatMap((analysis) => analysis.references), []),
-      imports: mergeImports(analyses.flatMap((analysis) => analysis.imports), []),
-      warnings
-    },
-    fallback
-  );
+  return symbolGraphFromOccurrences({
+    engine: "vue_sfc_symbol_graph",
+    filePath,
+    language: "vue",
+    occurrences: [
+      componentOccurrence,
+      ...occurrences,
+      ...templateOccurrences
+    ],
+    warnings
+  });
 }
 
 function analyzeScript(
   content: string,
   filePath: string,
   jsx: boolean
-): FileSymbolAnalysis {
+): FileSymbolGraph {
   const sourceFile = ts.createSourceFile(
     filePath,
     content,
@@ -80,43 +92,143 @@ function analyzeScript(
     true,
     scriptKindFor(filePath, jsx)
   );
-  const declarations: SymbolFact[] = [];
-  const references: SymbolFact[] = [];
-  const imports: ImportFact[] = [];
+  const occurrences: SymbolOccurrence[] = [];
 
   function visit(node: ts.Node): void {
-    collectImport(node, sourceFile, imports);
-    collectDeclaration(node, sourceFile, declarations);
-    collectReference(node, sourceFile, references);
+    collectImport(node, sourceFile, filePath, occurrences);
+    collectDeclaration(node, sourceFile, filePath, occurrences);
+    collectReference(node, sourceFile, filePath, occurrences);
     ts.forEachChild(node, visit);
   }
 
   visit(sourceFile);
 
+  return symbolGraphFromOccurrences({
+    engine: "typescript_symbol_graph",
+    filePath,
+    language: filePath.endsWith(".vue")
+      ? "vue"
+      : filePath.endsWith(".ts") || filePath.endsWith(".tsx")
+        ? "typescript"
+        : "javascript",
+    occurrences
+  });
+}
+
+function offsetBlockOccurrences(
+  fullContent: string,
+  blockContent: string,
+  hintedOffset: number | undefined,
+  occurrences: readonly SymbolOccurrence[]
+): SymbolOccurrence[] {
+  const blockOffset = blockContentOffset(fullContent, blockContent, hintedOffset);
+  const start = lineAndCharacterAt(fullContent, blockOffset);
+  return occurrences.map((item) => ({
+    ...item,
+    ...(item.range === undefined
+      ? {}
+      : { range: offsetRange(item.range, start) })
+  }));
+}
+
+function collectTemplateComponentReferences(
+  content: string,
+  filePath: string
+): SymbolOccurrence[] {
+  const occurrences: SymbolOccurrence[] = [];
+  const pattern = /<\/?\s*([A-Za-z][A-Za-z0-9_.-]*)\b/g;
+  for (const match of content.matchAll(pattern)) {
+    const rawName = match[1] ?? "";
+    const name = componentNameFromTag(rawName);
+    if (name === undefined) {
+      continue;
+    }
+    const start = (match.index ?? 0) + match[0].indexOf(rawName);
+    occurrences.push(occurrence({
+      filePath,
+      name,
+      kind: "component",
+      roles: ["reference", "read"],
+      range: lineRange(content, start, start + rawName.length)
+    }));
+  }
+  return occurrences;
+}
+
+function componentNameFromTag(name: string): string | undefined {
+  if (name.includes(".") || name === "template") {
+    return undefined;
+  }
+  if (/^[A-Z]/u.test(name)) {
+    return name;
+  }
+  if (name.includes("-")) {
+    return name
+      .split("-")
+      .filter(Boolean)
+      .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+      .join("");
+  }
+  return undefined;
+}
+
+function blockContentOffset(
+  fullContent: string,
+  blockContent: string,
+  hintedOffset: number | undefined
+): number {
+  if (
+    hintedOffset !== undefined &&
+    hintedOffset >= 0 &&
+    fullContent.slice(hintedOffset, hintedOffset + blockContent.length) === blockContent
+  ) {
+    return hintedOffset;
+  }
+  const found = fullContent.indexOf(blockContent);
+  return found >= 0 ? found : 0;
+}
+
+function offsetRange(
+  range: SymbolRange,
+  start: SymbolRangeStart
+): SymbolRange {
   return {
-    engine: "typescript_ast",
-    declarations: mergeSymbols(declarations, []),
-    references: mergeSymbols(references, []),
-    imports: mergeImports(imports, []),
-    warnings: []
+    start_line: range.start_line + start.line,
+    start_character: range.start_line === 0
+      ? range.start_character + start.character
+      : range.start_character,
+    end_line: range.end_line + start.line,
+    end_character: range.end_line === 0
+      ? range.end_character + start.character
+      : range.end_character
+  };
+}
+
+type SymbolRangeStart = {
+  readonly line: number;
+  readonly character: number;
+};
+
+function lineAndCharacterAt(content: string, offset: number): SymbolRangeStart {
+  const prefix = content.slice(0, offset);
+  return {
+    line: prefix.split("\n").length - 1,
+    character: offset - Math.max(prefix.lastIndexOf("\n") + 1, 0)
   };
 }
 
 function collectImport(
   node: ts.Node,
   sourceFile: ts.SourceFile,
-  imports: ImportFact[]
+  filePath: string,
+  occurrences: SymbolOccurrence[]
 ): void {
   if (
     (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
     node.moduleSpecifier !== undefined &&
     ts.isStringLiteralLike(node.moduleSpecifier)
   ) {
-    imports.push({
-      value: node.moduleSpecifier.text,
-      kind: "import",
-      line: lineOf(sourceFile, node)
-    });
+    pushImport(node.moduleSpecifier.text, "import", sourceFile, filePath, node.moduleSpecifier, occurrences);
     return;
   }
 
@@ -130,92 +242,104 @@ function collectImport(
   }
 
   if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-    imports.push({ value: firstArg.text, kind: "dynamic_import", line: lineOf(sourceFile, node) });
+    pushImport(firstArg.text, "dynamic_import", sourceFile, filePath, firstArg, occurrences);
   } else if (ts.isIdentifier(node.expression) && node.expression.text === "require") {
-    imports.push({ value: firstArg.text, kind: "require", line: lineOf(sourceFile, node) });
+    pushImport(firstArg.text, "require", sourceFile, filePath, firstArg, occurrences);
   }
 }
 
 function collectDeclaration(
   node: ts.Node,
   sourceFile: ts.SourceFile,
-  declarations: SymbolFact[]
+  filePath: string,
+  occurrences: SymbolOccurrence[]
 ): void {
-  const line = lineOf(sourceFile, node);
   const kind = declarationKind(node);
 
   if (hasName(node) && kind !== undefined) {
-    declarations.push({
+    occurrences.push(occurrence({
+      filePath,
       name: node.name.text,
       kind,
-      line
-    });
+      roles: ["definition"],
+      range: rangeOf(sourceFile, node.name)
+    }));
   }
 
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-    declarations.push({
+    occurrences.push(occurrence({
+      filePath,
       name: node.name.text,
-      kind: storeKind(node) ?? "variable",
-      line
-    });
+      kind: storeKind(node) ?? variableDeclarationKind(node),
+      roles: ["definition", "write"],
+      range: rangeOf(sourceFile, node.name)
+    }));
   }
 }
 
 function collectReference(
   node: ts.Node,
   sourceFile: ts.SourceFile,
-  references: SymbolFact[]
+  filePath: string,
+  occurrences: SymbolOccurrence[]
 ): void {
   if (ts.isCallExpression(node)) {
-    collectEntityReference(node.expression, sourceFile, references);
+    collectEntityReference(node.expression, sourceFile, filePath, occurrences);
   } else if (ts.isNewExpression(node)) {
-    collectEntityReference(node.expression, sourceFile, references);
+    collectEntityReference(node.expression, sourceFile, filePath, occurrences);
   } else if (ts.isTypeReferenceNode(node)) {
-    collectTypeNameReference(node.typeName, sourceFile, references);
+    collectTypeNameReference(node.typeName, sourceFile, filePath, occurrences);
   } else if (ts.isExpressionWithTypeArguments(node)) {
-    collectEntityReference(node.expression, sourceFile, references);
+    collectEntityReference(node.expression, sourceFile, filePath, occurrences);
+  } else if (ts.isPropertyAccessExpression(node)) {
+    collectEntityReference(node, sourceFile, filePath, occurrences);
   } else if (ts.isJsxOpeningLikeElement(node)) {
-    collectJsxTagReference(node.tagName, sourceFile, references);
+    collectJsxTagReference(node.tagName, sourceFile, filePath, occurrences);
   }
 }
 
 function collectEntityReference(
   node: ts.Expression,
   sourceFile: ts.SourceFile,
-  references: SymbolFact[]
+  filePath: string,
+  occurrences: SymbolOccurrence[]
 ): void {
   if (ts.isIdentifier(node)) {
-    pushReference(node.text, "variable", sourceFile, node, references);
+    pushReference(node.text, "variable", sourceFile, filePath, node, occurrences);
     return;
   }
 
   if (ts.isPropertyAccessExpression(node)) {
-    collectEntityReference(node.expression, sourceFile, references);
-    pushReference(node.name.text, "method", sourceFile, node.name, references);
+    collectEntityReference(node.expression, sourceFile, filePath, occurrences);
+    pushReference(node.name.text, "method", sourceFile, filePath, node.name, occurrences);
   }
 }
 
 function collectTypeNameReference(
   node: ts.EntityName,
   sourceFile: ts.SourceFile,
-  references: SymbolFact[]
+  filePath: string,
+  occurrences: SymbolOccurrence[]
 ): void {
-  references.push({
+  occurrences.push(occurrence({
+    filePath,
     name: node.getText(sourceFile),
     kind: "type",
-    line: lineOf(sourceFile, node)
-  });
+    roles: ["reference", "read"],
+    range: rangeOf(sourceFile, node)
+  }));
 }
 
 function collectJsxTagReference(
   node: ts.JsxTagNameExpression,
   sourceFile: ts.SourceFile,
-  references: SymbolFact[]
+  filePath: string,
+  occurrences: SymbolOccurrence[]
 ): void {
   if (ts.isIdentifier(node)) {
-    pushReference(node.text, "component", sourceFile, node, references);
+    pushReference(node.text, "component", sourceFile, filePath, node, occurrences);
   } else if (ts.isPropertyAccessExpression(node)) {
-    collectEntityReference(node, sourceFile, references);
+    collectEntityReference(node, sourceFile, filePath, occurrences);
   }
 }
 
@@ -223,14 +347,36 @@ function pushReference(
   name: string,
   kind: SymbolKind,
   sourceFile: ts.SourceFile,
+  filePath: string,
   node: ts.Node,
-  references: SymbolFact[]
+  occurrences: SymbolOccurrence[]
 ): void {
-  references.push({
+  occurrences.push(occurrence({
+    filePath,
     name,
     kind,
-    line: lineOf(sourceFile, node)
-  });
+    roles: ["reference", "read"],
+    range: rangeOf(sourceFile, node)
+  }));
+}
+
+function pushImport(
+  value: string,
+  kind: ImportKind,
+  sourceFile: ts.SourceFile,
+  filePath: string,
+  node: ts.Node,
+  occurrences: SymbolOccurrence[]
+): void {
+  occurrences.push(occurrence({
+    filePath,
+    name: value,
+    kind: "variable",
+    roles: ["import", "reference"],
+    range: rangeOf(sourceFile, node),
+    import_value: value,
+    import_kind: kind
+  }));
 }
 
 function hasName(node: ts.Node): node is ts.Node & { readonly name: ts.Identifier } {
@@ -269,6 +415,14 @@ function storeKind(node: ts.VariableDeclaration): SymbolKind | undefined {
     : undefined;
 }
 
+function variableDeclarationKind(node: ts.VariableDeclaration): SymbolKind {
+  const declarationList = node.parent;
+  return ts.isVariableDeclarationList(declarationList) &&
+    (declarationList.flags & ts.NodeFlags.Const) !== 0
+    ? "const"
+    : "variable";
+}
+
 function scriptKindFor(filePath: string, jsx: boolean): ts.ScriptKind {
   if (jsx) {
     return filePath.endsWith(".tsx") || filePath.endsWith(".vue")
@@ -281,8 +435,15 @@ function scriptKindFor(filePath: string, jsx: boolean): ts.ScriptKind {
   return ts.ScriptKind.JS;
 }
 
-function lineOf(sourceFile: ts.SourceFile, node: ts.Node): number {
-  return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+function rangeOf(sourceFile: ts.SourceFile, node: ts.Node): SymbolRange {
+  const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+  const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+  return {
+    start_line: start.line,
+    start_character: start.character,
+    end_line: end.line,
+    end_character: end.character
+  };
 }
 
 function componentNameFrom(filePath: string): string {

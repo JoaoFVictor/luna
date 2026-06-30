@@ -1,12 +1,14 @@
 import { lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  analyzeFileSymbols,
+  analyzeFileSymbolGraph,
   heuristicSymbolNames,
-  importValuesFromAnalysis,
-  symbolNamesFromAnalysis,
-  type FileSymbolAnalysis
+  importValuesFromGraph,
+  symbolNamesFromGraph,
+  unique,
+  type FileSymbolGraph
 } from "./symbol-analysis/index.js";
+export { unique, wordsFrom } from "./symbol-analysis/index.js";
 
 export type CandidateKind = "source" | "test" | "config" | "docs" | "other";
 
@@ -17,7 +19,7 @@ export type Candidate = {
   readonly truncated: boolean;
   readonly language?: string;
   readonly kind: CandidateKind;
-  readonly symbol_analysis: FileSymbolAnalysis;
+  readonly symbol_graph: FileSymbolGraph;
   readonly symbols: readonly string[];
   readonly imports: readonly string[];
 };
@@ -56,6 +58,8 @@ const IGNORED_DIRECTORIES = new Set([
   ".next",
   ".nuxt",
   ".output",
+  "runtime",
+  "storage",
   "tmp",
   "temp"
 ]);
@@ -159,15 +163,20 @@ function isConfigPath(filePath: string, basename: string, extension: string): bo
   if (CONFIG_FILES.has(basename)) {
     return true;
   }
+
+  const normalized = normalizePath(filePath).toLowerCase();
+  const directory = dirnameOf(normalized);
+  const inConfigDirectory = CONFIG_DIRECTORIES.some((prefix) =>
+    directory === prefix || directory.startsWith(`${prefix}/`)
+  );
+  if (extension === ".php" && inConfigDirectory) {
+    return true;
+  }
   if (!CONFIG_EXTENSIONS.has(extension)) {
     return false;
   }
 
-  const normalized = normalizePath(filePath).toLowerCase();
-  const directory = dirnameOf(normalized);
-  return directory === "" || CONFIG_DIRECTORIES.some((prefix) =>
-    directory === prefix || directory.startsWith(`${prefix}/`)
-  );
+  return directory === "" || inConfigDirectory;
 }
 
 export function isSupportedFile(filePath: string): boolean {
@@ -199,16 +208,6 @@ export function basenameStem(filePath: string): string {
   return basename.replace(/\.(test|spec)\.[^.]+$/i, "").replace(/\.[^.]+$/i, "");
 }
 
-export function unique(values: readonly string[]): string[] {
-  return [...new Set(values.filter((value) => value.length > 0))].sort();
-}
-
-export function wordsFrom(value: string): string[] {
-  return value
-    .split(/[^A-Za-z0-9_]+/)
-    .filter((word) => word.length >= 3 && !/^\d+$/.test(word));
-}
-
 export function extractSymbols(content: string, filePath: string): string[] {
   return heuristicSymbolNames(content, filePath);
 }
@@ -220,8 +219,8 @@ export async function walkFiles(root: string, options: {
   const files: string[] = [];
   let skipped = 0;
 
-  while (pending.length > 0) {
-    const current = pending.shift() as string;
+  for (let index = 0; index < pending.length; index += 1) {
+    const current = pending[index] as string;
     const entries = (await readdir(current, { withFileTypes: true }))
       .sort((left, right) => left.name.localeCompare(right.name));
 
@@ -296,7 +295,7 @@ export async function readCandidate(
   const raw = await readFile(absolutePath, "utf8");
   const truncated = Buffer.byteLength(raw, "utf8") > maxFileBytes;
   const content = truncated ? truncateUtf8(raw, maxFileBytes) : raw;
-  const symbolAnalysis = analyzeFileSymbols(content, relativePath, { truncated });
+  const symbolGraph = analyzeFileSymbolGraph(content, relativePath, { truncated });
 
   return {
     path: relativePath,
@@ -305,9 +304,9 @@ export async function readCandidate(
     truncated,
     language: languageFor(relativePath),
     kind: fileKind(relativePath),
-    symbol_analysis: symbolAnalysis,
-    symbols: symbolNamesFromAnalysis(symbolAnalysis),
-    imports: importValuesFromAnalysis(symbolAnalysis)
+    symbol_graph: symbolGraph,
+    symbols: symbolNamesFromGraph(symbolGraph),
+    imports: importValuesFromGraph(symbolGraph)
   };
 }
 
