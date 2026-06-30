@@ -42,7 +42,9 @@ export async function buildNativeWorkflowAgentInputs({
   const mcpConfig = await loadMcpConfig(configRoot);
   const entries = await Promise.all(
     specs.map(async ({ key, agentId }) => {
-      const agent = await loadAgentDefinition(agentsRoot, agentId);
+      const agent = await loadAgentDefinition(agentsRoot, agentId, {
+        capabilityRegistry
+      });
       const modelProfile = models[agent.model_profile];
       if (modelProfile === undefined) {
         throw new Error(

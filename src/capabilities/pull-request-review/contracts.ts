@@ -21,6 +21,16 @@ export type PullRequestReviewConfiguredEvent =
   | "auto"
   | PullRequestReviewEvent;
 
+export const PullRequestReviewCommentPolicySchema = z
+  .object({
+    inline_evidence: z.enum(["primary", "all"]).default("primary"),
+    max_inline_comments: z.number().int().positive().default(20)
+  })
+  .strict();
+export type PullRequestReviewCommentPolicy = z.infer<
+  typeof PullRequestReviewCommentPolicySchema
+>;
+
 export const PullRequestReviewAcceptanceSchema = z
   .object({
     status: z.enum(["accepted", "rejected", "needs_human_review"]),
@@ -57,6 +67,7 @@ export const PullRequestReviewResolvedInputSchema = z
     body: NonEmptyStringSchema,
     acceptance: PullRequestReviewAcceptanceSchema.optional(),
     inline_comments: z.boolean().default(true),
+    comment_policy: PullRequestReviewCommentPolicySchema.default({}),
     findings: FindingsPayloadSchema.optional(),
     repo_context: RepoContextSchema.optional()
   })

@@ -83,7 +83,8 @@ function finding({
   description = "The changed branch can dereference null.",
   path = "src/app.ts",
   line = 43,
-  recommendation = "Guard the nullable value before use."
+  recommendation = "Guard the nullable value before use.",
+  evidence
 }: {
   readonly title?: string;
   readonly severity?: Finding["severity"];
@@ -92,13 +93,14 @@ function finding({
   readonly path?: string;
   readonly line?: number;
   readonly recommendation?: string;
+  readonly evidence?: Finding["evidence"];
 } = {}): Finding {
   return {
     title,
     severity,
     confidence,
     description,
-    evidence: [
+    evidence: evidence ?? [
       {
         path,
         line_start: line,
@@ -147,6 +149,10 @@ function publishInput(
     event: "comment",
     body: "Luna found issues.",
     inline_comments: true,
+    comment_policy: {
+      inline_evidence: "primary",
+      max_inline_comments: 20
+    },
     findings: { findings: [] },
     ...overrides
   };
@@ -176,6 +182,21 @@ describe("pull-request-review capability", () => {
     expect(PullRequestReviewResolvedInputSchema.safeParse(input).success).toBe(true);
   });
 
+  it("defaults comment policy when older workflow configs omit it", () => {
+    const parsed = PullRequestReviewResolvedInputSchema.parse({
+      enabled: true,
+      provider_id: "example",
+      repository_path: "/repo/workspace",
+      pull_request: pullRequest,
+      body: "Luna found issues."
+    });
+
+    expect(parsed.comment_policy).toEqual({
+      inline_evidence: "primary",
+      max_inline_comments: 20
+    });
+  });
+
   it("publishes an explicit approved review result when acceptance passes without findings", async () => {
     const provider = recordingProvider();
     const builtIn = builtInFor(provider);
@@ -191,7 +212,7 @@ describe("pull-request-review capability", () => {
 
     expect(provider.publishReview).toHaveBeenCalledWith(
       expect.objectContaining({
-        event: "comment",
+        event: "approve",
         body: [
           "Review result: approved",
           "",
@@ -339,6 +360,53 @@ describe("pull-request-review capability", () => {
     );
   });
 
+  it("does not request changes from findings without publishable evidence", async () => {
+    const provider = recordingProvider();
+    const builtIn = builtInFor(provider);
+
+    await builtIn.run({
+      state,
+      input: publishInput({
+        event: "auto",
+        findings: { findings: [finding({ evidence: [] })] },
+        repo_context: repoContextWithRightSideLine()
+      })
+    });
+
+    expect(provider.publishReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "comment",
+        body: "Luna found issues.",
+        comments: [],
+        fallback_comments: []
+      })
+    );
+  });
+
+  it("uses request changes automatically when acceptance reports blocking reasons", async () => {
+    const provider = recordingProvider();
+    const builtIn = builtInFor(provider);
+
+    await builtIn.run({
+      state,
+      input: publishInput({
+        event: "auto",
+        acceptance: acceptance({
+          status: "rejected",
+          summary: "The review found a blocking problem.",
+          blocking_reasons: ["The changed code can leak account data."],
+          recommended_action: "request_changes"
+        })
+      })
+    });
+
+    expect(provider.publishReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "request_changes"
+      })
+    );
+  });
+
   it("downgrades unsafe review events when the finding state disagrees", async () => {
     const provider = recordingProvider();
     const builtIn = builtInFor(provider);
@@ -465,6 +533,91 @@ describe("pull-request-review capability", () => {
           })
         ],
         fallback_comments: []
+      })
+    );
+  });
+
+  it("publishes only primary evidence inline and deduplicates duplicate comment locations", async () => {
+    const provider = recordingProvider();
+    const builtIn = builtInFor(provider);
+
+    await builtIn.run({
+      state,
+      input: publishInput({
+        event: "request_changes",
+        findings: {
+          findings: [
+            finding({
+              evidence: [
+                { path: "src/app.ts", line_start: 43, line_end: 43 },
+                { path: "src/app.ts", line_start: 43, line_end: 43 },
+                { path: "src/app.ts", line_start: 99, line_end: 99 }
+              ]
+            })
+          ]
+        },
+        repo_context: repoContextWithRightSideLine()
+      })
+    });
+
+    expect(provider.publishReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        comments: [
+          expect.objectContaining({
+            path: "src/app.ts",
+            line: 43
+          })
+        ],
+        fallback_comments: [
+          expect.objectContaining({
+            path: "src/app.ts",
+            line: 99
+          })
+        ]
+      })
+    );
+  });
+
+  it("publishes at most one inline comment for the same diff location", async () => {
+    const provider = recordingProvider();
+    const builtIn = builtInFor(provider);
+
+    await builtIn.run({
+      state,
+      input: publishInput({
+        event: "request_changes",
+        findings: {
+          findings: [
+            finding({
+              title: "Global promo state leaks",
+              evidence: [{ path: "src/app.ts", line_start: 43, line_end: 43 }]
+            }),
+            finding({
+              title: "Shared modal state couples instances",
+              evidence: [{ path: "src/app.ts", line_start: 43, line_end: 43 }]
+            })
+          ]
+        },
+        repo_context: repoContextWithRightSideLine()
+      })
+    });
+
+    expect(provider.publishReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        comments: [
+          expect.objectContaining({
+            path: "src/app.ts",
+            line: 43,
+            body: expect.stringContaining("Global promo state leaks")
+          })
+        ],
+        fallback_comments: [
+          expect.objectContaining({
+            path: "src/app.ts",
+            line: 43,
+            body: expect.stringContaining("Shared modal state couples instances")
+          })
+        ]
       })
     );
   });

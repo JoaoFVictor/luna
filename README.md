@@ -153,8 +153,11 @@ Run from a normalized invocation JSON:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:code-review --input examples/github-pr-opened.invocation.json
 ```
 
-`code-review` can publish the validated review back to the PR when its workflow
-config enables PR review publishing:
+`code-review` plans review coverage, builds a deterministic related-context
+impact graph around the changed files, runs general, security, and architecture
+reviewers, merges duplicate findings with deterministic fingerprints and source
+provenance, verifies coverage, validates evidence, and can publish the validated
+review back to the PR when its workflow config enables PR review publishing:
 
 ```yaml
 # config/code-review.yaml
@@ -166,13 +169,22 @@ code_review:
     inline_comments: true
 ```
 
-`event` can be `auto`, `comment`, `request_changes`, or `approve`. `auto`
-requests changes only when validated findings exist; otherwise it publishes a
-regular PR review comment. The review body includes the acceptance result
+The bundled config also declares `review_dimensions`, `related_context`, and
+inline comment policy. See [configuration-reference.md](docs/configuration-reference.md)
+for the complete field contract.
+
+`event` can be `auto`, `comment`, `request_changes`, or `approve`. `auto` uses
+the structured acceptance result with safe downgrades: accepted reviews without
+findings publish an approval, rejected reviews with validated findings or
+blocking reasons request changes, and uncertain reviews publish a regular PR
+review comment. The review body includes the acceptance result
 (`approved`, `changes requested`, `not accepted`, or `needs human review`) plus
 the acceptance summary. Inline comments are created only for validated findings
-whose evidence maps to right-side PR diff lines; the rest are appended to the
-review body.
+whose evidence maps to right-side PR diff lines. By default Luna places the
+primary evidence inline, deduplicates duplicate comment locations within the
+published review, caps inline comments with `max_inline_comments`, and appends
+secondary or unplaceable evidence to the review body. This is not cross-run
+publication idempotency; a later run can still publish a new review.
 
 Resume a human interrupt:
 

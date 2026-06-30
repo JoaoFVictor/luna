@@ -25,6 +25,15 @@ const eventOrExpressionSchema = {
   anyOf: [{ enum: ["auto", "comment", "request_changes", "approve"] }, expressionSchema]
 } as const;
 
+const commentPolicySchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    inline_evidence: { enum: ["primary", "all"] },
+    max_inline_comments: { type: "integer", minimum: 1 }
+  }
+} as const;
+
 export const publishAuthoringInputSchema = {
   type: "object",
   additionalProperties: false,
@@ -39,6 +48,9 @@ export const publishAuthoringInputSchema = {
     body: stringOrExpressionSchema,
     acceptance: objectOrExpressionSchema,
     inline_comments: booleanOrExpressionSchema,
+    comment_policy: {
+      anyOf: [commentPolicySchema, expressionSchema]
+    },
     findings: objectOrExpressionSchema,
     repo_context: objectOrExpressionSchema
   }

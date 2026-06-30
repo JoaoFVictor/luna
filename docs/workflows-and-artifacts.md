@@ -124,6 +124,50 @@ write side-effect policy. The workflow owns when it runs and what state it
 passes; the provider owns how GitHub, or another source system, performs the
 external API call.
 
+## Code Review Workflow Shape
+
+`code-review` uses deterministic evidence collection, a related-context impact
+graph, and a logical multi-reviewer fan-out with deterministic fan-in:
+
+1. `review.coverage_plan` extracts `expected_review_ranges` from captured
+   repository diff evidence and records blocked ranges such as binary, deleted,
+   truncated, or uncaptured files.
+2. `repository-context.related_context` builds a bounded, auditable graph around
+   changed files: changed nodes, import/include dependencies, reverse
+   references, tests, configs, docs, nearby files, and similar abstractions.
+   The graph currently has deterministic JS/TS/PHP-friendly heuristics,
+   including `paths`, `baseUrl`, common root aliases, and Composer PSR-4, and
+   records budgets/truncation so incomplete context is visible.
+3. `review-planner` narrows the review scope from invocation, repository diff
+   context, coverage, and related context.
+4. `change-reviewer`, `security-reviewer`, and `architecture-reviewer` run from
+   the same plan, repository evidence, coverage plan, and related context.
+5. `findings.merge` combines those reviewer outputs, computes deterministic
+   fingerprints, preserves source provenance, unions reviewed ranges, and
+   deduplicates matching findings without using a model.
+6. `review.coverage_check` compares expected review ranges with reviewer
+   reported ranges and returns `missing_review_ranges` so partial or blocked
+   review scope remains visible. This is an auditable reviewer declaration, not
+   proof that a model understood every changed line.
+7. `findings.validate_evidence` checks the merged findings against captured
+   repository evidence.
+8. `review.quality_check` turns deterministic coverage, related-context,
+   truncation, and publishable-evidence signals into `pass`,
+   `needs_human_review`, or `blocked`.
+9. `change-acceptance-reviewer` evaluates the validated result, coverage,
+   related context, and deterministic review quality.
+10. `pull-request-review.publish` optionally publishes a formal PR review from
+   the validated findings and acceptance result.
+
+To add another review lens, create a reusable read-only agent with the standard
+findings output schema, add it to `context.collect_context`, pass
+`coverage_plan` and `related_context`, run it after `review_plan`, and append
+its named step output to `merged_findings.input.sources`. Downstream validation
+and PR publication should keep reading from `$.steps.validated_findings`;
+acceptance should also receive `$.steps.coverage_check` and
+`$.steps.related_context`, plus `$.steps.review_quality` when the workflow uses
+the quality gate.
+
 ## Compilation And Scheduling
 
 Workflow loading lives in `src/core/workflow/definition.ts`. Compilation lives
@@ -143,7 +187,10 @@ At runtime, the scheduler:
 - chooses dependency-ready nodes.
 - respects `execution.max_concurrency`.
 - avoids artifact path collisions in the same batch.
-- serializes agent sessions with an `agent_session` exclusion key.
+- serializes agent sessions with an `agent_session` exclusion key unless native
+  compilation has verified a read-only agent and workflow
+  `execution.agent_sessions.read_only: shared` opts into shared read-only
+  sessions. `execution.max_concurrency` remains the batch-size limit.
 - serializes workspace capture.
 - applies built-in metadata locks for repository-sensitive steps.
 - validates node output schemas and checkpoint-safe JSON.

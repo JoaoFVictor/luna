@@ -4,25 +4,17 @@ import type {
   BuiltInStepDependencies,
   BuiltInStepRunOptions
 } from "../../core/built-ins/types.js";
-import {
-  type Finding
-} from "../../core/findings/types.js";
-import {
-  type ChangedFile,
-  type RepoContext
-} from "../git/diff/types.js";
-import { patchHasRightSideLine } from "./diff-lines.js";
 import { PullRequestReviewResolvedInputSchema } from "./contracts.js";
 import type {
-  PullRequestReviewAcceptance,
-  PullRequestReviewConfiguredEvent,
   PullRequestReviewBuiltInPorts,
-  PullRequestReviewComment,
-  PullRequestReviewEvent,
-  PullRequestReviewFallbackComment,
   PullRequestReviewPublishInput,
   PullRequestReviewSkippedResult
 } from "./contracts.js";
+import {
+  effectiveEvent,
+  reviewBodyFrom,
+  reviewCommentsFrom
+} from "./review-policy.js";
 
 export type PullRequestReviewBuiltInPortResolver =
   | PullRequestReviewBuiltInPorts
@@ -39,6 +31,12 @@ function pullRequestReviewError(
   const error = new Error(message) as Error & { code: string };
   error.code = code;
   return error;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 export function pullRequestReviewPortsFromBuiltInOptions({
@@ -76,23 +74,20 @@ function skipped(
 }
 
 function publishFailure(error: unknown): PullRequestReviewSkippedResult {
-  const candidate = error instanceof Error
-    ? error as Error & { code?: unknown; details?: unknown }
-    : undefined;
+  const candidate = error instanceof Error ? error : undefined;
+  const record = objectRecord(error);
 
   return skipped("publish_failed", true, {
-    ...(typeof candidate?.code === "string" ? { code: candidate.code } : {}),
+    ...(typeof record?.code === "string" ? { code: record.code } : {}),
     message: candidate?.message ?? "Pull request review publication failed",
-    ...(candidate !== undefined && "details" in candidate
-      ? { details: candidate.details }
+    ...(record !== undefined && "details" in record
+      ? { details: record.details }
       : {})
   });
 }
 
 function isPublishFailed(error: unknown): boolean {
-  return typeof error === "object" &&
-    error !== null &&
-    (error as { code?: unknown }).code === "pull_request_review_publish_failed";
+  return objectRecord(error)?.code === "pull_request_review_publish_failed";
 }
 
 function readEnabled(input: Record<string, unknown> | undefined): boolean {
@@ -119,143 +114,6 @@ function readEnabledInput(input: Record<string, unknown>) {
   return parsed.data;
 }
 
-function commentBody(finding: Finding): string {
-  return [
-    `**${finding.severity}: ${finding.title}**`,
-    "",
-    finding.description,
-    "",
-    `Recommendation: ${finding.recommendation}`
-  ].join("\n");
-}
-
-function reviewResultLabel({
-  acceptance,
-  findings
-}: {
-  readonly acceptance?: PullRequestReviewAcceptance;
-  readonly findings: readonly Finding[];
-}): string {
-  if (
-    findings.length > 0 ||
-    acceptance?.recommended_action === "request_changes"
-  ) {
-    return "changes requested";
-  }
-
-  if (
-    acceptance?.status === "needs_human_review" ||
-    acceptance?.recommended_action === "human_review"
-  ) {
-    return "needs human review";
-  }
-
-  if (
-    acceptance?.status === "accepted" ||
-    acceptance?.recommended_action === "approve"
-  ) {
-    return "approved";
-  }
-
-  if (acceptance?.status === "rejected") {
-    return "not accepted";
-  }
-
-  return "comment";
-}
-
-function reviewBodyFrom({
-  body,
-  acceptance,
-  findings
-}: {
-  readonly body: string;
-  readonly acceptance?: PullRequestReviewAcceptance;
-  readonly findings: readonly Finding[];
-}): string {
-  if (acceptance === undefined) {
-    return body;
-  }
-
-  const result = reviewResultLabel({ acceptance, findings });
-  const lines = [`Review result: ${result}`, "", acceptance.summary];
-
-  if (acceptance.blocking_reasons.length > 0) {
-    lines.push(
-      "",
-      "Blocking reasons:",
-      ...acceptance.blocking_reasons.map((reason) => `- ${reason}`)
-    );
-  }
-
-  return lines.join("\n");
-}
-
-function lineIsRightSidePatchLine(file: ChangedFile | undefined, line: number): boolean {
-  return patchHasRightSideLine(file?.patch, line);
-}
-
-function reviewCommentsFrom({
-  findings,
-  repoContext
-}: {
-  readonly findings: readonly Finding[];
-  readonly repoContext?: RepoContext;
-}): {
-  comments: PullRequestReviewComment[];
-  fallbackComments: PullRequestReviewFallbackComment[];
-} {
-  const filesByPath = new Map(
-    (repoContext?.files ?? []).map((file) => [file.path, file])
-  );
-  const comments: PullRequestReviewComment[] = [];
-  const fallbackComments: PullRequestReviewFallbackComment[] = [];
-
-  for (const finding of findings) {
-    const body = commentBody(finding);
-    for (const evidence of finding.evidence) {
-      const line = evidence.line_start;
-      if (lineIsRightSidePatchLine(filesByPath.get(evidence.path), line)) {
-        comments.push({
-          path: evidence.path,
-          line,
-          side: "RIGHT",
-          body
-        });
-      } else {
-        fallbackComments.push({
-          path: evidence.path,
-          line,
-          body
-        });
-      }
-    }
-  }
-
-  return { comments, fallbackComments };
-}
-
-function effectiveEvent(
-  requestedEvent: PullRequestReviewConfiguredEvent,
-  findings: readonly Finding[]
-): PullRequestReviewEvent {
-  const hasFindings = findings.length > 0;
-
-  if (requestedEvent === "auto") {
-    return hasFindings ? "request_changes" : "comment";
-  }
-
-  if (requestedEvent === "request_changes" && !hasFindings) {
-    return "comment";
-  }
-
-  if (requestedEvent === "approve" && hasFindings) {
-    return "comment";
-  }
-
-  return requestedEvent;
-}
-
 function publishInputFrom(
   input: Record<string, unknown> | undefined
 ): PullRequestReviewPublishInput | PullRequestReviewSkippedResult {
@@ -267,10 +125,13 @@ function publishInputFrom(
   }
 
   const enabledInput = readEnabledInput(input);
-  const findings = enabledInput.findings?.findings ?? [];
+  const findings = (enabledInput.findings?.findings ?? []).filter(
+    (finding) => finding.evidence.length > 0
+  );
   const { comments, fallbackComments } = reviewCommentsFrom({
     findings,
-    repoContext: enabledInput.repo_context
+    repoContext: enabledInput.repo_context,
+    policy: enabledInput.comment_policy
   });
   const effectiveComments = enabledInput.inline_comments ? comments : [];
   const effectiveFallbackComments = enabledInput.inline_comments
@@ -288,7 +149,7 @@ function publishInputFrom(
     owner: enabledInput.pull_request.owner,
     repo: enabledInput.pull_request.repo,
     pull_number: enabledInput.pull_request.number,
-    event: effectiveEvent(enabledInput.event, findings),
+    event: effectiveEvent(enabledInput.event, findings, enabledInput.acceptance),
     body: reviewBodyFrom({
       body: enabledInput.body,
       acceptance: enabledInput.acceptance,

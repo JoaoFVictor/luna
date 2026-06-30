@@ -47,8 +47,8 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 }
 
 describe("evidence validation", () => {
-  it("removes evidence when its path is absent from repo context files", () => {
-    const [validated] = validateFindingEvidence(repoContext, [
+  it("drops findings when their evidence path is absent from repo context files", () => {
+    const validated = validateFindingEvidence(repoContext, [
       finding({
         evidence: [
           {
@@ -60,12 +60,11 @@ describe("evidence validation", () => {
       })
     ]);
 
-    expect(validated.evidence).toEqual([]);
-    expect(validated.confidence).toBe("low");
+    expect(validated).toEqual([]);
   });
 
-  it("removes evidence when its line range is outside the changed file excerpt", () => {
-    const [validated] = validateFindingEvidence(repoContext, [
+  it("drops findings when their line range is outside the changed file excerpt and patch", () => {
+    const validated = validateFindingEvidence(repoContext, [
       finding({
         evidence: [
           {
@@ -77,8 +76,7 @@ describe("evidence validation", () => {
       })
     ]);
 
-    expect(validated.evidence).toEqual([]);
-    expect(validated.confidence).toBe("low");
+    expect(validated).toEqual([]);
   });
 
   it("keeps line evidence and removes the quote when the quote is absent", () => {
@@ -103,6 +101,9 @@ describe("evidence validation", () => {
       }
     ]);
     expect(validated.confidence).toBe("high");
+    expect(validated.fingerprint).toBe(
+      "src/auth.ts:11:12|uncategorized|missing authorization check|verify ownership before updating the user."
+    );
   });
 
   it("keeps line evidence and removes the quote when the quote is outside the cited line range", () => {
@@ -127,18 +128,21 @@ describe("evidence validation", () => {
       }
     ]);
     expect(validated.confidence).toBe("high");
+    expect(validated.fingerprint).toBe(
+      "src/auth.ts:12:12|uncategorized|missing authorization check|verify ownership before updating the user."
+    );
   });
 
-  it("downgrades a high-confidence finding with no valid evidence to low", () => {
-    const [validated] = validateFindingEvidence(repoContext, [
+  it("drops a high-confidence finding with no valid evidence", () => {
+    const validated = validateFindingEvidence(repoContext, [
       finding({ confidence: "high", evidence: [] })
     ]);
 
-    expect(validated.confidence).toBe("low");
+    expect(validated).toEqual([]);
   });
 
-  it("keeps a low-confidence finding text when no valid evidence remains", () => {
-    const [validated] = validateFindingEvidence(repoContext, [
+  it("drops a low-confidence finding with no valid evidence", () => {
+    const validated = validateFindingEvidence(repoContext, [
       finding({
         confidence: "low",
         description: "Keep this weaker signal visible.",
@@ -146,15 +150,18 @@ describe("evidence validation", () => {
       })
     ]);
 
-    expect(validated.confidence).toBe("low");
-    expect(validated.description).toBe("Keep this weaker signal visible.");
+    expect(validated).toEqual([]);
   });
 
-  it("retains valid evidence unchanged", () => {
+  it("retains valid evidence and adds a matching fingerprint", () => {
     const original = finding();
 
     const [validated] = validateFindingEvidence(repoContext, [original]);
 
-    expect(validated).toEqual(original);
+    expect(validated).toEqual({
+      ...original,
+      fingerprint:
+        "src/auth.ts:11:12|uncategorized|missing authorization check|verify ownership before updating the user."
+    });
   });
 });

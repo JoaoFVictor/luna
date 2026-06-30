@@ -1,7 +1,8 @@
 id: code-review
 type: workflow
 # Read-only PR review workflow. It captures repository evidence, plans review
-# scope, runs a reviewer agent, validates evidence, then renders a report.
+# scope, runs specialist reviewer agents, merges their findings, validates
+# evidence, then renders a report.
 mode: read_only
 input_schema: input.schema.json
 output_schema: output.schema.json
@@ -12,6 +13,8 @@ capabilities:
   - runtime
   - repository-workspace
   - repository-diff
+  - repository-context
+  - review
   - findings
   - context
   - agents
@@ -21,9 +24,11 @@ capabilities:
 requires:
   repository: true
 execution:
-  # The scheduler can run independent safe nodes concurrently, while agent
-  # sessions and repository-sensitive work are still serialized by policies.
-  max_concurrency: 2
+  # Independent safe nodes may overlap. Read-only review agents can share a
+  # batch; trusted write agents remain serialized by the runtime scheduler.
+  max_concurrency: 3
+  agent_sessions:
+    read_only: shared
   lock_timeout_ms: 120000
 nodes:
   # Runtime/config sanity check. Keep this first so failures happen before
@@ -70,6 +75,44 @@ nodes:
     after:
       - workspace
 
+  # Builds a deterministic map of review ranges that reviewers should inspect.
+  # This lets the workflow report incomplete or blocked review coverage instead
+  # of pretending a truncated diff was fully reviewed.
+  - id: coverage_plan
+    type: built_in
+    uses: review.coverage_plan
+    artifacts:
+      - path: review-coverage-plan.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.coverage_plan"
+        format: json
+    input:
+      repo_context:
+        expression: "$.steps.repo_context"
+    after:
+      - repo_context
+
+  # Builds a deterministic, budgeted impact graph around the changed files.
+  # Review agents use this for dependencies, reverse references, tests, config,
+  # docs, and existing abstractions while findings still cite PR diff evidence.
+  - id: related_context
+    type: built_in
+    uses: repository-context.related_context
+    artifacts:
+      - path: related-context.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.related_context"
+        format: json
+    input:
+      repo_context:
+        expression: "$.steps.repo_context"
+      config:
+        expression: "$.config.code_review.related_context"
+    after:
+      - repo_context
+
   # Loads repository and agent context/skills for all model roles used by this
   # workflow. Raw file bodies become instructions; task input gets context_audit.
   - id: context
@@ -79,6 +122,8 @@ nodes:
       agents:
         - review-planner
         - change-reviewer
+        - security-reviewer
+        - architecture-reviewer
         - change-acceptance-reviewer
     artifacts:
       - path: context-intake.json
@@ -106,18 +151,25 @@ nodes:
         expression: "$.invocation"
       context:
         expression: "$.steps.context"
+      coverage_plan:
+        expression: "$.steps.coverage_plan"
       repo_context:
         expression: "$.steps.repo_context"
+      related_context:
+        expression: "$.steps.related_context"
+      review_dimensions:
+        expression: "$.config.code_review.review_dimensions"
     after:
       - context
-      - repo_context
+      - coverage_plan
+      - related_context
 
-  # Reviewer returns structured findings only. It remains read-only and should
-  # cite evidence from repo_context rather than trusting PR prose.
+  # General reviewer returns structured findings only. It remains read-only and
+  # should cite evidence from repo_context rather than trusting PR prose.
   - id: code_review
     type: agent
     agent: change-reviewer
-    output_schema: output.schema.json
+    output_schema: findings.review_output
     artifacts:
       - path: raw-code-review-findings.json
         publisher: artifacts.manifest_publisher
@@ -131,10 +183,123 @@ nodes:
         expression: "$.steps.context"
       review_plan:
         expression: "$.steps.review_plan"
+      coverage_plan:
+        expression: "$.steps.coverage_plan"
       repo_context:
         expression: "$.steps.repo_context"
+      related_context:
+        expression: "$.steps.related_context"
+      review_dimensions:
+        expression: "$.config.code_review.review_dimensions"
     after:
       - review_plan
+
+  # Security-focused reviewer catches auth, injection, secrets, and data
+  # exposure risks without diluting the general review prompt.
+  - id: security_review
+    type: agent
+    agent: security-reviewer
+    output_schema: findings.review_output
+    artifacts:
+      - path: security-review-findings.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.security_review"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      review_plan:
+        expression: "$.steps.review_plan"
+      coverage_plan:
+        expression: "$.steps.coverage_plan"
+      repo_context:
+        expression: "$.steps.repo_context"
+      related_context:
+        expression: "$.steps.related_context"
+      review_dimensions:
+        expression: "$.config.code_review.review_dimensions"
+    after:
+      - review_plan
+
+  # Architecture-focused reviewer checks maintainability, contracts, and runtime
+  # boundaries that are easy to miss in defect-oriented review.
+  - id: architecture_review
+    type: agent
+    agent: architecture-reviewer
+    output_schema: findings.review_output
+    artifacts:
+      - path: architecture-review-findings.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.architecture_review"
+        format: json
+    input:
+      invocation:
+        expression: "$.invocation"
+      context:
+        expression: "$.steps.context"
+      review_plan:
+        expression: "$.steps.review_plan"
+      coverage_plan:
+        expression: "$.steps.coverage_plan"
+      repo_context:
+        expression: "$.steps.repo_context"
+      related_context:
+        expression: "$.steps.related_context"
+      review_dimensions:
+        expression: "$.config.code_review.review_dimensions"
+    after:
+      - review_plan
+
+  # Deterministic merge keeps downstream validation, acceptance, and publishing
+  # provider-neutral even as more reviewer roles are added.
+  - id: merged_findings
+    type: built_in
+    uses: findings.merge
+    artifacts:
+      - path: merged-code-review-findings.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.merged_findings"
+        format: json
+    input:
+      sources:
+        - id: code_review
+          result:
+            expression: "$.steps.code_review"
+        - id: security_review
+          result:
+            expression: "$.steps.security_review"
+        - id: architecture_review
+          result:
+            expression: "$.steps.architecture_review"
+    after:
+      - code_review
+      - security_review
+      - architecture_review
+
+  # Verifies whether reviewer outputs claim coverage for the deterministic
+  # expected review ranges. Missing or blocked ranges are carried into acceptance and
+  # reporting instead of being hidden behind the finding list.
+  - id: coverage_check
+    type: built_in
+    uses: review.coverage_check
+    artifacts:
+      - path: review-coverage-check.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.coverage_check"
+        format: json
+    input:
+      coverage_plan:
+        expression: "$.steps.coverage_plan"
+      review_result:
+        expression: "$.steps.merged_findings"
+    after:
+      - merged_findings
 
   # Deterministic evidence validator filters/normalizes model findings against
   # captured repository evidence before acceptance or reporting.
@@ -151,9 +316,31 @@ nodes:
       repo_context:
         expression: "$.steps.repo_context"
       findings:
-        expression: "$.steps.code_review"
+        expression: "$.steps.merged_findings"
     after:
-      - code_review
+      - coverage_check
+
+  # Deterministic review-quality gate. This turns coverage gaps, weak reviewed
+  # range declarations, related-context warnings, truncation, and publishability
+  # signals into explicit input for acceptance.
+  - id: review_quality
+    type: built_in
+    uses: review.quality_check
+    artifacts:
+      - path: review-quality.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.review_quality"
+        format: json
+    input:
+      coverage:
+        expression: "$.steps.coverage_check"
+      related_context:
+        expression: "$.steps.related_context"
+      findings:
+        expression: "$.steps.validated_findings"
+    after:
+      - validated_findings
 
   # Acceptance reviewer checks whether the findings are useful and complete
   # from the requested review perspective.
@@ -176,10 +363,18 @@ nodes:
         expression: "$.steps.review_plan"
       findings:
         expression: "$.steps.validated_findings"
+      coverage:
+        expression: "$.steps.coverage_check"
+      review_quality:
+        expression: "$.steps.review_quality"
       repo_context:
         expression: "$.steps.repo_context"
+      related_context:
+        expression: "$.steps.related_context"
+      review_dimensions:
+        expression: "$.config.code_review.review_dimensions"
     after:
-      - validated_findings
+      - review_quality
 
   # Terminal report node. Final workflow output is derived from this terminal
   # node, and artifacts publish both structured JSON and markdown.
@@ -200,9 +395,21 @@ nodes:
     input:
       title: Code Review
       sections:
+        - heading: Review Coverage
+          content:
+            expression: "$.steps.coverage_check"
+        - heading: Related Repository Context
+          content:
+            expression: "$.steps.related_context"
+        - heading: Reviewer Merge
+          content:
+            expression: "$.steps.merged_findings"
         - heading: Findings
           content:
             expression: "$.steps.validated_findings"
+        - heading: Review Quality
+          content:
+            expression: "$.steps.review_quality"
         - heading: Acceptance
           content:
             expression: "$.steps.acceptance"
@@ -246,6 +453,8 @@ nodes:
         expression: "$.config.code_review.pull_request_review.event"
       inline_comments:
         expression: "$.config.code_review.pull_request_review.inline_comments"
+      comment_policy:
+        expression: "$.config.code_review.pull_request_review.comment_policy"
       body:
         expression: "$.steps.acceptance.summary"
       acceptance:

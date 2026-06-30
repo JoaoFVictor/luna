@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { officialCapabilityRegistry } from "../../src/capabilities/registry.js";
 import { loadAgentDefinition } from "../../src/capabilities/agents/agent-loader.js";
 
 async function tempAgentsRoot(): Promise<string> {
@@ -95,6 +96,57 @@ describe("agent definition loader", () => {
         outputSchema: {},
         runtime_requirements: ["tool_calling"],
         skills: ["../../skills/implementation-safe-git/SKILL.md"]
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("loads capability-registered output schemas", async () => {
+    const root = await tempAgentsRoot();
+    const agentDir = path.join(root, "change-reviewer");
+
+    try {
+      await mkdir(agentDir, { recursive: true });
+      await writeAgentYaml(agentDir, {
+        id: "change-reviewer",
+        output_schema: "findings.review_output"
+      });
+      await writeFile(path.join(agentDir, "instructions.md"), "# Review\n", "utf8");
+
+      await expect(
+        loadAgentDefinition(root, "change-reviewer", {
+          capabilityRegistry: officialCapabilityRegistry
+        })
+      ).resolves.toMatchObject({
+        outputSchemaPath: "findings.review_output",
+        outputSchema: officialCapabilityRegistry
+          .registrations()
+          .schemas.get("findings.review_output")?.schema
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unknown capability-registered output schemas", async () => {
+    const root = await tempAgentsRoot();
+    const agentDir = path.join(root, "change-reviewer");
+
+    try {
+      await mkdir(agentDir, { recursive: true });
+      await writeAgentYaml(agentDir, {
+        id: "change-reviewer",
+        output_schema: "findings.unknown"
+      });
+      await writeFile(path.join(agentDir, "instructions.md"), "# Review\n", "utf8");
+
+      await expect(
+        loadAgentDefinition(root, "change-reviewer", {
+          capabilityRegistry: officialCapabilityRegistry
+        })
+      ).rejects.toMatchObject({
+        code: "agent_output_schema_unknown"
       });
     } finally {
       await rm(root, { recursive: true, force: true });

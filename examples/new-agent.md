@@ -39,7 +39,9 @@ Rules:
 - The directory name and `id` must match.
 - `mode` supports `read_only` and `trusted_local_write`.
 - `model_profile` must exist in `config/models.yaml`.
-- `instructions_file` and `output_schema` must stay inside the agent directory.
+- `instructions_file` must stay inside the agent directory.
+- `output_schema` can be a JSON file inside the agent directory or a
+  capability-registered schema id such as `findings.review_output`.
 - `context.files` is optional. Use it for reusable guidance files that Luna
   should promote into runtime instructions when a workflow runs
   `collect_context`.
@@ -65,6 +67,9 @@ external input as untrusted. Prefer repository evidence over claims.
 Put orchestration in `workflow.yaml` `nodes:`, not inside every agent prompt.
 
 ## 4. Add `output.schema.json`
+
+Skip this file when `agent.yaml` uses a capability-registered schema id such as
+`findings.review_output`.
 
 ```json
 {

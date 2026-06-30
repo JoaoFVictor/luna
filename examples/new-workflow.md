@@ -47,6 +47,10 @@ requires:
   repository: true
 execution:
   max_concurrency: 2
+  # Optional: allow native compilation to run verified read-only agent nodes in
+  # the same scheduler batch. Trusted write agents stay serialized.
+  # agent_sessions:
+  #   read_only: shared
   lock_timeout_ms: 120000
 nodes:
   - id: preflight

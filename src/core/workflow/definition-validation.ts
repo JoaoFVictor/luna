@@ -11,6 +11,7 @@ import {
   type CapabilityRegistrationKind
 } from "../capabilities/registration-index.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
+import { isNamespacedCapabilityId } from "../capabilities/ids.js";
 import { matchesJsonSchema } from "../capabilities/json-schema.js";
 import {
   createSideEffectPolicy,
@@ -702,10 +703,6 @@ function assertNamespacedCapabilityId(id: string, yamlPath: string): void {
       { path: yamlPath, capability: id }
     );
   }
-}
-
-function isNamespacedCapabilityId(id: string): boolean {
-  return /^[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/.test(id);
 }
 
 function patternAuthoringConfigFor(

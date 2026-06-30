@@ -1,4 +1,5 @@
 import type { RepositoryConfig } from "../config/schemas.js";
+import type { CapabilityRegistry } from "../capabilities/registry.js";
 
 export type ContextReadFile = {
   readonly path: string;
@@ -40,6 +41,7 @@ export type CollectContextIntakeInput = {
   readonly agentsRoot: string;
   readonly agentIds: readonly string[];
   readonly maxFileBytes?: number;
+  readonly capabilityRegistry?: Pick<CapabilityRegistry, "registrations">;
 };
 
 const skippedReasons = new Set(["path_escape", "not_file", "too_large"]);

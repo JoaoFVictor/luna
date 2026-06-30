@@ -103,7 +103,11 @@ export function normalizeExecution(value: unknown): WorkflowExecution {
     return { max_concurrency: 1 };
   }
   const record = assertObject(value, "$.execution");
-  assertKnownFields(record, new Set(["max_concurrency", "lock_timeout_ms"]), "$.execution");
+  assertKnownFields(
+    record,
+    new Set(["max_concurrency", "lock_timeout_ms", "agent_sessions"]),
+    "$.execution"
+  );
   if (record.max_concurrency !== undefined && !isPositiveInteger(record.max_concurrency)) {
     throw new WorkflowDefinitionError(
       "workflow_schema_invalid",
@@ -118,12 +122,40 @@ export function normalizeExecution(value: unknown): WorkflowExecution {
       { path: "$.execution.lock_timeout_ms" }
     );
   }
+  let agentSessions: WorkflowExecution["agent_sessions"] | undefined;
+  if (record.agent_sessions !== undefined) {
+    const agentSessionsRecord = assertObject(
+      record.agent_sessions,
+      "$.execution.agent_sessions"
+    );
+    assertKnownFields(
+      agentSessionsRecord,
+      new Set(["read_only"]),
+      "$.execution.agent_sessions"
+    );
+    if (
+      agentSessionsRecord.read_only !== "exclusive" &&
+      agentSessionsRecord.read_only !== "shared"
+    ) {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_invalid",
+        "Workflow execution.agent_sessions.read_only must be exclusive or shared.",
+        { path: "$.execution.agent_sessions.read_only" }
+      );
+    }
+    agentSessions = {
+      read_only: agentSessionsRecord.read_only
+    };
+  }
   return {
     max_concurrency:
       typeof record.max_concurrency === "number" ? record.max_concurrency : 1,
     ...(typeof record.lock_timeout_ms === "number"
       ? { lock_timeout_ms: record.lock_timeout_ms }
-      : {})
+      : {}),
+    ...(agentSessions === undefined
+      ? {}
+      : { agent_sessions: agentSessions })
   };
 }
 

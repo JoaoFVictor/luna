@@ -10,6 +10,9 @@ export const WorkflowMetadataSchema = z.record(z.unknown());
 export type WorkflowExecution = {
   max_concurrency: number;
   lock_timeout_ms?: number;
+  agent_sessions?: {
+    read_only: "exclusive" | "shared";
+  };
 };
 
 export type WorkflowRequirements = {
@@ -86,6 +89,9 @@ export type WorkflowAgentNode = {
   after?: string[];
   retry?: Record<string, unknown>;
   runtime_requirements?: string[];
+  agent_session?: {
+    isolation: "exclusive" | "shared";
+  };
 };
 
 export type ParsedCapabilityGate = {

@@ -1,4 +1,6 @@
 import { collectContextIntake } from "../../capabilities/context/collect-context.js";
+import { officialCapabilityRegistry } from "../../capabilities/registry.js";
+import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
 import {
   changeRequestPortsFromBuiltInOptions,
   createChangeRequestCreateBuiltIn
@@ -36,11 +38,20 @@ import {
 import { recordImplementationValidationBuiltIn } from "../../capabilities/repository-change/validation-built-in.js";
 import { runValidationCommandsBuiltIn } from "../../capabilities/validation/built-ins.js";
 import { collectContextBuiltIn } from "../../capabilities/context/built-ins.js";
-import { validateFindingEvidenceBuiltIn } from "../../capabilities/findings/built-ins.js";
+import {
+  mergeFindingsBuiltIn,
+  validateFindingEvidenceBuiltIn
+} from "../../capabilities/findings/built-ins.js";
 import { createBuiltInStepCatalog } from "../../core/built-ins/catalog.js";
 import { collectRepoContextBuiltIn } from "../../capabilities/repository-diff/built-ins.js";
+import { relatedContextBuiltIn } from "../../capabilities/repository-context/built-ins.js";
 import { finalReportBuiltIn } from "../../capabilities/reports/final-report.js";
 import { requireApprovalBuiltIn } from "../../capabilities/hitl/built-ins.js";
+import {
+  coverageCheckBuiltIn,
+  coveragePlanBuiltIn,
+  qualityCheckBuiltIn
+} from "../../capabilities/review/built-ins.js";
 import {
   createCollectTaskContextBuiltIn,
   createFinalImplementationReportBuiltIn,
@@ -114,23 +125,35 @@ export const pullRequestReviewPublishBuiltIn =
 
 export function createNativeProviderBuiltIns({
   workflowBuiltIns = defaultWorkflowBuiltIns,
-  taskProviderBuiltIns = defaultTaskProviderBuiltIns
+  taskProviderBuiltIns = defaultTaskProviderBuiltIns,
+  capabilityRegistry = officialCapabilityRegistry
 }: {
   readonly workflowBuiltIns?: NativeWorkflowBuiltIns;
   readonly taskProviderBuiltIns?: Readonly<Record<string, TaskProviderBuiltIns>>;
+  readonly capabilityRegistry?: Pick<CapabilityRegistry, "registrations">;
 } = {}) {
   const collectTaskContext = createCollectTaskContextBuiltIn(taskProviderBuiltIns);
   const finalImplementationReport = createFinalImplementationReportBuiltIn(
     taskProviderBuiltIns
   );
+  const collectNativeContextIntake: typeof collectContextIntake = (input) =>
+    collectContextIntake({
+      ...input,
+      capabilityRegistry
+    });
 
   return createProviderBuiltIns({
-    dependencies: { collectContextIntake, runGit },
+    dependencies: { collectContextIntake: collectNativeContextIntake, runGit },
     steps: [
       ...(workflowBuiltIns.beforeContext ?? []),
       collectContextBuiltIn,
       ...(workflowBuiltIns.afterContext ?? []),
       collectRepoContextBuiltIn,
+      relatedContextBuiltIn,
+      coveragePlanBuiltIn,
+      mergeFindingsBuiltIn,
+      coverageCheckBuiltIn,
+      qualityCheckBuiltIn,
       validateFindingEvidenceBuiltIn,
       requireApprovalBuiltIn,
       ...(workflowBuiltIns.builtIns ?? []),

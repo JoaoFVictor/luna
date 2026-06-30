@@ -71,6 +71,11 @@ config:
 
 ```yaml
 code_review:
+  review_dimensions:
+    - correctness
+    - security
+    - architecture
+    - reuse_existing_components
   pull_request_review:
     enabled: false
     provider: github
@@ -78,7 +83,11 @@ code_review:
     inline_comments: true
 ```
 
-`workflows/code-review/config.schema.json` validates that shape:
+`workflows/code-review/config.schema.json` validates that shape. Keep the
+schema in the workflow directory as the source of truth; operational fields are
+documented in [configuration-reference.md](configuration-reference.md).
+
+Minimal schema example:
 
 ```json
 {
@@ -91,6 +100,10 @@ code_review:
       "additionalProperties": false,
       "required": ["pull_request_review"],
       "properties": {
+        "review_dimensions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
         "pull_request_review": {
           "type": "object",
           "additionalProperties": false,
@@ -122,15 +135,19 @@ input:
     expression: "$.config.code_review.pull_request_review.event"
   inline_comments:
     expression: "$.config.code_review.pull_request_review.inline_comments"
+  comment_policy:
+    expression: "$.config.code_review.pull_request_review.comment_policy"
   acceptance:
     expression: "$.steps.acceptance"
 ```
 
-For PR reviews, `auto` is the safest operational default: it publishes
-`request_changes` only when validated findings exist and otherwise publishes a
-regular review `comment`. A configured `request_changes` is also downgraded to
-`comment` when there are no validated findings, and a configured `approve` is
-downgraded to `comment` when findings exist.
+For PR reviews, `auto` is the safest operational default: it uses the
+structured acceptance result with safe downgrades. Accepted reviews without
+findings publish an approval, rejected reviews with validated findings or
+blocking reasons request changes, and uncertain reviews publish a regular
+review `comment`. A configured `request_changes` is also downgraded to
+`comment` when there are no findings or blocking reasons, and a configured
+`approve` is downgraded to `comment` when findings or rejection exist.
 
 The optional `acceptance` input lets the provider-neutral
 `pull-request-review.publish` built-in render a clear review result in the PR

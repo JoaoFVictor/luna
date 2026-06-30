@@ -1,0 +1,6 @@
+id: architecture-reviewer
+description: Reviews code changes for maintainability, coupling, and design risks.
+model_profile: deep
+mode: read_only
+instructions_file: instructions.md
+output_schema: findings.review_output

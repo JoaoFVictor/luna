@@ -121,21 +121,32 @@ export async function compileNativeWorkflow({
   > = {};
   const nodes = await Promise.all(
     workflow.graph.nodes.map(async (node) => {
-      if (
-        node.type !== "agent" ||
-        !node.output_schema.endsWith(".json")
-      ) {
+      if (node.type !== "agent") {
         return node;
       }
 
+      const agent = await loadAgentDefinition(agentsRoot, node.agent, {
+        capabilityRegistry: platform.capabilityRegistry
+      });
       const schemaId = `workflow-agent-schemas.${workflow.id}.${node.id}`;
-      const agent = await loadAgentDefinition(agentsRoot, node.agent);
-      schemaRegistrations[schemaId] = {
-        id: schemaId,
-        schema: agent.outputSchema as JsonSchemaLike
-      };
+      const outputSchema = node.output_schema.endsWith(".json")
+        ? schemaId
+        : node.output_schema;
+      if (node.output_schema.endsWith(".json")) {
+        schemaRegistrations[schemaId] = {
+          id: schemaId,
+          schema: agent.outputSchema as JsonSchemaLike
+        };
+      }
 
-      return { ...node, output_schema: schemaId };
+      return {
+        ...node,
+        output_schema: outputSchema,
+        ...(workflow.execution.agent_sessions?.read_only === "shared" &&
+        agent.mode === "read_only"
+          ? { agent_session: { isolation: "shared" as const } }
+          : {})
+      };
     })
   );
   const compiledWorkflow = {

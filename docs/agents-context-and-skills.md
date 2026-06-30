@@ -10,7 +10,7 @@ output it must return.
 agents/<id>/
   agent.yaml
   instructions.md
-  output.schema.json
+  output.schema.json # optional when output_schema uses a capability schema id
 ```
 
 `agent.yaml` is strict and includes:
@@ -46,6 +46,11 @@ The runner validates:
 - resolved tool catalog.
 - runtime requirements supported by the selected runtime.
 - final model output as JSON matching the output schema.
+
+`output_schema` can point at a JSON file inside the agent directory or at a
+capability-registered schema id. Code-review reviewer agents use
+`findings.review_output`, which keeps their shared findings contract in the
+`findings` capability instead of duplicating JSON schema files across agents.
 
 The bundled Pi runtime currently supports local tools and `tool_calling`.
 
@@ -128,6 +133,20 @@ In the current codebase, the main implemented multi-agent orchestration path is
 workflow/pattern projection: agent nodes and `quality-gates.gated_agent_loop`
 worker/gate agents. Use workflow nodes when delegated work needs artifacts,
 gates, MCP, or its own lifecycle.
+
+For read-only code review, `code-review` composes several reusable reviewer
+agents in workflow YAML and merges their standard findings outputs with the
+deterministic `findings.merge` built-in. The workflow also passes
+`repository-context.related_context`, a bounded impact graph, so reviewers can
+inspect dependencies, reverse references, tests, configs, docs, and existing
+abstractions without choosing their own repository crawl. Keep reviewer prompts
+focused on a role; keep deduplication, validation, acceptance, context
+collection, and publishing outside agent instructions.
+
+Workflows may opt into shared scheduler batches for verified read-only agents
+with `execution.agent_sessions.read_only: shared`. Native compilation marks
+only agents whose `agent.yaml` mode is `read_only`; trusted local write agents
+keep the default exclusive `agent_session` scheduling behavior.
 
 ## Source Map
 

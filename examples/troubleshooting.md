@@ -131,24 +131,34 @@ Check `config/code-review.yaml`:
 
 ```yaml
 code_review:
+  review_dimensions:
+    - correctness
+    - security
+    - architecture
+    - reuse_existing_components
   pull_request_review:
     enabled: true
     provider: github
     event: auto
     inline_comments: true
+    comment_policy:
+      inline_evidence: primary
+      max_inline_comments: 20
 ```
 
 If publishing is disabled, `pull-request-review.json` records a skipped result.
 If publishing is enabled but fails, check `gh auth status` with the Luna
 `GH_CONFIG_DIR`, confirm the authenticated account can review the PR, and
-inspect `repo-context.json` plus `code-review-findings.json`.
+inspect `repo-context.json`, `related-context.json`, and
+`code-review-findings.json`.
 
-`event: auto` publishes `request_changes` only when
-`code-review-findings.json` contains validated findings; with no findings it
-publishes a regular PR review comment. That comment should still include the
-acceptance result from `acceptance-review.json`, such as `approved`,
-`changes requested`, `not accepted`, or `needs human review`. If the provider
-call fails, the workflow records a `publish_failed` result in
+`event: auto` follows `acceptance-review.json` with safe downgrades: accepted
+reviews without findings can publish approvals, rejected reviews with validated
+findings or blocking reasons can request changes, and uncertain reviews publish
+a regular PR review comment. The review body should include the acceptance
+result, such as `approved`, `changes requested`, `not accepted`, or
+`needs human review`. If the provider call fails, the workflow records a
+`publish_failed` result in
 `pull-request-review.json` instead of retrying the webhook job.
 
 If GitHub accepts the request but Luna cannot prove the created review identity
@@ -180,6 +190,10 @@ adapter support before expecting MCP calls in Pi-backed agents.
 
 - `preflight.json`: selected runtime and config preflight.
 - `context-intake.json`: repository and agent context audit.
+- `related-context.json`: code-review related repository graph, budgets, and
+  truncation audit.
+- `review-quality.json`: deterministic code-review quality signals before
+  acceptance and PR publication.
 - `implementation-result.json`: writer attempts and gate outcomes.
 - `validation.json`: validation command results.
 - `acceptance-review.json`: acceptance gate result.

@@ -1,4 +1,23 @@
 code_review:
+  review_dimensions:
+    - correctness
+    - security
+    - architecture
+    - reuse_existing_components
+    - tests
+    - documentation
+    - compatibility
+  related_context:
+    # Deterministic repository impact graph used by review agents. Findings still
+    # cite PR diff evidence for publishable inline comments.
+    enabled: true
+    max_related_files: 12
+    max_scan_files: 600
+    max_file_bytes: 24000
+    max_excerpt_bytes: 4000
+    include_tests: true
+    include_docs: true
+    include_configs: true
   pull_request_review:
     # Publish the validated Luna review back to the GitHub pull request.
     enabled: true
@@ -9,3 +28,8 @@ code_review:
     event: auto
     # Place validated findings inline when their evidence maps to PR diff lines.
     inline_comments: true
+    # Keep PR review noise low: inline the primary evidence and summarize the rest
+    # in the review body.
+    comment_policy:
+      inline_evidence: primary
+      max_inline_comments: 20

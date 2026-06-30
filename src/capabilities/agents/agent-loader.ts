@@ -2,6 +2,8 @@ import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { loadJsonFile, loadYamlFile } from "../../core/config/loader.js";
+import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
+import { isNamespacedCapabilityId } from "../../core/capabilities/ids.js";
 import { assertSafeSegment, isInsideRoot } from "../../core/security/path.js";
 import {
   AgentMetadataSchema,
@@ -9,6 +11,10 @@ import {
   assertNoDuplicateCapabilities,
   type LoadedAgentDefinition
 } from "./agent-definition.js";
+
+type LoadAgentDefinitionOptions = {
+  readonly capabilityRegistry?: Pick<CapabilityRegistry, "registrations">;
+};
 
 async function safeAgentDirectory(
   agentsRoot: string,
@@ -85,9 +91,27 @@ async function safeAgentPath(
   return resolved;
 }
 
+function capabilitySchemaFrom(
+  schemaId: string,
+  options: LoadAgentDefinitionOptions
+): unknown {
+  const registration = options.capabilityRegistry
+    ?.registrations()
+    .schemas.get(schemaId);
+  if (registration === undefined) {
+    throw agentDefinitionError(
+      `Agent output_schema references unknown capability schema: ${schemaId}`,
+      "agent_output_schema_unknown"
+    );
+  }
+
+  return registration.schema;
+}
+
 export async function loadAgentDefinition(
   agentsRoot: string,
-  agentId: string
+  agentId: string,
+  options: LoadAgentDefinitionOptions = {}
 ): Promise<LoadedAgentDefinition> {
   const directory = await safeAgentDirectory(agentsRoot, agentId);
   const metadata = await loadYamlFile(
@@ -108,7 +132,15 @@ export async function loadAgentDefinition(
     directory,
     metadata.instructions_file
   );
-  const outputSchemaPath = await safeAgentPath(directory, metadata.output_schema);
+  const outputSchemaIsCapabilitySchema =
+    isNamespacedCapabilityId(metadata.output_schema) &&
+    !metadata.output_schema.endsWith(".json");
+  const outputSchemaPath = outputSchemaIsCapabilitySchema
+    ? metadata.output_schema
+    : await safeAgentPath(directory, metadata.output_schema);
+  const outputSchema = outputSchemaIsCapabilitySchema
+    ? capabilitySchemaFrom(metadata.output_schema, options)
+    : await loadJsonFile(outputSchemaPath, z.unknown());
 
   return {
     ...metadata,
@@ -116,6 +148,6 @@ export async function loadAgentDefinition(
     instructionsPath,
     outputSchemaPath,
     instructions: await readFile(instructionsPath, "utf8"),
-    outputSchema: await loadJsonFile(outputSchemaPath, z.unknown())
+    outputSchema
   };
 }

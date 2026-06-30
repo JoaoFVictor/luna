@@ -99,8 +99,14 @@ code_review:
 ```
 
 Inline comments are created only for validated findings whose evidence maps to
-right-side lines in the captured PR diff. Findings that cannot be placed inline
-are appended to the review body.
+right-side lines in the captured PR diff. By default Luna places primary
+evidence inline, deduplicates duplicate comment locations within one published
+review, caps inline comments, and appends secondary or unplaceable evidence to
+the review body. Separate runs can still publish separate reviews.
+
+The full `code-review.yaml` contract, including `review_dimensions`,
+`related_context`, and comment policy, is documented in
+`docs/configuration-reference.md`.
 
 The workflow remains read-only for the local repository: agents cannot edit the
 worktree and no commit/push is performed. Publishing is still an external
@@ -109,15 +115,17 @@ capability policy and requires working `gh` auth.
 
 Review event behavior:
 
-- `auto`: request changes when validated findings exist; otherwise publish a
-  non-blocking PR review comment.
+- `auto`: follow the structured acceptance result with safe downgrades.
+  Accepted reviews without findings publish an approval, rejected reviews with
+  validated findings or blocking reasons request changes, and uncertain reviews
+  publish a non-blocking PR review comment.
 - `comment`: publish a non-blocking PR review comment.
 - `request_changes`: publish a formal review requesting changes on the PR.
 - `approve`: publish an approval review.
 
 The runtime protects contradictory states before calling the provider:
-`request_changes` with no validated findings becomes `comment`, and `approve`
-with validated findings becomes `comment`.
+`request_changes` without validated findings or blocking reasons becomes
+`comment`, and `approve` with validated findings or rejection becomes `comment`.
 
 Published review body:
 
@@ -130,6 +138,9 @@ Capability/provider split:
 
 - `workflows/code-review/workflow.yaml` decides when to call
   `pull-request-review.publish` and what state to pass.
+- The workflow runs general, security, and architecture reviewers from the
+  same review plan, then calls `findings.merge` so downstream validation and
+  publishing read one deduplicated findings payload.
 - `src/capabilities/pull-request-review/` validates the provider-neutral input
   and derives inline/fallback comments from validated findings.
 - `src/providers/github/pull-request-review/` performs the GitHub API call
@@ -149,8 +160,23 @@ Important files:
 - `final-report.json`: structured final report.
 - `context-intake.json`: configured repository and agent context audit.
 - `repo-context.json`: changed files and diff context.
+- `related-context.json`: deterministic related repository graph with nodes,
+  edges, budgets, truncation, and ranked files.
+- `review-coverage-plan.json`: deterministic expected review ranges and blocked review
+  coverage before agents run.
 - `review-plan.json`: planner agent output.
+- `raw-code-review-findings.json`: general reviewer findings before merge.
+- `security-review-findings.json`: security reviewer findings before merge.
+- `architecture-review-findings.json`: architecture reviewer findings before
+  merge.
+- `merged-code-review-findings.json`: deterministic merged reviewer output with
+  finding fingerprints, source provenance, and reviewed ranges before evidence
+  validation.
+- `review-coverage-check.json`: complete, partial, or blocked coverage result
+  comparing expected review ranges with reviewer-reported ranges.
 - `code-review-findings.json`: validated review findings.
+- `review-quality.json`: deterministic review-quality gate result from
+  coverage, related-context, truncation, and publishable-evidence signals.
 - `acceptance-review.json`: acceptance agent output.
 - `pull-request-review.json`: PR review publication result when enabled.
 

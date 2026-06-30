@@ -19,7 +19,11 @@ import {
   loadWorkflowDefinition,
   type WorkflowDefinition
 } from "../../../src/core/workflow/definition.js";
-import { loadWorkflowRuntimeConfig } from "../../../src/platform/native/native-run-context.js";
+import {
+  compileNativeWorkflow,
+  loadWorkflowRuntimeConfig
+} from "../../../src/platform/native/native-run-context.js";
+import { nativeLunaPlatformRegistrations } from "../../../src/platform/native/native-platform-registrations.js";
 
 function workflowDefinition(
   overrides: Partial<WorkflowDefinition> = {}
@@ -50,6 +54,37 @@ function workflowDefinition(
 }
 
 describe("native workflow runtime config", () => {
+  it("compiles the bundled code-review workflow with specialist reviewers", async () => {
+    const workflow = await loadWorkflowDefinition("workflows", "code-review", {
+      agentsRoot: "agents",
+      capabilityRegistry: nativeLunaPlatformRegistrations.capabilityRegistry
+    });
+
+    const nativeWorkflow = await compileNativeWorkflow({
+      workflow,
+      agentsRoot: "agents"
+    });
+    const nodeIds = nativeWorkflow.compiled.nodes.map((node) => node.id);
+
+    expect(nodeIds).toEqual(expect.arrayContaining([
+      "code_review",
+      "security_review",
+      "architecture_review",
+      "merged_findings",
+      "validated_findings",
+      "publish_review"
+    ]));
+    expect(
+      nativeWorkflow.workflow.graph.nodes
+        .filter((node) =>
+          ["code_review", "security_review", "architecture_review"].includes(node.id)
+        )
+        .every((node) =>
+          node.type === "agent" && node.agent_session?.isolation === "shared"
+        )
+    ).toBe(true);
+  });
+
   it("loads workflow-declared config for any workflow id and mode", async () => {
     const configRoot = await mkdtemp(path.join(tmpdir(), "luna-runtime-config-"));
 

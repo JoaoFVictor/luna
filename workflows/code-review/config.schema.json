@@ -8,6 +8,24 @@
       "additionalProperties": false,
       "required": ["pull_request_review"],
       "properties": {
+        "review_dimensions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "related_context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "max_related_files": { "type": "integer", "minimum": 1 },
+            "max_scan_files": { "type": "integer", "minimum": 1 },
+            "max_file_bytes": { "type": "integer", "minimum": 1 },
+            "max_excerpt_bytes": { "type": "integer", "minimum": 1 },
+            "include_tests": { "type": "boolean" },
+            "include_docs": { "type": "boolean" },
+            "include_configs": { "type": "boolean" }
+          }
+        },
         "pull_request_review": {
           "type": "object",
           "additionalProperties": false,
@@ -18,7 +36,15 @@
             "event": {
               "enum": ["auto", "comment", "request_changes", "approve"]
             },
-            "inline_comments": { "type": "boolean" }
+            "inline_comments": { "type": "boolean" },
+            "comment_policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "inline_evidence": { "enum": ["primary", "all"] },
+                "max_inline_comments": { "type": "integer", "minimum": 1 }
+              }
+            }
           }
         }
       }

@@ -122,6 +122,26 @@ Controls optional pull request review publication for the read-only
 
 Fields:
 
+- `review_dimensions`: optional operator-owned review rubric labels passed to
+  the planner, reviewers, and acceptance reviewer. The bundled config includes
+  `reuse_existing_components` so reviewers check whether the diff duplicates an
+  existing abstraction instead of reusing it.
+- `related_context.enabled`: whether to build the deterministic related
+  repository impact graph before planning and reviewer agents run.
+- `related_context.max_related_files`: maximum ranked files included in
+  `related-context.json` and passed to agents.
+- `related_context.max_scan_files`: maximum supported repository files scanned
+  for relationships.
+- `related_context.max_file_bytes`: maximum bytes read from any scanned file.
+- `related_context.max_excerpt_bytes`: maximum excerpt bytes included per
+  related file.
+- `related_context.include_tests`, `include_docs`, and `include_configs`:
+  whether test/spec, documentation, and config relationships are included.
+  Symbol parsing does not require configuration: Luna uses TypeScript AST for
+  JS/TS, Luna-owned Vue SFC parsing for `.vue`, and `nikic/php-parser` through
+  the target repository autoload when available. The run records actual engines
+  in `related-context.json` under `audit.symbol_engines` and parser fallback
+  warnings under `audit.warnings`.
 - `pull_request_review.enabled`: whether to publish the validated review back
   to the PR.
 - `pull_request_review.provider`: provider id. The bundled provider is
@@ -130,31 +150,61 @@ Fields:
   `request_changes`, or `approve`.
 - `pull_request_review.inline_comments`: whether Luna should try to place
   validated findings as inline PR comments.
+- `pull_request_review.comment_policy.inline_evidence`: `primary` places only
+  the first evidence range inline and sends secondary evidence to the review
+  body; `all` attempts every evidence range inline.
+- `pull_request_review.comment_policy.max_inline_comments`: cap on inline
+  comments for one published review.
 
 Example:
 
 ```yaml
 code_review:
+  review_dimensions:
+    - correctness
+    - security
+    - architecture
+    - reuse_existing_components
+    - tests
+    - documentation
+    - compatibility
+  related_context:
+    enabled: true
+    max_related_files: 12
+    max_scan_files: 600
+    max_file_bytes: 24000
+    max_excerpt_bytes: 4000
+    include_tests: true
+    include_docs: true
+    include_configs: true
   pull_request_review:
     enabled: true
     provider: github
     event: auto
     inline_comments: true
+    comment_policy:
+      inline_evidence: primary
+      max_inline_comments: 20
 ```
 
 Inline comments are created only for validated findings whose evidence maps to
-right-side lines in the captured PR diff. Findings that cannot be placed inline
-are appended to the review body. The review body also includes the structured
-acceptance result, so a published review can explicitly say `approved`,
-`changes requested`, `not accepted`, or `needs human review` even when there are
-no inline comments. The side effect is performed by the provider-neutral
+right-side lines in the captured PR diff. By default Luna places the primary
+evidence inline, deduplicates duplicate comment locations within one published
+review, caps inline comments, and appends secondary or unplaceable evidence to
+the review body. This does not deduplicate publication across separate runs. The
+review body also includes the structured acceptance result, so a published
+review can explicitly say `approved`, `changes requested`, `not accepted`, or
+`needs human review` even when there are no inline comments. The side effect is
+performed by the provider-neutral
 `pull-request-review.publish` built-in and the selected provider port; GitHub
 publishing uses `gh` auth under `.luna/auth/gh`.
 
-`auto` requests changes only when validated findings exist. With no findings it
-publishes a regular PR review comment. Luna also prevents contradictory events:
-`request_changes` with no findings becomes `comment`, and `approve` with
-findings becomes `comment`.
+`auto` uses the structured acceptance result with safe downgrades. Accepted
+reviews without findings publish an approval, rejected reviews with validated
+findings or blocking reasons request changes, and uncertain reviews publish a
+regular PR review comment. Luna also prevents contradictory explicit events:
+`request_changes` without findings or blocking reasons becomes `comment`, and
+`approve` with findings or rejection becomes `comment`.
 
 ## `implementation.yaml`
 
