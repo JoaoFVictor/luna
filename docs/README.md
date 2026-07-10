@@ -26,6 +26,13 @@ CLI / input adapter
 - [Runtime and observability](runtime-and-observability.md)
 - [Configuration reference](configuration-reference.md)
 
+## Planned Surfaces
+
+The following document records accepted implementation decisions for work that is
+in progress. It must not be read as a description of already shipped behavior:
+
+- [Luna Studio architecture decisions](studio-architecture.md)
+
 Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 
 ## Layer Map
