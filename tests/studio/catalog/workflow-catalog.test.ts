@@ -63,6 +63,15 @@ describe("Studio workflow catalog", () => {
     expect(catalog.workflows.length).toBeGreaterThan(0);
     expect(catalog.workflows.some((workflow) => workflow.id === "code-review"))
       .toBe(true);
+    expect(
+      catalog.workflows.find((workflow) => workflow.id === "code-review")?.agents
+    ).toEqual([
+      "architecture-reviewer",
+      "change-acceptance-reviewer",
+      "change-reviewer",
+      "review-planner",
+      "security-reviewer"
+    ]);
   });
 
   it("projects absolute in-root schema paths as relative references", async () => {

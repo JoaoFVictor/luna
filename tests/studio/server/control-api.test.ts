@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { RouterDefinition } from "../../../src/core/router/router-definition.js";
 import {
   registerStudioControlApi,
@@ -66,6 +66,33 @@ const defaultInputRouting: StudioInputRoutingControl = {
       event: "pull_request"
     },
     redacted_fields: ["payload"]
+  }),
+  previewInputRoute: async (_principal, request) => ({
+    adapter: {
+      adapter_id: request.adapter_id,
+      effects: [],
+      invocation: {
+        version: "2026-06",
+        source: "github",
+        event: "pull_request"
+      },
+      redacted_fields: ["payload"]
+    },
+    routing: {
+      status: "matched",
+      evaluations: [
+        {
+          rule_id: "manual",
+          rule_index: 0,
+          expression_path: "$.rules[0].when.expression",
+          outcome: "boolean",
+          result: true
+        }
+      ],
+      matched_rule: { rule_id: "manual", rule_index: 0 },
+      target: { type: "workflow", id: "code-review" },
+      diagnostics: []
+    }
   }),
   routingDefinition: () => routingDefinition,
   simulateRouting: async () => ({
@@ -162,6 +189,15 @@ describe("Studio Control API", () => {
         acknowledged_effects: []
       }
     });
+    const routePreview = await server.inject({
+      method: "POST",
+      url: "/api/studio/v1/input-adapters/github-pr-url/route-preview",
+      headers: mutationHeaders,
+      payload: {
+        input: { kind: "cli", value: "https://github.com/acme/repo/pull/1" },
+        acknowledged_effects: []
+      }
+    });
     const routing = await server.inject({
       method: "GET",
       url: "/api/studio/v1/configuration/routing",
@@ -190,6 +226,14 @@ describe("Studio Control API", () => {
       invocation: { source: "github", event: "pull_request" },
       redacted_fields: ["payload"]
     });
+    expect(routePreview.statusCode).toBe(200);
+    expect(routePreview.json()).toMatchObject({
+      adapter: { adapter_id: "github-pr-url", redacted_fields: ["payload"] },
+      routing: {
+        status: "matched",
+        target: { type: "workflow", id: "code-review" }
+      }
+    });
     expect(routing.statusCode).toBe(200);
     expect(routing.json()).toEqual(routingDefinition);
     expect(simulation.statusCode).toBe(200);
@@ -197,6 +241,55 @@ describe("Studio Control API", () => {
       status: "matched",
       target: { type: "workflow", id: "code-review" }
     });
+    await server.close();
+  });
+
+  it("binds routing simulation to the HTTP request cancellation signal", async () => {
+    const simulateRouting = vi.fn<
+      StudioInputRoutingControl["simulateRouting"]
+    >(async (_principal, _request, signal) => {
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(signal.aborted).toBe(false);
+      return {
+        status: "no_match",
+        evaluations: [],
+        matched_rule: null,
+        target: null,
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "router_no_match",
+            message: "No router rule matched invocation."
+          }
+        ]
+      };
+    });
+    const { server, sessions } = await fixture({
+      inputRouting: { ...defaultInputRouting, simulateRouting }
+    });
+    const session = await localSession(server, sessions.bootstrapCapability());
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/studio/v1/routing/simulate",
+      headers: {
+        host,
+        cookie: session.cookie,
+        origin,
+        "content-type": "application/json",
+        "x-luna-csrf": session.csrf
+      },
+      payload: {
+        invocation: {
+          version: "2026-06",
+          source: "manual",
+          event: "simulate"
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(simulateRouting).toHaveBeenCalledOnce();
     await server.close();
   });
 
@@ -450,7 +543,6 @@ describe("Studio Control API", () => {
         origin,
         cookie: session.cookie,
         "content-type": "application/json",
-        "x-luna-csrf": session.csrf,
         "sec-fetch-site": "same-origin"
       },
       payload: {}
@@ -482,8 +574,8 @@ describe("Studio Control API", () => {
     });
 
     expect(rotation.statusCode).toBe(200);
-    expect(rotatedCsrf).not.toBe(session.csrf);
-    expect(oldToken.statusCode).toBe(403);
+    expect(rotatedCsrf).toBe(session.csrf);
+    expect(oldToken.statusCode).toBe(200);
     expect(newToken.statusCode).toBe(200);
     expect(reusedBootstrap.statusCode).toBe(401);
     await server.close();
@@ -516,7 +608,7 @@ describe("Studio Control API", () => {
     await server.close();
   });
 
-  it("rejects CSRF rotation without the current CSRF token", async () => {
+  it("recovers the stable CSRF without requiring a caller token", async () => {
     const { server, sessions } = await fixture();
     const session = await localSession(server, sessions.bootstrapCapability());
     const baseHeaders = {
@@ -538,8 +630,8 @@ describe("Studio Control API", () => {
       payload: {}
     });
 
-    expect(missing.statusCode).toBe(403);
-    expect(wrong.statusCode).toBe(403);
+    expect(missing.statusCode).toBe(200);
+    expect(wrong.statusCode).toBe(200);
     await server.close();
   });
 });

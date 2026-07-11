@@ -2,7 +2,7 @@ import { z } from "zod";
 import { StudioDigestSchema } from "./digests.js";
 import { StudioPathSchema, StudioResourceRefSchema } from "./paths.js";
 
-const ApplyTokenSchema = z.string().min(32).max(256);
+export const StudioApplyPlanTokenSchema = z.string().min(32).max(256);
 const ApplyOperationIdSchema = z.string().uuid();
 
 export const StudioApplyDiffKindSchema = z.enum([
@@ -71,7 +71,7 @@ const StudioApplyPlanBaseSchema = z
 const StudioReadyApplyPlanSchema = StudioApplyPlanBaseSchema.extend({
   status: z.literal("ready"),
   conflicts: z.array(StudioApplyConflictSchema).length(0),
-  plan_token: ApplyTokenSchema,
+  plan_token: StudioApplyPlanTokenSchema,
   expires_at: z.string().datetime({ offset: true })
 }).strict();
 
@@ -116,7 +116,7 @@ export type StudioApplyResult = z.infer<typeof StudioApplyResultSchema>;
 
 export const StudioApplyRequestSchema = z
   .object({
-    plan_token: ApplyTokenSchema,
+    plan_token: StudioApplyPlanTokenSchema,
     idempotency_key: z
       .string()
       .min(8)

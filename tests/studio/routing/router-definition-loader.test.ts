@@ -58,7 +58,7 @@ describe("Studio router definition loader", () => {
         "workspace:",
         "  strategy: git_worktree",
         `  root: ${JSON.stringify(path.join(configRoot, "worktrees"))}`,
-        "  preserve_on_success: false",
+        "  preserve_on_success: true",
         "  preserve_on_failure: true",
         "artifacts:",
         `  root: ${JSON.stringify(path.join(configRoot, "artifacts"))}`,
@@ -96,7 +96,7 @@ describe("Studio router definition loader", () => {
           workspace: {
             strategy: "git_worktree",
             root: path.join(configRoot, "worktrees"),
-            preserve_on_success: false,
+            preserve_on_success: true,
             preserve_on_failure: true
           },
           artifacts: { root: path.join(configRoot, "artifacts") },
@@ -112,7 +112,7 @@ describe("Studio router definition loader", () => {
           workspace: {
             strategy: "git_worktree",
             root: path.join(configRoot, "worktrees"),
-            preserve_on_success: false,
+            preserve_on_success: true,
             preserve_on_failure: true
           },
           artifacts: { root: path.join(configRoot, "artifacts") },
@@ -137,7 +137,7 @@ describe("Studio router definition loader", () => {
         workspace: {
           strategy: "git_worktree",
           root: path.join(configRoot, "worktrees"),
-          preserve_on_success: false,
+          preserve_on_success: true,
           preserve_on_failure: true
         },
         artifacts: { root: path.join(configRoot, "artifacts") }
@@ -176,7 +176,7 @@ describe("Studio router definition loader", () => {
         workspace: {
           strategy: "git_worktree",
           root: path.join(configRoot, "worktrees"),
-          preserve_on_success: false,
+          preserve_on_success: true,
           preserve_on_failure: true
         },
         artifacts: { root: path.join(configRoot, "artifacts") },
@@ -202,7 +202,7 @@ describe("Studio router definition loader", () => {
           workspace: {
             strategy: "git_worktree",
             root: path.join(configRoot, "worktrees"),
-            preserve_on_success: false,
+            preserve_on_success: true,
             preserve_on_failure: true
           },
           artifacts: { root: path.join(configRoot, "artifacts") },

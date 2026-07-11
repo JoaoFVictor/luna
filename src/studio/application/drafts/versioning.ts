@@ -5,6 +5,15 @@ import {
   type StudioDraftVersion
 } from "./persistence.js";
 
+export function studioDraftEtag(
+  changeSet: Pick<
+    StudioChangeSet,
+    "draft_id" | "record_revision" | "draft_hash"
+  >
+): string {
+  return `"studio-draft:${changeSet.draft_id}:${changeSet.record_revision}:${changeSet.draft_hash}"`;
+}
+
 export function studioDraftVersion(
   changeSet: StudioChangeSet
 ): StudioDraftVersion {

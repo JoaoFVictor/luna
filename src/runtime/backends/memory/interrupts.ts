@@ -6,6 +6,7 @@ import type {
 import { resumeInputsEqual } from "../../../core/runtime/interrupts/resume.js";
 import type { BackendRegistration } from "../../../core/runtime/backends/contracts.js";
 import { runtimeError } from "../../../core/runtime/errors.js";
+import { stableJson } from "../../../core/runtime/json.js";
 import { z } from "zod";
 
 export const MemoryInterruptBackendOptionsSchema = z.object({}).strict();
@@ -18,9 +19,21 @@ export const memoryInterruptBackendRegistration = {
 export function createMemoryInterruptStore(): InterruptStore {
   const interrupts = new Map<string, InterruptRecord>();
   const pendingResumes = new Map<string, PendingResume>();
+  const resumeLeaseTails = new Map<string, Promise<void>>();
 
   return {
     async create(record) {
+      const existing = interrupts.get(record.id);
+      if (existing !== undefined) {
+        if (stableJson(existing) === stableJson(record)) {
+          return;
+        }
+        throw runtimeError(
+          "Interrupt identity already belongs to different durable state",
+          "interrupt_conflict",
+          { details: { interrupt_id: record.id } }
+        );
+      }
       pendingResumes.delete(record.id);
       interrupts.set(record.id, { ...record });
     },
@@ -33,6 +46,24 @@ export function createMemoryInterruptStore(): InterruptStore {
       return [...interrupts.values()]
         .filter((interrupt) => interrupt.run_id === runId)
         .map((interrupt) => ({ ...interrupt }));
+    },
+    async withResumeLease(id, operation) {
+      const previous = resumeLeaseTails.get(id) ?? Promise.resolve();
+      let release!: () => void;
+      const current = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const tail = previous.then(() => current, () => current);
+      resumeLeaseTails.set(id, tail);
+      await previous.catch(() => undefined);
+      try {
+        return await operation();
+      } finally {
+        release();
+        if (resumeLeaseTails.get(id) === tail) {
+          resumeLeaseTails.delete(id);
+        }
+      }
     },
     async beginResume(id, resumeAttempt, input) {
       const interrupt = interrupts.get(id);

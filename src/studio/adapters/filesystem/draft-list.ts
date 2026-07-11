@@ -59,14 +59,35 @@ function pageSize(input: StudioDraftListInput): number {
 export type ParsedStudioDraftListQuery = {
   readonly limit: number;
   readonly after?: string;
+  readonly primaryResourceKinds?: ReadonlySet<
+    StudioDraftSummary["primary_resource"]["kind"]
+  >;
 };
 
 export function parseStudioDraftListQuery(
   input: StudioDraftListInput
 ): ParsedStudioDraftListQuery {
+  const kinds = input.primaryResourceKinds;
+  if (
+    kinds !== undefined &&
+    (kinds.length === 0 ||
+      new Set(kinds).size !== kinds.length ||
+      kinds.some(
+        (kind) =>
+          kind !== "workflow" && kind !== "agent" && kind !== "config"
+      ))
+  ) {
+    throw new StudioDraftPersistenceError(
+      "studio_list_limit_invalid",
+      "Studio draft resource-kind filter is invalid"
+    );
+  }
   return {
     limit: pageSize(input),
-    ...(input.cursor === undefined ? {} : { after: decodeCursor(input.cursor) })
+    ...(input.cursor === undefined ? {} : { after: decodeCursor(input.cursor) }),
+    ...(kinds === undefined
+      ? {}
+      : { primaryResourceKinds: new Set(kinds) })
   };
 }
 
@@ -97,6 +118,40 @@ export async function buildStudioDraftListPage(input: {
     next_cursor:
       input.hasMore && input.directoryNames.length > 0
         ? encodeCursor(input.directoryNames.at(-1)!)
+        : null
+  };
+}
+
+export async function buildFilteredStudioDraftListPage(input: {
+  readonly directoryNames: readonly string[];
+  readonly limit: number;
+  readonly include: (summary: StudioDraftSummary) => boolean;
+  readonly readEntry: (directoryName: string) => Promise<StudioDraftListEntry>;
+}): Promise<StudioDraftListPage> {
+  const items: StudioDraftSummary[] = [];
+  let cursorDirectory: string | undefined;
+  let hasMore = false;
+
+  // Scoped callers must never receive diagnostics or cursors containing an ID
+  // that belongs to another surface. Corrupt metadata cannot be classified, so
+  // it is intentionally omitted from scoped projections.
+  for (const directoryName of input.directoryNames) {
+    const entry = await input.readEntry(directoryName);
+    if (entry.kind !== "summary" || !input.include(entry.value)) continue;
+    if (items.length === input.limit) {
+      hasMore = true;
+      break;
+    }
+    items.push(entry.value);
+    cursorDirectory = directoryName;
+  }
+
+  return {
+    items,
+    diagnostics: [],
+    next_cursor:
+      hasMore && cursorDirectory !== undefined
+        ? encodeCursor(cursorDirectory)
         : null
   };
 }

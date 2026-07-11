@@ -10,6 +10,7 @@ import { manifest as context } from "../../../src/capabilities/context/manifest.
 import { manifest as qualityGates } from "../../../src/capabilities/quality-gates/manifest.js";
 import { manifest as reports } from "../../../src/capabilities/reports/manifest.js";
 import { loadWorkflowDefinition, type DefinitionDigestResolver } from "../../../src/core/workflow/definition.js";
+import { readWorkflowDefinitionReferences } from "../../../src/core/workflow/definition-references.js";
 
 const fixtures = path.join(process.cwd(), "tests/fixtures/workflows");
 
@@ -217,6 +218,29 @@ describe("strict workflow definition validation", () => {
       code: "workflow_capability_missing",
       capability: "context"
     });
+  });
+
+  it("rejects the unsupported gate.agent field instead of treating it as an executable agent", () => {
+    expect(() => readWorkflowDefinitionReferences([
+      "id: unsupported-gate-agent",
+      "type: workflow",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "capabilities: [quality-gates, agents]",
+      "nodes:",
+      "  - id: loop",
+      "    type: pattern",
+      "    uses: quality-gates.gated_agent_loop",
+      "    worker: writer",
+      "    gates:",
+      "      - id: review",
+      "        type: quality-gates.agent_review",
+      "        agent: reviewer",
+      ""
+    ].join("\n"))).toThrow(expect.objectContaining({
+      code: "workflow_unknown_field",
+      path: "$.nodes[0].gates[0].agent"
+    }));
   });
 
 });

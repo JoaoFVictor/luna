@@ -10,6 +10,7 @@ import type {
   ArtifactManifestKey
 } from "../../../src/core/runtime/artifacts/contracts.js";
 import {
+  hashArtifactContent,
   publishArtifactTransaction
 } from "../../../src/core/runtime/artifacts/transaction.js";
 import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
@@ -83,6 +84,7 @@ function baseInput() {
       artifact_path: "reports/result.json",
       content: "{\"ok\":true}\n",
       media_type: "application/json",
+      semantic_type: "luna.review.findings.v1",
       overwrite_policy: "forbid" as const,
       backend: { id: "memory.artifacts", root: "artifacts" },
       manifestStore: createMemoryArtifactManifestStore(),
@@ -132,6 +134,7 @@ describe("artifact transaction", () => {
       uri: artifactUri("reports/result.json"),
       source_node_id: "writer",
       media_type: "application/json",
+      semantic_type: "luna.review.findings.v1",
       status: "committed",
       attempt: 1,
       content_hash: expect.stringMatching(/^sha256:/)
@@ -178,6 +181,51 @@ describe("artifact transaction", () => {
     expect(second.manifest).toEqual(first.manifest);
     expect(content.writes).toEqual(["artifact-1"]);
     expect(content.commits).toEqual(["artifact-1"]);
+  });
+
+  it("rejects invalid and conflicting semantic metadata", async () => {
+    const { input } = baseInput();
+
+    await expect(
+      publishArtifactTransaction({ ...input, semantic_type: "findings" })
+    ).rejects.toMatchObject({ code: "artifact_semantic_type_invalid" });
+
+    await publishArtifactTransaction(input);
+    await expect(
+      publishArtifactTransaction({
+        ...input,
+        semantic_type: "luna.review.coverage-check.v1"
+      })
+    ).rejects.toMatchObject({ code: "artifact_semantic_type_conflict" });
+    await expect(
+      publishArtifactTransaction({
+        ...input,
+        content: "{\"ok\":false}\n",
+        semantic_type: "luna.review.coverage-check.v1"
+      })
+    ).rejects.toMatchObject({ code: "artifact_semantic_type_conflict" });
+  });
+
+  it("keeps semantic metadata outside the transaction identity for legacy compatibility", async () => {
+    const semanticInput = baseInput().input;
+    const legacyInput = { ...baseInput().input, semantic_type: undefined };
+
+    const semanticResult = await publishArtifactTransaction(semanticInput);
+    const legacyResult = await publishArtifactTransaction(legacyInput);
+    const legacyIdentity = JSON.stringify({
+      run_id: legacyInput.run_id,
+      node_id: legacyInput.node_id,
+      attempt: 1,
+      backend_id: legacyInput.backend.id,
+      backend_root: legacyInput.backend.root,
+      artifact_path: legacyInput.artifact_path,
+      artifact_id: legacyInput.artifact_id
+    });
+
+    const expectedTransactionId = `artifact-tx:${hashArtifactContent(legacyIdentity)}`;
+    expect(semanticResult.record.transaction_id).toBe(expectedTransactionId);
+    expect(legacyResult.record.transaction_id).toBe(expectedTransactionId);
+    expect(legacyResult.manifest).not.toHaveProperty("semantic_type");
   });
 
   it("rejects same artifact id with different content unless overwrite is explicit", async () => {

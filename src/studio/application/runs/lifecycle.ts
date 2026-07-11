@@ -22,21 +22,36 @@ const ALLOWED_RUNTIME_TRANSITIONS: Readonly<
     "waiting_for_retry",
     "succeeded",
     "failed",
+    "outcome_unknown",
     "timed_out",
     "cancelled"
   ],
-  waiting_for_input: ["resuming", "failed", "timed_out", "cancelled"],
-  waiting_for_retry: ["resuming", "failed", "timed_out", "cancelled"],
+  waiting_for_input: [
+    "resuming",
+    "failed",
+    "outcome_unknown",
+    "timed_out",
+    "cancelled"
+  ],
+  waiting_for_retry: [
+    "resuming",
+    "failed",
+    "outcome_unknown",
+    "timed_out",
+    "cancelled"
+  ],
   resuming: [
     "running",
     "waiting_for_input",
     "waiting_for_retry",
     "failed",
+    "outcome_unknown",
     "timed_out",
     "cancelled"
   ],
   succeeded: [],
   failed: [],
+  outcome_unknown: [],
   timed_out: [],
   cancelled: []
 };
@@ -47,6 +62,12 @@ export function initialRunRecord(input: PreallocateRunInput): RunRecord {
     schema_version: 1,
     record_revision: 1,
     run_id: command.run_id,
+    ...(command.accepted_plan_id === undefined
+      ? {}
+      : { accepted_plan_id: command.accepted_plan_id }),
+    ...(command.input_provenance === undefined
+      ? {}
+      : { input_provenance: command.input_provenance }),
     ...(command.correlation_id === undefined ? {} : { correlation_id: command.correlation_id }),
     ...(command.job_id === undefined ? {} : { job_id: command.job_id }),
     workflow_id: command.workflow_id,
@@ -64,21 +85,23 @@ export function initialRunRecord(input: PreallocateRunInput): RunRecord {
     artifact_count: 0,
     interrupt_count: 0,
     side_effects: command.side_effects,
+    lifecycle_projection: "exact",
     completeness: "complete"
   });
 }
 
-function isTerminal(record: RunRecord): boolean {
+function isImmutable(record: RunRecord): boolean {
   return record.dispatch_status === "rejected" ||
+    record.dispatch_status === "historical_unknown" ||
     (record.run_status !== undefined &&
       RunTerminalStatusSchema.safeParse(record.run_status).success);
 }
 
 function assertMutable(record: RunRecord): void {
-  if (isTerminal(record)) {
+  if (isImmutable(record)) {
     throw runStoreError(
       "run_terminal_immutable",
-      "Terminal run records cannot be changed",
+      "Immutable run records cannot be changed",
       { run_id: record.run_id, revision: record.record_revision }
     );
   }
@@ -127,6 +150,21 @@ function monotonicCount(
     );
   }
   return candidate;
+}
+
+function knownRunCount(
+  record: RunRecord,
+  field: "artifact_count" | "interrupt_count"
+): number {
+  const value = record[field];
+  if (value === undefined) {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Mutable run is missing canonical lifecycle counts",
+      { run_id: record.run_id, revision: record.record_revision }
+    );
+  }
+  return value;
 }
 
 function nextRevision(record: RunRecord): number {
@@ -189,6 +227,37 @@ function started(
   };
 }
 
+function recoveryClaimed(
+  record: RunRecord,
+  transition: Extract<RunTransition, { kind: "dispatch_recovery_claim" }>,
+  occurredAt: string
+): RunRecord {
+  if (
+    record.dispatch_status !== "started" ||
+    record.run_status !== "running"
+  ) {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Only unfinished running dispatches can be claimed for recovery"
+    );
+  }
+  if (record.owner_id !== transition.previous_owner_id) {
+    throw runStoreError(
+      "run_owner_conflict",
+      "Recovery claim does not match the previous run owner",
+      { run_id: record.run_id, revision: record.record_revision }
+    );
+  }
+  return {
+    ...record,
+    record_revision: nextRevision(record),
+    owner_id: transition.owner_id,
+    heartbeat_at: occurredAt,
+    active_node_ids: [],
+    updated_at: occurredAt
+  };
+}
+
 function rejected(
   record: RunRecord,
   transition: Extract<RunTransition, { kind: "dispatch_rejected" }>,
@@ -246,20 +315,22 @@ function progress(
   }
   assertOwner(record, transition.owner_id);
   assertUniqueNodes(transition.active_node_ids);
+  const artifactCount = knownRunCount(record, "artifact_count");
+  const interruptCount = knownRunCount(record, "interrupt_count");
   const nextArtifactCount = monotonicCount(
-    record.artifact_count,
+    artifactCount,
     transition.artifact_count,
     "Artifact count"
   );
   const nextInterruptCount = monotonicCount(
-    record.interrupt_count,
+    interruptCount,
     transition.interrupt_count,
     "Interrupt count"
   );
   if (record.heartbeat_at !== undefined &&
     Date.parse(record.heartbeat_at) === Date.parse(occurredAt) &&
-    nextArtifactCount === record.artifact_count &&
-    nextInterruptCount === record.interrupt_count &&
+    nextArtifactCount === artifactCount &&
+    nextInterruptCount === interruptCount &&
     transition.active_node_ids.length === record.active_node_ids.length &&
     transition.active_node_ids.every((nodeId, index) => nodeId === record.active_node_ids[index])) {
     throw runStoreError("run_transition_invalid", "Progress transition has no changes");
@@ -273,6 +344,115 @@ function progress(
     heartbeat_at: occurredAt,
     updated_at: occurredAt
   };
+}
+
+function projectionTimestamp(record: RunRecord, occurredAt: string): string {
+  return new Date(
+    Math.max(Date.parse(record.updated_at), Date.parse(occurredAt))
+  ).toISOString();
+}
+
+function nodeLifecycle(
+  record: RunRecord,
+  transition: Extract<RunTransition, { kind: "node_lifecycle" }>,
+  occurredAt: string
+): RunRecord {
+  if (record.dispatch_status !== "started") {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Only started runs can report node lifecycle"
+    );
+  }
+  assertOwner(record, transition.owner_id);
+  const artifactCount = knownRunCount(record, "artifact_count");
+  const interruptCount = knownRunCount(record, "interrupt_count");
+  const activeNodeIds = new Set(record.active_node_ids);
+  if (transition.event.type === "node.started") {
+    activeNodeIds.add(transition.event.node_id);
+  } else {
+    activeNodeIds.delete(transition.event.node_id);
+  }
+  const projectedAt = projectionTimestamp(record, occurredAt);
+  return {
+    ...record,
+    record_revision: nextRevision(record),
+    active_node_ids: [...activeNodeIds].sort((left, right) =>
+      left.localeCompare(right)
+    ),
+    artifact_count: Math.max(
+      artifactCount,
+      transition.event.artifact_count
+    ),
+    interrupt_count: Math.max(
+      interruptCount,
+      transition.event.interrupt_count
+    ),
+    heartbeat_at: projectedAt,
+    updated_at: projectedAt
+  };
+}
+
+function lifecycleProjectionDegraded(
+  record: RunRecord,
+  transition: Extract<
+    RunTransition,
+    { kind: "lifecycle_projection_degraded" }
+  >,
+  occurredAt: string
+): RunRecord {
+  if (record.dispatch_status !== "started") {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Only started runs can degrade lifecycle projection"
+    );
+  }
+  assertOwner(record, transition.owner_id);
+  const projectedAt = projectionTimestamp(record, occurredAt);
+  return {
+    ...record,
+    record_revision: nextRevision(record),
+    lifecycle_projection: "degraded",
+    heartbeat_at: projectedAt,
+    updated_at: projectedAt
+  };
+}
+
+function assertOutcomeProof(
+  record: RunRecord,
+  transition: Extract<RunTransition, { kind: "runtime_status" }>
+): void {
+  const proof = transition.outcome_proof;
+  const terminal = RunTerminalStatusSchema.safeParse(transition.status).success;
+  if (!terminal && proof !== undefined) {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Only terminal transitions can carry an outcome proof"
+    );
+  }
+  if (transition.completeness === "complete" && proof === undefined) {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Complete terminal transitions require a durable outcome proof"
+    );
+  }
+  if (proof === undefined) {
+    return;
+  }
+  if (
+    proof.identity.graph_snapshot_handle !== record.graph_snapshot_handle ||
+    proof.identity.run_id !== record.run_id ||
+    proof.identity.workflow_id !== record.workflow_id ||
+    proof.identity.workflow_revision !== record.workflow_revision ||
+    proof.identity.definition_bundle_hash !== record.definition_bundle_hash ||
+    proof.identity.execution_snapshot_hash !== record.execution_snapshot_hash ||
+    proof.record_revision !== nextRevision(record) ||
+    proof.run_status !== transition.status
+  ) {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Terminal outcome proof does not match the exact run identity"
+    );
+  }
 }
 
 function runtimeStatus(
@@ -293,12 +473,20 @@ function runtimeStatus(
   }
 
   const terminal = RunTerminalStatusSchema.safeParse(transition.status).success;
+  const artifactCount = knownRunCount(record, "artifact_count");
+  const interruptCount = knownRunCount(record, "interrupt_count");
+  assertOutcomeProof(record, transition);
   if (terminal && transition.active_node_ids.length > 0) {
     throw runStoreError("run_transition_invalid", "Terminal transition cannot keep active nodes");
   }
-  if ((transition.status === "failed" || transition.status === "timed_out") &&
+  if ((transition.status === "failed" ||
+    transition.status === "outcome_unknown" ||
+    transition.status === "timed_out") &&
     transition.failure === undefined) {
-    throw runStoreError("run_transition_invalid", "Failure details are required");
+    throw runStoreError(
+      "run_transition_invalid",
+      "Failure or uncertain-outcome details are required"
+    );
   }
   if (transition.status === "succeeded" &&
     (transition.failure !== undefined || transition.failed_node_id !== undefined)) {
@@ -307,6 +495,22 @@ function runtimeStatus(
   if (!terminal &&
     (transition.failure !== undefined || transition.failed_node_id !== undefined)) {
     throw runStoreError("run_transition_invalid", "Active states cannot carry terminal failure");
+  }
+  if (!terminal && transition.completeness !== undefined) {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Only terminal transitions can change run completeness"
+    );
+  }
+  if (
+    terminal &&
+    transition.completeness === "complete" &&
+    record.lifecycle_projection === "degraded"
+  ) {
+    throw runStoreError(
+      "run_transition_invalid",
+      "Degraded lifecycle projection cannot produce a complete terminal run"
+    );
   }
 
   return {
@@ -317,15 +521,18 @@ function runtimeStatus(
     ...(transition.failed_node_id === undefined ? {} : { failed_node_id: transition.failed_node_id }),
     ...(transition.failure === undefined ? {} : { failure: transition.failure }),
     artifact_count: monotonicCount(
-      record.artifact_count,
+      artifactCount,
       transition.artifact_count,
       "Artifact count"
     ),
     interrupt_count: monotonicCount(
-      record.interrupt_count,
+      interruptCount,
       transition.interrupt_count,
       "Interrupt count"
     ),
+    completeness: terminal
+      ? transition.completeness ?? "partial"
+      : record.completeness,
     heartbeat_at: occurredAt,
     ...(terminal ? { finished_at: occurredAt } : {}),
     updated_at: occurredAt
@@ -344,7 +551,12 @@ export function applyRunTransition(
     "ledger command"
   );
   assertMutable(record);
-  assertMonotonicTime(record, occurredAt);
+  if (
+    transition.kind !== "node_lifecycle" &&
+    transition.kind !== "lifecycle_projection_degraded"
+  ) {
+    assertMonotonicTime(record, occurredAt);
+  }
 
   const next = (() => {
     switch (transition.kind) {
@@ -352,12 +564,18 @@ export function applyRunTransition(
         return preparing(record, transition, occurredAt);
       case "dispatch_started":
         return started(record, transition, occurredAt);
+      case "dispatch_recovery_claim":
+        return recoveryClaimed(record, transition, occurredAt);
       case "dispatch_rejected":
         return rejected(record, transition, occurredAt);
       case "heartbeat":
         return heartbeat(record, transition, occurredAt);
       case "progress":
         return progress(record, transition, occurredAt);
+      case "node_lifecycle":
+        return nodeLifecycle(record, transition, occurredAt);
+      case "lifecycle_projection_degraded":
+        return lifecycleProjectionDegraded(record, transition, occurredAt);
       case "runtime_status":
         return runtimeStatus(record, transition, occurredAt);
     }
@@ -379,12 +597,18 @@ export function runTransitionEventType(transition: RunTransition): string {
       return "run.dispatch.preparing";
     case "dispatch_started":
       return "run.dispatch.started";
+    case "dispatch_recovery_claim":
+      return "run.dispatch.recovery_claimed";
     case "dispatch_rejected":
       return "run.dispatch.rejected";
     case "heartbeat":
       return "run.heartbeat";
     case "progress":
       return "run.progress";
+    case "node_lifecycle":
+      return `run.${transition.event.type}`;
+    case "lifecycle_projection_degraded":
+      return "run.lifecycle.projection_degraded";
     case "runtime_status":
       return `run.status.${transition.status}`;
   }
@@ -394,7 +618,13 @@ export function runDisplayStatus(record: RunRecord): RunDisplayStatus {
   return record.run_status ?? record.dispatch_status;
 }
 
-export function wallDurationMs(record: RunRecord, asOf: string): number {
+export function wallDurationMs(
+  record: RunRecord,
+  asOf: string
+): number | undefined {
+  if (record.dispatch_status === "historical_unknown") {
+    return undefined;
+  }
   const start = Date.parse(record.started_at ?? record.created_at);
   const end = Date.parse(record.finished_at ?? asOf);
   return Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, end - start));

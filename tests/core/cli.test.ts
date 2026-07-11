@@ -11,6 +11,7 @@ import type { Invocation } from "../../src/core/router/invocation.js";
 import { createInitialRuntimeState } from "../../src/core/runtime/state.js";
 import type { WorkflowRunResult } from "../../src/core/workflow/execution-contracts.js";
 import type { LunaPlatform } from "../../src/platform/native/native-platform.js";
+import type { StudioServerHandle } from "../../src/studio/server/studio-server.js";
 import { defineWebhookProviderAdapterFactories } from "../../src/webhooks/provider-registry.js";
 import {
   findProjectRoot,
@@ -99,7 +100,7 @@ async function writeCliProjectConfig({
       "workspace:",
       "  strategy: git_worktree",
       `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
-      "  preserve_on_success: false",
+      "  preserve_on_success: true",
       "  preserve_on_failure: true",
       "artifacts:",
       `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
@@ -214,14 +215,22 @@ describe("Luna CLI", () => {
       parseCliArgs([
         "studio",
         "--host",
-        "127.0.0.1",
+        "0.0.0.0",
         "--port",
-        "43111"
+        "43111",
+        "--allow-non-loopback-bind",
+        "--public-host",
+        "127.0.0.1",
+        "--public-port",
+        "43112"
       ])
     ).toEqual({
       command: "studio",
-      host: "127.0.0.1",
-      port: 43_111
+      host: "0.0.0.0",
+      port: 43_111,
+      allowNonLoopbackBind: true,
+      publicHost: "127.0.0.1",
+      publicPort: 43_112
     });
   });
 
@@ -245,6 +254,9 @@ describe("Luna CLI", () => {
     expect(() => parseCliArgs(["webhook-worker", "--port", "8080"])).toThrow(
       expect.objectContaining({ code: "unsupported_flag" })
     );
+    expect(() =>
+      parseCliArgs(["webhook-server", "--public-host", "127.0.0.1"])
+    ).toThrow(expect.objectContaining({ code: "unsupported_flag" }));
     expect(() => parseCliArgs(["studio", "--config", "config"])).toThrow(
       expect.objectContaining({ code: "unsupported_flag" })
     );
@@ -270,7 +282,7 @@ describe("Luna CLI", () => {
         "workspace:",
         "  strategy: git_worktree",
         `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
-        "  preserve_on_success: false",
+        "  preserve_on_success: true",
         "  preserve_on_failure: true",
         "artifacts:",
         `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
@@ -467,7 +479,11 @@ describe("Luna CLI", () => {
   it("starts Luna Studio with resolved roots and loopback overrides", async () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-studio-"));
     const configRoot = path.join(projectRoot, "config");
-    const startStudioServer = vi.fn(async () => undefined);
+    const studioHandle = {
+      close: vi.fn(async () => undefined)
+    } as unknown as StudioServerHandle;
+    const startStudioServer = vi.fn(async () => studioHandle);
+    const waitForStudioShutdown = vi.fn(async () => undefined);
     const studioOutput = { write: vi.fn() };
     await writeCliProjectConfig({ projectRoot, configRoot });
 
@@ -476,15 +492,21 @@ describe("Luna CLI", () => {
         [
           "studio",
           "--host",
-          "127.0.0.1",
+          "0.0.0.0",
           "--port",
-          "43111"
+          "43111",
+          "--allow-non-loopback-bind",
+          "--public-host",
+          "127.0.0.1",
+          "--public-port",
+          "43112"
         ],
         {
           projectRoot,
           env: { LUNA_CONFIG_ROOT: configRoot },
           startStudioServer,
-          studioOutput
+          studioOutput,
+          waitForStudioShutdown
         }
       )
     ).resolves.toBe(0);
@@ -493,8 +515,11 @@ describe("Luna CLI", () => {
       expect.objectContaining({
         projectRoot,
         configRoot,
-        host: "127.0.0.1",
+        host: "0.0.0.0",
         port: 43_111,
+        allowNonLoopbackBind: true,
+        publicHost: "127.0.0.1",
+        publicPort: 43_112,
         output: studioOutput,
         app: expect.objectContaining({
           workspace: expect.any(Object),
@@ -502,6 +527,8 @@ describe("Luna CLI", () => {
         })
       })
     );
+    expect(waitForStudioShutdown).toHaveBeenCalledOnce();
+    expect(waitForStudioShutdown).toHaveBeenCalledWith(studioHandle);
   });
 
   it("starts the webhook worker with resolved config and CLI overrides", async () => {

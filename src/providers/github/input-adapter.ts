@@ -192,6 +192,8 @@ async function fetchPullRequest(
 export const githubPrUrlAdapter: InputAdapter = {
   id: "github-pr-url",
   description: "Load a GitHub pull request from a github.com pull request URL.",
+  loadEffects: ["credential_read", "network_read", "process_execution"],
+  loadTimeoutMs: 60_000,
   async load(input, context) {
     return await fetchPullRequest(input, context.executeJson);
   }

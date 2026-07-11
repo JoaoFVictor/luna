@@ -19,11 +19,14 @@ A manifest can register:
 - artifact publishers
 - schemas
 - side-effect policies
+- intrinsic workflow-node ownership (`workflow_node_types`; currently `agent`)
 - re-exports and dependencies
 
 The core registry validates duplicate ids, dependency order, unresolved
 references, undeclared cross-capability references, policy metadata, and write
-side-effect operation ids.
+side-effect operation ids. A workflow node type may have only one declared
+capability owner. Registered node kinds derive their owner from the selected
+registration; agent nodes derive it from this manifest declaration.
 
 Add public deterministic behavior in a capability, not as an unregistered
 helper and not as a scattered public name list.

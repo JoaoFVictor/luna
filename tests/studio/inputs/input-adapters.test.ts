@@ -16,12 +16,14 @@ import {
 } from "../../../src/studio/contracts/input-routing.js";
 
 function registeredAdapter(
-  load: RegisteredInputAdapter["load"] = vi.fn()
+  load: RegisteredInputAdapter["load"] = vi.fn(),
+  loadEffects: NonNullable<RegisteredInputAdapter["loadEffects"]> = []
 ): RegisteredInputAdapter {
   return {
     id: "safe-preview",
     description: "Adapter used to exercise the controlled Studio preview port.",
     source: "fake",
+    loadEffects,
     load
   };
 }
@@ -104,7 +106,10 @@ describe("Studio input adapters", () => {
         callback: () => undefined
       }
     }));
-    const adapter = registeredAdapter(rawLoad);
+    const adapter = registeredAdapter(rawLoad, [
+      "credential_read",
+      "network_read"
+    ]);
     const registry = defineInputAdapters([adapter]);
     const previews = defineStudioAdapterPreviewPort(registry, [
       {
@@ -157,7 +162,10 @@ describe("Studio input adapters", () => {
   });
 
   it("does not execute a preview until every classified effect is acknowledged", async () => {
-    const adapter = registeredAdapter();
+    const adapter = registeredAdapter(vi.fn(), [
+      "network_read",
+      "credential_read"
+    ]);
     const registry = defineInputAdapters([adapter]);
     const controlledPreview = vi.fn();
     const previews = defineStudioAdapterPreviewPort(registry, [
@@ -401,5 +409,18 @@ describe("Studio input adapters", () => {
         })
       );
     }
+
+    const classified = registeredAdapter(vi.fn(), ["network_read"]);
+    const classifiedRegistry = defineInputAdapters([classified]);
+    expect(() =>
+      defineStudioAdapterPreviewPort(classifiedRegistry, [{
+        ...definition,
+        adapterId: classified.id
+      }])
+    ).toThrow(
+      expect.objectContaining<Partial<StudioAdapterPreviewRegistrationError>>({
+        code: "studio_adapter_preview_effect_mismatch"
+      })
+    );
   });
 });

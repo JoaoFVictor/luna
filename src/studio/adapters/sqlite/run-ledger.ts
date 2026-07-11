@@ -132,11 +132,14 @@ export class SqliteRunLedger implements RunLedgerPort, RunReconcilerPort {
       input,
       "ledger command"
     );
+    const lifecycleProjection =
+      command.transition.kind === "node_lifecycle" ||
+      command.transition.kind === "lifecycle_projection_degraded";
     const hash = commandHash({
       run_id: command.run_id,
       transition_id: command.transition_id,
       event_id: command.event_id,
-      occurred_at: command.occurred_at,
+      ...(lifecycleProjection ? {} : { occurred_at: command.occurred_at }),
       transition: command.transition
     });
     const result = withImmediateTransaction(this.#context.database, () => {
@@ -202,7 +205,20 @@ export class SqliteRunLedger implements RunLedgerPort, RunReconcilerPort {
           previous_run_status: current.run_status ?? null,
           dispatch_status: next.dispatch_status,
           run_status: next.run_status ?? null,
-          record_revision: next.record_revision
+          record_revision: next.record_revision,
+          active_node_ids: next.active_node_ids,
+          ...(next.artifact_count === undefined
+            ? {}
+            : { artifact_count: next.artifact_count }),
+          ...(next.interrupt_count === undefined
+            ? {}
+            : { interrupt_count: next.interrupt_count }),
+          ...(command.transition.kind === "node_lifecycle"
+            ? { node_event: command.transition.event }
+            : {}),
+          ...(command.transition.kind === "lifecycle_projection_degraded"
+            ? { failed_event: command.transition.failed_event }
+            : {})
         }
       });
       insertOutbox(this.#context.database, next, payload);
@@ -222,18 +238,33 @@ export class SqliteRunLedger implements RunLedgerPort, RunReconcilerPort {
   async listOrphanCandidates(input: {
     stale_before: string;
     limit?: number;
+    cursor?: { readonly stale_since: string; readonly run_id: string };
   }): Promise<readonly RunOrphanCandidate[]> {
     assertRunStoreOpen(this.#context);
     const query = parseRunContract(
       z.object({
         heartbeat_at: z.string().datetime({ offset: true }),
-        limit: z.number().int().safe().min(1).max(200).default(50)
+        limit: z.number().int().safe().min(1).max(200).default(50),
+        cursor: z.object({
+          stale_since: z.string().datetime({ offset: true }),
+          run_id: RunOpaqueIdSchema
+        }).strict().optional()
       }).strict(),
-      { heartbeat_at: input.stale_before, limit: input.limit },
+      {
+        heartbeat_at: input.stale_before,
+        limit: input.limit,
+        cursor: input.cursor
+      },
       "ledger command"
     );
     return withReadTransaction(this.#context.database, () => {
-      const rows = runStatement(this.#context.database, `
+      const cursorClause = query.cursor === undefined
+        ? ""
+        : `AND (
+            heartbeat_at_ms > ?
+            OR (heartbeat_at_ms = ? AND run_id > ?)
+          )`;
+      const statement = runStatement(this.#context.database, `
         SELECT run_id, schema_version, record_revision, dispatch_status, run_status,
           heartbeat_at, heartbeat_at_ms, created_at, created_at_ms,
           updated_at, updated_at_ms, record_json
@@ -244,12 +275,22 @@ export class SqliteRunLedger implements RunLedgerPort, RunReconcilerPort {
             dispatch_status = 'preparing'
             OR (
               dispatch_status = 'started'
-              AND run_status IN ('running', 'waiting_for_input', 'waiting_for_retry', 'resuming')
+              AND run_status IN ('running', 'waiting_for_retry', 'resuming')
             )
           )
+        ${cursorClause}
         ORDER BY heartbeat_at_ms ASC, run_id ASC
         LIMIT ?
-      `).all(Date.parse(query.heartbeat_at), query.limit) as RunRow[];
+      `);
+      const rows = query.cursor === undefined
+        ? statement.all(Date.parse(query.heartbeat_at), query.limit) as RunRow[]
+        : statement.all(
+            Date.parse(query.heartbeat_at),
+            Date.parse(query.cursor.stale_since),
+            Date.parse(query.cursor.stale_since),
+            query.cursor.run_id,
+            query.limit
+          ) as RunRow[];
       return rows.map((row) => {
         const record = recordFromRow(row);
         if (record.heartbeat_at === undefined) {

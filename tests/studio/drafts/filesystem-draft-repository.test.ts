@@ -1,9 +1,6 @@
-import { createHash } from "node:crypto";
 import {
-  chmod,
   lstat,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rm,
@@ -11,183 +8,29 @@ import {
   symlink,
   writeFile
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { RunLockManager } from "../../../src/core/workflow/lock-manager.js";
+import { describe, expect, it } from "vitest";
 import {
-  computeStudioDraftHash,
-  createStudioChangeSet,
   replaceStudioDraftContent,
-  replaceStudioDraftLayout,
-  replaceStudioDraftStatus
+  replaceStudioDraftLayout
 } from "../../../src/studio/application/drafts/change-set.js";
-import type {
-  StudioDraftBlob,
-  StudioDraftLockPort
-} from "../../../src/studio/application/drafts/persistence.js";
+import type { StudioDraftLockPort } from "../../../src/studio/application/drafts/persistence.js";
 import {
-  FileSystemStudioDraftRepository,
-  type FileSystemStudioDraftRepositoryOptions,
-  type StudioDraftStorageLimits
-} from "../../../src/studio/adapters/filesystem/draft-repository.js";
-import type { StudioChangeSet } from "../../../src/studio/contracts/drafts.js";
+  blob,
+  createRepository,
+  createRoot,
+  DRAFT_ID,
+  DRAFT_IDS,
+  digestPath,
+  draftRoot,
+  draftWithBlobs,
+  modeBits,
+  rawDigest,
+  seedDraft,
+  versionOf
+} from "./filesystem-draft-repository-test-support.js";
 
-const DRAFT_IDS = [
-  "00000000-0000-4000-8000-000000000001",
-  "00000000-0000-4000-8000-000000000002",
-  "00000000-0000-4000-8000-000000000003"
-] as const;
-const DRAFT_ID = DRAFT_IDS[0];
-const roots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
-  );
-});
-
-function rawDigest(content: string | Uint8Array): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
-}
-
-function blob(content: string): StudioDraftBlob {
-  return { digest: rawDigest(content), content };
-}
-
-function draftRoot(root: string, draftId: string = DRAFT_ID): string {
-  return path.join(root, ".luna", "studio", "drafts", draftId);
-}
-
-function digestPath(root: string, draftId: string, digest: string): string {
-  return path.join(
-    draftRoot(root, draftId),
-    "files",
-    digest.slice("sha256:".length)
-  );
-}
-
-async function createRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "luna-studio-drafts-"));
-  roots.push(root);
-  return root;
-}
-
-function createRepository(
-  root: string,
-  runId: string,
-  options: {
-    readonly limits?: Partial<StudioDraftStorageLimits>;
-    readonly now?: () => number;
-    readonly lockManager?: StudioDraftLockPort;
-    readonly deleteFaultInjector?: FileSystemStudioDraftRepositoryOptions["deleteFaultInjector"];
-    readonly createFaultInjector?: FileSystemStudioDraftRepositoryOptions["createFaultInjector"];
-    readonly rootMaintenanceFaultInjector?: FileSystemStudioDraftRepositoryOptions["rootMaintenanceFaultInjector"];
-    readonly onLockReleaseError?: FileSystemStudioDraftRepositoryOptions["onLockReleaseError"];
-  } = {}
-): FileSystemStudioDraftRepository {
-  const lockManager = options.lockManager ?? new RunLockManager({
-    root: path.join(root, ".luna", "studio", "locks"),
-    runId,
-    timeoutMs: 2_000,
-    staleAfterMs: 3_000
-  });
-  return new FileSystemStudioDraftRepository({
-    projectRoot: root,
-    ...options,
-    lockManager
-  });
-}
-
-function draftWithBlobs(input: {
-  readonly baseDigest: string;
-  readonly changeDigest: string;
-  readonly draftId?: string;
-}): StudioChangeSet {
-  const draftId = input.draftId ?? DRAFT_ID;
-  return createStudioChangeSet({
-    draftId,
-    primaryResource: { kind: "workflow", id: `sample-${draftId.at(-1)}` },
-    resources: [
-      { kind: "workflow", id: `sample-${draftId.at(-1)}` }
-    ],
-    resourceRevisions: {
-      [`workflow:sample-${draftId.at(-1)}`]: rawDigest("workflow-revision")
-    },
-    baseBundleHash: rawDigest("base-bundle"),
-    technicalCatalogFingerprint: rawDigest("technical-catalog"),
-    presentationCatalogFingerprint: rawDigest("presentation-catalog"),
-    baseFiles: [
-      {
-        file: {
-          root: "project",
-          path: `workflows/sample-${draftId.at(-1)}/workflow.yaml`
-        },
-        sha256: input.baseDigest,
-        content_ref: input.baseDigest,
-        mode: 0o644
-      }
-    ],
-    dependencies: [],
-    allowedFiles: [
-      {
-        root: "project",
-        path: `workflows/sample-${draftId.at(-1)}/workflow.yaml`
-      }
-    ],
-    changes: [
-      {
-        action: "write",
-        file: {
-          root: "project",
-          path: `workflows/sample-${draftId.at(-1)}/workflow.yaml`
-        },
-        base_sha256: input.baseDigest,
-        content_sha256: input.changeDigest,
-        content_ref: input.changeDigest,
-        eol: "lf",
-        mode: 0o600
-      }
-    ],
-    now: "2026-07-10T12:00:00.000Z"
-  });
-}
-
-async function seedDraft(
-  repository: FileSystemStudioDraftRepository,
-  draftId: string = DRAFT_ID
-): Promise<{
-  readonly draft: StudioChangeSet;
-  readonly baseBlob: StudioDraftBlob;
-  readonly changeBlob: StudioDraftBlob;
-}> {
-  const baseBlob = blob("name: sample\n");
-  const changeBlob = blob(`name: updated-${draftId.at(-1)}\n`);
-  const draft = draftWithBlobs({
-    baseDigest: baseBlob.digest,
-    changeDigest: changeBlob.digest,
-    draftId
-  });
-  await repository.create({
-    changeSet: draft,
-    blobs: [baseBlob, changeBlob]
-  });
-  return { draft, baseBlob, changeBlob };
-}
-
-function versionOf(draft: StudioChangeSet) {
-  return {
-    recordRevision: draft.record_revision,
-    contentRevision: draft.content_revision,
-    layoutRevision: draft.layout_revision
-  };
-}
-
-function modeBits(mode: number): number {
-  return mode & 0o777;
-}
-
-describe("filesystem Studio draft repository", () => {
+describe("filesystem Studio draft repository persistence", () => {
   it("persists a draft and its batch of UTF-8 blobs privately", async () => {
     const root = await createRoot();
     const repository = createRepository(root, "studio-private");
@@ -702,6 +545,46 @@ describe("filesystem Studio draft repository", () => {
     });
   });
 
+  it("paginates a scoped list without exposing skipped configuration IDs", async () => {
+    const root = await createRoot();
+    const repository = createRepository(root, "studio-scoped-list-pages");
+    const baseBlob = blob("name: base\n");
+    const changeBlob = blob("name: changed\n");
+    for (const [index, draftId] of DRAFT_IDS.entries()) {
+      await repository.create({
+        changeSet: draftWithBlobs({
+          baseDigest: baseBlob.digest,
+          changeDigest: changeBlob.digest,
+          draftId,
+          resource:
+            index === 1
+              ? { kind: "config", id: "private-config" }
+              : { kind: "workflow", id: `visible-${index}` }
+        }),
+        blobs: [baseBlob, changeBlob]
+      });
+    }
+
+    const first = await repository.list({
+      limit: 1,
+      primaryResourceKinds: ["workflow", "agent"]
+    });
+    expect(first.items.map((item) => item.draft_id)).toEqual([DRAFT_IDS[0]]);
+    expect(first.next_cursor).toEqual(expect.any(String));
+    expect(Buffer.from(first.next_cursor!, "base64url").toString("utf8")).toBe(
+      DRAFT_IDS[0]
+    );
+
+    const second = await repository.list({
+      limit: 1,
+      cursor: first.next_cursor!,
+      primaryResourceKinds: ["workflow", "agent"]
+    });
+    expect(second.items.map((item) => item.draft_id)).toEqual([DRAFT_IDS[2]]);
+    expect(second.next_cursor).toBeNull();
+    expect(JSON.stringify([first, second])).not.toContain(DRAFT_IDS[1]);
+  });
+
   it("bounds directory enumeration and does not run garbage collection from list", async () => {
     const root = await createRoot();
     const repository = createRepository(root, "studio-list-no-maintenance", {
@@ -725,395 +608,5 @@ describe("filesystem Studio draft repository", () => {
       code: "studio_storage_quota_exceeded",
       details: { actualEntries: 21, maxEntries: 20 }
     });
-  });
-
-  it("serializes optimistic updates across repository instances", async () => {
-    const root = await createRoot();
-    const firstRepository = createRepository(root, "studio-concurrent-1");
-    const secondRepository = createRepository(root, "studio-concurrent-2");
-    const { draft } = await seedDraft(firstRepository);
-    const firstUpdate = replaceStudioDraftLayout(
-      draft,
-      { selected: "first" },
-      "2026-07-10T12:01:00.000Z"
-    );
-    const secondUpdate = replaceStudioDraftLayout(
-      draft,
-      { selected: "second" },
-      "2026-07-10T12:01:00.000Z"
-    );
-
-    const results = await Promise.allSettled([
-      firstRepository.update({
-        changeSet: firstUpdate,
-        expectedVersion: versionOf(draft),
-        blobs: []
-      }),
-      secondRepository.update({
-        changeSet: secondUpdate,
-        expectedVersion: versionOf(draft),
-        blobs: []
-      })
-    ]);
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(results.filter((result) => result.status === "rejected")).toEqual([
-      expect.objectContaining({
-        reason: expect.objectContaining({
-          code: "studio_draft_revision_conflict"
-        })
-      })
-    ]);
-  });
-
-  it("validates revision movement in both semantic directions", async () => {
-    const root = await createRoot();
-    const repository = createRepository(root, "studio-versioning");
-    const { draft, baseBlob, changeBlob } = await seedDraft(repository);
-    const advancedWithoutLayoutChange = {
-      ...draft,
-      record_revision: 2,
-      layout_revision: 1,
-      updated_at: "2026-07-10T12:01:00.000Z"
-    };
-    await expect(
-      repository.update({
-        changeSet: advancedWithoutLayoutChange,
-        expectedVersion: versionOf(draft),
-        blobs: []
-      })
-    ).rejects.toThrow(/advanced without a layout change/);
-
-    const contentRevisionWithoutContent = {
-      ...draft,
-      record_revision: 2,
-      content_revision: 2,
-      updated_at: "2026-07-10T12:01:00.000Z"
-    };
-    await expect(
-      repository.update({
-        changeSet: contentRevisionWithoutContent,
-        expectedVersion: versionOf(draft),
-        blobs: []
-      })
-    ).rejects.toThrow(/advanced without a content change/);
-
-    const changedLayoutWithoutRevision = {
-      ...draft,
-      record_revision: 2,
-      layout: { selected: "node-a" },
-      updated_at: "2026-07-10T12:01:00.000Z"
-    };
-    await expect(
-      repository.update({
-        changeSet: changedLayoutWithoutRevision,
-        expectedVersion: versionOf(draft),
-        blobs: []
-      })
-    ).rejects.toThrow(/changed without advancing layout revision/);
-
-    const newContent = blob("replacement");
-    const contentUpdate = replaceStudioDraftContent(
-      draft,
-      [
-        {
-          ...draft.changes[0]!,
-          action: "write",
-          content_sha256: newContent.digest,
-          content_ref: newContent.digest
-        }
-      ],
-      "2026-07-10T12:01:00.000Z"
-    );
-    const changedContentWithoutRevision = {
-      ...contentUpdate,
-      content_revision: draft.content_revision
-    };
-    await expect(
-      repository.update({
-        changeSet: changedContentWithoutRevision,
-        expectedVersion: versionOf(draft),
-        blobs: [newContent]
-      })
-    ).rejects.toThrow(/changed without advancing content revision/);
-
-    const timestampOnly = {
-      ...draft,
-      record_revision: 2,
-      updated_at: "2026-07-10T12:01:00.000Z"
-    };
-    await expect(
-      repository.update({
-        changeSet: timestampOnly,
-        expectedVersion: versionOf(draft),
-        blobs: []
-      })
-    ).rejects.toThrow(/must change persisted semantics/);
-
-    const expandedResources = {
-      ...draft,
-      resources: [
-        ...draft.resources,
-        { kind: "agent", id: "helper" } as const
-      ],
-      resource_revisions: {
-        ...draft.resource_revisions,
-        "agent:helper": rawDigest("helper-revision")
-      }
-    };
-    const expanded = {
-      ...expandedResources,
-      draft_hash: computeStudioDraftHash(expandedResources)
-    };
-    const reorderRoot = await createRoot();
-    const reorderRepository = createRepository(
-      reorderRoot,
-      "studio-reorder-noop"
-    );
-    await reorderRepository.create({
-      changeSet: expanded,
-      blobs: [baseBlob, changeBlob]
-    });
-    const reordered = {
-      ...expanded,
-      resources: [...expanded.resources].reverse(),
-      record_revision: 2,
-      updated_at: "2026-07-10T12:01:00.000Z"
-    };
-    await expect(
-      reorderRepository.update({
-        changeSet: reordered,
-        expectedVersion: versionOf(expanded),
-        blobs: []
-      })
-    ).rejects.toThrow(/must change persisted semantics/);
-
-    const explicitNullLayout = {
-      ...draft,
-      layout: null,
-      record_revision: 2,
-      updated_at: "2026-07-10T12:01:00.000Z"
-    };
-    await expect(
-      repository.update({
-        changeSet: explicitNullLayout,
-        expectedVersion: versionOf(draft),
-        blobs: []
-      })
-    ).rejects.toThrow(/must change persisted semantics/);
-  });
-
-  it("persists status through record revision only", async () => {
-    const root = await createRoot();
-    const repository = createRepository(root, "studio-status");
-    const { draft } = await seedDraft(repository);
-    const validated = replaceStudioDraftStatus(
-      draft,
-      "valid",
-      "2026-07-10T12:02:00.000Z"
-    );
-    await repository.update({
-      changeSet: validated,
-      expectedVersion: versionOf(draft),
-      blobs: []
-    });
-    await expect(repository.get(DRAFT_ID)).resolves.toMatchObject({
-      status: "valid",
-      record_revision: 2,
-      content_revision: 1,
-      layout_revision: 0
-    });
-  });
-
-  it("uses a durable tombstone as the delete commit point", async () => {
-    const root = await createRoot();
-    const repository = createRepository(root, "studio-delete");
-    const { draft } = await seedDraft(repository);
-
-    await repository.delete({ draftId: DRAFT_ID, expectedVersion: versionOf(draft) });
-    await expect(repository.get(DRAFT_ID)).resolves.toBeUndefined();
-    await expect(repository.list()).resolves.toMatchObject({ items: [] });
-    await expect(
-      repository.delete({ draftId: DRAFT_ID, expectedVersion: versionOf(draft) })
-    ).resolves.toBeUndefined();
-    expect(
-      (await readdir(path.join(root, ".luna", "studio", "drafts"))).some(
-        (entry) => entry.startsWith(".deleted-")
-      )
-    ).toBe(true);
-  });
-
-  for (const faultStage of [
-    "after_delete_rename",
-    "after_delete_directory_sync"
-  ] as const) {
-    it(`makes delete retryable after ${faultStage}`, async () => {
-      const root = await createRoot();
-      let injected = false;
-      const repository = createRepository(root, `studio-${faultStage}`, {
-        deleteFaultInjector: (stage) => {
-          if (stage === faultStage && !injected) {
-            injected = true;
-            throw new Error(`injected ${stage}`);
-          }
-        }
-      });
-      const { draft } = await seedDraft(repository);
-      const command = { draftId: DRAFT_ID, expectedVersion: versionOf(draft) };
-
-      await expect(repository.delete(command)).rejects.toMatchObject({
-        code: "studio_storage_commit_ambiguous"
-      });
-      await expect(repository.delete(command)).resolves.toBeUndefined();
-      await expect(repository.get(DRAFT_ID)).resolves.toBeUndefined();
-    });
-  }
-
-  it("collects expired delete tombstones on the next locked access", async () => {
-    const root = await createRoot();
-    let nowMs = Date.now();
-    const repository = createRepository(root, "studio-delete-gc", {
-      now: () => nowMs,
-      limits: { deleteTombstoneRetentionMs: 10 }
-    });
-    const { draft } = await seedDraft(repository);
-    await repository.delete({ draftId: DRAFT_ID, expectedVersion: versionOf(draft) });
-    const draftsRoot = path.join(root, ".luna", "studio", "drafts");
-    const tombstone = (await readdir(draftsRoot)).find((entry) =>
-      entry.startsWith(".deleted-")
-    )!;
-    nowMs = Math.ceil((await stat(path.join(draftsRoot, tombstone))).mtimeMs) + 11;
-    await repository.list();
-    expect(
-      (await readdir(draftsRoot)).some(
-        (entry) => entry.startsWith(".deleted-")
-      )
-    ).toBe(true);
-    await seedDraft(repository, DRAFT_IDS[1]);
-    expect(
-      (await readdir(draftsRoot)).some(
-        (entry) => entry.startsWith(".deleted-")
-      )
-    ).toBe(false);
-  });
-
-  it("reschedules a non-expired tombstone and permits id reuse after expiry", async () => {
-    const root = await createRoot();
-    let nowMs = 10_000;
-    const repository = createRepository(root, "studio-delete-scheduled-gc", {
-      now: () => nowMs,
-      limits: { deleteTombstoneRetentionMs: 10 }
-    });
-    const { draft } = await seedDraft(repository);
-    await repository.delete({
-      draftId: DRAFT_ID,
-      expectedVersion: versionOf(draft)
-    });
-
-    nowMs += 5;
-    await expect(repository.get(DRAFT_IDS[1])).resolves.toBeUndefined();
-    const draftsRoot = path.join(root, ".luna", "studio", "drafts");
-    expect(
-      (await readdir(draftsRoot)).some((entry) =>
-        entry.startsWith(".deleted-")
-      )
-    ).toBe(true);
-
-    nowMs += 5;
-    await expect(repository.get(DRAFT_IDS[1])).resolves.toBeUndefined();
-    expect(
-      (await readdir(draftsRoot)).some((entry) =>
-        entry.startsWith(".deleted-")
-      )
-    ).toBe(false);
-    await expect(seedDraft(repository, DRAFT_ID)).resolves.toMatchObject({
-      draft: { draft_id: DRAFT_ID }
-    });
-  });
-
-  it("periodically discovers tombstones created by another repository instance", async () => {
-    const root = await createRoot();
-    let nowMs = 20_000;
-    const limits = { deleteTombstoneRetentionMs: 10 } as const;
-    const first = createRepository(root, "studio-periodic-gc-first", {
-      now: () => nowMs,
-      limits
-    });
-    const second = createRepository(root, "studio-periodic-gc-second", {
-      now: () => nowMs,
-      limits
-    });
-
-    await expect(first.get(DRAFT_IDS[1])).resolves.toBeUndefined();
-    const { draft } = await seedDraft(second);
-    await second.delete({
-      draftId: DRAFT_ID,
-      expectedVersion: versionOf(draft)
-    });
-    const draftsRoot = path.join(root, ".luna", "studio", "drafts");
-    expect(
-      (await readdir(draftsRoot)).some((entry) =>
-        entry.startsWith(".deleted-")
-      )
-    ).toBe(true);
-
-    nowMs += 10;
-    await expect(first.get(DRAFT_IDS[1])).resolves.toBeUndefined();
-    expect(
-      (await readdir(draftsRoot)).some((entry) =>
-        entry.startsWith(".deleted-")
-      )
-    ).toBe(false);
-    await expect(seedDraft(first, DRAFT_ID)).resolves.toMatchObject({
-      draft: { draft_id: DRAFT_ID }
-    });
-  });
-
-  it("refuses a draft directory symlink instead of reading outside storage", async () => {
-    const root = await createRoot();
-    const outside = await createRoot();
-    const repository = createRepository(root, "studio-symlink");
-    await repository.list();
-    await mkdir(path.join(outside, "files"), { mode: 0o700 });
-    await chmod(outside, 0o700);
-    await symlink(outside, draftRoot(root), "dir");
-
-    await expect(repository.get(DRAFT_ID)).rejects.toMatchObject({
-      code: "studio_storage_invalid"
-    });
-  });
-
-  it("reports a hash-valid domain-invalid draft without accepting it", async () => {
-    const root = await createRoot();
-    const repository = createRepository(root, "studio-domain-invalid");
-    const baseBlob = blob("base");
-    const changeBlob = blob("change");
-    const draft = draftWithBlobs({
-      baseDigest: baseBlob.digest,
-      changeDigest: changeBlob.digest
-    });
-    const duplicateResource = {
-      ...draft,
-      resources: [...draft.resources, draft.resources[0]!]
-    };
-    const invalidDraft = {
-      ...duplicateResource,
-      draft_hash: computeStudioDraftHash(duplicateResource)
-    };
-    await expect(
-      repository.create({
-        changeSet: invalidDraft,
-        blobs: [baseBlob, changeBlob]
-      })
-    ).rejects.toMatchObject({ code: "studio_draft_invalid" });
-  });
-
-  it("keeps stored metadata readable as JSON for recovery tools", async () => {
-    const root = await createRoot();
-    const repository = createRepository(root, "studio-readable-metadata");
-    const { draft } = await seedDraft(repository);
-    const stored = JSON.parse(
-      await readFile(path.join(draftRoot(root), "change-set.json"), "utf8")
-    ) as unknown;
-    expect(stored).toEqual(draft);
   });
 });

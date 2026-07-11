@@ -2,6 +2,9 @@ import { z } from "zod";
 import { WorkflowIdSchema } from "../../core/router/invocation.js";
 import { StudioDigestSchema } from "./digests.js";
 import { StudioJsonValueSchema } from "./json.js";
+import { StudioRunPlanIdSchema } from "./run-launch-primitives.js";
+import { StudioRunInputProvenanceSchema } from "./run-provenance.js";
+import { remoteUrlContainsCredentials } from "../../core/security/url-credentials.js";
 
 const BoundedStringSchema = z.string().trim().min(1).max(256);
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -31,7 +34,8 @@ export const RunDispatchStatusSchema = z.enum([
   "queued",
   "preparing",
   "started",
-  "rejected"
+  "rejected",
+  "historical_unknown"
 ]);
 export type RunDispatchStatus = z.infer<typeof RunDispatchStatusSchema>;
 
@@ -42,6 +46,7 @@ export const RunRuntimeStatusSchema = z.enum([
   "resuming",
   "succeeded",
   "failed",
+  "outcome_unknown",
   "timed_out",
   "cancelled"
 ]);
@@ -50,6 +55,7 @@ export type RunRuntimeStatus = z.infer<typeof RunRuntimeStatusSchema>;
 export const RunTerminalStatusSchema = z.enum([
   "succeeded",
   "failed",
+  "outcome_unknown",
   "timed_out",
   "cancelled"
 ]);
@@ -64,6 +70,15 @@ export type RunDisplayStatus = z.infer<typeof RunDisplayStatusSchema>;
 export const RunCompletenessSchema = z.enum(["complete", "partial", "legacy"]);
 export type RunCompleteness = z.infer<typeof RunCompletenessSchema>;
 
+export const RunLifecycleProjectionSchema = z.enum([
+  "exact",
+  "degraded",
+  "unknown"
+]);
+export type RunLifecycleProjection = z.infer<
+  typeof RunLifecycleProjectionSchema
+>;
+
 export const RunSubjectSchema = z
   .object({
     id: BoundedStringSchema.optional(),
@@ -73,6 +88,10 @@ export const RunSubjectSchema = z
       .url()
       .max(8_192)
       .refine(isHttpUrl, "Subject URL must use HTTP or HTTPS")
+      .refine(
+        (value) => !remoteUrlContainsCredentials(value),
+        "Subject URL must not contain credentials"
+      )
       .optional()
   })
   .strict()
@@ -101,6 +120,8 @@ export const RunRecordSchema = z
     schema_version: z.literal(1),
     record_revision: z.number().int().safe().positive(),
     run_id: RunOpaqueIdSchema,
+    accepted_plan_id: StudioRunPlanIdSchema.optional(),
+    input_provenance: StudioRunInputProvenanceSchema.optional(),
     correlation_id: RunOpaqueIdSchema.optional(),
     job_id: RunOpaqueIdSchema.optional(),
     workflow_id: WorkflowIdSchema,
@@ -121,9 +142,10 @@ export const RunRecordSchema = z
     failed_node_id: BoundedStringSchema.optional(),
     failure: RunFailureSchema.optional(),
     graph_snapshot_handle: RunGraphSnapshotHandleSchema.optional(),
-    artifact_count: SafeCountSchema,
-    interrupt_count: SafeCountSchema,
+    artifact_count: SafeCountSchema.optional(),
+    interrupt_count: SafeCountSchema.optional(),
     side_effects: z.array(StudioJsonValueSchema).max(10_000),
+    lifecycle_projection: RunLifecycleProjectionSchema.default("exact"),
     completeness: RunCompletenessSchema
   })
   .strict()
@@ -134,6 +156,17 @@ export const RunRecordSchema = z
         code: z.ZodIssueCode.custom,
         path: ["active_node_ids"],
         message: "Active node ids must be unique"
+      });
+    }
+
+    if (
+      (record.accepted_plan_id === undefined) !==
+      (record.input_provenance === undefined)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["input_provenance"],
+        message: "Accepted plan and input provenance must appear together"
       });
     }
 
@@ -171,6 +204,25 @@ function validateRunStateShape(record: RunStateShape, context: RefineContext): v
     RunTerminalStatusSchema.safeParse(record.run_status).success;
   const beforeStart = record.dispatch_status === "queued" ||
     record.dispatch_status === "preparing";
+  const historical = record.dispatch_status === "historical_unknown";
+
+  if (historical) {
+    validateHistoricalRunStateShape(record, context);
+  } else {
+    if (record.lifecycle_projection === "unknown") {
+      issue(
+        context,
+        "lifecycle_projection",
+        "Only historical runs may have unknown lifecycle projection"
+      );
+    }
+    if (record.artifact_count === undefined) {
+      issue(context, "artifact_count", "Canonical runs require artifact count");
+    }
+    if (record.interrupt_count === undefined) {
+      issue(context, "interrupt_count", "Canonical runs require interrupt count");
+    }
+  }
 
   if (beforeStart && record.run_status !== undefined) {
     issue(context, "run_status", "Run status is unavailable before dispatch starts");
@@ -210,15 +262,19 @@ function validateRunStateShape(record: RunStateShape, context: RefineContext): v
   if (terminal !== (record.finished_at !== undefined && record.dispatch_status === "started")) {
     issue(context, "finished_at", "Runtime terminal status and finish time must agree");
   }
-  if ((record.run_status === "failed" || record.run_status === "timed_out") &&
+  if ((record.run_status === "failed" ||
+    record.run_status === "outcome_unknown" ||
+    record.run_status === "timed_out") &&
     record.failure === undefined) {
-    issue(context, "failure", "Failed and timed-out runs require a failure");
+    issue(context, "failure", "Failed, uncertain, and timed-out runs require details");
   }
   if (record.failed_node_id !== undefined && record.failure === undefined) {
     issue(context, "failed_node_id", "Failed node requires a failure");
   }
   const failureState = record.dispatch_status === "rejected" ||
-    record.run_status === "failed" || record.run_status === "timed_out" ||
+    record.run_status === "failed" ||
+    record.run_status === "outcome_unknown" ||
+    record.run_status === "timed_out" ||
     record.run_status === "cancelled";
   if (!failureState &&
     (record.failure !== undefined || record.failed_node_id !== undefined)) {
@@ -226,6 +282,60 @@ function validateRunStateShape(record: RunStateShape, context: RefineContext): v
   }
   if (terminal && record.active_node_ids.length > 0) {
     issue(context, "active_node_ids", "Terminal runs cannot have active nodes");
+  }
+  if (
+    terminal &&
+    record.lifecycle_projection === "degraded" &&
+    record.completeness === "complete"
+  ) {
+    issue(
+      context,
+      "completeness",
+      "A terminal run with degraded lifecycle projection must be partial"
+    );
+  }
+}
+
+function validateHistoricalRunStateShape(
+  record: RunStateShape,
+  context: RefineContext
+): void {
+  if (record.completeness === "complete") {
+    issue(context, "completeness", "Historical runs cannot claim complete metadata");
+  }
+  if (record.lifecycle_projection !== "unknown") {
+    issue(
+      context,
+      "lifecycle_projection",
+      "Historical runs require unknown lifecycle projection"
+    );
+  }
+  for (const field of [
+    "run_status",
+    "started_at",
+    "finished_at",
+    "owner_id",
+    "owner_claimed_at",
+    "heartbeat_at",
+    "failed_node_id",
+    "failure",
+    "artifact_count",
+    "interrupt_count"
+  ] as const) {
+    if (record[field] !== undefined) {
+      issue(
+        context,
+        field,
+        "Historical run lifecycle data must remain unavailable"
+      );
+    }
+  }
+  if (record.active_node_ids.length > 0) {
+    issue(
+      context,
+      "active_node_ids",
+      "Historical runs cannot claim active runtime nodes"
+    );
   }
 }
 
@@ -296,7 +406,7 @@ export const RunCatalogItemSchema = z
   .object({
     record: RunRecordSchema,
     status: RunDisplayStatusSchema,
-    wall_duration_ms: SafeCountSchema
+    wall_duration_ms: SafeCountSchema.optional()
   })
   .strict()
   .superRefine((item, context) => {
@@ -307,12 +417,24 @@ export const RunCatalogItemSchema = z
         message: "Catalog status must match the run lifecycle"
       });
     }
+    if (
+      (item.record.dispatch_status === "historical_unknown") !==
+      (item.wall_duration_ms === undefined)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["wall_duration_ms"],
+        message: "Wall duration is unavailable only for historical runs"
+      });
+    }
   });
 export type RunCatalogItem = z.infer<typeof RunCatalogItemSchema>;
 
 export const RunCatalogSummarySchema = z
   .object({
     run_id: RunOpaqueIdSchema,
+    accepted_plan_id: StudioRunPlanIdSchema.optional(),
+    input_provenance: StudioRunInputProvenanceSchema.optional(),
     correlation_id: RunOpaqueIdSchema.optional(),
     job_id: RunOpaqueIdSchema.optional(),
     workflow_id: WorkflowIdSchema,
@@ -328,10 +450,10 @@ export const RunCatalogSummarySchema = z
     subject: RunSubjectSchema.optional(),
     repository_id: BoundedStringSchema.optional(),
     failed_node_id: BoundedStringSchema.optional(),
-    artifact_count: SafeCountSchema,
-    interrupt_count: SafeCountSchema,
+    artifact_count: SafeCountSchema.optional(),
+    interrupt_count: SafeCountSchema.optional(),
     completeness: RunCompletenessSchema,
-    wall_duration_ms: SafeCountSchema
+    wall_duration_ms: SafeCountSchema.optional()
   })
   .strict()
   .superRefine((summary, context) => {
@@ -341,6 +463,20 @@ export const RunCatalogSummarySchema = z
         path: ["status"],
         message: "Catalog status must match the run lifecycle"
       });
+    }
+    const historical = summary.dispatch_status === "historical_unknown";
+    for (const field of [
+      "artifact_count",
+      "interrupt_count",
+      "wall_duration_ms"
+    ] as const) {
+      if (historical !== (summary[field] === undefined)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is unavailable only for historical runs`
+        });
+      }
     }
   });
 export type RunCatalogSummary = z.infer<typeof RunCatalogSummarySchema>;

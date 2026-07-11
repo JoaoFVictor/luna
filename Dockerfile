@@ -20,10 +20,12 @@ RUN npm install -g npm@11.5.1
 FROM base AS build
 
 COPY package.json package-lock.json ./
+COPY apps/studio/package.json ./apps/studio/package.json
 RUN npm ci
 
 COPY . .
 RUN npm run build
+RUN npm run studio:build
 
 FROM base AS runtime
 
@@ -31,25 +33,32 @@ ENV NODE_ENV=production
 ENV HOME=/home/node
 ENV LUNA_CONFIG_ROOT=/app/config
 ENV LUNA_AUTH_ROOT=/app/.luna/auth
+ENV LUNA_STUDIO_STATE_ROOT=/var/lib/luna-studio
 ENV GH_CONFIG_DIR=/app/.luna/auth/gh
 ENV GH_PROMPT_DISABLED=1
 ENV GIT_CONFIG_GLOBAL=/app/.luna/auth/git/config
 
 COPY package.json package-lock.json ./
+COPY apps/studio/package.json ./apps/studio/package.json
 RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/apps/studio/dist ./apps/studio/dist
 COPY --from=build /app/agents ./agents
 COPY --from=build /app/config ./config
 COPY --from=build /app/skills ./skills
 COPY --from=build /app/workflows ./workflows
 
-RUN mkdir -p /app/.runs /app/.luna/auth/git /home/node \
+RUN mkdir -p /app/.runs /app/.luna/auth/git /app/.luna/studio /var/lib/luna-studio /home/node \
   && ln -sfn /app/.luna/auth/ssh /home/node/.ssh \
-  && chown -R node:node /app /home/node
+  && chown node:node /app/.runs /app/.luna /app/.luna/auth /app/.luna/auth/git /app/.luna/studio /home/node \
+  && chown -h node:node /home/node/.ssh \
+  && chmod 0700 /app/.runs /app/.luna /app/.luna/auth /app/.luna/auth/git /app/.luna/studio \
+  && chmod 0755 /home/node \
+  && chmod 0700 /var/lib/luna-studio
 
 USER node
 
-EXPOSE 4012
+EXPOSE 4012 43110
 
 CMD ["node", "dist/src/cli.js", "webhook-server", "--host", "0.0.0.0"]

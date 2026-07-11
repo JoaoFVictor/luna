@@ -125,6 +125,27 @@ export const LUNA_RUNTIME_STATE_CHANNELS = {
   interrupt_refs: { reducer: "append_only" }
 } as const satisfies Record<string, RuntimeReducerMetadata>;
 
+/**
+ * Every key registered as a LangGraph state channel. Public workflow node ids
+ * must not reuse these names because StateGraph shares one node/channel
+ * namespace.
+ */
+export const LUNA_RUNTIME_STATE_FIELD_NAMES = [
+  "state_schema_version",
+  "invocation",
+  "config",
+  "run",
+  "workflow",
+  "run_status",
+  "node_statuses",
+  "steps",
+  "attempts",
+  "artifact_refs",
+  "interrupt_refs",
+  "event_cursor",
+  "primary_failure"
+] as const;
+
 export type CreateInitialRuntimeStateOptions = {
   invocation: JsonValue;
   config: JsonValue;

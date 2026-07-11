@@ -156,7 +156,7 @@ describe("GitHub pull request review provider", () => {
     );
   });
 
-  it("preserves sanitized GitHub CLI failure details for diagnostics", async () => {
+  it("treats a post-dispatch CLI failure as unknown while preserving diagnostics", async () => {
     const cause = new Error("GitHub CLI command failed") as Error & {
       code: "github_cli_failed";
       details: {
@@ -179,13 +179,14 @@ describe("GitHub pull request review provider", () => {
     await expect(
       provider.publishReview(reviewInput({ event: "request_changes" }))
     ).rejects.toMatchObject({
-      code: "pull_request_review_publish_failed",
+      code: "pull_request_review_unknown_publish_outcome",
       details: {
         endpoint: "repos/octo-org/hello-world/pulls/42/reviews",
         event: "REQUEST_CHANGES",
         inline_comments: 0,
         fallback_comments: 0,
         body_bytes: 18,
+        reason: "transport_result_unknown",
         cause: {
           code: "github_cli_failed",
           message: "GitHub CLI command failed",

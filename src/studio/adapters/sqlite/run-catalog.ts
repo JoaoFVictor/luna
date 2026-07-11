@@ -82,10 +82,13 @@ function recordFromCatalogRow(row: CatalogRow): RunRecord {
 
 function catalogItem(row: CatalogRow, asOf: string): RunCatalogItem {
   const record = recordFromCatalogRow(row);
+  const wallDuration = wallDurationMs(record, asOf);
   const item = RunCatalogItemSchema.safeParse({
     record,
     status: row.status,
-    wall_duration_ms: wallDurationMs(record, asOf)
+    ...(wallDuration === undefined
+      ? {}
+      : { wall_duration_ms: wallDuration })
   });
   if (!item.success) {
     throw runStoreError("run_store_corrupt", "Run catalog item is invalid");
@@ -95,8 +98,15 @@ function catalogItem(row: CatalogRow, asOf: string): RunCatalogItem {
 
 function catalogSummary(row: CatalogRow, asOf: string): RunCatalogSummary {
   const record = recordFromCatalogRow(row);
+  const wallDuration = wallDurationMs(record, asOf);
   const summary = RunCatalogSummarySchema.safeParse({
     run_id: record.run_id,
+    ...(record.accepted_plan_id === undefined
+      ? {}
+      : { accepted_plan_id: record.accepted_plan_id }),
+    ...(record.input_provenance === undefined
+      ? {}
+      : { input_provenance: record.input_provenance }),
     ...(record.correlation_id === undefined ? {} : { correlation_id: record.correlation_id }),
     ...(record.job_id === undefined ? {} : { job_id: record.job_id }),
     workflow_id: record.workflow_id,
@@ -116,10 +126,16 @@ function catalogSummary(row: CatalogRow, asOf: string): RunCatalogSummary {
     ...(record.subject === undefined ? {} : { subject: record.subject }),
     ...(record.repository_id === undefined ? {} : { repository_id: record.repository_id }),
     ...(record.failed_node_id === undefined ? {} : { failed_node_id: record.failed_node_id }),
-    artifact_count: record.artifact_count,
-    interrupt_count: record.interrupt_count,
+    ...(record.artifact_count === undefined
+      ? {}
+      : { artifact_count: record.artifact_count }),
+    ...(record.interrupt_count === undefined
+      ? {}
+      : { interrupt_count: record.interrupt_count }),
     completeness: record.completeness,
-    wall_duration_ms: wallDurationMs(record, asOf)
+    ...(wallDuration === undefined
+      ? {}
+      : { wall_duration_ms: wallDuration })
   });
   if (!summary.success) {
     throw runStoreError("run_store_corrupt", "Run catalog summary is invalid");
@@ -235,6 +251,10 @@ export class SqliteRunCatalog implements RunCatalogPort, RunCatalogProjectorPort
       if (query.filters.job_id !== undefined) {
         conditions.push("job_id = ?");
         parameters.push(query.filters.job_id);
+      }
+      if (query.filters.accepted_plan_id !== undefined) {
+        conditions.push("json_extract(record_json, '$.accepted_plan_id') = ?");
+        parameters.push(query.filters.accepted_plan_id);
       }
       if (cursor !== undefined) {
         const operator = query.direction === "asc" ? ">" : "<";

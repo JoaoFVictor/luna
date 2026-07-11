@@ -28,6 +28,9 @@ const services: StudioServerServices = {
     previewInputAdapter: async () => {
       throw new Error("unused");
     },
+    previewInputRoute: async () => {
+      throw new Error("unused");
+    },
     routingDefinition: () => ({
       type: "router",
       version: "2026-06",
@@ -56,6 +59,10 @@ describe("native Studio server ownership", () => {
       startNativeStudioServer({
         projectRoot: "/project",
         configRoot: "/config",
+        host: "0.0.0.0",
+        allowNonLoopbackBind: true,
+        publicHost: "127.0.0.1",
+        publicPort: 43_110,
         createServices,
         startServer
       })
@@ -63,6 +70,14 @@ describe("native Studio server ownership", () => {
 
     expect(createServices).toHaveBeenCalledOnce();
     expect(startServer).toHaveBeenCalledOnce();
+    expect(startServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "0.0.0.0",
+        allowNonLoopbackBind: true,
+        publicHost: "127.0.0.1",
+        publicPort: 43_110
+      })
+    );
     expect(dispose).toHaveBeenCalledOnce();
   });
 });

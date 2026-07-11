@@ -32,9 +32,13 @@ import {
 } from "../../../src/studio/application/apply/digests.js";
 import { StudioApplySimulatedCrash } from "../../../src/studio/application/apply/errors.js";
 import {
-  StudioApplyService,
-  studioDraftApplyEtag
+  StudioApplyService
 } from "../../../src/studio/application/apply/service.js";
+import {
+  STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE,
+  studioConfigurationApplyScope
+} from "../../../src/studio/application/apply/scope.js";
+import { studioDraftEtag } from "../../../src/studio/application/drafts/versioning.js";
 import type { StudioInstalledApplyVerificationPort } from "../../../src/studio/application/apply/ports.js";
 import type { StudioDraftValidationService } from "../../../src/studio/application/validation/draft-validation.js";
 import type {
@@ -63,6 +67,7 @@ afterEach(async () => {
 
 class MemoryDraftPersistence implements StudioDraftPersistencePort {
   draft: StudioChangeSet;
+  available = true;
   readonly blobs: Map<string, string>;
 
   constructor(draft: StudioChangeSet, blobs: ReadonlyMap<string, string>) {
@@ -94,7 +99,9 @@ class MemoryDraftPersistence implements StudioDraftPersistencePort {
   }
 
   async get(draftId: string): Promise<StudioChangeSet | undefined> {
-    return draftId === this.draft.draft_id ? this.draft : undefined;
+    return this.available && draftId === this.draft.draft_id
+      ? this.draft
+      : undefined;
   }
 
   async list(_input?: StudioDraftListInput): Promise<StudioDraftListPage> {
@@ -301,7 +308,10 @@ async function createFixture(options: {
 }
 
 async function readyPlan(fixture: ApplyFixture) {
-  const plan = await fixture.service.plan(DRAFT_ID);
+  const plan = await fixture.service.plan(
+    DRAFT_ID,
+    STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE
+  );
   expect(plan.status).toBe("ready");
   if (plan.status !== "ready") {
     throw new Error("expected ready plan");
@@ -323,53 +333,111 @@ describe("StudioApplyService", () => {
       studioApplyValueDigest(plan.diff)
     );
 
-    const ifMatch = studioDraftApplyEtag(fixture.persistence.draft);
+    const ifMatch = studioDraftEtag(fixture.persistence.draft);
     const result = await fixture.service.apply(DRAFT_ID, {
       planToken: plan.plan_token,
       idempotencyKey: "apply-demo-0001",
       ifMatch
-    });
+    }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE);
     expect(result.status).toBe("committed");
     expect(result.idempotent_replay).toBe(false);
     expect(result.diff).toEqual(plan.diff);
     expect(await readFile(fixture.target, "utf8")).toBe(fixture.after);
 
+    fixture.persistence.draft = replaceStudioDraftLayout(
+      fixture.persistence.draft,
+      { moved_after_commit: true },
+      "2026-07-10T12:00:01.000Z"
+    );
     fixture.advance(5_000);
     const replay = await fixture.service.apply(DRAFT_ID, {
       planToken: plan.plan_token,
       idempotencyKey: "apply-demo-0001",
       ifMatch
-    });
+    }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE);
     expect(replay.operation_id).toBe(result.operation_id);
     expect(replay.idempotent_replay).toBe(true);
+
+    fixture.persistence.available = false;
+    await expect(fixture.service.apply(DRAFT_ID, {
+      planToken: plan.plan_token,
+      idempotencyKey: "apply-demo-0001",
+      ifMatch
+    }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE)).resolves.toMatchObject({
+      operation_id: result.operation_id,
+      idempotent_replay: true
+    });
 
     await expect(
       fixture.service.apply(DRAFT_ID, {
         planToken: plan.plan_token,
         idempotencyKey: "apply-demo-0001",
         ifMatch: `${ifMatch}changed`
-      })
+      }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE)
     ).rejects.toMatchObject({ code: "studio_apply_idempotency_conflict" });
+  });
+
+  it("binds apply idempotency to its Studio surface before any transaction", async () => {
+    const fixture = await createFixture();
+    const plan = await readyPlan(fixture);
+    const ifMatch = studioDraftEtag(fixture.persistence.draft);
+    const configurationScope = studioConfigurationApplyScope("demo");
+
+    await expect(fixture.service.plan(
+      DRAFT_ID,
+      configurationScope
+    )).rejects.toMatchObject({ code: "studio_apply_draft_not_found" });
+    await expect(fixture.service.apply(DRAFT_ID, {
+      planToken: plan.plan_token,
+      idempotencyKey: "wrong-surface-apply-01",
+      ifMatch
+    }, configurationScope)).rejects.toMatchObject({
+      code: "studio_apply_draft_not_found"
+    });
+    expect(await readFile(fixture.target, "utf8")).toBe(fixture.before);
+
+    const committed = await fixture.service.apply(DRAFT_ID, {
+      planToken: plan.plan_token,
+      idempotencyKey: "surface-bound-replay-01",
+      ifMatch
+    }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE);
+    await expect(fixture.service.apply(DRAFT_ID, {
+      planToken: plan.plan_token,
+      idempotencyKey: "surface-bound-replay-01",
+      ifMatch
+    }, configurationScope)).rejects.toMatchObject({
+      code: "studio_apply_idempotency_conflict",
+      details: { operationId: committed.operation_id }
+    });
   });
 
   it("returns created, modified, and deleted source conflicts without a token", async () => {
     const modified = await createFixture();
     await writeFile(modified.target, "name: external\n");
-    await expect(modified.service.plan(DRAFT_ID)).resolves.toMatchObject({
+    await expect(modified.service.plan(
+      DRAFT_ID,
+      STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE
+    )).resolves.toMatchObject({
       status: "conflicted",
       conflicts: [{ kind: "modified" }]
     });
 
     const created = await createFixture({ baseExists: false });
     await writeFile(created.target, "name: external\n");
-    await expect(created.service.plan(DRAFT_ID)).resolves.toMatchObject({
+    await expect(created.service.plan(
+      DRAFT_ID,
+      STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE
+    )).resolves.toMatchObject({
       status: "conflicted",
       conflicts: [{ kind: "created" }]
     });
 
     const deleted = await createFixture();
     await unlink(deleted.target);
-    await expect(deleted.service.plan(DRAFT_ID)).resolves.toMatchObject({
+    await expect(deleted.service.plan(
+      DRAFT_ID,
+      STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE
+    )).resolves.toMatchObject({
       status: "conflicted",
       conflicts: [{ kind: "deleted" }]
     });
@@ -387,8 +455,8 @@ describe("StudioApplyService", () => {
       fixture.service.apply(DRAFT_ID, {
         planToken: plan.plan_token,
         idempotencyKey: "dependency-change-1",
-        ifMatch: studioDraftApplyEtag(fixture.persistence.draft)
-      })
+        ifMatch: studioDraftEtag(fixture.persistence.draft)
+      }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE)
     ).rejects.toMatchObject({
       code: "studio_apply_source_conflict",
       details: { conflicts: [{ kind: "modified" }] }
@@ -399,18 +467,18 @@ describe("StudioApplyService", () => {
   it("serializes concurrent confirmations so only one can commit", async () => {
     const fixture = await createFixture();
     const plan = await readyPlan(fixture);
-    const ifMatch = studioDraftApplyEtag(fixture.persistence.draft);
+    const ifMatch = studioDraftEtag(fixture.persistence.draft);
     const outcomes = await Promise.allSettled([
       fixture.service.apply(DRAFT_ID, {
         planToken: plan.plan_token,
         idempotencyKey: "concurrent-apply-01",
         ifMatch
-      }),
+      }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE),
       fixture.service.apply(DRAFT_ID, {
         planToken: plan.plan_token,
         idempotencyKey: "concurrent-apply-02",
         ifMatch
-      })
+      }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE)
     ]);
     expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
     const rejected = outcomes.find((outcome) => outcome.status === "rejected");
@@ -429,8 +497,8 @@ describe("StudioApplyService", () => {
       fixture.service.apply(DRAFT_ID, {
         planToken: plan.plan_token,
         idempotencyKey: "mode-change-0001",
-        ifMatch: studioDraftApplyEtag(fixture.persistence.draft)
-      })
+        ifMatch: studioDraftEtag(fixture.persistence.draft)
+      }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE)
     ).rejects.toMatchObject({
       code: "studio_apply_source_conflict",
       details: {
@@ -452,7 +520,10 @@ describe("StudioApplyService", () => {
       afterMode: 0o600
     });
     await chmod(conflicted.target, 0o600);
-    await expect(conflicted.service.plan(DRAFT_ID)).resolves.toMatchObject({
+    await expect(conflicted.service.plan(
+      DRAFT_ID,
+      STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE
+    )).resolves.toMatchObject({
       status: "conflicted",
       conflicts: [
         {
@@ -477,8 +548,8 @@ describe("StudioApplyService", () => {
     await modeOnly.service.apply(DRAFT_ID, {
       planToken: plan.plan_token,
       idempotencyKey: "mode-only-change-01",
-      ifMatch: studioDraftApplyEtag(modeOnly.persistence.draft)
-    });
+      ifMatch: studioDraftEtag(modeOnly.persistence.draft)
+    }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE);
     expect(await readFile(modeOnly.target, "utf8")).toBe(modeOnly.before);
     expect((await stat(modeOnly.target)).mode & 0o777).toBe(0o755);
   });
@@ -491,8 +562,8 @@ describe("StudioApplyService", () => {
       expired.service.apply(DRAFT_ID, {
         planToken: expiredPlan.plan_token,
         idempotencyKey: "expired-plan-001",
-        ifMatch: studioDraftApplyEtag(expired.persistence.draft)
-      })
+        ifMatch: studioDraftEtag(expired.persistence.draft)
+      }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE)
     ).rejects.toMatchObject({ code: "studio_apply_plan_expired" });
 
     const catalog = await createFixture();
@@ -502,8 +573,8 @@ describe("StudioApplyService", () => {
       catalog.service.apply(DRAFT_ID, {
         planToken: catalogPlan.plan_token,
         idempotencyKey: "catalog-change-1",
-        ifMatch: studioDraftApplyEtag(catalog.persistence.draft)
-      })
+        ifMatch: studioDraftEtag(catalog.persistence.draft)
+      }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE)
     ).rejects.toMatchObject({ code: "studio_apply_plan_stale" });
 
     const revised = await createFixture();
@@ -517,8 +588,8 @@ describe("StudioApplyService", () => {
       revised.service.apply(DRAFT_ID, {
         planToken: revisedPlan.plan_token,
         idempotencyKey: "revised-draft-01",
-        ifMatch: studioDraftApplyEtag(revised.persistence.draft)
-      })
+        ifMatch: studioDraftEtag(revised.persistence.draft)
+      }, STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE)
     ).rejects.toMatchObject({ code: "studio_apply_plan_stale" });
   });
 
@@ -534,12 +605,20 @@ describe("StudioApplyService", () => {
     const request = {
       planToken: plan.plan_token,
       idempotencyKey: "interrupted-apply-01",
-      ifMatch: studioDraftApplyEtag(fixture.persistence.draft)
+      ifMatch: studioDraftEtag(fixture.persistence.draft)
     };
-    await expect(fixture.service.apply(DRAFT_ID, request)).rejects.toMatchObject({
+    await expect(fixture.service.apply(
+      DRAFT_ID,
+      request,
+      STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE
+    )).rejects.toMatchObject({
       code: "studio_apply_recovery_required"
     });
-    await expect(fixture.service.apply(DRAFT_ID, request)).rejects.toMatchObject({
+    await expect(fixture.service.apply(
+      DRAFT_ID,
+      request,
+      STUDIO_DEFINITION_AUTHORING_APPLY_SCOPE
+    )).rejects.toMatchObject({
       code: "studio_apply_recovery_required"
     });
     expect((await fixture.journal.list())[0]?.state).toBe("installing");

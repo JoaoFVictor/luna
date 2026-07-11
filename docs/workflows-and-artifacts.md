@@ -58,6 +58,13 @@ Supported node types:
 Dependencies are declared with `after`. Duplicate node ids, missing
 dependencies, and cycles fail graph analysis.
 
+Node ids also share an internal namespace with the LangGraph scheduler. They
+must not start with `__luna_`, equal `__start__` or `__end__`, contain `:` or
+`|`, or equal a runtime state field such as `steps`, `run`, `attempts`, or
+`artifact_refs`. Definition validation and compilation both reject these ids
+before execution, rather than accepting a workflow that the runtime graph
+cannot construct.
+
 Final workflow output is derived from terminal node outputs. One terminal node
 returns that output. Multiple terminal nodes return an object keyed by terminal
 node id. Workflow YAML does not have a separate `output:` mapping.
@@ -179,7 +186,10 @@ Compilation records node capability ids, output schemas, execution policy,
 interrupt capability, and edges. It rejects unsafe combinations such as:
 
 - fan-in from independent parallel branches without an object-merge reducer.
-- parallel branches that can create multiple pending human interrupts.
+- any interrupt-capable node that is not dependency-ordered with every other
+  node. Independent siblings are rejected with
+  `workflow_parallel_hitl_unsupported`, because a sibling failure cannot race
+  an already-durable human wait.
 - protected side-effect operations before approval.
 
 At runtime, the scheduler:
@@ -210,9 +220,12 @@ Current quality-gate ids:
 - `quality-gates.agent_review`
 - `quality-gates.non_empty_diff`
 
-Agent-review gates configure `input.review_agent`, `block_when.expression`, and
-optional `feedback.expression` on the workflow gate entry. Gate policy stays in
-workflow YAML, not in the reusable agent.
+Agent-review gates configure the static `input.review_agent`,
+`block_when.expression`, and optional `feedback.expression` on the workflow
+gate entry. If the reviewer declares context files, the workflow must collect
+that agent in `context.collect_context`, make the pattern depend on the
+collector, and pass `input.context.expression: "$.steps.<collector>"` on that
+specific gate. Gate policy stays in workflow YAML, not in the reusable agent.
 
 Repair attempts are not transport retries. `repair.attempts` controls how many
 times validation or review feedback loops back to the writer. Trusted write
@@ -229,7 +242,9 @@ npm run dev -- resume --target workflow:<id> --thread <run-id> --checkpoint <che
 
 Resume reloads the workflow definition, recompiles it, loads the checkpoint,
 reconstructs invocation/run context from checkpoint metadata, applies the
-decision, and continues the scheduler.
+decision, and continues the scheduler. Until concurrent HITL outcome merging
+has an explicit contract, every interrupt-capable node must be ordered before
+or after every other node in the workflow graph.
 
 ## Artifacts
 
@@ -237,11 +252,12 @@ Artifact plans are declared on nodes:
 
 ```yaml
 artifacts:
-  - path: final-report.md
+  - path: code-review-findings.json
     publisher: artifacts.manifest_publisher
+    semantic_type: luna.review.findings.v1
     source:
-      expression: "$.steps.final_report.markdown"
-    format: markdown
+      expression: "$.steps.validated_findings"
+    format: json
     required: true
 ```
 
@@ -255,6 +271,40 @@ Artifact sources must stay under `$.steps.<declaring-node>...`. Formats are
 `json` and `markdown`. `required` defaults to true. The publisher uses
 transactional stores for content, manifests, and journals, then appends artifact
 refs to runtime state.
+
+`semantic_type` is optional manifest metadata for consumers that can validate
+and present a known artifact schema. It is a lowercase, namespaced id ending in
+an explicit positive version such as `.v1`, and is limited to 128 characters.
+It does not change routing, execution, or the artifact bytes. Producers must
+only declare a semantic type when the published source really matches that
+versioned contract; incompatible payload changes require a new `.vN` id.
+Consumers must validate the content and fall back to the
+generic preview for missing, unknown, or schema-invalid semantic types. Legacy
+manifests without this field remain valid.
+
+The Studio currently recognizes these versioned JSON contracts:
+
+| `semantic_type` | Specialized presentation |
+| --- | --- |
+| `luna.review.findings.v1` | Findings, severity, confidence, safe evidence ranges, and recommendations |
+| `luna.review.coverage-plan.v1` | Planned coverage totals and blocked ranges |
+| `luna.review.coverage-check.v1` | Reviewed, missing, and blocked coverage totals |
+| `luna.review.acceptance.v1` | Acceptance status, recommended action, and blocking reasons |
+| `luna.review.provider-publish.v1` | Provider publication status and comment totals |
+| `luna.implementation.worktree.v1` | Worktree lifecycle, repository, branch, and abbreviated base revision |
+| `luna.implementation.plan.v1` | Implementation summary, steps, files, validation plan, and risks |
+| `luna.implementation.gates.v1` | Attempt, validation, and gate summaries |
+| `luna.implementation.validation.v1` | Command exit, timeout, duration, and truncation summaries |
+| `luna.implementation.diff.v1` | Changed-file statuses and diff truncation totals |
+| `luna.implementation.commit.v1` | Commit or commit-lifecycle result |
+| `luna.implementation.push.v1` | Push or push-lifecycle result |
+| `luna.implementation.change-request.v1` | Change-request creation or skip result |
+
+Specialized views use bounded strict schemas and render React text only. They do
+not render raw command output, diff patches, evidence quotes, physical worktree
+paths, provider URLs, HTML, SVG, or Markdown. The generic inline fallback also
+redacts physical paths. Raw downloads deliberately remain original bytes and
+the Studio labels that boundary explicitly.
 
 Common runtime artifacts include `invocation.json`, `run.json`, `events.jsonl`,
 `trace.jsonl`, `observability-summary.json`, node artifacts, interrupt data,

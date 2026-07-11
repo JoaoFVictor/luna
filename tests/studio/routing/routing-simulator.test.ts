@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defineInputAdapters } from "../../../src/adapters/registry.js";
 import type { RegisteredInputAdapter } from "../../../src/adapters/types.js";
 import type {
@@ -12,6 +12,7 @@ import {
 import { defineStudioAdapterPreviewPort } from "../../../src/studio/application/inputs/adapter-preview-port.js";
 import { previewStudioInputAdapter } from "../../../src/studio/application/inputs/input-adapters.js";
 import { simulateStudioRouting } from "../../../src/studio/application/routing/routing-simulator.js";
+import type { StudioRoutingExecutor } from "../../../src/studio/application/routing/isolated-routing-executor.js";
 import {
   STUDIO_INVOCATION_PAYLOAD_MAX_BYTES,
   STUDIO_INVOCATION_PAYLOAD_MAX_ENTRIES,
@@ -57,6 +58,7 @@ function fixedAdapter(
     id,
     description: `Fake ${id} adapter`,
     source: invocation.source,
+    loadEffects: [],
     async load() {
       return invocation;
     }
@@ -144,6 +146,43 @@ describe("Studio routing simulator", () => {
         rule_index: Number.MAX_SAFE_INTEGER + 1
       }).success
     ).toBe(false);
+  });
+
+  it("submits the complete ruleset once under one total timeout budget", async () => {
+    const simulate = vi.fn<StudioRoutingExecutor["simulate"]>(async () => ({
+      kind: "simulation",
+      simulation: {
+        status: "no_match",
+        evaluations: [],
+        matched_rule: null,
+        target: null,
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "router_no_match",
+            message: "No router rule matched invocation."
+          }
+        ]
+      }
+    }));
+
+    await simulateStudioRouting(
+      {
+        invocation: {
+          version: "2026-06",
+          source: "manual",
+          event: "simulate"
+        }
+      },
+      routing,
+      { executor: { simulate }, timeoutMs: 250 }
+    );
+
+    expect(simulate).toHaveBeenCalledOnce();
+    expect(simulate.mock.calls[0]?.[0]).toMatchObject({
+      definition: routing,
+      timeoutMs: 250
+    });
   });
 
   it.each([
@@ -236,6 +275,78 @@ describe("Studio routing simulator", () => {
     expect(simulation.evaluations).toHaveLength(routing.rules.length);
   });
 
+  it("terminates one non-cooperative routing decision at its total timeout", async () => {
+    const hostileRouting = {
+      type: "router",
+      version: "2026-06",
+      rules: [
+        {
+          id: "non-cooperative",
+          when: {
+            expression: "($loop := function(){ $loop() }; $loop())"
+          },
+          target: "workflow:never"
+        }
+      ]
+    } satisfies RouterDefinition;
+    const startedAt = Date.now();
+
+    const simulation = await simulateStudioRouting(
+      {
+        invocation: {
+          version: "2026-06",
+          source: "hostile",
+          event: "simulate"
+        }
+      },
+      hostileRouting,
+      { timeoutMs: 30 }
+    );
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(simulation).toMatchObject({
+      status: "error",
+      evaluations: [],
+      matched_rule: null,
+      target: null,
+      diagnostics: [{ code: "router_evaluation_timeout" }]
+    });
+  });
+
+  it("terminates a non-cooperative routing decision when its caller cancels", async () => {
+    const caller = new AbortController();
+    const simulation = simulateStudioRouting(
+      {
+        invocation: {
+          version: "2026-06",
+          source: "hostile",
+          event: "simulate"
+        }
+      },
+      {
+        type: "router",
+        version: "2026-06",
+        rules: [
+          {
+            id: "non-cooperative",
+            when: {
+              expression: "($loop := function(){ $loop() }; $loop())"
+            },
+            target: "workflow:never"
+          }
+        ]
+      },
+      { signal: caller.signal, timeoutMs: 1_000 }
+    );
+    caller.abort();
+
+    await expect(simulation).resolves.toMatchObject({
+      status: "error",
+      evaluations: [],
+      diagnostics: [{ code: "router_evaluation_cancelled" }]
+    });
+  });
+
   it("returns the failed rule and structured expression diagnostics", async () => {
     const brokenRouting = {
       type: "router",
@@ -278,6 +389,46 @@ describe("Studio routing simulator", () => {
         {
           code: "router_expression_failed",
           rule_id: "broken",
+          rule_index: 0
+        }
+      ]
+    });
+  });
+
+  it("preserves canonical invalid-target diagnostics from the router", async () => {
+    const invalidTargetRouting = {
+      type: "router",
+      version: "2026-06",
+      rules: [
+        {
+          id: "invalid-target",
+          when: { expression: "true" },
+          target: "workflow:not/valid"
+        }
+      ]
+    } as unknown as RouterDefinition;
+
+    const simulation = await simulateStudioRouting(
+      {
+        invocation: {
+          version: "2026-06",
+          source: "manual",
+          event: "simulate"
+        }
+      },
+      invalidTargetRouting
+    );
+
+    expect(simulation).toMatchObject({
+      status: "error",
+      evaluations: [{ outcome: "boolean", result: true }],
+      matched_rule: { rule_id: "invalid-target", rule_index: 0 },
+      target: null,
+      diagnostics: [
+        {
+          code: "router_invalid_target",
+          path: "$.rules[0].target",
+          rule_id: "invalid-target",
           rule_index: 0
         }
       ]

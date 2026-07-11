@@ -33,6 +33,9 @@ const services: StudioServerServices = {
     previewInputAdapter: async () => {
       throw new Error("unused");
     },
+    previewInputRoute: async () => {
+      throw new Error("unused");
+    },
     routingDefinition: () => ({
       type: "router",
       version: "2026-06",
@@ -107,6 +110,129 @@ describe("Studio local server launcher", () => {
       expect(dispose).toHaveBeenCalledOnce();
     }
   );
+
+  it("supports an explicit wildcard container bind with loopback public authority", async () => {
+    const listen = vi.fn(async (
+      _server: FastifyInstance,
+      _address: { readonly host: string; readonly port: number }
+    ) => undefined);
+    const handle = await startStudioServer({
+      services,
+      host: "0.0.0.0",
+      port: 43_110,
+      allowNonLoopbackBind: true,
+      publicHost: "127.0.0.1",
+      publicPort: 43_112,
+      logger: false,
+      listen
+    });
+
+    expect(listen.mock.calls[0]?.[1]).toEqual({
+      host: "0.0.0.0",
+      port: 43_110
+    });
+    expect(handle.launchUrl).toMatch(
+      /^http:\/\/127\.0\.0\.1:43112\/#capability=[A-Za-z0-9_-]+$/
+    );
+
+    const allowed = await handle.server.inject({
+      method: "GET",
+      url: "/health",
+      headers: { host: "127.0.0.1:43112" }
+    });
+    const bindAuthority = await handle.server.inject({
+      method: "GET",
+      url: "/health",
+      headers: { host: "0.0.0.0:43110" }
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(bindAuthority.statusCode).toBe(403);
+    await handle.close();
+  });
+
+  it("requires an explicit loopback public authority for wildcard binds", async () => {
+    await expect(
+      startStudioServer({
+        services,
+        host: "0.0.0.0",
+        allowNonLoopbackBind: true,
+        logger: false,
+        listen: async () => undefined
+      })
+    ).rejects.toMatchObject({
+      code: "studio_server_configuration_invalid"
+    });
+  });
+
+  it.each(["192.168.1.20", "localhost"])(
+    "does not turn container opt-in into an arbitrary network bind for %s",
+    async (host) => {
+      await expect(
+        startStudioServer({
+          services,
+          host,
+          allowNonLoopbackBind: true,
+          publicHost: "127.0.0.1",
+          logger: false,
+          listen: async () => undefined
+        })
+      ).rejects.toMatchObject({
+        code: "studio_server_configuration_invalid"
+      });
+    }
+  );
+
+  it("rejects a non-loopback public authority in container mode", async () => {
+    await expect(
+      startStudioServer({
+        services,
+        host: "0.0.0.0",
+        allowNonLoopbackBind: true,
+        publicHost: "192.168.1.20",
+        logger: false,
+        listen: async () => undefined
+      })
+    ).rejects.toMatchObject({
+      code: "studio_server_configuration_invalid"
+    });
+  });
+
+  it.each([0, 65_536, 1.5])(
+    "rejects invalid public port %s",
+    async (publicPort) => {
+      await expect(
+        startStudioServer({
+          services,
+          publicPort,
+          logger: false,
+          listen: async () => undefined
+        })
+      ).rejects.toMatchObject({
+        code: "studio_server_configuration_invalid"
+      });
+    }
+  );
+
+  it("canonicalizes the default HTTP public port for browser Host and Origin", async () => {
+    const handle = await startStudioServer({
+      services,
+      port: 43_110,
+      publicPort: 80,
+      logger: false,
+      listen: async () => undefined
+    });
+
+    expect(handle.launchUrl).toMatch(
+      /^http:\/\/127\.0\.0\.1\/#capability=[A-Za-z0-9_-]+$/
+    );
+    const response = await handle.server.inject({
+      method: "GET",
+      url: "/health",
+      headers: { host: "127.0.0.1" }
+    });
+    expect(response.statusCode).toBe(200);
+    await handle.close();
+  });
 
   it.each([0, 65_536, 1.5])(
     "rejects invalid port %s and releases owned services",

@@ -3,6 +3,9 @@ import { createSqliteRunStore } from "../../../src/studio/adapters/sqlite/run-st
 import { RunStoreError } from "../../../src/studio/application/runs/errors.js";
 import { preallocation, withRunStore } from "./helpers.js";
 
+const PLAN_ID = `rp_${"p".repeat(32)}`;
+const INPUT_HASH = `sha256:${"e".repeat(64)}`;
+
 describe("SQLite run ledger", () => {
   it("preallocates queued before dispatch and retries idempotently", async () => {
     await withRunStore(async ({ store }) => {
@@ -17,6 +20,41 @@ describe("SQLite run ledger", () => {
         ...command,
         source: "jira"
       })).rejects.toMatchObject({ code: "run_idempotency_conflict" });
+    });
+  });
+
+  it("persists safe input provenance and resolves an accepted plan exactly", async () => {
+    await withRunStore(async ({ store }) => {
+      await store.ledger.preallocate(preallocation("run-from-plan", {
+        accepted_plan_id: PLAN_ID,
+        input_provenance: {
+          kind: "adapter",
+          adapter_id: "github.pull-request",
+          adapter_input_hash: INPUT_HASH
+        }
+      }));
+      await store.ledger.preallocate(preallocation("other-run"));
+
+      const page = await store.catalog.list({
+        filters: { accepted_plan_id: PLAN_ID },
+        limit: 10
+      });
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]).toMatchObject({
+        run_id: "run-from-plan",
+        accepted_plan_id: PLAN_ID,
+        input_provenance: {
+          kind: "adapter",
+          adapter_id: "github.pull-request",
+          adapter_input_hash: INPUT_HASH
+        }
+      });
+      await expect(store.catalog.get("run-from-plan")).resolves.toMatchObject({
+        record: {
+          accepted_plan_id: PLAN_ID,
+          input_provenance: { adapter_id: "github.pull-request" }
+        }
+      });
     });
   });
 
@@ -82,6 +120,7 @@ describe("SQLite run ledger", () => {
         }
       });
       expect(terminal.record.finished_at).toBe("2026-07-10T12:00:12.000Z");
+      expect(terminal.record.completeness).toBe("partial");
       await expect(store.ledger.appendTransition({
         run_id: "run-1",
         transition_id: "heartbeat-terminal",
@@ -94,6 +133,79 @@ describe("SQLite run ledger", () => {
       const detail = await store.catalog.get("run-1");
       expect(detail?.wall_duration_ms).toBe(10_000);
       expect(detail?.status).toBe("succeeded");
+    });
+  });
+
+  it("replays a stable node observation idempotently after an intervening heartbeat", async () => {
+    await withRunStore(async ({ store }) => {
+      await store.ledger.preallocate(preallocation("run-1"));
+      await store.ledger.appendTransition({
+        run_id: "run-1",
+        transition_id: "prepare-1",
+        event_id: "event-prepare-1",
+        expected_revision: 1,
+        occurred_at: "2026-07-10T12:00:01.000Z",
+        transition: { kind: "dispatch_preparing", owner_id: "worker-1" }
+      });
+      await store.ledger.appendTransition({
+        run_id: "run-1",
+        transition_id: "start-1",
+        event_id: "event-start-1",
+        expected_revision: 2,
+        occurred_at: "2026-07-10T12:00:02.000Z",
+        transition: {
+          kind: "dispatch_started",
+          owner_id: "worker-1",
+          active_node_ids: []
+        }
+      });
+      const observation = {
+        run_id: "run-1",
+        transition_id: "node-start-node-a-attempt-1",
+        event_id: "event-node-start-node-a-attempt-1",
+        expected_revision: 3,
+        occurred_at: "2026-07-10T12:00:03.000Z",
+        transition: {
+          kind: "node_lifecycle" as const,
+          owner_id: "worker-1",
+          event: {
+            type: "node.started" as const,
+            node_id: "node-a",
+            attempt: 1,
+            observed_at: "2026-07-10T12:00:03.000Z",
+            artifact_count: 0,
+            interrupt_count: 0
+          }
+        }
+      };
+      const first = await store.ledger.appendTransition(observation);
+      await store.ledger.appendTransition({
+        run_id: "run-1",
+        transition_id: "heartbeat-1",
+        event_id: "event-heartbeat-1",
+        expected_revision: 4,
+        occurred_at: "2026-07-10T12:00:04.000Z",
+        transition: { kind: "heartbeat", owner_id: "worker-1" }
+      });
+      const retry = await store.ledger.appendTransition({
+        ...observation,
+        expected_revision: 5,
+        occurred_at: "2026-07-10T12:00:05.000Z"
+      });
+
+      expect(first).toMatchObject({ applied: true, transition_revision: 4 });
+      expect(retry).toMatchObject({
+        applied: false,
+        transition_revision: 4,
+        record: { record_revision: 5, active_node_ids: ["node-a"] }
+      });
+      const events = await store.events.list({
+        run_id: "run-1",
+        direction: "asc",
+        event_types: ["run.node.started"],
+        limit: 10
+      });
+      expect(events.items).toHaveLength(1);
     });
   });
 
@@ -115,6 +227,36 @@ describe("SQLite run ledger", () => {
       });
       expect(first).toMatchObject({ applied: true, event: { sequence: 2 } });
       expect(retry).toMatchObject({ applied: false, event: { sequence: 2 } });
+
+      const resumed = await store.events.list({
+        run_id: "run-1",
+        direction: "asc",
+        event_types: [],
+        limit: 10,
+        after_sequence: 1
+      });
+      expect(resumed.items.map((event) => event.sequence)).toEqual([2]);
+      await expect(store.events.list({
+        run_id: "run-1",
+        direction: "asc",
+        event_types: [],
+        limit: 10,
+        after_sequence: 2
+      })).resolves.toMatchObject({ items: [], as_of_sequence: 2 });
+      await expect(store.events.list({
+        run_id: "run-1",
+        direction: "asc",
+        event_types: [],
+        limit: 10,
+        after_sequence: 3
+      })).rejects.toMatchObject({ code: "run_cursor_invalid" });
+      await expect(store.events.list({
+        run_id: "run-1",
+        direction: "desc",
+        event_types: [],
+        limit: 10,
+        after_sequence: 1
+      })).rejects.toMatchObject({ code: "run_invalid_input" });
 
       await expect(store.events.append({
         ...command,
@@ -212,6 +354,15 @@ describe("SQLite run ledger", () => {
         occurred_at: "2026-07-10T12:00:01.000Z",
         transition: { kind: "dispatch_preparing", owner_id: "worker-1" }
       });
+      await store.ledger.preallocate(preallocation("active-z"));
+      await store.ledger.appendTransition({
+        run_id: "active-z",
+        transition_id: "prepare-active-z",
+        event_id: "event-prepare-active-z",
+        expected_revision: 1,
+        occurred_at: "2026-07-10T12:00:01.000Z",
+        transition: { kind: "dispatch_preparing", owner_id: "worker-z" }
+      });
       await store.ledger.preallocate(preallocation("rejected"));
       await store.ledger.appendTransition({
         run_id: "rejected",
@@ -224,11 +375,65 @@ describe("SQLite run ledger", () => {
           failure: { code: "dispatch_failed", message: "Dispatcher refused work" }
         }
       });
+      await store.ledger.preallocate(preallocation("waiting"));
+      await store.ledger.appendTransition({
+        run_id: "waiting",
+        transition_id: "prepare-waiting",
+        event_id: "event-prepare-waiting",
+        expected_revision: 1,
+        occurred_at: "2026-07-10T12:00:01.000Z",
+        transition: { kind: "dispatch_preparing", owner_id: "worker-2" }
+      });
+      await store.ledger.appendTransition({
+        run_id: "waiting",
+        transition_id: "start-waiting",
+        event_id: "event-start-waiting",
+        expected_revision: 2,
+        occurred_at: "2026-07-10T12:00:02.000Z",
+        transition: {
+          kind: "dispatch_started",
+          owner_id: "worker-2",
+          active_node_ids: []
+        }
+      });
+      await store.ledger.appendTransition({
+        run_id: "waiting",
+        transition_id: "wait",
+        event_id: "event-wait",
+        expected_revision: 3,
+        occurred_at: "2026-07-10T12:00:03.000Z",
+        transition: {
+          kind: "runtime_status",
+          owner_id: "worker-2",
+          status: "waiting_for_input",
+          active_node_ids: []
+        }
+      });
 
       const candidates = await store.ledger.listOrphanCandidates({
         stale_before: "2026-07-10T12:01:00.000Z"
       });
-      expect(candidates.map((candidate) => candidate.record.run_id)).toEqual(["active"]);
+      expect(candidates.map((candidate) => candidate.record.run_id)).toEqual([
+        "active",
+        "active-z"
+      ]);
+      const firstPage = await store.ledger.listOrphanCandidates({
+        stale_before: "2026-07-10T12:01:00.000Z",
+        limit: 1
+      });
+      const first = firstPage[0];
+      if (first === undefined) throw new Error("Expected orphan cursor fixture");
+      const secondPage = await store.ledger.listOrphanCandidates({
+        stale_before: "2026-07-10T12:01:00.000Z",
+        limit: 1,
+        cursor: {
+          stale_since: first.stale_since,
+          run_id: first.record.run_id
+        }
+      });
+      expect(secondPage.map((candidate) => candidate.record.run_id)).toEqual([
+        "active-z"
+      ]);
     });
   });
 });

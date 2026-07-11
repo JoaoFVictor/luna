@@ -19,6 +19,12 @@ export type StudioCsrfRotation = {
   readonly principal: StudioLocalPrincipal;
 };
 
+export type StudioAuthenticatedLocalSession = {
+  readonly principal: StudioLocalPrincipal;
+  /** Server-only capability that binds confirmations to one HttpOnly session. */
+  readonly actorBinding: string;
+};
+
 export type StudioSessionRequest = {
   readonly host?: string;
   readonly origin?: string;
@@ -60,6 +66,7 @@ export class StudioSessionError extends Error {
 
 type SessionRecord = {
   readonly csrfToken: string;
+  readonly actorBinding: string;
   readonly expiresAtMs: number;
 };
 
@@ -203,6 +210,7 @@ export class StudioLocalSessionManager {
 
     const sessionToken = opaqueToken();
     const csrfToken = opaqueToken();
+    const actorBinding = opaqueToken();
     const expiry = sessionExpiry(this.now(), this.sessionTtlMs);
     const exchange = {
       csrfToken,
@@ -218,7 +226,11 @@ export class StudioLocalSessionManager {
     // by the response has been validated and materialized.
     this.bootstrapToken = undefined;
     const expiresAtMs = expiry.expiresAtMs;
-    this.sessions.set(tokenKey(sessionToken), { csrfToken, expiresAtMs });
+    this.sessions.set(tokenKey(sessionToken), {
+      csrfToken,
+      actorBinding,
+      expiresAtMs
+    });
 
     return exchange;
   }
@@ -231,27 +243,34 @@ export class StudioLocalSessionManager {
   }
 
   authenticateRead(request: StudioSessionRequest): StudioLocalPrincipal {
-    this.assertRequestSource(request, false);
-    this.requireSession(request.cookie);
-    return { id: "local-user", authentication: "local-session" };
+    return this.authenticateReadSession(request).principal;
   }
 
   authenticateMutation(request: StudioSessionRequest): StudioLocalPrincipal {
-    this.requireMutationSession(request);
-    return { id: "local-user", authentication: "local-session" };
+    return this.authenticateMutationSession(request).principal;
   }
 
-  rotateCsrf(request: StudioSessionRequest): StudioCsrfRotation {
-    const session = this.requireMutationSession(request);
-    const rotated = {
-      csrfToken: opaqueToken(),
-      expiresAtMs: session.record.expiresAtMs
-    };
-    this.sessions.set(session.key, rotated);
+  authenticateReadSession(
+    request: StudioSessionRequest
+  ): StudioAuthenticatedLocalSession {
+    this.assertRequestSource(request, false);
+    return this.authenticatedSession(this.requireSession(request.cookie));
+  }
+
+  authenticateMutationSession(
+    request: StudioSessionRequest
+  ): StudioAuthenticatedLocalSession {
+    return this.authenticatedSession(this.requireMutationSession(request));
+  }
+
+  recoverCsrf(request: StudioSessionRequest): StudioCsrfRotation {
+    this.assertRequestSource(request, true);
+    this.assertJsonContentType(request.contentType);
+    const session = this.requireSession(request.cookie);
 
     return {
-      csrfToken: rotated.csrfToken,
-      expiresAt: new Date(rotated.expiresAtMs).toISOString(),
+      csrfToken: session.record.csrfToken,
+      expiresAt: new Date(session.record.expiresAtMs).toISOString(),
       principal: { id: "local-user", authentication: "local-session" }
     };
   }
@@ -263,6 +282,15 @@ export class StudioLocalSessionManager {
         "Studio mutations require Content-Type application/json"
       );
     }
+  }
+
+  private authenticatedSession(
+    session: LocatedSession
+  ): StudioAuthenticatedLocalSession {
+    return {
+      principal: { id: "local-user", authentication: "local-session" },
+      actorBinding: session.record.actorBinding
+    };
   }
 
   private requireMutationSession(

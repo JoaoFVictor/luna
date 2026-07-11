@@ -315,6 +315,14 @@ describe("Studio draft canonical validation", () => {
     const projectRoot = await temporaryDirectory("luna-studio-project-");
     const configRoot = await temporaryDirectory("luna-studio-config-");
     const temporaryRoot = await temporaryDirectory("luna-studio-snapshots-");
+    const models = [
+      "model_profiles:",
+      "  default:",
+      "    model: test/test-model",
+      "    reasoning_effort: low",
+      ""
+    ].join("\n");
+    await sourceFile(configRoot, "models.yaml", models);
     const files = new Map<string, string>([
       [
         "agents/helper/agent.yaml",
@@ -348,7 +356,11 @@ describe("Studio draft canonical validation", () => {
     }
     const draft = changeSet({
       resources: [{ kind: "agent", id: "helper" }],
-      baseFiles
+      baseFiles,
+      dependencies: [{
+        file: { root: "config", path: "models.yaml" },
+        sha256: digest(models)
+      }]
     });
     const service = validationService({
       projectRoot,
@@ -368,6 +380,41 @@ describe("Studio draft canonical validation", () => {
           revision: expect.stringMatching(/^sha256:/)
         }
       ]
+    });
+
+    const agentFile = baseFiles.find(
+      (file) => file.file.path === "agents/helper/agent.yaml"
+    );
+    if (agentFile?.content_ref === null || agentFile?.content_ref === undefined) {
+      throw new Error("Expected agent definition fixture");
+    }
+    const unknownProfile = files.get("agents/helper/agent.yaml")!.replace(
+      "model_profile: default",
+      "model_profile: missing"
+    );
+    blobs.set(digest(unknownProfile), unknownProfile);
+    const invalid = changeSet({
+      resources: [{ kind: "agent", id: "helper" }],
+      baseFiles,
+      dependencies: [{
+        file: { root: "config", path: "models.yaml" },
+        sha256: digest(models)
+      }],
+      changes: [{
+        action: "write",
+        file: agentFile.file,
+        base_sha256: agentFile.sha256,
+        content_sha256: digest(unknownProfile),
+        content_ref: digest(unknownProfile)
+      }]
+    });
+
+    await expect(service.validate(invalid)).resolves.toMatchObject({
+      status: "invalid",
+      diagnostics: [expect.objectContaining({
+        code: "agent_model_profile_unknown",
+        resource: { kind: "agent", id: "helper" }
+      })]
     });
   });
 

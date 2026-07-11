@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CAPABILITY_SIDE_EFFECT_CATEGORIES } from "../../core/capabilities/manifest.js";
 import {
   StudioPresentationSchema,
   type StudioPresentation
@@ -12,6 +13,18 @@ import {
 
 const NonEmptyStringSchema = z.string().min(1);
 const StringArraySchema = z.array(NonEmptyStringSchema);
+
+const StudioCapabilityReExportsSchema = z
+  .object({
+    built_ins: StringArraySchema,
+    patterns: StringArraySchema,
+    tools: StringArraySchema,
+    gates: StringArraySchema,
+    policies: StringArraySchema,
+    ports: StringArraySchema,
+    artifact_publishers: StringArraySchema
+  })
+  .strict();
 
 export const StudioRegistrationPresentationSchema = StudioPresentationSchema;
 export type StudioRegistrationPresentation = StudioPresentation;
@@ -68,7 +81,20 @@ const StudioToolCatalogItemSchema = z
     output_schema: StudioJsonValueSchema,
     runtime_requirements: StringArraySchema,
     materialization: z.enum(["local", "mcp", "runtime"]).optional(),
-    allowlist_required: z.boolean()
+    allowlist_required: z.boolean(),
+    allowed_agent_modes: z
+      .array(z.enum(["read_only", "trusted_local_write"]))
+      .min(1)
+      .max(2)
+      .optional(),
+    safety: z
+      .object({
+        local_writes: z.boolean(),
+        network: z.boolean(),
+        external_side_effects: z.boolean()
+      })
+      .strict()
+      .optional()
   })
   .strict();
 
@@ -92,6 +118,7 @@ const StudioPolicyCatalogItemSchema = z
     config_schema: StudioJsonValueSchema,
     local_context_roots: StringArraySchema,
     side_effect_semantics: z.enum(["none", "read", "write"]).optional(),
+    side_effect_category: z.enum(CAPABILITY_SIDE_EFFECT_CATEGORIES).optional(),
     side_effect_operation_ids: StringArraySchema,
     idempotency_scope: z
       .enum(["run", "node", "attempt", "external_resource"])
@@ -157,7 +184,10 @@ export const StudioCapabilitySummarySchema = z
     id: NonEmptyStringSchema,
     version: NonEmptyStringSchema,
     kind: z.enum(["execution", "composition"]),
+    workflow_node_types: z.array(z.literal("agent")).max(1),
     depends_on: StringArraySchema,
+    presets: z.record(NonEmptyStringSchema, StringArraySchema),
+    re_exports: StudioCapabilityReExportsSchema,
     presentation: StudioRegistrationPresentationSchema,
     docs: z.array(
       z
@@ -174,12 +204,35 @@ export type StudioCapabilitySummary = z.infer<
   typeof StudioCapabilitySummarySchema
 >;
 
+export const StudioCatalogConsumersSchema = z
+  .object({
+    workflows: StringArraySchema,
+    agents: StringArraySchema
+  })
+  .strict();
+export type StudioCatalogConsumers = z.infer<
+  typeof StudioCatalogConsumersSchema
+>;
+
+export const StudioCapabilityConsumerIndexSchema = z
+  .object({
+    status: z.enum(["complete", "partial"]),
+    incomplete_sources: z.array(z.enum(["workflows", "agents"])),
+    capabilities: z.record(NonEmptyStringSchema, StudioCatalogConsumersSchema),
+    registrations: z.record(NonEmptyStringSchema, StudioCatalogConsumersSchema)
+  })
+  .strict();
+export type StudioCapabilityConsumerIndex = z.infer<
+  typeof StudioCapabilityConsumerIndexSchema
+>;
+
 export const StudioCapabilityCatalogSchema = z
   .object({
     technical_fingerprint: StudioDigestSchema,
     presentation_fingerprint: StudioDigestSchema,
     capabilities: z.array(StudioCapabilitySummarySchema),
-    registrations: z.array(StudioCapabilityRegistrationSchema)
+    registrations: z.array(StudioCapabilityRegistrationSchema),
+    consumers: StudioCapabilityConsumerIndexSchema.optional()
   })
   .strict();
 export type StudioCapabilityCatalog = z.infer<

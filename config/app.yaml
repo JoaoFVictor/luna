@@ -3,9 +3,9 @@ workspace:
   strategy: git_worktree
   # Directory where Luna creates per-run worktrees.
   root: .runs/workspaces
-  # Keep successful run worktrees for inspection.
-  preserve_on_success: false
-  # Keep failed run worktrees for debugging.
+  # Required safety assertion: terminalization never deletes successful worktrees.
+  preserve_on_success: true
+  # Required safety assertion: terminalization never deletes failed worktrees.
   preserve_on_failure: true
 artifacts:
   # Directory where run artifacts are written.

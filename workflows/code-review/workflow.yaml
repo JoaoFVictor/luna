@@ -84,6 +84,7 @@ nodes:
     artifacts:
       - path: review-coverage-plan.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.coverage-plan.v1
         source:
           expression: "$.steps.coverage_plan"
         format: json
@@ -173,6 +174,7 @@ nodes:
     artifacts:
       - path: raw-code-review-findings.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.findings.v1
         source:
           expression: "$.steps.code_review"
         format: json
@@ -203,6 +205,7 @@ nodes:
     artifacts:
       - path: security-review-findings.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.findings.v1
         source:
           expression: "$.steps.security_review"
         format: json
@@ -233,6 +236,7 @@ nodes:
     artifacts:
       - path: architecture-review-findings.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.findings.v1
         source:
           expression: "$.steps.architecture_review"
         format: json
@@ -262,6 +266,7 @@ nodes:
     artifacts:
       - path: merged-code-review-findings.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.findings.v1
         source:
           expression: "$.steps.merged_findings"
         format: json
@@ -290,6 +295,7 @@ nodes:
     artifacts:
       - path: review-coverage-check.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.coverage-check.v1
         source:
           expression: "$.steps.coverage_check"
         format: json
@@ -309,6 +315,7 @@ nodes:
     artifacts:
       - path: code-review-findings.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.findings.v1
         source:
           expression: "$.steps.validated_findings"
         format: json
@@ -351,6 +358,7 @@ nodes:
     artifacts:
       - path: acceptance-review.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.acceptance.v1
         source:
           expression: "$.steps.acceptance"
         format: json
@@ -432,6 +440,7 @@ nodes:
     artifacts:
       - path: pull-request-review.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.provider-publish.v1
         source:
           expression: "$.steps.publish_review"
         format: json

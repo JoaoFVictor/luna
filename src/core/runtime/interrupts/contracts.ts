@@ -75,6 +75,13 @@ export type InterruptStore = {
   create(record: InterruptRecord): Promise<void>;
   get(id: string): Promise<InterruptRecord | undefined>;
   list(runId: string): Promise<InterruptRecord[]>;
+  /**
+   * Serializes the complete application of one interrupt decision. The lease
+   * must be cross-process for durable stores and crash-recoverable; protecting
+   * only the `beginResume` record mutation is insufficient because duplicate
+   * callers could still publish artifacts or execute downstream nodes.
+   */
+  withResumeLease<T>(runId: string, operation: () => Promise<T>): Promise<T>;
   beginResume(
     id: string,
     resumeAttempt: string,

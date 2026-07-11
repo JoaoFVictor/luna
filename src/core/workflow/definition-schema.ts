@@ -1,4 +1,5 @@
 import YAML from "yaml";
+import { ArtifactSemanticTypeSchema } from "../artifacts/semantic-type.js";
 import { AgentRuntimeRequirementSchema } from "../agent-runtime/contracts.js";
 import { assertExpressionObject } from "./expression.js";
 import { WorkflowDefinitionError } from "./definition-errors.js";
@@ -48,6 +49,7 @@ const ARTIFACT_FIELDS = new Set([
   "format",
   "required",
   "publisher",
+  "semantic_type",
   "config"
 ]);
 
@@ -396,12 +398,23 @@ function readArtifacts(
         { path: `${artifactPath}.required` }
       );
     }
+    const semanticType = raw.semantic_type === undefined
+      ? undefined
+      : ArtifactSemanticTypeSchema.safeParse(raw.semantic_type);
+    if (semanticType !== undefined && !semanticType.success) {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_invalid",
+        "Artifact semantic_type must be a bounded, namespaced id ending in .vN.",
+        { path: `${artifactPath}.semantic_type` }
+      );
+    }
     return {
       path: requireString(raw.path, `${artifactPath}.path`),
       source: assertExpressionObject(raw.source, `${artifactPath}.source`, publisher),
       format,
       required: raw.required !== false,
       publisher,
+      ...(semanticType === undefined ? {} : { semantic_type: semanticType.data }),
       ...(raw.config === undefined
         ? {}
         : { config: assertObject(raw.config, `${artifactPath}.config`) })

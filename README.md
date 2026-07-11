@@ -31,6 +31,9 @@ Runtime entrypoints:
   checkpoints, interrupts, artifacts, events, and runtime logs.
 - `src/core/observability/**`: telemetry records, spans, sinks, runtime-log
   projection, and summary artifacts.
+- `src/studio/**` and `apps/studio/`: local React control plane for authoring,
+  classified configuration, deterministic launch, run inspection, and
+  restore-as-draft. See the [Luna Studio guide](docs/studio-guide.md).
 
 Authoring surfaces:
 
@@ -201,18 +204,67 @@ node dist/src/cli.js webhook-server
 node dist/src/cli.js webhook-worker
 ```
 
-Or run the webhook API, worker, and Redis with Docker Compose:
+Or run the webhook API, worker, Redis, and Luna Studio with Docker Compose:
 
 ```bash
+export HOST_UID="$(id -u)"
+export HOST_GID="$(id -g)"
+export LUNA_STUDIO_CHECKOUT_ID="$(pwd -P | sha256sum | cut -c1-24)"
+install -d -m 0700 .runs .luna/studio
 docker compose up --build
 ```
+
+To start only the Studio and its storage-permission initializer:
+
+```bash
+docker compose up --build studio
+docker compose logs studio
+```
+
+Open the `Luna Studio:` capability URL printed in the Studio log. Compose
+publishes it only at `http://127.0.0.1:43110`; do not remove the loopback IP
+from the port mapping while Studio uses local sessions. The container listens
+on its bridge wildcard only through the explicit container-mode CLI flag, while
+Host and Origin validation remain pinned to the public loopback authority.
+
+The Studio image includes the production React build. Only the `studio`
+service mounts `workflows/`, `agents/`, and `config/` read-write so confirmed
+authoring changes reach the checkout. Private Studio state persists in
+`.luna/studio/`, runtime data remains in `.runs/`, and the SQLite run ledger is
+kept in the checkout-scoped `luna-<checkout-id>_luna-studio-state` named volume
+at `/var/lib/luna-studio`. `LUNA_STUDIO_CHECKOUT_ID` is also hashed into the
+ledger directory, so identities remain isolated even if an override deliberately
+points two checkouts at one volume. Use a stable id derived from the physical
+checkout path, not its basename. Keeping the database outside the repository
+prevents a checkout-controlled leaf from redirecting the SQLite open. Local
+non-container runs use `${LUNA_STUDIO_STATE_ROOT}` when set, otherwise the
+per-user XDG state directory.
+
+Compose runs Luna as the required numeric `HOST_UID:HOST_GID`. The one-shot
+state initializer changes ownership only on the named-volume root, without a
+recursive `chown`; bind-mounted `.runs/`, `.luna/studio/`, auth, source, and
+repository directories are never re-owned by Compose. They must exist and be
+writable by that host identity before startup. A read-only preflight verifies
+that `.runs/` and `.luna/studio/` are owned by `HOST_UID` with mode `0700` and
+fails instead of repairing them as root. The webhook server and worker keep
+their existing read-only `dist/` and `config/` mounts.
 
 The Compose setup mounts `${LUNA_AUTH_ROOT:-./.luna/auth}` at
 `/app/.luna/auth` and `${LUNA_REPOSITORIES_ROOT:-./repositories}` at
 `/repositories`. Configure repository paths in `config/repositories.yaml` with
 container paths such as `/repositories/repo`. Compose exposes
 `/app/.luna/auth/git/config` as Git's global config, so commits made by the
-worker use the same identity file as local CLI runs.
+worker use the same identity file as local CLI runs. Those mounts are also
+available to the Studio process so an explicitly confirmed real Launch can use
+the same native model/provider/repository configuration. The Luna checkout's
+`.git` directory is separately mounted read-only into Studio for history and
+restore-as-draft; the Studio cannot update refs or create commits there. Docker
+startup explicitly rejects a linked Git worktree whose `.git` is a gitfile,
+because its absolute host gitdir is not valid inside `/app`; use a full clone for
+the Compose deployment.
+The tracked `repositories/.gitkeep` only guarantees that this bind source
+exists in a fresh clone; repository contents remain ignored by Git and excluded
+from the image build context.
 
 For a machine-local repository smoke test, keep the committed
 `config/repositories.yaml` generic and put real repository wiring in ignored
@@ -225,6 +277,9 @@ services:
     volumes:
       - ./.luna/local-config/repositories.yaml:/app/config/repositories.yaml:ro
   webhook-worker:
+    volumes:
+      - ./.luna/local-config/repositories.yaml:/app/config/repositories.yaml:ro
+  studio:
     volumes:
       - ./.luna/local-config/repositories.yaml:/app/config/repositories.yaml:ro
 ```

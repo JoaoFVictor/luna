@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalJson } from "../../../core/workflow/definition-digests.js";
+import { studioSecretDigest } from "../confirmations/digests.js";
 
 export function studioApplyBytesDigest(content: Uint8Array): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
@@ -12,6 +13,5 @@ export function studioApplyValueDigest(value: unknown): string {
 }
 
 export function studioApplySecretDigest(value: string): string {
-  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
+  return studioSecretDigest(value);
 }
-

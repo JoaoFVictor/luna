@@ -2,6 +2,7 @@ import type {
   StudioChangeSet,
   StudioDraftListPage
 } from "../../contracts/drafts.js";
+import type { StudioResourceRef } from "../../contracts/paths.js";
 
 export type StudioDraftBlob = {
   readonly digest: string;
@@ -56,6 +57,8 @@ export type StudioDraftPersistencePort = StudioDraftRepositoryPort &
 export type StudioDraftListInput = {
   readonly cursor?: string;
   readonly limit?: number;
+  /** Internal storage filter. Implementations must not expose skipped IDs in cursors or diagnostics. */
+  readonly primaryResourceKinds?: readonly StudioResourceRef["kind"][];
 };
 
 export type StudioDraftLockRelease = () => Promise<void> | void;

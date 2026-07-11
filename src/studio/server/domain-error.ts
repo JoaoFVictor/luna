@@ -5,11 +5,29 @@ import {
   RunStoreError,
   type RunStoreErrorCode
 } from "../application/runs/errors.js";
+import { studioDraftAuthoringHttpError } from "./draft-authoring-errors.js";
+import {
+  ARTIFACT_READER_ERROR_CODES,
+  ArtifactReaderError,
+  type ArtifactReaderErrorCode
+} from "../application/artifacts/errors.js";
+import {
+  RUN_LOG_READER_ERROR_CODES,
+  RunLogReaderError,
+  type RunLogReaderErrorCode
+} from "../application/runs/log-ports.js";
+import { studioRunLaunchHttpError } from "./run-launch-errors.js";
+import { studioConfigurationHttpError } from "./configuration-errors.js";
+import { studioResourceHistoryHttpError } from "./resource-history-errors.js";
+import { studioAgentTestHttpError } from "./agent-test-errors.js";
 
 export type StudioDomainHttpError = {
   readonly statusCode: number;
   readonly code: string;
   readonly message: string;
+  readonly details?: Readonly<
+    Record<string, string | number | boolean | null>
+  >;
 };
 
 const PREVIEW_ERRORS: Readonly<
@@ -183,15 +201,71 @@ const RUN_ERRORS: Readonly<Record<RunStoreErrorCode, StudioDomainHttpError>> = {
   }
 };
 
+const ARTIFACT_ERRORS: Readonly<
+  Record<ArtifactReaderErrorCode, StudioDomainHttpError>
+> = {
+  artifact_backend_unsupported: { statusCode: 409, code: "artifact_backend_unsupported", message: "The artifact backend is not readable by Studio" },
+  artifact_catalog_corrupt: { statusCode: 500, code: "artifact_catalog_corrupt", message: "Artifact metadata is unavailable" },
+  artifact_content_changed: { statusCode: 409, code: "artifact_content_changed", message: "The artifact changed while it was being read" },
+  artifact_handle_invalid: { statusCode: 400, code: "artifact_handle_invalid", message: "The artifact handle is invalid" },
+  artifact_input_invalid: { statusCode: 400, code: "artifact_input_invalid", message: "The artifact request is invalid" },
+  artifact_io_failed: { statusCode: 500, code: "artifact_io_failed", message: "The artifact could not be read" },
+  artifact_not_found: { statusCode: 404, code: "artifact_not_found", message: "The artifact was not found" },
+  artifact_security_violation: { statusCode: 403, code: "artifact_security_violation", message: "The artifact cannot be accessed safely" },
+  artifact_too_large: { statusCode: 413, code: "artifact_too_large", message: "The artifact exceeds the configured limit" },
+  artifact_unavailable: { statusCode: 409, code: "artifact_unavailable", message: "The artifact is not available" }
+};
+
+const RUN_LOG_ERRORS: Readonly<
+  Record<RunLogReaderErrorCode, StudioDomainHttpError>
+> = {
+  run_log_changed: { statusCode: 409, code: "run_log_changed", message: "The run log changed during pagination" },
+  run_log_cursor_expired: { statusCode: 410, code: "run_log_cursor_expired", message: "The run log cursor has expired" },
+  run_log_cursor_invalid: { statusCode: 400, code: "run_log_cursor_invalid", message: "The run log cursor is invalid" },
+  run_log_cursor_tampered: { statusCode: 400, code: "run_log_cursor_tampered", message: "The run log cursor is invalid" },
+  run_log_input_invalid: { statusCode: 400, code: "run_log_input_invalid", message: "The run log request is invalid" },
+  run_log_io_failed: { statusCode: 500, code: "run_log_io_failed", message: "The run log could not be read" },
+  run_log_line_too_large: { statusCode: 413, code: "run_log_line_too_large", message: "A run log entry exceeds the configured limit" },
+  run_log_security_violation: { statusCode: 403, code: "run_log_security_violation", message: "The run log cannot be accessed safely" },
+  run_log_snapshot_too_large: { statusCode: 413, code: "run_log_snapshot_too_large", message: "The run log exceeds the configured limit" },
+  run_log_store_corrupt: { statusCode: 500, code: "run_log_store_corrupt", message: "The run log is unavailable" }
+};
+
 // Compile-time exhaustiveness is carried by RUN_ERRORS; this runtime guard
 // prevents a future code from being silently omitted by generated adapters.
 if (Object.keys(RUN_ERRORS).length !== RUN_STORE_ERROR_CODES.length) {
   throw new Error("Studio run HTTP error mapping is incomplete");
 }
+if (Object.keys(ARTIFACT_ERRORS).length !== ARTIFACT_READER_ERROR_CODES.length) {
+  throw new Error("Studio artifact HTTP error mapping is incomplete");
+}
+if (Object.keys(RUN_LOG_ERRORS).length !== RUN_LOG_READER_ERROR_CODES.length) {
+  throw new Error("Studio run log HTTP error mapping is incomplete");
+}
 
 export function studioDomainHttpError(
   error: unknown
 ): StudioDomainHttpError | undefined {
+  const resourceHistory = studioResourceHistoryHttpError(error);
+  if (resourceHistory !== undefined) {
+    return resourceHistory;
+  }
+  const configuration = studioConfigurationHttpError(error);
+  if (configuration !== undefined) {
+    return configuration;
+  }
+  const runLaunch = studioRunLaunchHttpError(error);
+  if (runLaunch !== undefined) {
+    return runLaunch;
+  }
+  const authoring = studioDraftAuthoringHttpError(error);
+  if (authoring !== undefined) {
+    return authoring;
+  }
+  const agentTest = studioAgentTestHttpError(error);
+  if (agentTest !== undefined) {
+    return agentTest;
+  }
   if (error instanceof StudioAdapterPreviewError) {
     return PREVIEW_ERRORS[error.code];
   }
@@ -200,6 +274,12 @@ export function studioDomainHttpError(
   }
   if (error instanceof RunStoreError) {
     return RUN_ERRORS[error.code];
+  }
+  if (error instanceof ArtifactReaderError) {
+    return ARTIFACT_ERRORS[error.code];
+  }
+  if (error instanceof RunLogReaderError) {
+    return RUN_LOG_ERRORS[error.code];
   }
   return undefined;
 }

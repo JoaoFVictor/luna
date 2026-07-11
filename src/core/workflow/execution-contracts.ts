@@ -3,6 +3,7 @@ import type {
   AgentRuntimePort,
   AgentRuntimeRequirement
 } from "../agent-runtime/contracts.js";
+import type { ArtifactSemanticType } from "../artifacts/semantic-type.js";
 import type { BuiltInStepMetadata } from "../built-ins/types.js";
 import type { ModelProfile } from "../config/schemas.js";
 import type { WorkflowObservability } from "../observability/workflow-observability.js";
@@ -16,6 +17,10 @@ import type { CompiledWorkflow, CompiledWorkflowNode } from "./compiler.js";
 import type { WorkflowDefinition } from "./definition-types.js";
 import type { WorkflowLockManager } from "./runner-locks.js";
 import type { WorkflowRuntimeContext } from "./runtime-context.js";
+import type {
+  WorkflowLifecycleProjectionErrorObserver,
+  WorkflowNodeLifecycleObserver
+} from "./events.js";
 
 export type WorkflowArtifactRef = {
   readonly id: string;
@@ -30,16 +35,9 @@ export type WorkflowArtifactPublisherPort = {
     readonly path: string;
     readonly format: "json" | "markdown";
     readonly value: unknown;
+    readonly semantic_type?: ArtifactSemanticType;
     readonly overwrite_policy: ArtifactOverwritePolicy;
   }): Promise<WorkflowArtifactRef>;
-};
-
-export type WorkflowWorkspaceLifecyclePort = {
-  complete(input: {
-    readonly status: "succeeded" | "failed";
-    readonly state: LunaRuntimeState;
-    readonly runtimeContext: WorkflowRuntimeContext;
-  }): Promise<unknown | undefined> | unknown | undefined;
 };
 
 export type WorkflowBuiltInExecutor = (input: {
@@ -85,6 +83,7 @@ export type RunWorkflowInput = {
   readonly invocation: JsonValue;
   readonly config: JsonValue;
   readonly run: RunHandle;
+  readonly signal?: AbortSignal;
   readonly runtimeContext?: WorkflowRuntimeContext;
   readonly backends: RuntimeBackends;
   readonly builtIns: Record<string, WorkflowBuiltInExecutor>;
@@ -95,12 +94,32 @@ export type RunWorkflowInput = {
   readonly agentInputs?: WorkflowAgentInputMap;
   readonly artifactPublisher?: WorkflowArtifactPublisherPort;
   readonly observability?: WorkflowObservability;
-  readonly workspaceLifecycle?: WorkflowWorkspaceLifecyclePort;
+  /**
+   * Internal durability barrier invoked after final output validation and
+   * before the runtime succeeded checkpoint.
+   * When present, the control-plane terminal intent is the first success
+   * authority and resolves before the runtime may continue.
+   */
+  readonly onSucceededState?: (state: LunaRuntimeState) => Promise<void>;
+  /**
+   * Internal, best-effort observation of an exact failed runtime state.
+   * The observer is deliberately synchronous and cannot change runtime failure
+   * semantics.
+   */
+  readonly onFailedState?: (state: LunaRuntimeState) => void;
+  /**
+   * Internal, ordered projection of node lifecycle events at their production
+   * boundary. Projection failures are observational and must never change node
+   * outcome or retry semantics.
+   */
+  readonly onLifecycleEvent?: WorkflowNodeLifecycleObserver;
+  readonly onLifecycleProjectionError?: WorkflowLifecycleProjectionErrorObserver;
 };
 
 export type ResumeWorkflowInput = {
   readonly compiled: CompiledWorkflow;
   readonly workflow: WorkflowDefinition;
+  readonly signal?: RunWorkflowInput["signal"];
   readonly runtimeContext?: WorkflowRuntimeContext;
   readonly backends: RuntimeBackends;
   readonly builtIns: Record<string, WorkflowBuiltInExecutor>;
@@ -111,7 +130,10 @@ export type ResumeWorkflowInput = {
   readonly agentInputs?: WorkflowAgentInputMap;
   readonly artifactPublisher?: WorkflowArtifactPublisherPort;
   readonly observability?: WorkflowObservability;
-  readonly workspaceLifecycle?: WorkflowWorkspaceLifecyclePort;
+  readonly onSucceededState?: RunWorkflowInput["onSucceededState"];
+  readonly onFailedState?: RunWorkflowInput["onFailedState"];
+  readonly onLifecycleEvent?: RunWorkflowInput["onLifecycleEvent"];
+  readonly onLifecycleProjectionError?: RunWorkflowInput["onLifecycleProjectionError"];
   readonly thread_id: string;
   readonly checkpoint_id: string;
   readonly interrupt_id: string;

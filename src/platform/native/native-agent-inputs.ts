@@ -1,34 +1,34 @@
-import path from "node:path";
 import { loadAgentDefinition } from "../../capabilities/agents/agent-loader.js";
 import {
   gatedAgentGateKey,
   gatedAgentWorkerKey
 } from "../../capabilities/quality-gates/gated-agent-loop-keys.js";
-import { loadYamlFile } from "../../core/config/loader.js";
 import { loadMcpConfig } from "../../core/config/mcp.js";
-import { resolveModelProfiles } from "../../core/config/models.js";
 import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
-import {
-  ModelsConfigSchema,
-  type RepositoryConfig
-} from "../../core/config/schemas.js";
+import type { RepositoryConfig } from "../../core/config/schemas.js";
 import { lunaToolCatalog } from "../../capabilities/repository/tool-catalog.js";
 import { resolveToolCatalog } from "../../core/tools/resolved-catalog.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import type { WorkflowAgentInputMap } from "../../core/workflow/execution-contracts.js";
 import { nativeLunaPlatformRegistrations } from "./native-platform-registrations.js";
+import {
+  loadNativeModelProfiles,
+  requireNativeAgentModelProfile
+} from "./native-agent-model-profiles.js";
 
 export async function buildNativeWorkflowAgentInputs({
   workflow,
   agentsRoot,
   repository,
   configRoot,
+  signal,
   capabilityRegistry = nativeLunaPlatformRegistrations.capabilityRegistry
 }: {
   readonly workflow: WorkflowDefinition;
   readonly agentsRoot: string;
   readonly repository?: RepositoryConfig;
   readonly configRoot: string;
+  readonly signal?: AbortSignal;
   readonly capabilityRegistry?: CapabilityRegistry;
 }): Promise<WorkflowAgentInputMap> {
   const specs = workflowAgentSpecs(workflow);
@@ -36,21 +36,14 @@ export async function buildNativeWorkflowAgentInputs({
     return {};
   }
 
-  const models = resolveModelProfiles(
-    await loadYamlFile(path.join(configRoot, "models.yaml"), ModelsConfigSchema)
-  );
+  const models = await loadNativeModelProfiles(configRoot);
   const mcpConfig = await loadMcpConfig(configRoot);
   const entries = await Promise.all(
     specs.map(async ({ key, agentId }) => {
       const agent = await loadAgentDefinition(agentsRoot, agentId, {
         capabilityRegistry
       });
-      const modelProfile = models[agent.model_profile];
-      if (modelProfile === undefined) {
-        throw new Error(
-          `Agent ${agent.id} references unknown model profile ${agent.model_profile}`
-        );
-      }
+      const modelProfile = requireNativeAgentModelProfile(agent, models);
 
       return [
         key,
@@ -85,7 +78,8 @@ export async function buildNativeWorkflowAgentInputs({
           },
           runtime_requirements: agent.runtime_requirements ?? [],
           output_schema: agent.outputSchema,
-          cwd: repository?.path
+          cwd: repository?.path,
+          ...(signal === undefined ? {} : { signal })
         }
       ] as const;
     })

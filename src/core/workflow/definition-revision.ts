@@ -5,6 +5,7 @@ import {
   type DefinitionDigestResolver
 } from "./definition-digests.js";
 import type { ParsedWorkflowNode } from "./definition-types.js";
+import { collectWorkflowAgentReferences } from "./definition-references.js";
 
 export const LUNA_WORKFLOW_COMPILER_SCHEMA_VERSION = "2026-06-25.task-3";
 export const LUNA_WORKFLOW_RUNTIME_SCHEMA_VERSION = "2026-06-25.task-3";
@@ -13,26 +14,11 @@ export async function collectExternalDefinitionDigests(
   nodes: readonly ParsedWorkflowNode[],
   resolver: DefinitionDigestResolver | undefined
 ): Promise<Record<string, string>> {
-  const references = new Set<string>();
-  for (const node of nodes) {
-    if (node.type === "agent") {
-      references.add(`agents/${node.agent}/agent.yaml`);
-    }
-    if (node.type === "pattern") {
-      if (node.worker) {
-        references.add(`agents/${node.worker}/agent.yaml`);
-      }
-      for (const gate of node.gates ?? []) {
-        if ("agent" in gate && gate.agent) {
-          references.add(`agents/${gate.agent}/agent.yaml`);
-        }
-        const reviewAgent = (gate.input as { review_agent?: unknown } | undefined)?.review_agent;
-        if (typeof reviewAgent === "string") {
-          references.add(`agents/${reviewAgent}/agent.yaml`);
-        }
-      }
-    }
-  }
+  const references = new Set(
+    collectWorkflowAgentReferences(nodes).map(
+      ({ agentId }) => `agents/${agentId}/agent.yaml`
+    )
+  );
 
   const result: Record<string, string> = {};
   for (const reference of [...references].sort()) {

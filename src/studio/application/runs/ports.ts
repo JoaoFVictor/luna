@@ -16,6 +16,9 @@ import {
 } from "../../contracts/runs.js";
 import { StudioDigestSchema } from "../../contracts/digests.js";
 import { StudioJsonValueSchema } from "../../contracts/json.js";
+import { StudioRunPlanIdSchema } from "../../contracts/run-launch-primitives.js";
+import { StudioRunInputProvenanceSchema } from "../../contracts/run-provenance.js";
+import { RunGraphOutcomeProofSchema } from "./graph-snapshot.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const PageLimitSchema = z.number().int().safe().min(1).max(200);
@@ -34,6 +37,8 @@ export const PreallocateRunInputSchema = z
     transition_id: RunOpaqueIdSchema,
     event_id: RunOpaqueIdSchema,
     run_id: RunOpaqueIdSchema,
+    accepted_plan_id: StudioRunPlanIdSchema.optional(),
+    input_provenance: StudioRunInputProvenanceSchema.optional(),
     correlation_id: RunOpaqueIdSchema.optional(),
     job_id: RunOpaqueIdSchema.optional(),
     workflow_id: WorkflowIdSchema,
@@ -45,7 +50,19 @@ export const PreallocateRunInputSchema = z
     graph_snapshot_handle: RunGraphSnapshotHandleSchema.optional(),
     side_effects: z.array(StudioJsonValueSchema).max(10_000).default([])
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      (input.accepted_plan_id === undefined) !==
+      (input.input_provenance === undefined)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["input_provenance"],
+        message: "Accepted plan and input provenance must appear together"
+      });
+    }
+  });
 export type PreallocateRunInput = z.input<typeof PreallocateRunInputSchema>;
 
 const DispatchPreparingTransitionSchema = z
@@ -60,6 +77,14 @@ const DispatchStartedTransitionSchema = z
     kind: z.literal("dispatch_started"),
     owner_id: RunOpaqueIdSchema,
     active_node_ids: z.array(z.string().trim().min(1).max(256)).max(10_000).default([])
+  })
+  .strict();
+
+const DispatchRecoveryClaimTransitionSchema = z
+  .object({
+    kind: z.literal("dispatch_recovery_claim"),
+    previous_owner_id: RunOpaqueIdSchema,
+    owner_id: RunOpaqueIdSchema
   })
   .strict();
 
@@ -88,6 +113,36 @@ const ProgressTransitionSchema = z
   })
   .strict();
 
+const NodeLifecycleEventIdentitySchema = z
+  .object({
+    type: z.enum(["node.started", "node.succeeded", "node.failed"]),
+    node_id: z.string().trim().min(1).max(256),
+    attempt: z.number().int().safe().positive()
+  })
+  .strict();
+
+const NodeLifecycleTransitionSchema = z
+  .object({
+    kind: z.literal("node_lifecycle"),
+    owner_id: RunOpaqueIdSchema,
+    event: NodeLifecycleEventIdentitySchema.extend({
+      observed_at: TimestampSchema,
+      artifact_count: z.number().int().safe().nonnegative(),
+      interrupt_count: z.number().int().safe().nonnegative()
+    }).strict()
+  })
+  .strict();
+
+const LifecycleProjectionDegradedTransitionSchema = z
+  .object({
+    kind: z.literal("lifecycle_projection_degraded"),
+    owner_id: RunOpaqueIdSchema,
+    failed_event: NodeLifecycleEventIdentitySchema.extend({
+      observed_at: TimestampSchema
+    }).strict()
+  })
+  .strict();
+
 const RuntimeStatusTransitionSchema = z
   .object({
     kind: z.literal("runtime_status"),
@@ -97,16 +152,21 @@ const RuntimeStatusTransitionSchema = z
     failed_node_id: z.string().trim().min(1).max(256).optional(),
     failure: RunFailureSchema.optional(),
     artifact_count: z.number().int().safe().nonnegative().optional(),
-    interrupt_count: z.number().int().safe().nonnegative().optional()
+    interrupt_count: z.number().int().safe().nonnegative().optional(),
+    completeness: z.enum(["complete", "partial"]).optional(),
+    outcome_proof: RunGraphOutcomeProofSchema.optional()
   })
   .strict();
 
 export const RunTransitionSchema = z.discriminatedUnion("kind", [
   DispatchPreparingTransitionSchema,
   DispatchStartedTransitionSchema,
+  DispatchRecoveryClaimTransitionSchema,
   DispatchRejectedTransitionSchema,
   HeartbeatTransitionSchema,
   ProgressTransitionSchema,
+  NodeLifecycleTransitionSchema,
+  LifecycleProjectionDegradedTransitionSchema,
   RuntimeStatusTransitionSchema
 ]);
 export type RunTransition = z.infer<typeof RunTransitionSchema>;
@@ -153,6 +213,7 @@ export const RunEventListQuerySchema = z
       .max(64)
       .default([]),
     limit: PageLimitSchema.default(50),
+    after_sequence: z.number().int().safe().nonnegative().optional(),
     cursor: z.string().min(1).max(4_096).optional()
   })
   .strict()
@@ -162,6 +223,20 @@ export const RunEventListQuerySchema = z
         code: z.ZodIssueCode.custom,
         path: ["event_types"],
         message: "Event type filters must be unique"
+      });
+    }
+    if (query.cursor !== undefined && query.after_sequence !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["after_sequence"],
+        message: "Event cursor and after_sequence are mutually exclusive"
+      });
+    }
+    if (query.after_sequence !== undefined && query.direction !== "asc") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["direction"],
+        message: "after_sequence requires ascending event order"
       });
     }
   });
@@ -175,7 +250,8 @@ export const RunCatalogFiltersSchema = z
     created_from: TimestampSchema.optional(),
     created_to: TimestampSchema.optional(),
     correlation_id: RunOpaqueIdSchema.optional(),
-    job_id: RunOpaqueIdSchema.optional()
+    job_id: RunOpaqueIdSchema.optional(),
+    accepted_plan_id: StudioRunPlanIdSchema.optional()
   })
   .strict()
   .superRefine((filters, context) => {
@@ -230,6 +306,11 @@ export type RunOrphanCandidate = {
   readonly stale_since: string;
 };
 
+export type RunOrphanCursor = {
+  readonly stale_since: string;
+  readonly run_id: string;
+};
+
 export interface RunLedgerPort {
   preallocate(input: PreallocateRunInput): Promise<RunMutationResult>;
   appendTransition(input: AppendRunTransitionInput): Promise<RunMutationResult>;
@@ -237,6 +318,7 @@ export interface RunLedgerPort {
   listOrphanCandidates(input: {
     stale_before: string;
     limit?: number;
+    cursor?: RunOrphanCursor;
   }): Promise<readonly RunOrphanCandidate[]>;
 }
 
@@ -258,8 +340,11 @@ export interface RunCatalogProjectorPort {
 export const HistoricalRunImportSchema = z
   .object({
     record: RunRecordSchema.refine(
-      (record) => record.completeness !== "complete",
-      "Historical imports must be partial or legacy"
+      (record) =>
+        record.dispatch_status === "historical_unknown" &&
+        record.lifecycle_projection === "unknown" &&
+        record.completeness !== "complete",
+      "Historical imports require an unknown immutable lifecycle"
     ),
     transition_id: RunOpaqueIdSchema,
     event_id: RunOpaqueIdSchema

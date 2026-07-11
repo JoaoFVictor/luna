@@ -4,6 +4,7 @@ export type WorkflowDefinitionErrorCode =
   | "workflow_schema_missing"
   | "workflow_id_mismatch"
   | "workflow_node_duplicate"
+  | "workflow_node_id_reserved"
   | "workflow_capability_missing"
   | "workflow_capability_unknown"
   | "workflow_capability_id_unqualified"

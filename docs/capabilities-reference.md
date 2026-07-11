@@ -18,10 +18,12 @@ The registry validates:
 - declared dependencies.
 - dependency cycles.
 - duplicate public registration ids.
+- duplicate intrinsic workflow-node owners.
 - references to built-ins, patterns, gates, tools, policies, ports, schemas,
   and artifact publishers.
 - re-export references.
 - write side-effect policy metadata.
+- validated side-effect categories used by Studio effect planning.
 - duplicate side-effect operation ids.
 
 Workflow YAML declares unqualified capability ids:
@@ -36,6 +38,11 @@ Nodes reference qualified registrations:
 ```yaml
 uses: reports.final_report
 ```
+
+Agent nodes select an agent definition rather than a capability registration.
+Their execution owner is therefore declared by the capability manifest with
+`workflow_node_types: ["agent"]`; validators, the compiler, and Studio catalog
+all resolve the owner through the registry instead of assuming a capability id.
 
 ## Official Capabilities
 
@@ -187,6 +194,11 @@ Human gate:
 Quality gates do not create runtime interrupts. `hitl.approval` creates a
 required interrupt and must be resumed with a decision.
 
+`quality-gates.agent_review` accepts an optional collected `input.context`.
+Context-dependent reviewers require the same explicit collector, dependency,
+and exact `$.steps.<collector>` binding as direct agent and pattern-worker
+participants.
+
 ## Policies
 
 Side-effect policies:
@@ -202,6 +214,13 @@ Side-effect policies:
 
 Workflow nodes that use side-effecting built-ins must declare the matching
 policy with `operation_id`.
+
+Policy registrations may also declare `side_effect_category`. The supported
+manifest values are `provider_read`, `local_process`, `repository_write`, and
+`external_write`. Studio projects this metadata into launch plans; capability ids
+and prefixes never imply a category. A declared category requires compatible
+read/write side-effect metadata, and registry validation rejects inconsistent
+manifests.
 
 Examples:
 

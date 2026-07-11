@@ -11,13 +11,13 @@ import { WorkflowDefinitionError } from "./definition-errors.js";
 import type { WorkflowDefinitionErrorCode } from "./definition-errors.js";
 import {
   assertWorkflowDocument,
-  assertObject,
   normalizeExecution,
   parseWorkflowYaml,
   readCapabilities,
   readGraph,
   requireString
 } from "./definition-schema.js";
+import { readWorkflowConfigReference } from "./definition-references.js";
 import { defaultWorkflowObservabilityConfig } from "./definition-types.js";
 import {
   collectExternalDefinitionDigests,
@@ -193,42 +193,14 @@ async function readRuntimeConfig(
   directory: string,
   value: unknown
 ): Promise<WorkflowDefinition["config"] | undefined> {
-  if (value === undefined) {
+  const reference = readWorkflowConfigReference(value);
+  if (reference === undefined) {
     return undefined;
   }
-  const raw = assertObject(value, "$.config");
-  for (const key of Object.keys(raw)) {
-    if (key !== "file" && key !== "schema") {
-      throw new WorkflowDefinitionError(
-        "workflow_unknown_field",
-        `Unknown workflow field ${key} at $.config.`,
-        { path: "$.config" }
-      );
-    }
-  }
-  const file = requireString(raw.file, "$.config.file");
-  const schema = requireString(raw.schema, "$.config.schema");
-  assertSafeConfigFilePath(file);
-
   return {
-    file,
-    schema,
-    schema_content: await readJsonSchema(directory, schema)
+    ...reference,
+    schema_content: await readJsonSchema(directory, reference.schema)
   };
-}
-
-function assertSafeConfigFilePath(relativePath: string): void {
-  if (
-    relativePath.trim() === "" ||
-    path.isAbsolute(relativePath) ||
-    relativePath.split(/[\\/]/).includes("..")
-  ) {
-    throw new WorkflowDefinitionError(
-      "workflow_path_escape",
-      `Workflow config file path escapes config directory: ${relativePath}`,
-      { path: "$.config.file" }
-    );
-  }
 }
 
 async function readJsonSchema(

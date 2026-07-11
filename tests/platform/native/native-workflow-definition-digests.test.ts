@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
 import {
   LUNA_RUNTIME_STATE_SCHEMA_VERSION,
@@ -12,6 +12,7 @@ import type {
   RunWorkflowInput,
   WorkflowRunResult
 } from "../../../src/core/workflow/execution-contracts.js";
+import type { CompiledWorkflow } from "../../../src/core/workflow/compiler.js";
 import type { WorkflowRuntimeFactory } from "../../../src/core/workflow/runner-port.js";
 import {
   resumeNativeWorkflowTarget,
@@ -47,8 +48,8 @@ async function writeProject(): Promise<{
         "workspace:",
         "  strategy: git_worktree",
         "  root: .runs/workspaces",
-        "  preserve_on_success: false",
-        "  preserve_on_failure: false",
+        "  preserve_on_success: true",
+        "  preserve_on_failure: true",
         "artifacts:",
         "  root: .runs",
         "workflow_runtime:",
@@ -167,6 +168,7 @@ describe("native workflow agent definition digests", () => {
     const { projectRoot, configRoot } = await writeProject();
     let runInput: RunWorkflowInput | undefined;
     let resumeInput: ResumeWorkflowInput | undefined;
+    let compiledAtDurabilityBarrier: CompiledWorkflow | undefined;
     const workflowRuntimeFactory: WorkflowRuntimeFactory<
       RunWorkflowInput,
       ResumeWorkflowInput,
@@ -205,13 +207,23 @@ describe("native workflow agent definition digests", () => {
     const target = { type: "workflow" as const, id: "agent-run" };
 
     await runNativeWorkflowTarget(
-      { projectRoot, configRoot, invocation, target },
+      {
+        projectRoot,
+        configRoot,
+        invocation,
+        target,
+        onCompiledWorkflow: async (compiled) => {
+          expect(runInput).toBeUndefined();
+          compiledAtDurabilityBarrier = compiled;
+        }
+      },
       { platform }
     );
     if (runInput === undefined) {
       throw new Error("run input was not captured");
     }
     const reference = "agents/reviewer/agent.yaml";
+    expect(compiledAtDurabilityBarrier).toBe(runInput.compiled);
     const runRevision = runInput.workflow.external_definition_digests[reference];
     expect(runRevision).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(runRevision).not.toBe("sha256:unresolved");
@@ -249,5 +261,107 @@ describe("native workflow agent definition digests", () => {
     expect(
       Object.values(resumeInput?.workflow.external_definition_digests ?? {})
     ).not.toContain("sha256:unresolved");
+  });
+
+  it("forwards resume terminal controls and cancellation", async () => {
+    const { projectRoot, configRoot } = await writeProject();
+
+    let runInput: RunWorkflowInput | undefined;
+    let resumeInput: ResumeWorkflowInput | undefined;
+    const workflowRuntimeFactory: WorkflowRuntimeFactory<
+      RunWorkflowInput,
+      ResumeWorkflowInput,
+      WorkflowRunResult
+    > = {
+      id: "capture",
+      create: () => ({
+        async run(input) {
+          runInput = input;
+          return successfulResult(input);
+        },
+        async resume(input) {
+          resumeInput = input;
+          if (runInput === undefined) {
+            throw new Error("run input was not captured");
+          }
+          const baseResult = successfulResult(runInput);
+          const result: WorkflowRunResult = {
+            ...baseResult,
+            state: baseResult.state
+          };
+          await input.onSucceededState?.(result.state);
+          return result;
+        }
+      })
+    };
+    const platform: NativeLunaPlatformRegistrations = {
+      ...nativeLunaPlatformRegistrations,
+      workflowRuntimeFactories: { capture: workflowRuntimeFactory },
+      agentRuntimeFactories: {
+        "capture-agent": {
+          id: "capture-agent",
+          create: captureAgentRuntime
+        }
+      }
+    };
+    const invocation = {
+      version: "2026-06" as const,
+      source: "test",
+      event: "agent_run"
+    };
+    const target = { type: "workflow" as const, id: "agent-run" };
+
+    await runNativeWorkflowTarget(
+      { projectRoot, configRoot, invocation, target },
+      { platform }
+    );
+    if (runInput === undefined) {
+      throw new Error("run input was not captured");
+    }
+    await runInput.backends.checkpoints.save({
+      thread_id: "thread-controls",
+      checkpoint_id: "checkpoint-controls",
+      state_schema_version: LUNA_RUNTIME_STATE_SCHEMA_VERSION,
+      state: { state_schema_version: LUNA_RUNTIME_STATE_SCHEMA_VERSION },
+      metadata: {
+        resume_context: {
+          invocation,
+          config: {},
+          run: runInput.run
+        }
+      }
+    });
+
+    const controller = new AbortController();
+    const onSucceededState = vi.fn(async () => undefined);
+    const onFailedState = vi.fn();
+    const onLifecycleEvent = vi.fn(async () => undefined);
+    const onLifecycleProjectionError = vi.fn();
+    await resumeNativeWorkflowTarget(
+      {
+        projectRoot,
+        configRoot,
+        target,
+        thread_id: "thread-controls",
+        checkpoint_id: "checkpoint-controls",
+        interrupt_id: "interrupt-controls",
+        decision: { approved: true },
+        signal: controller.signal,
+        onSucceededState,
+        onFailedState,
+        onLifecycleEvent,
+        onLifecycleProjectionError
+      },
+      { platform }
+    );
+
+    expect(onSucceededState).toHaveBeenCalledOnce();
+    expect(resumeInput?.signal).toBe(controller.signal);
+    expect(resumeInput?.onSucceededState).toBe(onSucceededState);
+    expect(resumeInput?.onFailedState).toBe(onFailedState);
+    expect(resumeInput?.onLifecycleEvent).toBe(onLifecycleEvent);
+    expect(resumeInput?.onLifecycleProjectionError).toBe(
+      onLifecycleProjectionError
+    );
   });
 });

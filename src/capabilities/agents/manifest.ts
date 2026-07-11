@@ -108,6 +108,7 @@ export const manifest = capabilityManifest({
   id: "agents",
   kind: "execution",
   version: "2026.06.25",
+  workflow_node_types: ["agent"],
   ports: {
     "agents.runtime": {
       id: "agents.runtime",

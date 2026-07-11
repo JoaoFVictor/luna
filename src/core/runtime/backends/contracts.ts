@@ -119,6 +119,8 @@ export type CheckpointStore = {
     checkpointNs: string,
     checkpointId: string
   ): Promise<CheckpointWriteRecord[]>;
+  /** Checks for any protocol write owned by one workflow execution thread. */
+  hasThreadWrites(threadId: string): Promise<boolean>;
   deleteThread(threadId: string): Promise<void>;
 };
 

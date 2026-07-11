@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source", "event", "target"],
+  "properties": {
+    "version": { "const": "2026-06" },
+    "source": { "const": "studio-e2e" },
+    "event": { "const": "manual" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "workflow" },
+        "id": { "const": "e2e-deterministic" }
+      }
+    },
+    "payload": { "type": "object", "additionalProperties": true }
+  }
+}

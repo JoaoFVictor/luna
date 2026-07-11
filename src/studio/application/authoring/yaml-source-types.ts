@@ -25,7 +25,8 @@ export type YamlSourceDiagnostic = {
     | "yaml_path_alias_unsupported"
     | "yaml_target_unsafe"
     | "yaml_value_invalid"
-    | "yaml_replacement_invalid";
+    | "yaml_replacement_invalid"
+    | "yaml_operation_invalid";
   readonly message: string;
   readonly path?: YamlValuePath;
   readonly range?: YamlSourceRange;
@@ -73,3 +74,45 @@ export type ReplaceYamlValueFailure = {
 export type ReplaceYamlValueResult =
   | ReplaceYamlValueSuccess
   | ReplaceYamlValueFailure;
+
+export type YamlSourceOperation =
+  | {
+      readonly op: "set";
+      readonly path: YamlValuePath;
+      readonly value: JsonValue;
+    }
+  | {
+      readonly op: "delete";
+      readonly path: YamlValuePath;
+    }
+  | {
+      readonly op: "sequence_insert";
+      readonly path: YamlValuePath;
+      readonly index?: number;
+      readonly value: JsonValue;
+    }
+  | {
+      readonly op: "sequence_remove";
+      readonly path: YamlValuePath;
+      readonly index: number;
+    };
+
+export type ApplyYamlSourceOperationsInput = {
+  readonly source: string;
+  readonly operations: readonly YamlSourceOperation[];
+};
+
+export type ApplyYamlSourceOperationsResult =
+  | {
+      readonly ok: true;
+      readonly changed: boolean;
+      readonly source: string;
+      readonly diagnostics: readonly YamlSourceDiagnostic[];
+    }
+  | {
+      readonly ok: false;
+      readonly changed: false;
+      readonly source: string;
+      readonly operationIndex: number;
+      readonly diagnostics: readonly YamlSourceDiagnostic[];
+    };

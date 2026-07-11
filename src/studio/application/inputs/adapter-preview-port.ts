@@ -37,6 +37,7 @@ export type StudioAdapterPreviewPort = {
 
 export type StudioAdapterPreviewRegistrationErrorCode =
   | "studio_adapter_preview_duplicate"
+  | "studio_adapter_preview_effect_mismatch"
   | "studio_adapter_preview_invalid_effects"
   | "studio_adapter_preview_invalid_timeout";
 
@@ -85,6 +86,20 @@ function validatedTimeout(timeoutMs: number): number {
   return parsed.data;
 }
 
+export function sameStudioAdapterEffects(
+  acknowledged: readonly StudioAdapterPreviewEffect[],
+  classified: readonly StudioAdapterPreviewEffect[]
+): boolean {
+  const acknowledgedSorted = [...acknowledged].sort();
+  const classifiedSorted = [...classified].sort();
+  return (
+    acknowledgedSorted.length === classifiedSorted.length &&
+    acknowledgedSorted.every(
+      (effect, index) => effect === classifiedSorted[index]
+    )
+  );
+}
+
 export function defineStudioAdapterPreviewPort(
   registry: RegisteredAdapterRegistry,
   registrations: readonly StudioAdapterPreviewRegistration[]
@@ -92,7 +107,7 @@ export function defineStudioAdapterPreviewPort(
   const previews = new Map<string, StudioAdapterPreviewer>();
 
   for (const registration of registrations) {
-    registry.require(registration.adapterId);
+    const adapter = registry.require(registration.adapterId);
     if (previews.has(registration.adapterId)) {
       throw new StudioAdapterPreviewRegistrationError(
         "studio_adapter_preview_duplicate",
@@ -100,13 +115,24 @@ export function defineStudioAdapterPreviewPort(
       );
     }
 
+    const effects = validatedEffects(
+      registration.adapterId,
+      registration.effects
+    );
+    if (
+      adapter.loadEffects === undefined ||
+      !sameStudioAdapterEffects(effects, adapter.loadEffects)
+    ) {
+      throw new StudioAdapterPreviewRegistrationError(
+        "studio_adapter_preview_effect_mismatch",
+        `Studio adapter preview ${registration.adapterId} must classify the registered adapter load exactly`
+      );
+    }
+
     previews.set(
       registration.adapterId,
       Object.freeze({
-        effects: validatedEffects(
-          registration.adapterId,
-          registration.effects
-        ),
+        effects,
         timeoutMs: validatedTimeout(registration.timeoutMs),
         preview: registration.preview
       })

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { assertJsonValue, type JsonValue } from "../json/value.js";
 import { SkillPathSchema } from "../skills/schemas.js";
+import { remoteUrlContainsCredentials } from "../security/url-credentials.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -37,7 +38,25 @@ export const RepositoryConfigSchema = z
     skills: z.array(SkillPathSchema).optional(),
     context: ContextConfigSchema.optional()
   })
-  .strict();
+  .strict()
+  .superRefine((repository, context) => {
+    if (remoteUrlContainsCredentials(repository.remote)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "repository remote must not embed credentials",
+        path: ["remote"]
+      });
+    }
+    repository.expected_remote_urls?.forEach((remote, index) => {
+      if (remoteUrlContainsCredentials(remote)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "expected remote URL must not embed credentials",
+          path: ["expected_remote_urls", index]
+        });
+      }
+    });
+  });
 export type RepositoryConfig = z.infer<typeof RepositoryConfigSchema>;
 
 export const RepositoriesConfigSchema = z
@@ -68,8 +87,8 @@ export const WorkspaceConfigSchema = z
   .object({
     strategy: z.literal("git_worktree"),
     root: NonEmptyStringSchema,
-    preserve_on_success: z.boolean(),
-    preserve_on_failure: z.boolean()
+    preserve_on_success: z.literal(true),
+    preserve_on_failure: z.literal(true)
   })
   .strict();
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;

@@ -8,6 +8,12 @@ implementations must follow.
 The Studio remains a projection over Luna's existing files, loaders, registries,
 compiler, and runtime. It is not a second workflow engine.
 
+The local loopback control plane and capability-session boundary described here
+are implemented. Remote identity, RBAC, durable actor audit, multi-user
+collaboration, and non-loopback exposure remain later-phase work. For the
+user-visible surface and its current limits, see the
+[Luna Studio operational guide](studio-guide.md).
+
 ## Decision Summary
 
 | ID | Decision | Status |
@@ -40,16 +46,20 @@ The browser application lives under `apps/studio/` and uses:
 
 The repository owns the generated shadcn component source. Initialization follows
 the official [shadcn Vite setup](https://ui.shadcn.com/docs/installation/vite),
-and the complete current registry is installed with the documented
+and the current registry was initially generated with the documented
 [`shadcn add --all`](https://ui.shadcn.com/docs/cli) command. `components.json`
-records the selected Base UI preset and aliases. Generated components are treated
-as normal source: they pass type, unused-code, accessibility, and thermonuclear
-review gates and may be simplified when a generated abstraction is not useful.
+records the selected Base UI preset and aliases. Generation is a discovery and
+scaffolding step, not a permanent dead-code exemption: after the Studio surfaces
+were composed, unreachable generated components and their exclusive dependencies
+were removed. `knip.json` starts at `src/main.tsx`, so retained `components/ui`
+files must remain reachable through normal application imports and pass the same
+unused-code gate as first-party modules.
 
 “All components” means all registry components available from the pinned shadcn
-CLI during the initial generation, including the current conversation primitives.
-The generated inventory is committed so future upstream additions are deliberate
-updates, not nondeterministic build-time downloads.
+CLI were evaluated during initial generation, including the current conversation
+primitives. Only the components the product actually uses are committed. Future
+upstream additions are deliberate source updates, never nondeterministic
+build-time downloads.
 
 React Flow was selected because its public contract includes keyboard-focusable
 nodes and edges, selection and movement by keyboard, ARIA descriptions, and live
@@ -58,7 +68,7 @@ the Studio acceptance criteria. See the
 [React Flow accessibility guide](https://reactflow.dev/learn/advanced-use/accessibility).
 
 The application is a client-side application, not an SSR application. Production
-assets are built into `dist/apps/studio/` and served by the Studio server. During
+assets are built into `apps/studio/dist/` and served by the Studio server. During
 development, Vite serves browser assets and proxies `/api/studio/v1` to the local
 server. This follows Vite's documented
 [backend integration](https://vite.dev/guide/backend-integration.html) model.
@@ -67,15 +77,19 @@ Frontend domain modules mirror user-facing concepts rather than backend folders:
 
 ```text
 apps/studio/src/
-  app/                 routing, shell, command palette
-  api/                 typed Control API client
-  workflows/           catalog, editor, canvas, inspector
-  agents/              catalog and editor
-  library/             registry projection
-  configuration/       safe configuration projections
-  runs/                catalog, detail, timeline, launch
-  shared/              design primitives and accessibility helpers
-  components/ui/       shadcn-owned component source
+  app/                  bootstrap, routing, session and editor state
+  api/                  typed Control API client split by domain
+  pages/                route-level compositions
+  features/workflows/   editor, graph, schemas, diff, apply and run projection
+  features/agents/      structured editor, Test Bench and resource authority
+  features/drafts/      local draft file sessions
+  features/configuration/ classified config and redacted posture
+  features/launch/      adapter/invocation input and plan-confirm-execute
+  features/runs/        graph, timeline, logs and semantic artifact views
+  features/history/     Git compare and restore-as-draft
+  components/           shell and shared page components
+  components/ui/        shadcn-owned component source
+  hooks/, lib/, test/    browser helpers and test setup
 ```
 
 No workflow or capability id may be hard-coded in a component. Schema-driven
@@ -90,11 +104,16 @@ provider payload implementations into generic application services.
 
 ```text
 src/studio/
-  server/              HTTP, local session, static assets, SSE
-  contracts/           request and response DTO schemas
-  application/         authoring and operation use cases
-  infrastructure/      filesystem, SQLite, hashing, journals
-  templates/           versioned draft generators
+  server/               composition, HTTP, security, static assets and routes
+  contracts/            request and response DTO schemas
+  application/          authoring, drafts, validation, apply, configuration,
+                        inputs, routing, launch, runs, history and sandbox use cases
+  adapters/filesystem/  private storage, locks, journals, graphs, logs and artifacts
+  adapters/git/         bounded resource history and comparison
+  adapters/memory/      local confirmation and plan-token stores
+  adapters/native/      Luna loaders, compiler, runtime and repository bridges
+  adapters/redaction/   safe text projection
+  adapters/sqlite/      durable run ledger, events and catalog
 ```
 
 The CLI gets one generic `studio` command. It does not get commands per workflow.
@@ -301,6 +320,13 @@ The authoritative validation snapshot is current source plus the complete change
 set overlay. Loaders and compiler run against that snapshot; drafts are never
 copied into active workflow or agent directories just to validate them.
 
+Authoring closure changes are lossless. If editing a canonical reference would
+remove an allowed file that still has a pending draft change, the whole mutation
+is rejected as a conflict before metadata or blobs are persisted. The response
+contains a deterministic, bounded list of affected logical paths. The operator
+must first restore, apply, or explicitly remove those edits; recalculating a
+closure never garbage-collects dirty content implicitly.
+
 ## LS-006: Apply Journal And Recovery
 
 Apply is a recoverable logical transaction, not a claim of portable filesystem
@@ -383,10 +409,13 @@ type, and an allowed `Origin`. All routes validate `Host`; Fastify documents tha
 host and forwarding metadata are untrusted and require explicit validation in
 security-sensitive decisions. CORS is closed and `trustProxy` stays disabled.
 
-The default bind is `127.0.0.1`. A non-loopback bind requires both an explicit CLI
-flag and a configured non-local identity provider; local capability mode is not
-accepted for remote exposure. The server emits a restrictive CSP, frame denial,
-MIME sniffing protection, referrer policy, and request/body limits.
+The default bind is `127.0.0.1`. Local container mode may use an explicit CLI flag
+for a wildcard transport bind only when a separate public authority remains an
+explicit loopback IP and the host port is published on loopback. Any non-loopback
+public authority requires a configured non-local identity provider; local
+capability mode is not accepted for remote exposure. The server emits a restrictive
+CSP, frame denial, MIME sniffing protection, referrer policy, and request/body
+limits.
 
 The local filesystem trust boundary is the operating-system principal that owns
 the project and Studio private roots. Portable Node.js pathname APIs do not expose
@@ -419,9 +448,48 @@ ports remain separate for queries, but application code cannot persist a transit
 and event as unrelated writes. The catalog projector consumes the committed outbox
 and is rebuilt from the ledger; it is never the authority for a transition.
 
+The SQLite file is not stored inside the repository. Local mode derives a
+project-scoped directory below `LUNA_STUDIO_STATE_ROOT` or the user's XDG state
+root. Compose requires a stable host-checkout identity, uses it in the Compose
+project namespace, and hashes it into a private subdirectory of the named state
+volume. The inner namespace is intentional defense in depth: two checkout
+identities remain separate even when an override shares one physical volume.
+The database leaf is opened only after no-follow regular-file identity checks,
+so a checkout cannot redirect SQLite through a pre-existing symlink.
+
 Runtime events are projected into the event ledger at their production boundary.
 Existing checkpoint, observability, and summary files remain specialized stores
 and are not reinterpreted as a complete lifecycle.
+
+Run-log pagination captures one immutable in-memory snapshot while computing its
+keyed fingerprint and verifies source file identity again after the read. Cursor
+continuations page only that snapshot, so source I/O is linear in snapshot size
+instead of repeated per page. The process-local LRU is bounded by aggregate
+bytes, entry count, and TTL; missing, expired, or evicted snapshots return cursor
+expiry and never fall back to a changed source file.
+
+The canonical run record also stores the accepted Studio plan id and a bounded,
+safe input provenance projection. Invocation launches store only the provenance
+kind; adapter launches additionally store the registered adapter id and a digest
+of the opaque adapter input. The opaque input itself is not copied into the run
+ledger. This makes an `acceptance_unknown` response recoverable through an exact
+plan-id catalog lookup without replaying the one-shot confirmation request.
+
+Subject URLs are treated as untrusted display metadata. User-info credentials,
+known secret query parameters (including AWS, GCS, and Azure signed-URL forms),
+encoded key names, and credential-bearing fragments are rejected at the contract
+boundary. The shared redactor applies the same classification to diagnostic text,
+so a signed URL cannot become searchable provenance or leak through an error.
+
+Runs created outside Studio, such as CLI and webhook executions, are reconciled
+from the shared artifact root by a bounded background importer. The importer is
+not on the request path, advances a bounded in-process cursor across batches,
+retries temporarily incomplete entries with bounded backoff, rejects links and
+path escapes, and projects only canonical historical metadata into the same
+catalog. Imported records use immutable `historical_unknown` dispatch state,
+unknown lifecycle projection, and unavailable counts/duration rather than fake
+terminal facts. Imported metadata is observational: it cannot synthesize
+dispatch ownership or rewrite a live Studio lifecycle.
 
 ## LS-010: Run Plan, Confirmation, And Dispatch
 
@@ -437,20 +505,79 @@ recomputes mutable inputs and rejects a stale plan. Normal artifacts, logs,
 checkpoints, and traces do not require a separate confirmation; repository mutation
 and declared external writes do.
 
-The dispatcher records an owner and heartbeat. Startup reconciliation marks stale
+If an acceptance response is lost, the one-use token is not replayed. The client
+plans and confirms again with the same idempotency key. When actor binding and
+execution snapshot are exact, native dispatch adopts the immutable job and run
+accepted by the first plan, returns a receipt bound to the new plan, and keeps the
+original accepted plan in the ledger for audit. A changed snapshot or actor never
+adopts that run.
+
+Effect classification is declarative. Each side-effect policy registration may
+publish a validated category such as `provider_read`, `local_process`,
+`repository_write`, or `external_write`; Studio resolves the launch plan from
+that manifest metadata and never from capability-id prefixes. An unclassified
+write remains conservatively visible as an external write.
+
+The dispatcher records an owner and heartbeat. Every acquired lease also creates
+a fresh cryptographic acquisition token used in mutable heartbeat and terminal
+transition ids, so two recoveries by the same worker owner cannot collide when
+their local counters restart. Deterministic recovery-claim and outcome-proof ids
+remain content-addressed for idempotent replay. Startup reconciliation marks stale
 active work as orphaned or requeues only when policy proves replay safety. A queued
 response is HTTP 202 and always includes the preallocated run id.
+
+Replay authorization is evidence-based. A stale job may receive a durable recovery
+intent only when immutable preflight evidence proves the complete plan is read-only
+and contains no unlisted write. Recovery claims the exact intent hash and execution
+identity atomically before replay. A started write-capable job, an unknown
+checkpoint acceptance, a missing/mismatched intent, or any contradictory evidence
+becomes `outcome_unknown`; its workspace and artifacts are retained for manual
+review and the dispatcher never automatically executes it again.
+
+Before any runtime node executes, the checkpoint store binds `run_id` to the
+compiled workflow id and revision. Node output/completion checkpoints are also
+namespaced by that immutable identity. An exact retry of the same revision may
+reuse durable completion, while a reused `run_id` for a changed workflow or agent
+fails before a side effect instead of accepting stale output.
+
+Legacy waiting runs without that identity are migrated only during resume. Luna
+first validates the exact waiting checkpoint, schema, workflow revision, resume
+context, deterministic checkpoint id, and matching interrupt without writing;
+only that durable evidence may establish the missing identity. A mistyped or
+changed-revision resume therefore cannot poison the later valid resume.
+
+Repository launch fingerprints use one global deadline and strict aggregate
+budgets for tracked differences and untracked content. Reads reject special files,
+pin regular-file/symlink identity before and after hashing, disable external Git
+diff helpers, and never open an untracked FIFO or device. A timeout, mutation, or
+unsupported entry fails planning/dispatch closed.
+
+Runtime success crosses an explicit durability barrier. After final output
+validation, the Studio first writes an exact terminal intent and replays it into
+the graph outcome and run ledger. Only then may Luna write its secondary
+succeeded checkpoint. Terminalization never performs workspace cleanup after
+either success or failure. An exact journal resolves
+acceptance-unknown replay errors, startup recovery completes any remaining
+projection, and no secondary store may reclassify the authoritative terminal.
+
+Luna retains all run workspaces for Studio and CLI executions. Automatic
+worktree deletion is deferred until cleanup has its own durable, observable,
+retry-safe operation. A later Studio cleanup action must be separately planned
+and confirmed, idempotent, recoverable from a durable intent, and reflected as
+operational workspace state; it must not silently reuse terminalization or
+failure recovery.
 
 Adapters remain normalizers. Launch accepts either normalized invocation JSON or a
 registered adapter plus its current opaque string input. Deterministic routing
 selects a workflow unless the caller explicitly pins a workflow target.
 
-The Workflow Studio presents this relationship on an **Inputs and routing** panel,
-but does not write adapter ownership into `workflow.yaml`. The panel can execute a
-registered adapter preview and show the resulting normalized Invocation. Routing
-rules evaluate only `{ invocation }`; an adapter id is not persisted as a predicate
-because it is not part of the Invocation contract. Rules may use normalized fields
-such as `source`, `event`, `action`, subject, or repository, so they cannot
+The implemented UI presents this relationship through the **Routing** and **Input
+adapters** tabs in Configuration and through adapter preview in Launch. It does
+not write adapter ownership into `workflow.yaml`. Launch can execute a registered
+adapter preview and show the resulting normalized Invocation. Routing rules
+evaluate only `{ invocation }`; an adapter id is not persisted as a predicate
+because it is not part of the Invocation contract. Rules may use normalized
+fields such as `source`, `event`, `action`, subject, or repository, so they cannot
 distinguish two adapters that intentionally produce the same envelope.
 
 For example, the Studio may author the equivalent routing rule outside the
@@ -471,27 +598,32 @@ distinguish two physical adapters that emit the same normalized envelope, the
 trusted Invocation contract must first gain an explicit adapter-origin field;
 the Studio must not infer one from browser input.
 
-The edited `RouterDefinition` is a separate config-root resource in the same
-multi-resource draft. Its location comes from the canonical config loader:
-`LUNA_CONFIG_ROOT` selects the root and `app.routing.path ?? "routing.yaml"`
-selects the relative file. The panel calls the canonical router for simulation and
-never duplicates predicates in frontend code. This lets one workflow accept
-GitHub, Jira, Plane, webhook, CLI, or manual invocations without coupling its graph
-to any provider.
+The current Studio loads `RouterDefinition` from the canonical config loader and
+exposes a read-only projection plus simulation; it does not edit `routing.yaml`.
+`LUNA_CONFIG_ROOT` selects the root and
+`app.routing.path ?? "routing.yaml"` selects the relative file. Simulation calls
+the canonical router and never duplicates predicates in frontend code. A future
+authoring surface must treat the router definition as a separate config-root
+resource in a multi-resource draft. This lets one workflow accept GitHub, Jira,
+Plane, webhook, CLI, or manual invocations without coupling its graph to any
+provider.
 
 ## LS-011: Visual Layout
 
-Layout is stored at `.luna/studio/layouts/workflows/<id>.json` and is never inserted
-into strict workflow YAML. Missing layout uses a deterministic topological layout.
-Graph semantics come only from workflow `after`; dotted data-reference overlays are
-derived from expressions.
+Layout is stored in the draft's non-semantic `layout` field under private
+`.luna/studio/drafts/` state and is never inserted into strict workflow YAML.
+Missing layout uses a deterministic topological layout. Graph semantics come only
+from workflow `after`; the current canvas does not invent additional semantic
+edges from expressions.
 
 The canvas and outline consume one graph view model. A pattern may have a conceptual
 expanded view, but the compiled graph still contains one pattern node.
 
 ## LS-012: Templates
 
-Templates are versioned generators registered under `src/studio/templates/`. A
+Templates are versioned generators registered by
+`src/studio/application/drafts/authoring-template-catalog.ts`, with parameter and
+workflow builders in the neighboring `authoring-template-*.ts` modules. A
 template produces an ordinary multi-resource draft, then runs the same validation
 pipeline as imported or manually created content. It cannot execute and is not a
 second workflow format.
@@ -513,15 +645,20 @@ roots and validates resolved paths against them.
 
 ## LS-014: Authorization And Collaboration
 
-Application commands receive a `Principal`, `AuthorizationPort`, and `AuditLogPort`
-from the beginning. Local mode supplies a synthetic `local-user` principal and a
-local authorization policy. Loaders, compiler, workflows, and capability executors
-never import identity or RBAC concepts.
+Current local mode uses a transport-owned `StudioLocalPrincipal` derived from the
+loopback capability session. It gates mutation availability at the Control API
+boundary; there is no general `AuthorizationPort`, role model, or durable
+`AuditLogPort` yet. Loaders, compiler, workflows, and capability executors do not
+import identity or RBAC concepts.
 
-Remote mode later supplies an identity provider, project/repository role bindings,
-and durable audit. It is impossible to enable a non-loopback listener without that
-mode. Human decisions use atomic claims and record actor, decision schema version,
-input hash, and timestamps.
+Remote mode must introduce command-level principals, an authorization port,
+project/repository role bindings, and durable actor audit before it can supply a
+non-loopback public authority. Container-local mode has one narrow transport exception: an
+explicit opt-in may bind the process to a wildcard inside a container bridge while
+the launch URL, Host allowlist, Origin allowlist, and published host port remain on
+an explicit loopback IP. This exception is not remote mode and must never publish
+the port on all host interfaces. Human decisions use atomic claims and record actor,
+decision schema version, input hash, and timestamps.
 
 ## LS-015: Verification Strategy
 
@@ -544,13 +681,16 @@ workflow is valid.
 
 - The first deployment opens one project root.
 - Templates are bundled code registrations that generate ordinary drafts.
-- Global provider/plugin/runtime configuration is read-only until governed remote
-  administration exists; classified workflow config can be edited earlier.
+- Global provider/plugin/runtime/repository configuration is exposed only through
+  redacted read-only projections; classified workflow config is editable through
+  its own draft/validate/plan/apply flow.
 - Launch supports invocation JSON and the existing opaque adapter string contract.
 - Layout is local in the first deployment.
 - Apply can create new resource directories through a draft.
-- Initial Git integration is status and diff only. The Studio never commits or
-  pushes authoring changes automatically.
+- Git integration lists reachable revisions for workflow and agent bundles,
+  compares selected revisions, and restores a revision as an ordinary draft. It
+  never updates refs, checks out files, commits, or pushes authoring changes
+  automatically.
 
 ## Dependency Direction
 

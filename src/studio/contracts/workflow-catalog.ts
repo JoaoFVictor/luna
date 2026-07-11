@@ -11,6 +11,8 @@ export const StudioWorkflowSummarySchema = z
     mode: z.enum(["read_only", "trusted_local_write"]),
     revision: StudioDigestSchema,
     capabilities: z.array(NonEmptyStringSchema),
+    registrations: z.array(NonEmptyStringSchema),
+    agents: z.array(NonEmptyStringSchema),
     input_schema: StudioCatalogReferenceSchema,
     output_schema: StudioCatalogReferenceSchema,
     config: z

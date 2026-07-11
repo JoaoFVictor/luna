@@ -38,6 +38,7 @@ import type {
   ParsedPatternNode
 } from "./definition-types.js";
 import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "./repair-attempts.js";
+import { isReservedWorkflowNodeId } from "./node-id.js";
 
 export function validateDeclaredCapabilities(
   capabilities: readonly string[],
@@ -65,6 +66,13 @@ export function validateNodesAgainstCapabilities(
 ): void {
   const seen = new Set<string>();
   nodes.forEach((node, index) => {
+    if (isReservedWorkflowNodeId(node.id)) {
+      throw new WorkflowDefinitionError(
+        "workflow_node_id_reserved",
+        `Workflow node id ${node.id} uses Luna's reserved internal namespace.`,
+        { path: `$.nodes[${index}].id` }
+      );
+    }
     if (seen.has(node.id)) {
       throw new WorkflowDefinitionError(
         "workflow_node_duplicate",
@@ -106,7 +114,12 @@ export function validateNodesAgainstCapabilities(
         );
       }
     } else if (node.type === "agent") {
-      requireDeclaredCapability("agents", declaredCapabilities, `$.nodes[${index}].type`);
+      requireWorkflowNodeCapability(
+        "agent",
+        declaredCapabilities,
+        `$.nodes[${index}].type`,
+        registry
+      );
     } else if (node.type === "pattern") {
       validatePatternNode(node, index, declaredCapabilities, nodeIds, registry);
     } else {
@@ -284,7 +297,12 @@ function validatePatternNode(
 
   const worker = node.worker;
   if (worker) {
-    requireDeclaredCapability("agents", declaredCapabilities, `$.nodes[${index}].worker`);
+    requireWorkflowNodeCapability(
+      "agent",
+      declaredCapabilities,
+      `$.nodes[${index}].worker`,
+      registry
+    );
   }
 
   (node.gates ?? []).forEach((gate, gateIndex) => {
@@ -355,6 +373,18 @@ function validateGate(
 
   if (!registration) {
     return;
+  }
+
+  const reviewAgent = gate.input?.review_agent;
+  if (
+    reviewAgent !== undefined &&
+    (typeof reviewAgent !== "string" || reviewAgent === "")
+  ) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      `Gate review_agent must be a static non-empty agent id for ${registration.id}.`,
+      { path: `${gatePath}.input.review_agent`, capability: registration.id }
+    );
   }
 
   assertLocalExpressionRoots(registration.local_context_roots, registration.id);
@@ -693,6 +723,26 @@ function requireDeclaredCapability(
       { path: yamlPath, capability }
     );
   }
+}
+
+function requireWorkflowNodeCapability(
+  nodeType: "agent",
+  declaredCapabilities: readonly string[],
+  yamlPath: string,
+  registry: CapabilityRegistry | undefined
+): void {
+  if (registry === undefined) {
+    return;
+  }
+  const capability = registry.workflowNodeCapability(nodeType);
+  if (capability === undefined) {
+    throw new WorkflowDefinitionError(
+      "workflow_capability_unknown",
+      `No capability supplies workflow node type ${nodeType}.`,
+      { path: yamlPath, capability: nodeType }
+    );
+  }
+  requireDeclaredCapability(capability.id, declaredCapabilities, yamlPath);
 }
 
 function assertNamespacedCapabilityId(id: string, yamlPath: string): void {

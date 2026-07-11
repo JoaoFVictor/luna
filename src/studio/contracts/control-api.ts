@@ -49,7 +49,15 @@ export const StudioHttpErrorEnvelopeSchema = z
       .object({
         code: NonEmptyStringSchema,
         message: NonEmptyStringSchema,
-        details: z.object({}).strict(),
+        details: z.record(
+          z.string().min(1).max(128),
+          z.union([
+            z.string().max(4_096),
+            z.number().finite(),
+            z.boolean(),
+            z.null()
+          ])
+        ),
         request_id: NonEmptyStringSchema
       })
       .strict()

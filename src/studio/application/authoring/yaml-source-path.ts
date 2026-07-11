@@ -34,6 +34,27 @@ function pathDiagnostic(
   };
 }
 
+function indirectSourceDiagnostic(
+  node: Node,
+  path: YamlValuePath
+): UnresolvedYamlPath | undefined {
+  if (isAlias(node)) {
+    return pathDiagnostic(
+      "yaml_path_alias_unsupported",
+      "YAML paths cannot traverse aliases because their source is indirect.",
+      path
+    );
+  }
+  if (node.anchor !== undefined || node.tag !== undefined) {
+    return pathDiagnostic(
+      "yaml_target_unsafe",
+      "Anchored or explicitly tagged YAML values require an anchor-aware edit.",
+      path
+    );
+  }
+  return undefined;
+}
+
 export function validateYamlValuePath(
   path: YamlValuePath
 ): YamlSourceDiagnostic | undefined {
@@ -83,13 +104,8 @@ export function resolveYamlValuePath(
   let current: Node = root;
 
   for (const segment of path) {
-    if (isAlias(current)) {
-      return pathDiagnostic(
-        "yaml_path_alias_unsupported",
-        "YAML paths cannot traverse aliases because their source is indirect.",
-        path
-      );
-    }
+    const indirect = indirectSourceDiagnostic(current, path);
+    if (indirect !== undefined) return indirect;
 
     if (isMap(current)) {
       if (typeof segment !== "string") {
@@ -142,13 +158,8 @@ export function resolveYamlValuePath(
     );
   }
 
-  if (isAlias(current)) {
-    return pathDiagnostic(
-      "yaml_path_alias_unsupported",
-      "Replacing an alias is unsupported because its value source is indirect.",
-      path
-    );
-  }
+  const indirect = indirectSourceDiagnostic(current, path);
+  if (indirect !== undefined) return indirect;
 
   return { ok: true, node: current };
 }

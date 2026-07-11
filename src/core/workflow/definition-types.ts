@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { WorkflowSubagentPolicy } from "../agents/subagent-policy.js";
+import type { ArtifactSemanticType } from "../artifacts/semantic-type.js";
 import type { JsonSchemaLike } from "../capabilities/json-schema-types.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import type { WorkflowExpression } from "./expression.js";
@@ -60,6 +61,7 @@ export type ArtifactWritePlan = {
   format: "json" | "markdown";
   required: boolean;
   publisher: string;
+  semantic_type?: ArtifactSemanticType;
   config?: Record<string, unknown>;
 };
 
@@ -98,7 +100,6 @@ export type ParsedCapabilityGate = {
   id: string;
   type: `${string}.${string}`;
   input?: Record<string, unknown>;
-  agent?: string;
   decision?: unknown;
   block_when?: WorkflowExpression;
   feedback?: WorkflowExpression;

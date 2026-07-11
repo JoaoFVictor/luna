@@ -101,6 +101,13 @@ Shared provider helpers may read `.luna/auth/luna.auth.json` as unknown
 provider data. Provider-specific validation belongs in the owning provider
 module.
 
+Adapter JSON commands execute through the shared bounded process runner: no
+implicit shell, reduced environment, explicit timeout and stdout/stderr limits,
+strict UTF-8 JSON decoding, abort propagation, and whole-process-group
+termination. Errors expose a stable reason but never echo raw command output.
+Provider adapters must use the supplied `executeJson` context instead of spawning
+their own unbounded command trees.
+
 Generic workflow and capability modules should depend on provider-neutral ports,
 not provider-specific factories. For example, the `pull-request-review`
 capability exposes `pull-request-review.publish` and the

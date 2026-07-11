@@ -141,7 +141,11 @@ export const manifest = capabilityManifest({
         additionalProperties: false,
         required: ["review_agent", "subject"],
         properties: {
-          review_agent: { type: "string" },
+          review_agent: { type: "string", minLength: 1 },
+          context: {
+            type: "object",
+            description: "Collected workflow context delivered to the review agent."
+          },
           subject: { description: "JSON value reviewed by the gate agent." }
         }
       },

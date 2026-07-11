@@ -14,13 +14,13 @@ import {
   StudioInputAdapterSummarySchema,
   StudioPublicInvocationSchema,
   type StudioAdapterPreview,
-  type StudioAdapterPreviewEffect,
   type StudioInputAdapterCatalog,
   type StudioInputAdapterSummary,
   type StudioPublicInvocation
 } from "../../contracts/input-routing.js";
 import {
   denyStudioAdapterPreviews,
+  sameStudioAdapterEffects,
   type StudioAdapterPreviewPort,
   type StudioAdapterPreviewer
 } from "./adapter-preview-port.js";
@@ -77,20 +77,6 @@ function summarizeAdapter(
             timeout_ms: preview.timeoutMs
           }
   });
-}
-
-function sameEffects(
-  acknowledged: readonly StudioAdapterPreviewEffect[],
-  classified: readonly StudioAdapterPreviewEffect[]
-): boolean {
-  const acknowledgedSorted = [...acknowledged].sort();
-  const classifiedSorted = [...classified].sort();
-  return (
-    acknowledgedSorted.length === classifiedSorted.length &&
-    acknowledgedSorted.every(
-      (effect, index) => effect === classifiedSorted[index]
-    )
-  );
 }
 
 function publicInvocationProjection(invocation: Invocation): {
@@ -213,6 +199,23 @@ export async function previewStudioInputAdapter(
     readonly signal?: AbortSignal;
   }
 ): Promise<StudioAdapterPreview> {
+  return (await resolveStudioInputAdapterPreview(request, dependencies)).preview;
+}
+
+export type StudioResolvedAdapterPreview = {
+  readonly preview: StudioAdapterPreview;
+  /** Private full invocation. Never serialize this application result. */
+  readonly invocation: Invocation;
+};
+
+export async function resolveStudioInputAdapterPreview(
+  request: unknown,
+  dependencies: {
+    readonly registry: StudioAdapterRegistry;
+    readonly previews?: StudioAdapterPreviewPort;
+    readonly signal?: AbortSignal;
+  }
+): Promise<StudioResolvedAdapterPreview> {
   const requestResult = StudioAdapterPreviewRequestSchema.safeParse(request);
   if (!requestResult.success) {
     throw new StudioAdapterPreviewError(
@@ -239,7 +242,9 @@ export async function previewStudioInputAdapter(
       "Studio preview is not enabled for the requested adapter"
     );
   }
-  if (!sameEffects(parsed.acknowledged_effects, preview.effects)) {
+  if (
+    !sameStudioAdapterEffects(parsed.acknowledged_effects, preview.effects)
+  ) {
     throw new StudioAdapterPreviewError(
       "studio_adapter_preview_effects_unacknowledged",
       "Studio preview effects were not acknowledged"
@@ -278,5 +283,5 @@ export async function previewStudioInputAdapter(
       "Studio adapter preview returned an invalid invocation"
     );
   }
-  return result.data;
+  return Object.freeze({ preview: result.data, invocation });
 }

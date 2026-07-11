@@ -4,13 +4,19 @@ import {
   StudioDraftPersistenceError,
   type StudioDraftVersion
 } from "../../application/drafts/persistence.js";
+import { studioDraftVersion } from "../../application/drafts/versioning.js";
 import {
+  readPrivateFile,
   readBoundedPrivateDirectoryEntries,
   studioDraftDirectory,
   syncPrivateDirectory,
   type StudioStorageLayout
 } from "./private-storage.js";
-import { parseStudioDraftId } from "./draft-codec.js";
+import {
+  decodeStoredStudioDraft,
+  parseStudioDraftId
+} from "./draft-codec.js";
+import type { StudioPrivateFileLimit } from "./storage-limits.js";
 
 const TOMBSTONE_PATTERN =
   /^\.deleted-([0-9a-f-]{36})-r([0-9]+)-c([0-9]+)-l([0-9]+)-t([0-9]+)$/i;
@@ -191,6 +197,58 @@ export async function confirmStudioDraftDelete(
       "studio_storage_commit_ambiguous",
       `Studio draft ${draftId} deletion could not be confirmed durable`,
       { cause, details: { draftId } }
+    );
+  }
+}
+
+function sameVersion(
+  left: StudioDraftVersion,
+  right: StudioDraftVersion
+): boolean {
+  return (
+    left.recordRevision === right.recordRevision &&
+    left.contentRevision === right.contentRevision &&
+    left.layoutRevision === right.layoutRevision
+  );
+}
+
+export async function assertStudioDraftTombstoneVersion(
+  tombstone: StudioDraftTombstone,
+  expectedVersion: StudioDraftVersion,
+  limit: StudioPrivateFileLimit
+): Promise<void> {
+  const bytes = await readPrivateFile(
+    path.join(tombstone.path, "change-set.json"),
+    limit
+  );
+  if (bytes === undefined) {
+    throw new StudioDraftPersistenceError(
+      "studio_storage_invalid",
+      `Studio draft ${tombstone.draftId} tombstone has no metadata`,
+      { details: { draftId: tombstone.draftId } }
+    );
+  }
+  const embeddedVersion = studioDraftVersion(
+    decodeStoredStudioDraft(bytes, tombstone.draftId)
+  );
+  if (!sameVersion(embeddedVersion, tombstone.version)) {
+    throw new StudioDraftPersistenceError(
+      "studio_storage_invalid",
+      `Studio draft ${tombstone.draftId} tombstone version is inconsistent`,
+      { details: { draftId: tombstone.draftId } }
+    );
+  }
+  if (!sameVersion(embeddedVersion, expectedVersion)) {
+    throw new StudioDraftPersistenceError(
+      "studio_draft_revision_conflict",
+      `Studio draft ${tombstone.draftId} was updated by another writer`,
+      {
+        details: {
+          draftId: tombstone.draftId,
+          expectedVersion,
+          actualVersion: embeddedVersion
+        }
+      }
     );
   }
 }

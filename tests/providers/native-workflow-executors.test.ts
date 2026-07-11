@@ -13,7 +13,7 @@ const app: AppConfig = {
   workspace: {
     strategy: "git_worktree",
     root: ".runs/workspaces",
-    preserve_on_success: false,
+    preserve_on_success: true,
     preserve_on_failure: true
   },
   artifacts: { root: ".runs" }

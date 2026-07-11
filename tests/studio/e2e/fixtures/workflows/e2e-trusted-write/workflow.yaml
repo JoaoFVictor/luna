@@ -1,0 +1,22 @@
+id: e2e-trusted-write
+type: workflow
+mode: trusted_local_write
+input_schema: input.schema.json
+output_schema: output.schema.json
+capabilities:
+  - runtime
+  - artifacts
+requires:
+  repository: true
+execution:
+  max_concurrency: 1
+nodes:
+  - id: preflight
+    type: built_in
+    uses: runtime.preflight
+    artifacts:
+      - path: trusted-preflight.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.preflight"
+        format: json

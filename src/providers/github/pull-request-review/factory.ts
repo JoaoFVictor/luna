@@ -8,9 +8,7 @@ import type {
 import { runGh as defaultRunGh, type RunGh } from "../gh.js";
 
 type PullRequestReviewError = Error & {
-  code:
-    | "pull_request_review_publish_failed"
-    | "pull_request_review_unknown_publish_outcome";
+  code: "pull_request_review_unknown_publish_outcome";
   details: {
     reason?: string;
     endpoint?: string;
@@ -29,29 +27,23 @@ type PullRequestReviewError = Error & {
   cause?: unknown;
 };
 
-function pullRequestReviewError(
-  message: string,
-  cause: unknown,
-  details: PullRequestReviewError["details"] = {}
-): PullRequestReviewError {
-  const error = new Error(message, { cause }) as PullRequestReviewError;
-  error.code = "pull_request_review_publish_failed";
-  error.details = {
-    ...details,
-    cause: causeDetails(cause)
-  };
-  error.cause = cause;
-
-  return error;
-}
-
 function unknownPublishOutcomeError(
   message: string,
-  details: PullRequestReviewError["details"]
+  details: PullRequestReviewError["details"],
+  cause?: unknown
 ): PullRequestReviewError {
-  const error = new Error(message) as PullRequestReviewError;
+  const error = new Error(
+    message,
+    cause === undefined ? undefined : { cause }
+  ) as PullRequestReviewError;
   error.code = "pull_request_review_unknown_publish_outcome";
-  error.details = details;
+  error.details = {
+    ...details,
+    ...(cause === undefined ? {} : { cause: causeDetails(cause) })
+  };
+  if (cause !== undefined) {
+    error.cause = cause;
+  }
 
   return error;
 }
@@ -235,10 +227,14 @@ export function createGitHubPullRequestReviewProviderFactory({
               }
             );
           } catch (cause) {
-            throw pullRequestReviewError(
-              "Failed to publish GitHub pull request review",
-              cause,
-              details
+            // Once the POST process has been dispatched, timeout/transport
+            // failure cannot prove whether GitHub accepted the review. This
+            // must bypass the ordinary publish-failed/skipped path so Studio
+            // records an explicit manual outcome instead of inviting retry.
+            throw unknownPublishOutcomeError(
+              "GitHub pull request review acceptance is unknown",
+              { ...details, reason: "transport_result_unknown" },
+              cause
             );
           }
 

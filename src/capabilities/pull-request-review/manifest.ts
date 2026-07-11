@@ -157,6 +157,7 @@ export const manifest = capabilityManifest({
       id: "pull-request-review.publish_side_effect",
       config_schema: publishPolicySchema,
       side_effect_semantics: "write",
+      side_effect_category: "external_write",
       side_effect_operation_ids: ["pull-request-review.publish"],
       idempotency_scope: "attempt",
       retry_semantics: "retry_forbidden",

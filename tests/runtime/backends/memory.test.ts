@@ -3,6 +3,35 @@ import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 
 describe("memory runtime backends", () => {
+  it("round-trips bounded semantic metadata and accepts legacy manifests", async () => {
+    const store = createMemoryArtifactManifestStore();
+    const base = {
+      run_id: "run-semantic",
+      uri: "memory://semantic",
+      artifact_path: "result.json",
+      created_at: "2026-06-25T00:00:00.000Z"
+    };
+    await store.put({
+      ...base,
+      id: "semantic",
+      semantic_type: "luna.review.findings.v1"
+    });
+    await store.put({ ...base, id: "legacy", uri: "memory://legacy" });
+
+    await expect(store.list("run-semantic")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "semantic",
+          semantic_type: "luna.review.findings.v1"
+        }),
+        expect.not.objectContaining({ semantic_type: expect.anything() })
+      ])
+    );
+    await expect(
+      store.put({ ...base, id: "invalid", semantic_type: "unversioned" })
+    ).rejects.toThrow();
+  });
+
   it("keys artifact manifests by structured identity without slash collisions", async () => {
     const store = createMemoryArtifactManifestStore();
     await store.put({

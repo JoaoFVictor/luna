@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INPUT_ADAPTER_LOAD_EFFECTS } from "../../adapters/types.js";
 import {
   InvocationSchema,
   RouteTargetSchema
@@ -17,6 +18,7 @@ const StudioRouterRuleIdSchema = NonEmptyStringSchema.max(
 export const STUDIO_ADAPTER_INPUT_MAX_LENGTH = 64 * 1_024;
 export const STUDIO_INVOCATION_PAYLOAD_MAX_BYTES = 512 * 1_024;
 export const STUDIO_INVOCATION_PAYLOAD_MAX_ENTRIES = 1_024;
+export const STUDIO_ROUTING_TIMEOUT_MS = 2_000;
 export const STUDIO_ROUTING_DIAGNOSTIC_MESSAGE_MAX_LENGTH = 2_000;
 export const STUDIO_ROUTING_DIAGNOSTIC_PATH_MAX_LENGTH = 1_024;
 const UTF8_ENCODER = new TextEncoder();
@@ -83,13 +85,9 @@ export const StudioAdapterInputSchema = z
   .strict();
 export type StudioAdapterInput = z.infer<typeof StudioAdapterInputSchema>;
 
-export const StudioAdapterPreviewEffectSchema = z.enum([
-  "project_read",
-  "configuration_read",
-  "credential_read",
-  "network_read",
-  "process_execution"
-]);
+export const StudioAdapterPreviewEffectSchema = z.enum(
+  INPUT_ADAPTER_LOAD_EFFECTS
+);
 export type StudioAdapterPreviewEffect = z.infer<
   typeof StudioAdapterPreviewEffectSchema
 >;
@@ -181,6 +179,9 @@ export const StudioRoutingDiagnosticSchema = z
   .object({
     severity: z.enum(["warning", "error"]),
     code: z.enum([
+      "router_evaluation_cancelled",
+      "router_evaluation_failed",
+      "router_evaluation_timeout",
       "router_expression_failed",
       "router_invalid_target",
       "router_no_match"
@@ -257,4 +258,14 @@ export const StudioRoutingSimulationSchema = z
   .strict();
 export type StudioRoutingSimulation = z.infer<
   typeof StudioRoutingSimulationSchema
+>;
+
+export const StudioAdapterRoutingPreviewSchema = z
+  .object({
+    adapter: StudioAdapterPreviewSchema,
+    routing: StudioRoutingSimulationSchema
+  })
+  .strict();
+export type StudioAdapterRoutingPreview = z.infer<
+  typeof StudioAdapterRoutingPreviewSchema
 >;

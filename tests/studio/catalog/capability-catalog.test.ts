@@ -84,6 +84,18 @@ describe("Studio capability catalog", () => {
     expect(catalog.registrations.some(
       (registration) => registration.registration_kind === "pattern"
     )).toBe(true);
+    expect(catalog.registrations.find(
+      (registration) => registration.id === "repository.write-file"
+    )).toMatchObject({
+      registration_kind: "tool",
+      protocol: "local",
+      allowed_agent_modes: ["trusted_local_write"],
+      safety: {
+        local_writes: true,
+        network: false,
+        external_side_effects: false
+      }
+    });
   });
 
   it("projects loaded registrations into explicit discriminated DTOs", () => {
@@ -109,6 +121,65 @@ describe("Studio capability catalog", () => {
     ]);
   });
 
+  it("projects workflow node ownership from registry semantics instead of public ids", () => {
+    const registry = createCapabilityRegistry([
+      capabilityManifest({
+        id: "model-execution",
+        kind: "execution",
+        version: "1.0.0",
+        workflow_node_types: ["agent"]
+      })
+    ]);
+
+    expect(createStudioCapabilityCatalog(registry).capabilities).toEqual([
+      expect.objectContaining({
+        id: "model-execution",
+        workflow_node_types: ["agent"]
+      })
+    ]);
+  });
+
+  it("projects capability presets and re-exports without a parallel UI registry", () => {
+    const registry = createCapabilityRegistry([
+      capabilityManifest({
+        id: "base",
+        kind: "execution",
+        version: "1.0.0",
+        built_ins: {
+          "base.inspect": {
+            id: "base.inspect",
+            input_schema: { type: "object" },
+            output_schema: { type: "object" }
+          }
+        }
+      }),
+      capabilityManifest({
+        id: "sample",
+        kind: "composition",
+        version: "2.0.0",
+        depends_on: ["base"],
+        presets: { default: ["base.inspect"] },
+        re_exports: { built_ins: ["base.inspect"] }
+      })
+    ]);
+
+    expect(createStudioCapabilityCatalog(registry).capabilities).toContainEqual(
+      expect.objectContaining({
+        id: "sample",
+        presets: { default: ["base.inspect"] },
+        re_exports: {
+          built_ins: ["base.inspect"],
+          patterns: [],
+          tools: [],
+          gates: [],
+          policies: [],
+          ports: [],
+          artifact_publishers: []
+        }
+      })
+    );
+  });
+
   it("keeps technical and presentation invalidation independent", () => {
     const before = createStudioCapabilityCatalog(
       registryWithPresentation("Inspect")
@@ -122,6 +193,44 @@ describe("Studio capability catalog", () => {
     );
     expect(relabeled.presentation_fingerprint).not.toBe(
       before.presentation_fingerprint
+    );
+  });
+
+  it("includes local tool mode and safety authority in the technical fingerprint", () => {
+    const registry = (allowedModes: readonly ("read_only" | "trusted_local_write")[]) =>
+      createCapabilityRegistry([
+        capabilityManifest({
+          id: "repository",
+          kind: "execution",
+          version: "1.0.0",
+          tools: {
+            "repository.edit": {
+              id: "repository.edit",
+              protocol: "local",
+              input_schema: { type: "object" },
+              output_schema: { type: "object" },
+              allowed_agent_modes: allowedModes,
+              safety: {
+                localWrites: allowedModes.length === 1,
+                network: false,
+                externalSideEffects: false
+              }
+            }
+          }
+        })
+      ]);
+    const readOnly = createStudioCapabilityCatalog(
+      registry(["read_only", "trusted_local_write"])
+    );
+    const writeOnly = createStudioCapabilityCatalog(
+      registry(["trusted_local_write"])
+    );
+
+    expect(writeOnly.technical_fingerprint).not.toBe(
+      readOnly.technical_fingerprint
+    );
+    expect(writeOnly.presentation_fingerprint).toBe(
+      readOnly.presentation_fingerprint
     );
   });
 

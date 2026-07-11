@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, lstat, mkdir, open, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { RunStoreError, runStoreError } from "../../application/runs/errors.js";
@@ -414,6 +415,50 @@ function migrate(database: DatabaseSync): void {
   validateVersionOne(database);
 }
 
+async function secureDatabaseLeaf(filePath: string): Promise<FileHandle> {
+  const directory = path.dirname(filePath);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const directoryMetadata = await lstat(directory);
+  if (directoryMetadata.isSymbolicLink() || !directoryMetadata.isDirectory()) {
+    throw runStoreError(
+      "run_store_io_failed",
+      "Run store directory must be a physical directory"
+    );
+  }
+  await chmod(directory, 0o700);
+
+  const handle = await open(
+    filePath,
+    constants.O_CREAT |
+      constants.O_RDWR |
+      constants.O_NOFOLLOW,
+    0o600
+  );
+  try {
+    const [opened, linked] = await Promise.all([
+      handle.stat(),
+      lstat(filePath)
+    ]);
+    if (
+      !opened.isFile() ||
+      linked.isSymbolicLink() ||
+      !linked.isFile() ||
+      opened.dev !== linked.dev ||
+      opened.ino !== linked.ino
+    ) {
+      throw runStoreError(
+        "run_store_io_failed",
+        "Run store path must be a physical regular file"
+      );
+    }
+    await handle.chmod(0o600);
+    return handle;
+  } catch (cause) {
+    await handle.close().catch(() => undefined);
+    throw cause;
+  }
+}
+
 export async function openSqliteRunDatabase(
   options: SqliteRunDatabaseOptions
 ): Promise<DatabaseSync> {
@@ -426,8 +471,27 @@ export async function openSqliteRunDatabase(
   }
 
   try {
-    await mkdir(path.dirname(options.filePath), { recursive: true, mode: 0o700 });
-    const database = new DatabaseSync(options.filePath);
+    const securedLeaf = await secureDatabaseLeaf(options.filePath);
+    let database: DatabaseSync;
+    try {
+      database = new DatabaseSync(options.filePath);
+      const linked = await lstat(options.filePath);
+      const opened = await securedLeaf.stat();
+      if (
+        linked.isSymbolicLink() ||
+        !linked.isFile() ||
+        opened.dev !== linked.dev ||
+        opened.ino !== linked.ino
+      ) {
+        database.close();
+        throw runStoreError(
+          "run_store_io_failed",
+          "Run store path changed while it was opened"
+        );
+      }
+    } finally {
+      await securedLeaf.close();
+    }
     try {
       await chmod(options.filePath, 0o600);
       database.exec(`

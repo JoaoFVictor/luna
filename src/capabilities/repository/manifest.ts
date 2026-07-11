@@ -2,12 +2,12 @@ import { capabilityManifest } from "../../core/capabilities/manifest.js";
 import {
   localToolRegistrations
 } from "../../core/tools/local-tool-registration.js";
-import { repositoryLocalToolContracts } from "../../capabilities/repository/repository-contracts.js";
+import { lunaToolCatalog } from "./tool-catalog.js";
 
 export const manifest = capabilityManifest({
   id: "repository",
   kind: "execution",
   version: "2026.06.25",
-  tools: localToolRegistrations(repositoryLocalToolContracts),
+  tools: localToolRegistrations(lunaToolCatalog),
   docs: [{ title: "Repository read-only local tools" }]
 });

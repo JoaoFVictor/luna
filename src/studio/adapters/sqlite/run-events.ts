@@ -280,6 +280,15 @@ export class SqliteRunEventLedger implements RunEventLedgerPort {
           throw runStoreError("run_cursor_invalid", "Run cursor does not match this timeline");
         }
       }
+      if (
+        query.after_sequence !== undefined &&
+        query.after_sequence > head.last_sequence
+      ) {
+        throw runStoreError(
+          "run_cursor_invalid",
+          "Event sequence exceeds the current run timeline"
+        );
+      }
 
       const snapshot = cursor?.snapshot ?? head.last_sequence;
       const asOf = cursor?.as_of ?? now;
@@ -294,6 +303,9 @@ export class SqliteRunEventLedger implements RunEventLedgerPort {
         conditions.push(`(sequence ${operator} ? OR (sequence = ? AND event_id ${operator} ?))`);
         parameters.push(cursor.last_sequence ?? 0, cursor.last_sequence ?? 0,
           cursor.last_event_id ?? "");
+      } else if (query.after_sequence !== undefined) {
+        conditions.push("sequence > ?");
+        parameters.push(query.after_sequence);
       }
       parameters.push(query.limit + 1);
       const rows = runStatement(this.#context.database, `

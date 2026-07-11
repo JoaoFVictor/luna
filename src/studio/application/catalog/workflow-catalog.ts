@@ -5,6 +5,10 @@ import type { CapabilityRegistry } from "../../../core/capabilities/registry.js"
 import {
   type WorkflowDefinition
 } from "../../../core/workflow/definition.js";
+import {
+  collectWorkflowAgentReferences,
+  collectWorkflowRegistrationReferences
+} from "../../../core/workflow/definition-references.js";
 import { loadWorkflowDefinitionWithAgentDigests } from "../../../capabilities/agents/workflow-definition-loader.js";
 import { sha256Digest } from "../../../core/workflow/definition-digests.js";
 import {
@@ -80,12 +84,22 @@ function summarizeWorkflow(
   for (const node of definition.graph.nodes) {
     nodeCounts[node.type] += 1;
   }
+  const referencedAgents = new Set(
+    collectWorkflowAgentReferences(definition.graph.nodes)
+      .map(({ agentId }) => agentId)
+  );
 
   return StudioWorkflowSummarySchema.parse({
     id: definition.id,
     mode: definition.mode,
     revision: definition.revision,
     capabilities: definition.capabilities,
+    registrations: collectWorkflowRegistrationReferences(
+      definition.graph.nodes
+    ),
+    agents: [...referencedAgents].sort((left, right) =>
+      left.localeCompare(right)
+    ),
     input_schema: relativeCatalogFileReference(
       definition.directory,
       definition.input_schema,

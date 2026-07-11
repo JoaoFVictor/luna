@@ -9,6 +9,10 @@ import {
 } from "./control-api.js";
 import { onceStudioServiceDisposer } from "./service-lifecycle.js";
 import { StudioLocalSessionManager } from "./security/local-session.js";
+import {
+  registerStudioFrontendAssets,
+  type StudioFrontendAssetsOptions
+} from "./frontend-assets.js";
 
 const DEFAULT_STUDIO_HOST = "127.0.0.1";
 const DEFAULT_STUDIO_PORT = 43_110;
@@ -26,6 +30,9 @@ const DEFAULT_FASTIFY_LOGGER: Exclude<
       "req.headers.authorization",
       'req.headers["x-luna-csrf"]',
       "req.body.capability",
+      "req.body.fixture",
+      "req.body.context",
+      "req.body.confirmation_token",
       'res.headers["set-cookie"]'
     ],
     censor: "[Redacted]"
@@ -42,11 +49,16 @@ export type CreateStudioServerOptions = {
   readonly bodyLimitBytes?: number;
   readonly logger?: FastifyServerOptions["logger"];
   readonly registerControlApi?: typeof registerStudioControlApi;
+  readonly frontend?: StudioFrontendAssetsOptions;
+  readonly registerFrontend?: typeof registerStudioFrontendAssets;
 };
 
 export type StartStudioServerOptions = {
   readonly host?: string;
   readonly port?: number;
+  readonly allowNonLoopbackBind?: boolean;
+  readonly publicHost?: string;
+  readonly publicPort?: number;
   readonly sessionTtlMs?: number;
   readonly bodyLimitBytes?: number;
   readonly services: StudioServerServices;
@@ -56,6 +68,7 @@ export type StartStudioServerOptions = {
     address: { readonly host: string; readonly port: number }
   ) => Promise<void>;
   readonly output?: { readonly write: (message: string) => void };
+  readonly frontend?: StudioFrontendAssetsOptions;
 };
 
 export type StudioServerHandle = {
@@ -73,16 +86,34 @@ export class StudioServerConfigurationError extends Error {
   }
 }
 
-function assertLoopbackHost(host: string): void {
+function isLoopbackHost(host: string): boolean {
   const ipVersion = isIP(host);
-  const loopback =
+  return (
     (ipVersion === 4 && host.split(".", 1)[0] === "127") ||
-    (ipVersion === 6 && host === "::1");
-  if (!loopback) {
+    (ipVersion === 6 && host === "::1")
+  );
+}
+
+function assertPublicLoopbackHost(host: string): void {
+  if (!isLoopbackHost(host)) {
     throw new StudioServerConfigurationError(
-      "Luna Studio local mode only accepts an explicit loopback IP"
+      "Luna Studio public authority must use an explicit loopback IP"
     );
   }
+}
+
+function assertBindHost(host: string, allowNonLoopbackBind: boolean): void {
+  if (isLoopbackHost(host)) {
+    return;
+  }
+  if (allowNonLoopbackBind && (host === "0.0.0.0" || host === "::")) {
+    return;
+  }
+  throw new StudioServerConfigurationError(
+    allowNonLoopbackBind
+      ? "Luna Studio container mode only accepts a loopback IP or wildcard bind"
+      : "Luna Studio non-loopback binds require explicit container-mode opt-in"
+  );
 }
 
 function assertPort(port: number): void {
@@ -108,7 +139,8 @@ function bodyLimit(value: number | undefined): number {
 }
 
 function authority(host: string, port: number): string {
-  return `${isIP(host) === 6 ? `[${host}]` : host}:${port}`;
+  const hostname = isIP(host) === 6 ? `[${host}]` : host;
+  return port === 80 ? hostname : `${hostname}:${port}`;
 }
 
 async function defaultListen(
@@ -176,6 +208,12 @@ export async function createStudioServer(
       sessions: options.sessions,
       ...controlApi
     });
+    if (options.frontend !== undefined) {
+      await (options.registerFrontend ?? registerStudioFrontendAssets)(
+        server,
+        options.frontend
+      );
+    }
     return server;
   } catch (cause) {
     return await releaseAfterStartupFailure(server, dispose, cause);
@@ -191,12 +229,16 @@ export async function startStudioServer(
   try {
     const host = options.host ?? DEFAULT_STUDIO_HOST;
     const port = options.port ?? DEFAULT_STUDIO_PORT;
-    assertLoopbackHost(host);
+    const publicHost = options.publicHost ?? host;
+    const publicPort = options.publicPort ?? port;
+    assertBindHost(host, options.allowNonLoopbackBind === true);
+    assertPublicLoopbackHost(publicHost);
     assertPort(port);
-    const hostAndPort = authority(host, port);
-    const origin = `http://${hostAndPort}`;
+    assertPort(publicPort);
+    const publicAuthority = authority(publicHost, publicPort);
+    const origin = `http://${publicAuthority}`;
     const sessions = new StudioLocalSessionManager({
-      allowedHosts: [hostAndPort],
+      allowedHosts: [publicAuthority],
       allowedOrigins: [origin],
       ...(options.sessionTtlMs === undefined
         ? {}
@@ -208,7 +250,10 @@ export async function startStudioServer(
       ...(options.bodyLimitBytes === undefined
         ? {}
         : { bodyLimitBytes: options.bodyLimitBytes }),
-      ...(options.logger === undefined ? {} : { logger: options.logger })
+      ...(options.logger === undefined ? {} : { logger: options.logger }),
+      ...(options.frontend === undefined
+        ? {}
+        : { frontend: options.frontend })
     });
     const listen = options.listen ?? defaultListen;
     await listen(server, { host, port });

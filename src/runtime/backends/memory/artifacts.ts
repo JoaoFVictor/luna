@@ -3,8 +3,11 @@ import type {
   ArtifactManifestStore
 } from "../../../core/runtime/artifacts/contracts.js";
 import {
+  ArtifactManifestSchema,
+  artifactManifestListLimitError,
   artifactManifestKeyFromManifest,
-  artifactManifestKeyHash
+  artifactManifestKeyHash,
+  resolveArtifactManifestListLimits
 } from "../../../core/runtime/artifacts/contracts.js";
 import type {
   ArtifactContentCommitInput,
@@ -28,8 +31,9 @@ export function createMemoryArtifactManifestStore(): ArtifactManifestStore {
 
   return {
     async put(manifest) {
-      manifests.set(artifactManifestKeyHash(artifactManifestKeyFromManifest(manifest)), {
-        ...manifest
+      const parsed = ArtifactManifestSchema.parse(manifest);
+      manifests.set(artifactManifestKeyHash(artifactManifestKeyFromManifest(parsed)), {
+        ...parsed
       });
     },
     async get(key) {
@@ -37,10 +41,36 @@ export function createMemoryArtifactManifestStore(): ArtifactManifestStore {
 
       return manifest === undefined ? undefined : { ...manifest };
     },
-    async list(runId) {
-      return [...manifests.values()]
-        .filter((manifest) => manifest.run_id === runId)
-        .map((manifest) => ({ ...manifest }));
+    async list(runId, requestedLimits) {
+      const limits = resolveArtifactManifestListLimits(requestedLimits);
+      const listed: ArtifactManifest[] = [];
+      let scannedEntries = 0;
+      let totalBytes = 0;
+      for (const manifest of manifests.values()) {
+        scannedEntries += 1;
+        if (scannedEntries > limits.max_scanned_entries) {
+          throw artifactManifestListLimitError(
+            "scanned_entries",
+            limits.max_scanned_entries
+          );
+        }
+        if (manifest.run_id !== runId) {
+          continue;
+        }
+        if (listed.length >= limits.max_entries) {
+          throw artifactManifestListLimitError("entries", limits.max_entries);
+        }
+        const bytes = Buffer.byteLength(JSON.stringify(manifest), "utf8");
+        if (bytes > limits.max_entry_bytes) {
+          throw artifactManifestListLimitError("entry_bytes", limits.max_entry_bytes);
+        }
+        if (bytes > limits.max_total_bytes - totalBytes) {
+          throw artifactManifestListLimitError("total_bytes", limits.max_total_bytes);
+        }
+        totalBytes += bytes;
+        listed.push({ ...manifest });
+      }
+      return listed;
     }
   };
 }

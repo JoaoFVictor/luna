@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import {
+  ArtifactSemanticTypeSchema,
+  type ArtifactSemanticType
+} from "../../artifacts/semantic-type.js";
 import type {
   ArtifactManifestKey,
   ArtifactManifest,
@@ -28,6 +32,7 @@ export type ArtifactTransactionRecord = {
   readonly content_hash: string;
   readonly attempt: number;
   readonly media_type?: string;
+  readonly semantic_type?: ArtifactSemanticType;
   readonly stage: ArtifactTransactionStage;
   readonly pending_uri?: string;
   readonly committed_uri?: string;
@@ -49,6 +54,7 @@ export type ArtifactContentWriteInput = {
   readonly content: string | Uint8Array;
   readonly content_hash: string;
   readonly media_type?: string;
+  readonly semantic_type?: ArtifactSemanticType;
 };
 
 export type ArtifactContentCommitInput = {
@@ -89,6 +95,7 @@ export type ArtifactTransactionInput = {
   readonly artifact_path: string;
   readonly content: string | Uint8Array;
   readonly media_type?: string;
+  readonly semantic_type?: ArtifactSemanticType;
   readonly overwrite_policy?: ArtifactOverwritePolicy;
   readonly attempt?: number;
   readonly backend: {
@@ -114,6 +121,8 @@ type ArtifactTransactionErrorCode =
   | "path_security_violation"
   | "artifact_overwrite_policy_required"
   | "artifact_content_conflict"
+  | "artifact_semantic_type_conflict"
+  | "artifact_semantic_type_invalid"
   | "artifact_overwrite_policy_unsupported"
   | "artifact_pending_content_invalid"
   | "artifact_transaction_invalid";
@@ -138,6 +147,7 @@ export async function publishArtifactTransaction(
   input: ArtifactTransactionInput
 ): Promise<ArtifactTransactionResult> {
   assertSafeArtifactPath(input.artifact_path);
+  assertArtifactSemanticType(input.semantic_type);
 
   const overwritePolicy = explicitOverwritePolicy(input);
   rejectUnsupportedOverwritePolicy(overwritePolicy);
@@ -149,7 +159,8 @@ export async function publishArtifactTransaction(
   const journalRecord = await input.transactionJournal.get(transactionId);
   const existingTransaction =
     journalRecord?.attempt === (input.attempt ?? 1) &&
-    journalRecord.content_hash === contentHash
+    journalRecord.content_hash === contentHash &&
+    journalRecord.semantic_type === input.semantic_type
       ? journalRecord
       : undefined;
   const existingHash = existing?.content_hash;
@@ -161,7 +172,10 @@ export async function publishArtifactTransaction(
     artifact_path: input.artifact_path,
     content: input.content,
     content_hash: contentHash,
-    ...(input.media_type === undefined ? {} : { media_type: input.media_type })
+    ...(input.media_type === undefined ? {} : { media_type: input.media_type }),
+    ...(input.semantic_type === undefined
+      ? {}
+      : { semantic_type: input.semantic_type })
   });
 
   if (
@@ -187,8 +201,19 @@ export async function publishArtifactTransaction(
   }
 
   if (
-    existing !== undefined &&
-    manifestMatchesTransactionInput(existing, input) &&
+    manifestMatchesTransactionIdentity(existing, input) &&
+    existing?.status === "committed" &&
+    existing.semantic_type !== input.semantic_type
+  ) {
+    throw new ArtifactTransactionError(
+      "artifact_semantic_type_conflict",
+      `Artifact ${input.artifact_id} already exists with different semantic metadata.`,
+      { artifact_id: input.artifact_id }
+    );
+  }
+
+  if (
+    manifestMatchesTransactionIdentity(existing, input) &&
     existingHash !== contentHash &&
     overwritePolicy === "forbid"
   ) {
@@ -263,6 +288,20 @@ export function assertSafeArtifactPath(artifactPath: string): void {
   }
 }
 
+function assertArtifactSemanticType(
+  semanticType: ArtifactSemanticType | undefined
+): void {
+  if (
+    semanticType !== undefined &&
+    !ArtifactSemanticTypeSchema.safeParse(semanticType).success
+  ) {
+    throw new ArtifactTransactionError(
+      "artifact_semantic_type_invalid",
+      "Artifact semantic type is invalid."
+    );
+  }
+}
+
 function explicitOverwritePolicy(
   input: ArtifactTransactionInput
 ): ArtifactOverwritePolicy {
@@ -312,6 +351,9 @@ async function createPendingManifest({
     content_hash: contentHash,
     attempt: input.attempt ?? 1,
     ...(input.media_type === undefined ? {} : { media_type: input.media_type }),
+    ...(input.semantic_type === undefined
+      ? {}
+      : { semantic_type: input.semantic_type }),
     stage: "pending_manifest_created",
     created_at: timestamp,
     updated_at: timestamp
@@ -338,7 +380,10 @@ async function ensureContentWritten(
     artifact_path: record.artifact_path,
     content: input.content,
     content_hash: record.content_hash,
-    ...(record.media_type === undefined ? {} : { media_type: record.media_type })
+    ...(record.media_type === undefined ? {} : { media_type: record.media_type }),
+    ...(record.semantic_type === undefined
+      ? {}
+      : { semantic_type: record.semantic_type })
   });
   const next = advance(record, "content_written", now, {
     pending_uri: written.pending_uri,
@@ -444,6 +489,9 @@ function manifestFromRecord(record: ArtifactTransactionRecord): ArtifactManifest
     backend_root: record.backend_root,
     source_node_id: record.node_id,
     ...(record.media_type === undefined ? {} : { media_type: record.media_type }),
+    ...(record.semantic_type === undefined
+      ? {}
+      : { semantic_type: record.semantic_type }),
     content_hash: record.content_hash,
     artifact_path: record.artifact_path,
     status: "committed",
@@ -465,6 +513,9 @@ function pendingManifestFromRecord(
     backend_root: record.backend_root,
     source_node_id: record.node_id,
     ...(record.media_type === undefined ? {} : { media_type: record.media_type }),
+    ...(record.semantic_type === undefined
+      ? {}
+      : { semantic_type: record.semantic_type }),
     content_hash: record.content_hash,
     artifact_path: `.pending-artifact-transactions/${pendingKey}.json`,
     status: "pending",
@@ -504,6 +555,9 @@ function checkpointedRecordFromManifest({
     content_hash: contentHash,
     attempt: input.attempt ?? 1,
     ...(input.media_type === undefined ? {} : { media_type: input.media_type }),
+    ...(input.semantic_type === undefined
+      ? {}
+      : { semantic_type: input.semantic_type }),
     stage: "checkpoint_marked",
     committed_uri: manifest.uri,
     created_at: manifest.created_at,
@@ -547,6 +601,9 @@ function adoptCommittedManifest({
     content_hash: contentHash,
     attempt: input.attempt ?? 1,
     ...(input.media_type === undefined ? {} : { media_type: input.media_type }),
+    ...(input.semantic_type === undefined
+      ? {}
+      : { semantic_type: input.semantic_type }),
     stage: "manifest_updated",
     committed_uri: manifest.uri,
     created_at: manifest.created_at,
@@ -554,7 +611,7 @@ function adoptCommittedManifest({
   };
 }
 
-function manifestMatchesTransactionInput(
+function manifestMatchesTransactionIdentity(
   manifest: ArtifactManifest | undefined,
   input: ArtifactTransactionInput
 ): boolean {
@@ -566,6 +623,16 @@ function manifestMatchesTransactionInput(
     manifest.attempt === (input.attempt ?? 1) &&
     manifest.backend_id === input.backend.id &&
     manifest.backend_root === input.backend.root
+  );
+}
+
+function manifestMatchesTransactionInput(
+  manifest: ArtifactManifest | undefined,
+  input: ArtifactTransactionInput
+): boolean {
+  return (
+    manifestMatchesTransactionIdentity(manifest, input) &&
+    manifest?.semantic_type === input.semantic_type
   );
 }
 

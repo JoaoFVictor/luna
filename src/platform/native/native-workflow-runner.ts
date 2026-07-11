@@ -67,7 +67,16 @@ export type NativeWorkflowTargetDependencies = {
   readonly pullRequestReviewProviderFactories?: readonly PullRequestReviewProviderFactory[];
 };
 
-export type NativeWorkflowResumeInput = {
+type NativeWorkflowExecutionControls = Pick<
+  NativeWorkflowRunInput,
+  | "signal"
+  | "onSucceededState"
+  | "onFailedState"
+  | "onLifecycleEvent"
+  | "onLifecycleProjectionError"
+>;
+
+export type NativeWorkflowResumeInput = NativeWorkflowExecutionControls & {
   readonly projectRoot: string;
   readonly configRoot: string;
   readonly target: RouteTarget;
@@ -85,6 +94,7 @@ export async function runNativeWorkflowTarget(
   const {
     app,
     agentsRoot,
+    definitionConfigRoot,
     workflow,
     nativeWorkflow,
     repository,
@@ -93,33 +103,65 @@ export async function runNativeWorkflowTarget(
   } = await loadNativeRunContext(input, { platform });
   const invocation = input.invocation;
   assertCheckpointJsonValue(invocation);
+  await input.onCompiledWorkflow?.(nativeWorkflow.compiled);
   const execution = await prepareNativeWorkflowExecution({
     platform,
     dependencies,
     projectRoot: input.projectRoot,
-    configRoot: input.configRoot,
+    configRoot: definitionConfigRoot,
     app,
     agentsRoot,
     workflow,
     nativeWorkflow,
     repository,
     run,
-    runtimeConfig
+    runtimeConfig,
+    signal: input.signal
   });
+  const workflowConfig = input.workflowConfig ?? await loadWorkflowRuntimeConfig({
+    workflow: nativeWorkflow.workflow,
+    configRoot: definitionConfigRoot
+  });
+  assertCheckpointJsonValue(workflowConfig);
 
   const workflowRuntimeInput = {
     compiled: nativeWorkflow.compiled,
     workflow: nativeWorkflow.workflow,
     invocation,
-    config: await loadWorkflowRuntimeConfig({
-      workflow: nativeWorkflow.workflow,
-      configRoot: input.configRoot
-    }),
+    config: workflowConfig,
     run,
-    ...execution.input
+    ...execution.input,
+    ...nativeWorkflowExecutionControls(input)
   } satisfies RunWorkflowInput;
 
   return await execution.composition.workflowRuntime.run(workflowRuntimeInput);
+}
+
+function nativeWorkflowExecutionControls(
+  input: NativeWorkflowExecutionControls
+): Pick<
+  RunWorkflowInput,
+  | "signal"
+  | "onSucceededState"
+  | "onFailedState"
+  | "onLifecycleEvent"
+  | "onLifecycleProjectionError"
+> {
+  return {
+    ...(input.signal === undefined ? {} : { signal: input.signal }),
+    ...(input.onFailedState === undefined
+      ? {}
+      : { onFailedState: input.onFailedState }),
+    ...(input.onSucceededState === undefined
+      ? {}
+      : { onSucceededState: input.onSucceededState }),
+    ...(input.onLifecycleEvent === undefined
+      ? {}
+      : { onLifecycleEvent: input.onLifecycleEvent }),
+    ...(input.onLifecycleProjectionError === undefined
+      ? {}
+      : { onLifecycleProjectionError: input.onLifecycleProjectionError })
+  };
 }
 
 export async function resumeNativeWorkflowTarget(
@@ -179,6 +221,7 @@ export async function resumeNativeWorkflowTarget(
     repository,
     run: resumeContext.run,
     runtimeConfig,
+    signal: input.signal,
     composition
   });
   const workflowRuntimeInput = {
@@ -188,7 +231,8 @@ export async function resumeNativeWorkflowTarget(
     thread_id: input.thread_id,
     checkpoint_id: input.checkpoint_id,
     interrupt_id: input.interrupt_id,
-    decision: input.decision
+    decision: input.decision,
+    ...nativeWorkflowExecutionControls(input)
   } satisfies ResumeWorkflowInput;
 
   return await execution.composition.workflowRuntime.resume(workflowRuntimeInput);
@@ -206,6 +250,7 @@ async function prepareNativeWorkflowExecution({
   repository,
   run,
   runtimeConfig,
+  signal,
   composition = createRuntimeCompositionForWorkflow(
     runtimeConfig,
     nativeWorkflow.workflow,
@@ -227,6 +272,7 @@ async function prepareNativeWorkflowExecution({
   readonly repository?: RepositoryConfig;
   readonly run: RunHandle;
   readonly runtimeConfig: RuntimeCompositionConfig;
+  readonly signal?: AbortSignal;
   readonly composition?: ReturnType<typeof createRuntimeCompositionForWorkflow>;
 }): Promise<{
   readonly composition: ReturnType<typeof createRuntimeCompositionForWorkflow>;
@@ -238,7 +284,6 @@ async function prepareNativeWorkflowExecution({
     | "patternExecutors"
     | "builtInMetadata"
     | "lockManager"
-    | "workspaceLifecycle"
     | "agentRuntime"
     | "observability"
     | "artifactPublisher"
@@ -289,6 +334,7 @@ async function prepareNativeWorkflowExecution({
         agentsRoot,
         repository,
         configRoot,
+        signal,
         capabilityRegistry: platform.capabilityRegistry
       })
     }

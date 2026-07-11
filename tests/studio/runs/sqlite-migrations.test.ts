@@ -1,5 +1,12 @@
 import path from "node:path";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
@@ -126,6 +133,19 @@ async function expectCorruptSchema(filePath: string): Promise<void> {
 }
 
 describe("SQLite run store migrations", () => {
+  it("rejects a pre-existing symbolic-link database leaf", async () => {
+    await withDatabasePath(async ({ root, filePath }) => {
+      const outside = path.join(root, "outside.sqlite");
+      await writeFile(outside, "untouched", "utf8");
+      await symlink(outside, filePath);
+
+      await expect(createSqliteRunStore({ filePath })).rejects.toMatchObject({
+        code: "run_store_io_failed"
+      });
+      await expect(readFile(outside, "utf8")).resolves.toBe("untouched");
+    });
+  });
+
   it("creates a durable WAL schema and preserves records across reopen", async () => {
     await withRunStore(async ({ filePath, store }) => {
       await store.ledger.preallocate(preallocation("run-1"));
@@ -222,9 +242,18 @@ describe("SQLite run store migrations", () => {
         catalog_fingerprint: _catalogFingerprint,
         execution_snapshot_hash: _snapshotHash,
         graph_snapshot_handle: _graphSnapshot,
+        dispatch_status: _dispatchStatus,
+        artifact_count: _artifactCount,
+        interrupt_count: _interruptCount,
+        lifecycle_projection: _lifecycleProjection,
         ...base
       } = complete;
-      const legacy = { ...base, completeness: "legacy" as const };
+      const legacy = {
+        ...base,
+        dispatch_status: "historical_unknown" as const,
+        lifecycle_projection: "unknown" as const,
+        completeness: "legacy" as const
+      };
 
       const first = await store.reconciler.importHistorical({
         record: legacy,
@@ -240,7 +269,11 @@ describe("SQLite run store migrations", () => {
       expect(retry.applied).toBe(false);
       const item = await store.catalog.get("legacy-run");
       expect(item?.record.completeness).toBe("legacy");
+      expect(item?.record.dispatch_status).toBe("historical_unknown");
+      expect(item?.record.lifecycle_projection).toBe("unknown");
       expect(item?.record).not.toHaveProperty("graph_snapshot_handle");
+      expect(item?.record).not.toHaveProperty("artifact_count");
+      expect(item?.record).not.toHaveProperty("interrupt_count");
     });
   });
 

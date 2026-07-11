@@ -8,6 +8,11 @@ import { WorkflowCompilerError } from "../../../core/workflow/compiler.js";
 import { WorkflowDefinitionError } from "../../../core/workflow/definition.js";
 import { sha256Digest } from "../../../core/workflow/definition-digests.js";
 import {
+  assertNativeWorkflowAgentModelProfiles,
+  loadNativeModelProfiles,
+  requireNativeAgentModelProfile
+} from "../../../platform/native/native-agent-model-profiles.js";
+import {
   compileNativeWorkflow,
   loadWorkflowRuntimeConfig
 } from "../../../platform/native/native-run-context.js";
@@ -23,6 +28,7 @@ import {
 import type { StudioValidationSnapshot } from "../../application/validation/snapshot.js";
 import { StudioCompiledWorkflowSchema } from "../../contracts/validation.js";
 import type { StudioResourceRef } from "../../contracts/paths.js";
+import { findStudioWorkflowAgentContextIssue } from "./workflow-agent-context.js";
 
 type StudioNativeValidationPlatform = Pick<
   NativeLunaPlatformRegistrations,
@@ -37,9 +43,14 @@ const EXPECTED_AGENT_ERROR_CODES = new Set([
   "agent_capability_duplicate",
   "agent_external_definition_reference_invalid",
   "agent_id_mismatch",
+  "agent_model_profile_unknown",
   "agent_output_schema_unknown",
   "agent_path_escape",
-  "agent_path_missing"
+  "agent_path_missing",
+  "model_env_missing",
+  "model_placeholder_invalid",
+  "model_profile_env_unsupported",
+  "model_spec_invalid"
 ]);
 
 function publicErrorCode(cause: unknown, fallback: string): string {
@@ -180,12 +191,33 @@ export class NativeStudioDefinitionValidation
     shouldCompile: boolean
   ): Promise<StudioCanonicalValidationResult> {
     const workflow = await this.loadWorkflow(snapshot, workflowId);
+    const agentsRoot = path.join(snapshot.projectRoot, "agents");
+    await assertNativeWorkflowAgentModelProfiles({
+      workflow,
+      agentsRoot,
+      configRoot: snapshot.configRoot,
+      capabilityRegistry: this.platform.capabilityRegistry
+    });
+    const contextIssue = await findStudioWorkflowAgentContextIssue(
+      workflow,
+      async (agentId) =>
+        await loadAgentDefinition(agentsRoot, agentId, {
+          capabilityRegistry: this.platform.capabilityRegistry
+        })
+    );
+    if (contextIssue !== undefined) {
+      throw new StudioCanonicalDefinitionError(
+        "workflow_agent_context_missing",
+        `Agent ${contextIssue.agentId} requires explicit collected context at node ${contextIssue.nodeId}.`,
+        { fieldPath: contextIssue.fieldPath }
+      );
+    }
     if (!shouldCompile) {
       return { revision: workflow.revision };
     }
     const native = await compileNativeWorkflow({
       workflow,
-      agentsRoot: path.join(snapshot.projectRoot, "agents"),
+      agentsRoot,
       platform: this.platform
     });
     return {
@@ -203,7 +235,15 @@ export class NativeStudioDefinitionValidation
       agentId,
       { capabilityRegistry: this.platform.capabilityRegistry }
     );
-    return { revision: agentDefinitionRevision(agent) };
+    const profiles = await loadNativeModelProfiles(snapshot.configRoot);
+    const profile = requireNativeAgentModelProfile(agent, profiles);
+    return {
+      revision: sha256Digest({
+        agent_revision: agentDefinitionRevision(agent),
+        model_profile_id: agent.model_profile,
+        model_profile: profile
+      })
+    };
   }
 
   private async validateConfig(

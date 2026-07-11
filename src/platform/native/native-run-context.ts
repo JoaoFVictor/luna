@@ -17,6 +17,7 @@ import {
   assertCheckpointJsonValue,
   type JsonValue
 } from "../../core/runtime/json.js";
+import type { RunHandle } from "../../core/runtime/run-handle.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import { isInsideRoot } from "../../core/security/path.js";
 import { compileWorkflow, type CompiledWorkflow } from "../../core/workflow/compiler.js";
@@ -39,10 +40,11 @@ export type NativeCompiledWorkflow = {
 export type NativeRunContext = {
   readonly app: AppConfig;
   readonly agentsRoot: string;
+  readonly definitionConfigRoot: string;
   readonly workflow: WorkflowDefinition;
   readonly nativeWorkflow: NativeCompiledWorkflow;
   readonly repository?: RepositoryConfig;
-  readonly run: ReturnType<typeof createRunIdentity>;
+  readonly run: RunHandle;
   readonly runtimeConfig: RuntimeCompositionConfig;
 };
 
@@ -58,19 +60,28 @@ export async function loadNativeRunContext(
     invocation,
     target,
     projectRoot,
-    configRoot
+    configRoot,
+    definitionRoots,
+    run: preallocatedRun
   }: NativeWorkflowRunInput,
   dependencies: NativeRunContextDependencies = {}
 ): Promise<NativeRunContext> {
   const platform = dependencies.platform ?? nativeLunaPlatformRegistrations;
-  const app = await loadYamlFile(path.join(configRoot, "app.yaml"), AppConfigSchema);
+  const definitionProjectRoot =
+    definitionRoots?.projectRoot ?? projectRoot;
+  const definitionConfigRoot =
+    definitionRoots?.configRoot ?? configRoot;
+  const app = await loadYamlFile(
+    path.join(definitionConfigRoot, "app.yaml"),
+    AppConfigSchema
+  );
   const repositories = await loadYamlFile(
-    path.join(configRoot, "repositories.yaml"),
+    path.join(definitionConfigRoot, "repositories.yaml"),
     RepositoriesConfigSchema
   );
-  const agentsRoot = path.join(projectRoot, "agents");
+  const agentsRoot = path.join(definitionProjectRoot, "agents");
   const workflow = await loadNativeWorkflowDefinition({
-    projectRoot,
+    projectRoot: definitionProjectRoot,
     workflowId: target.id,
     platform
   });
@@ -82,7 +93,7 @@ export async function loadNativeRunContext(
   const repository = workflow.requires.repository
     ? resolveRepository(invocation, repositories.repositories)
     : undefined;
-  const run = createRunIdentity(
+  const run = preallocatedRun ?? createRunIdentity(
     { ...invocation, target },
     {
       attempt: 1,
@@ -91,16 +102,38 @@ export async function loadNativeRunContext(
       nonce: randomBytes(4).toString("hex")
     }
   );
+  assertNativeRunHandle(run, workflow.id);
 
   return {
     app,
     agentsRoot,
+    definitionConfigRoot,
     workflow,
     nativeWorkflow,
     repository,
     run,
     runtimeConfig: runtimeCompositionConfig(app, projectRoot)
   };
+}
+
+function assertNativeRunHandle(run: RunHandle, workflowId: string): void {
+  assertCheckpointJsonValue(run);
+  if (
+    typeof run.run_id !== "string" ||
+    run.run_id.length === 0 ||
+    typeof run.workflow_id !== "string" ||
+    run.workflow_id !== workflowId ||
+    !Number.isSafeInteger(run.attempt) ||
+    run.attempt < 1 ||
+    typeof run.started_at !== "string" ||
+    !Number.isFinite(Date.parse(run.started_at))
+  ) {
+    throw runtimeError(
+      "Preallocated native run identity is invalid",
+      "runtime_state_invalid",
+      { details: { workflow_id: workflowId } }
+    );
+  }
 }
 
 export async function loadNativeWorkflowDefinition({

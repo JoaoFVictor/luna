@@ -117,7 +117,19 @@ function toolItem(
     ...(registration.materialization === undefined
       ? {}
       : { materialization: registration.materialization }),
-    allowlist_required: registration.allowlist_required ?? false
+    allowlist_required: registration.allowlist_required ?? false,
+    ...(registration.allowed_agent_modes === undefined
+      ? {}
+      : { allowed_agent_modes: registration.allowed_agent_modes }),
+    ...(registration.safety === undefined
+      ? {}
+      : {
+          safety: {
+            local_writes: registration.safety.localWrites,
+            network: registration.safety.network,
+            external_side_effects: registration.safety.externalSideEffects
+          }
+        })
   });
 }
 
@@ -172,6 +184,9 @@ function policyItem(
     ...(registration.side_effect_semantics === undefined
       ? {}
       : { side_effect_semantics: registration.side_effect_semantics }),
+    ...(registration.side_effect_category === undefined
+      ? {}
+      : { side_effect_category: registration.side_effect_category }),
     side_effect_operation_ids: registration.side_effect_operation_ids ?? [],
     ...(registration.idempotency_scope === undefined
       ? {}
@@ -274,11 +289,23 @@ function registrationsFor(
 function capabilitySummary(
   manifest: CapabilityManifest
 ): StudioCapabilitySummary {
+  const reExports = manifest.re_exports;
   return StudioCapabilitySummarySchema.parse({
     id: manifest.id,
     version: manifest.version,
     kind: manifest.kind,
+    workflow_node_types: manifest.workflow_node_types ?? [],
     depends_on: manifest.depends_on ?? [],
+    presets: manifest.presets ?? {},
+    re_exports: {
+      built_ins: reExports?.built_ins ?? [],
+      patterns: reExports?.patterns ?? [],
+      tools: reExports?.tools ?? [],
+      gates: reExports?.gates ?? [],
+      policies: reExports?.policies ?? [],
+      ports: reExports?.ports ?? [],
+      artifact_publishers: reExports?.artifact_publishers ?? []
+    },
     presentation: presentation(manifest.id, manifest.presentation),
     docs: manifest.docs ?? []
   });
@@ -303,6 +330,7 @@ export function createStudioCapabilityCatalog(
     id: manifest.id,
     version: manifest.version,
     kind: manifest.kind,
+    workflow_node_types: manifest.workflow_node_types ?? [],
     depends_on: [...(manifest.depends_on ?? [])].sort(),
     presets: manifest.presets ?? {},
     re_exports: manifest.re_exports ?? {}

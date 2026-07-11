@@ -89,7 +89,7 @@ describe("Studio local session manager", () => {
     }));
   });
 
-  it("rotates a CSRF token through the authenticated same-origin session", () => {
+  it("recovers a CSRF token through the authenticated same-origin session", () => {
     const sessionManager = manager();
     const result = exchange(sessionManager);
     const request = {
@@ -100,16 +100,10 @@ describe("Studio local session manager", () => {
       contentType: "application/json",
       secFetchSite: "same-origin"
     } as const;
-    const rotated = sessionManager.rotateCsrf(request);
+    const rotated = sessionManager.recoverCsrf(request);
 
-    expect(rotated.csrfToken).not.toBe(result.csrfToken);
+    expect(rotated.csrfToken).toBe(result.csrfToken);
     expect(rotated.expiresAt).toBe(result.expiresAt);
-    expect(() =>
-      sessionManager.authenticateMutation({
-        ...request,
-        csrfToken: result.csrfToken
-      })
-    ).toThrow(expect.objectContaining({ code: "studio_csrf_invalid" }));
     expect(
       sessionManager.authenticateMutation({
         ...request,
@@ -133,14 +127,15 @@ describe("Studio local session manager", () => {
     } as const;
 
     expect(() =>
-      sessionManager.rotateCsrf({ ...request, origin: "https://evil.example" })
+      sessionManager.recoverCsrf({ ...request, origin: "https://evil.example" })
     ).toThrow(expect.objectContaining({ code: "studio_origin_forbidden" }));
     expect(() =>
-      sessionManager.rotateCsrf({ ...request, cookie: undefined })
+      sessionManager.recoverCsrf({ ...request, cookie: undefined })
     ).toThrow(expect.objectContaining({ code: "studio_session_missing" }));
-    expect(() =>
-      sessionManager.rotateCsrf({ ...request, csrfToken: "wrong" })
-    ).toThrow(expect.objectContaining({ code: "studio_csrf_invalid" }));
+    expect(sessionManager.recoverCsrf({
+      ...request,
+      csrfToken: "wrong"
+    }).csrfToken).toBe(result.csrfToken);
   });
 
   it("rejects unsafe TTLs and preserves bootstrap after an invalid clock", () => {

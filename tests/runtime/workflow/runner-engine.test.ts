@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
+import { RuntimeDurabilityRecoveryRequiredError } from "../../../src/core/runtime/errors.js";
+import type { LunaRuntimeState } from "../../../src/core/runtime/state.js";
 import { capabilityManifest } from "../../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import type { WorkflowDefinition, WorkflowNode } from "../../../src/core/workflow/definition-types.js";
@@ -128,6 +130,112 @@ describe("runtime-neutral workflow runner engine", () => {
     });
   });
 
+  it("observes an exact failed node state without replacing the runtime cause", async () => {
+    const stores = backends();
+    const runtimeFailure = new Error("built-in exploded");
+    let observedState: LunaRuntimeState | undefined;
+    const input = {
+      ...runInput({ stores, runId: "engine-node-fails" }),
+      builtIns: {
+        "runtime.noop": async () => {
+          throw runtimeFailure;
+        }
+      },
+      onFailedState: (state) => {
+        observedState = state;
+        throw new Error("observer must be isolated");
+      }
+    } satisfies RunWorkflowInput;
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState,
+      nodes,
+      runNode
+    }) => {
+      await runNode(nodes[0], initialState);
+      throw new Error("unreachable");
+    };
+
+    await expect(
+      runCompiledWorkflowWithScheduler(input, scheduler)
+    ).rejects.toBe(runtimeFailure);
+
+    expect(observedState).toMatchObject({
+      run_status: "failed",
+      primary_failure: {
+        node_id: "noop",
+        status: "failed"
+      },
+      node_statuses: {
+        noop: {
+          status: "failed",
+          attempt: 1
+        }
+      },
+      attempts: {
+        noop: {
+          count: 1,
+          history: [{ attempt: 1, status: "failed" }]
+        }
+      }
+    });
+    await expect(stores.checkpoints.load("engine-node-fails")).resolves.toMatchObject({
+      state: { run_status: "failed" }
+    });
+  });
+
+  it("requires recovery without observing a terminal failure when checkpoint recovery fails", async () => {
+    const stores = backends();
+    const checkpointStore = stores.checkpoints;
+    const runtimeFailure = new Error("built-in exploded");
+    const checkpointFailure = new Error("checkpoint unavailable");
+    let observedState: LunaRuntimeState | undefined;
+    stores.checkpoints = {
+      ...checkpointStore,
+      async load(threadId, options) {
+        if (options === undefined) {
+          throw checkpointFailure;
+        }
+        return await checkpointStore.load(threadId, options);
+      }
+    };
+    const input = {
+      ...runInput({ stores, runId: "engine-checkpoint-load-fails" }),
+      builtIns: {
+        "runtime.noop": async () => {
+          throw runtimeFailure;
+        }
+      },
+      onFailedState: (state) => {
+        observedState = state;
+      }
+    } satisfies RunWorkflowInput;
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState,
+      nodes,
+      runNode
+    }) => {
+      await runNode(nodes[0], initialState);
+      throw new Error("unreachable");
+    };
+
+    const outcome = await runCompiledWorkflowWithScheduler(input, scheduler)
+      .catch((cause: unknown) => cause);
+    expect(outcome).toBeInstanceOf(RuntimeDurabilityRecoveryRequiredError);
+    expect(outcome).toMatchObject({
+      code: "runtime_durability_recovery_required",
+      cause: checkpointFailure,
+      details: {
+        run_id: "engine-checkpoint-load-fails",
+        runtime_failure_kind: runtimeFailure.name
+      }
+    });
+    expect(observedState).toBeUndefined();
+    expect((await stores.events.list("engine-checkpoint-load-fails")))
+      .not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "run.failed" })
+      ]));
+  });
+
   it("records workflow, node, and built-in spans as the execution source of truth", async () => {
     const stores = backends();
     const observability = createWorkflowObservability({
@@ -205,6 +313,107 @@ describe("runtime-neutral workflow runner engine", () => {
         expect.objectContaining({ message: "span ok: workflow.run; duration_ms=80" })
       ])
     );
+  });
+
+  it("keeps committed success when workflow span end and flush telemetry fail", async () => {
+    const stores = backends();
+    const telemetryFailure = new Error("required telemetry unavailable");
+    const observability = createWorkflowObservability({
+      run: { id: "engine-post-commit-telemetry", workflowId: workflow.id, attempt: 1 },
+      sinks: [
+        {
+          id: "required-post-commit",
+          required: true,
+          emit(record) {
+            if (record.type === "span.ended" && record.span.kind === "workflow") {
+              throw telemetryFailure;
+            }
+          },
+          async flush() {
+            throw telemetryFailure;
+          }
+        }
+      ]
+    });
+    const input = {
+      ...runInput({ stores, runId: "engine-post-commit-telemetry" }),
+      observability,
+      builtIns: { "runtime.noop": async () => ({}) }
+    } satisfies RunWorkflowInput;
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState,
+      nodes,
+      runNode
+    }) => {
+      const result = await runNode(nodes[0], initialState);
+      if (result.kind !== "completed") {
+        throw new Error("unexpected wait");
+      }
+      return {
+        kind: "completed",
+        state: { ...initialState, ...result.update }
+      };
+    };
+
+    await expect(runCompiledWorkflowWithScheduler(input, scheduler))
+      .resolves.toMatchObject({
+        status: "succeeded",
+        state: { run_status: "succeeded" }
+      });
+    await expect(stores.checkpoints.load("engine-post-commit-telemetry"))
+      .resolves.toMatchObject({ state: { run_status: "succeeded" } });
+  });
+
+  it("does not retry a committed node when its succeeded telemetry fails", async () => {
+    const stores = backends();
+    const telemetryFailure = new Error("node succeeded telemetry unavailable");
+    const execute = vi.fn(async () => ({}));
+    const observability = createWorkflowObservability({
+      run: { id: "engine-node-telemetry", workflowId: workflow.id, attempt: 1 },
+      sinks: [
+        {
+          id: "required-node-telemetry",
+          required: true,
+          emit(record) {
+            if (
+              record.type === "span.event" &&
+              record.event.name === "node.succeeded"
+            ) {
+              throw telemetryFailure;
+            }
+          }
+        }
+      ]
+    });
+    const input = {
+      ...runInput({ stores, runId: "engine-node-telemetry" }),
+      observability,
+      builtIns: { "runtime.noop": execute }
+    } satisfies RunWorkflowInput;
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState,
+      nodes,
+      runNode
+    }) => {
+      const result = await runNode(nodes[0], initialState);
+      if (result.kind !== "completed") {
+        throw new Error("unexpected wait");
+      }
+      return {
+        kind: "completed",
+        state: { ...initialState, ...result.update }
+      };
+    };
+
+    await expect(runCompiledWorkflowWithScheduler(input, scheduler))
+      .resolves.toMatchObject({
+        status: "succeeded",
+        state: {
+          run_status: "succeeded",
+          node_statuses: { noop: { status: "succeeded" } }
+        }
+      });
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it("publishes one final observability summary after the workflow span closes", async () => {

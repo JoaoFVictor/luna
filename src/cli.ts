@@ -40,6 +40,7 @@ import {
   type StartNativeStudioServerOptions
 } from "./studio/server/native-studio-server.js";
 import type { StudioServerHandle } from "./studio/server/studio-server.js";
+import { waitForStudioShutdown } from "./studio/server/graceful-shutdown.js";
 import {
   InvocationSchema,
   type Invocation,
@@ -74,6 +75,9 @@ export type CliArgs = {
   command: "studio";
   host?: string;
   port?: number;
+  allowNonLoopbackBind?: true;
+  publicHost?: string;
+  publicPort?: number;
 };
 
 export type ResolvedWebhookServerDeps = StartWebhookServerDeps & {
@@ -113,6 +117,9 @@ export type MainDependencies = {
     deps: ResolvedStudioServerDeps
   ) => Promise<StudioServerHandle | void>;
   studioOutput?: { readonly write: (message: string) => void };
+  waitForStudioShutdown?: (
+    handle: Pick<StudioServerHandle, "close">
+  ) => Promise<void>;
   projectRoot?: string;
   env?: { LUNA_CONFIG_ROOT?: string };
 };
@@ -164,7 +171,17 @@ export function parseCliArgs(args: string[]): CliArgs {
   const [command, ...rest] = args;
 
   if (command === "webhook-server" || command === "studio") {
-    const allowedFlags = new Set(["--host", "--port"]);
+    const allowedFlags = new Set(
+      command === "studio"
+        ? [
+            "--host",
+            "--port",
+            "--allow-non-loopback-bind",
+            "--public-host",
+            "--public-port"
+          ]
+        : ["--host", "--port"]
+    );
     const unsupportedFlag = rest.find(
       (argument) => argument.startsWith("--") && !allowedFlags.has(argument)
     );
@@ -186,6 +203,40 @@ export function parseCliArgs(args: string[]): CliArgs {
           "--port"
         )
       : undefined;
+
+    if (command === "studio") {
+      const publicHostFlagIndex = rest.indexOf("--public-host");
+      const publicHost = publicHostFlagIndex >= 0
+        ? requiredFlag(
+            rest,
+            "--public-host",
+            "Missing required --public-host <host>"
+          )
+        : undefined;
+      const publicPortFlagIndex = rest.indexOf("--public-port");
+      const publicPort = publicPortFlagIndex >= 0
+        ? parsePositiveIntegerFlag(
+            requiredFlag(
+              rest,
+              "--public-port",
+              "Missing required --public-port <port>"
+            ),
+            "--public-port"
+          )
+        : undefined;
+      const allowNonLoopbackBind = rest.includes(
+        "--allow-non-loopback-bind"
+      );
+
+      return {
+        command,
+        ...(host === undefined ? {} : { host }),
+        ...(port === undefined ? {} : { port }),
+        ...(allowNonLoopbackBind ? { allowNonLoopbackBind: true as const } : {}),
+        ...(publicHost === undefined ? {} : { publicHost }),
+        ...(publicPort === undefined ? {} : { publicPort })
+      };
+    }
 
     return {
       command,
@@ -421,14 +472,26 @@ export async function main(
 
   if (parsedArgs.command === "studio") {
     const starter = deps.startStudioServer ?? startNativeStudioServer;
-    await starter({
+    const handle = await starter({
       projectRoot,
       configRoot,
       app: await loadApp(),
       ...(parsedArgs.host === undefined ? {} : { host: parsedArgs.host }),
       ...(parsedArgs.port === undefined ? {} : { port: parsedArgs.port }),
+      ...(parsedArgs.allowNonLoopbackBind === undefined
+        ? {}
+        : { allowNonLoopbackBind: parsedArgs.allowNonLoopbackBind }),
+      ...(parsedArgs.publicHost === undefined
+        ? {}
+        : { publicHost: parsedArgs.publicHost }),
+      ...(parsedArgs.publicPort === undefined
+        ? {}
+        : { publicPort: parsedArgs.publicPort }),
       output: deps.studioOutput ?? process.stdout
     });
+    if (handle !== undefined) {
+      await (deps.waitForStudioShutdown ?? waitForStudioShutdown)(handle);
+    }
     return 0;
   }
 

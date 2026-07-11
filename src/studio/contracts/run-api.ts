@@ -1,8 +1,10 @@
 import { z } from "zod";
 import {
-  RunOpaqueIdSchema
+  RunOpaqueIdSchema,
+  RunTerminalStatusSchema
 } from "./runs.js";
 import { WorkflowIdSchema } from "../../core/router/invocation.js";
+import { StudioRunPlanIdSchema } from "./run-launch-primitives.js";
 
 const CursorSchema = z.string().min(1).max(4_096);
 const PageLimitTextSchema = z
@@ -25,6 +27,7 @@ export const StudioRunListQuerySchema = z
     created_to: TimestampSchema.optional(),
     correlation_id: RunOpaqueIdSchema.optional(),
     job_id: RunOpaqueIdSchema.optional(),
+    plan_id: StudioRunPlanIdSchema.optional(),
     direction: z.enum(["asc", "desc"]).optional(),
     limit: PageLimitTextSchema.optional(),
     cursor: CursorSchema.optional()
@@ -42,4 +45,14 @@ export const StudioRunTimelineQuerySchema = z
   .strict();
 export type StudioRunTimelineQuery = z.infer<
   typeof StudioRunTimelineQuerySchema
+>;
+
+export const StudioRunEventStreamCompleteSchema = z
+  .object({
+    run_id: RunOpaqueIdSchema,
+    status: z.union([z.literal("rejected"), RunTerminalStatusSchema])
+  })
+  .strict();
+export type StudioRunEventStreamComplete = z.infer<
+  typeof StudioRunEventStreamCompleteSchema
 >;

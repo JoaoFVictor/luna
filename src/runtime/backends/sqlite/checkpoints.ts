@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
+import { isDeepStrictEqual } from "node:util";
 import {
   assertRefOnlyCheckpointState,
   type BackendRegistration,
@@ -49,6 +50,36 @@ type WriteRow = {
   channel: string;
   value_json: string;
 };
+
+function writeRecordFromRow(row: WriteRow): CheckpointWriteRecord {
+  const value = JSON.parse(row.value_json) as unknown;
+  assertCheckpointJsonValue(value, "$.write.value");
+  return {
+    thread_id: row.thread_id,
+    checkpoint_ns: row.checkpoint_ns,
+    checkpoint_id: row.checkpoint_id,
+    task_id: row.task_id,
+    index: row.idx,
+    channel: row.channel,
+    value
+  };
+}
+
+function conflictingCheckpointWrite(record: CheckpointWriteRecord): Error {
+  return runtimeError(
+    "Checkpoint write identity already belongs to different durable output",
+    "runtime_duplicate_node_output",
+    {
+      details: {
+        thread_id: record.thread_id,
+        checkpoint_ns: record.checkpoint_ns,
+        checkpoint_id: record.checkpoint_id,
+        task_id: record.task_id,
+        index: record.index
+      }
+    }
+  );
+}
 
 function openDatabase(filePath: string): DatabaseSync {
   const database = new DatabaseSync(filePath);
@@ -320,7 +351,7 @@ export function createSqliteCheckpointStore({
         database.exec("BEGIN IMMEDIATE");
         try {
           const insert = database.prepare(`
-            INSERT OR REPLACE INTO checkpoint_writes (
+            INSERT INTO checkpoint_writes (
               thread_id,
               checkpoint_id,
               checkpoint_ns,
@@ -330,11 +361,21 @@ export function createSqliteCheckpointStore({
               value_json
             )
             VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+            DO NOTHING
+          `);
+          const existingWrite = database.prepare(`
+            SELECT * FROM checkpoint_writes
+            WHERE thread_id = ?
+              AND checkpoint_ns = ?
+              AND checkpoint_id = ?
+              AND task_id = ?
+              AND idx = ?
           `);
 
           for (const record of records) {
             assertCheckpointJsonValue(record.value, "$.write.value");
-            insert.run(
+            const result = insert.run(
               record.thread_id,
               record.checkpoint_id,
               record.checkpoint_ns,
@@ -343,6 +384,30 @@ export function createSqliteCheckpointStore({
               record.channel,
               JSON.stringify(record.value)
             );
+            if (result.changes === 0) {
+              const existing = existingWrite.get(
+                record.thread_id,
+                record.checkpoint_ns,
+                record.checkpoint_id,
+                record.task_id,
+                record.index
+              ) as WriteRow | undefined;
+              let existingValue: unknown;
+              try {
+                existingValue = existing === undefined
+                  ? undefined
+                  : JSON.parse(existing.value_json) as unknown;
+              } catch {
+                throw conflictingCheckpointWrite(record);
+              }
+              if (
+                existing === undefined ||
+                existing.channel !== record.channel ||
+                !isDeepStrictEqual(existingValue, record.value)
+              ) {
+                throw conflictingCheckpointWrite(record);
+              }
+            }
           }
 
           database.exec("COMMIT");
@@ -366,19 +431,24 @@ export function createSqliteCheckpointStore({
           `)
           .all(threadId, checkpointNs, checkpointId) as WriteRow[];
 
-        return rows.map((row): CheckpointWriteRecord => ({
-          thread_id: row.thread_id,
-          checkpoint_ns: row.checkpoint_ns,
-          checkpoint_id: row.checkpoint_id,
-          task_id: row.task_id,
-          index: row.idx,
-          channel: row.channel,
-          value: (() => {
-            const parsed = JSON.parse(row.value_json) as unknown;
-            assertCheckpointJsonValue(parsed, "$.write.value");
-            return parsed;
-          })()
-        }));
+        return rows.map(writeRecordFromRow);
+      } finally {
+        database.close();
+      }
+    },
+    async hasThreadWrites(threadId) {
+      await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+      const database = openDatabase(filePath);
+      try {
+        const row = database
+          .prepare(`
+            SELECT 1 AS present FROM checkpoint_writes
+            WHERE thread_id = ?
+            LIMIT 1
+          `)
+          .get(threadId) as { present: 1 } | undefined;
+
+        return row !== undefined;
       } finally {
         database.close();
       }

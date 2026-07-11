@@ -2,6 +2,7 @@ import type {
   CapabilityManifest,
   CapabilityReExports
 } from "./manifest.js";
+import { CAPABILITY_SIDE_EFFECT_CATEGORIES } from "./manifest.js";
 import type { PatternRegistration } from "./pattern-registration.js";
 import type { JsonSchemaLike } from "./json-schema-types.js";
 import type { StudioPresentable } from "./studio-presentation.js";
@@ -41,6 +42,7 @@ const EXECUTION_ALLOWED_FIELDS = new Set([
   "id",
   "kind",
   "version",
+  "workflow_node_types",
   "presentation",
   "depends_on",
   "patterns",
@@ -95,7 +97,9 @@ const REGISTRATION_ALLOWED_FIELDS = {
     "output_schema",
     "runtime_requirements",
     "materialization",
-    "allowlist_required"
+    "allowlist_required",
+    "allowed_agent_modes",
+    "safety"
   ]),
   gates: new Set([
     "id",
@@ -113,6 +117,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
     "config_schema",
     "local_context_roots",
     "side_effect_semantics",
+    "side_effect_category",
     "side_effect_operation_ids",
     "idempotency_scope",
     "retry_semantics",
@@ -204,6 +209,20 @@ export function validateCapabilityManifest<T extends CapabilityManifest>(
     validateCapabilityId(dependency, "Capability dependency id");
   }
 
+  if (Object.hasOwn(manifest, "workflow_node_types")) {
+    const value = (manifest as Record<string, unknown>).workflow_node_types;
+    if (
+      !Array.isArray(value) ||
+      value.some((nodeType) => nodeType !== "agent") ||
+      new Set(value).size !== value.length
+    ) {
+      throw new CapabilityValidationError(
+        "capability_manifest_forbidden",
+        `Capability ${manifest.id} has invalid workflow_node_types.`
+      );
+    }
+  }
+
   for (const field of MANIFEST_FORBIDDEN_FIELDS) {
     if (field in manifest) {
       throw new CapabilityValidationError(
@@ -267,6 +286,17 @@ export function validateCapabilityManifest<T extends CapabilityManifest>(
         );
       }
       if (field === "policies") {
+        if (
+          registration.side_effect_category !== undefined &&
+          !CAPABILITY_SIDE_EFFECT_CATEGORIES.includes(
+            registration.side_effect_category as never
+          )
+        ) {
+          throw new CapabilityValidationError(
+            "capability_registration_forbidden",
+            `Policy ${registration.id} has an invalid side-effect category.`
+          );
+        }
         for (const operationId of registration.side_effect_operation_ids ?? []) {
           validateNamespacedId(manifest.id, operationId);
         }

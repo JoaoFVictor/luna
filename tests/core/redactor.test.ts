@@ -20,6 +20,21 @@ describe("redactor", () => {
     });
   });
 
+  it("preserves __proto__ as safe own JSON data without prototype mutation", () => {
+    const input = JSON.parse(
+      '{"__proto__":{"polluted":"attacker-value","api_token":"secret"}}'
+    ) as unknown;
+    const redacted = redactValue(input) as Record<string, unknown>;
+
+    expect(Object.getPrototypeOf(redacted)).toBe(Object.prototype);
+    expect(Object.hasOwn(redacted, "__proto__")).toBe(true);
+    expect(redacted).not.toHaveProperty("polluted");
+    expect(redacted["__proto__"]).toEqual({
+      polluted: "attacker-value",
+      api_token: "[REDACTED]"
+    });
+  });
+
   it("redacts markdown strings containing auth headers and env-style secrets", () => {
     expect(
       redactString(
@@ -66,5 +81,22 @@ describe("redactor", () => {
     ).toBe(
       "curl -H 'Authorization: Bearer [REDACTED]' https://api.github.com/repos/o/r && token=[REDACTED]"
     );
+  });
+
+  it("redacts URL userinfo and credential query parameters", () => {
+    const value = [
+      "https://git-user:remote-secret@example.test/acme/repo.git",
+      "https://token-user@example.test/repo?access_token=query-secret&ref=main"
+    ].join("\n");
+
+    const redacted = redactString(value);
+
+    expect(redacted).not.toContain("git-user");
+    expect(redacted).not.toContain("remote-secret");
+    expect(redacted).not.toContain("token-user");
+    expect(redacted).not.toContain("query-secret");
+    expect(redacted).toContain("https://[REDACTED]@example.test");
+    expect(redacted).toContain("access_token=[REDACTED]");
+    expect(redactValue({ remote: value })).toEqual({ remote: redacted });
   });
 });

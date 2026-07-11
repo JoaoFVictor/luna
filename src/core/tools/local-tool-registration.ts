@@ -13,7 +13,9 @@ export function localToolRegistrations(
         input_schema: tool.input_schema,
         output_schema: tool.output_schema,
         runtime_requirements: tool.runtime_requirements,
-        materialization: "local"
+        materialization: "local",
+        allowed_agent_modes: tool.modes,
+        safety: tool.safety
       } satisfies ToolRegistration
     ])
   );

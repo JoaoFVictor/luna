@@ -25,13 +25,16 @@ CLI / input adapter
 - [Capabilities reference](capabilities-reference.md)
 - [Runtime and observability](runtime-and-observability.md)
 - [Configuration reference](configuration-reference.md)
+- [Luna Studio operational guide](studio-guide.md)
 
-## Planned Surfaces
+## Luna Studio
 
-The following document records accepted implementation decisions for work that is
-in progress. It must not be read as a description of already shipped behavior:
+The Studio is the implemented local control plane for workflow and agent
+authoring, isolated agent smoke tests, classified workflow configuration,
+deterministic launch, run inspection, and Git-backed restore-as-draft:
 
-- [Luna Studio architecture decisions](studio-architecture.md)
+- [Operational guide and current limits](studio-guide.md)
+- [Architecture decisions](studio-architecture.md)
 
 Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 
@@ -52,6 +55,8 @@ Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 | Providers | `src/providers/**` | source-system adapters, auth/config, payload parsing, reports, PR review and change-request publishing |
 | Agents | `agents/<id>/` and `src/capabilities/agents/**` | reusable model roles and agent-node execution contracts |
 | Agent runtimes | `src/agent-runtimes/<runtime>/` | runtime-specific model/tool/materialization logic |
+| Studio server | `src/studio/**` | DTO-only local Control API, drafts, validation, apply recovery, configuration, launch, run ledger, history, logs, graphs, and artifacts |
+| Studio browser | `apps/studio/src/**` | React authoring and operating surfaces over the Control API |
 
 ## Extension Decision Guide
 

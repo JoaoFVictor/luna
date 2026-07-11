@@ -10,20 +10,49 @@
       "properties": {
         "review_dimensions": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1 },
+          "x-luna-studio": { "exposure": "editable" }
         },
         "related_context": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean" },
-            "max_related_files": { "type": "integer", "minimum": 1 },
-            "max_scan_files": { "type": "integer", "minimum": 1 },
-            "max_file_bytes": { "type": "integer", "minimum": 1 },
-            "max_excerpt_bytes": { "type": "integer", "minimum": 1 },
-            "include_tests": { "type": "boolean" },
-            "include_docs": { "type": "boolean" },
-            "include_configs": { "type": "boolean" }
+            "enabled": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "max_related_files": {
+              "type": "integer",
+              "minimum": 1,
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "max_scan_files": {
+              "type": "integer",
+              "minimum": 1,
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "max_file_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "max_excerpt_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "include_tests": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "include_docs": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "include_configs": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
+            }
           }
         },
         "pull_request_review": {
@@ -31,18 +60,36 @@
           "additionalProperties": false,
           "required": ["enabled", "provider", "event", "inline_comments"],
           "properties": {
-            "enabled": { "type": "boolean" },
-            "provider": { "type": "string", "minLength": 1 },
-            "event": {
-              "enum": ["auto", "comment", "request_changes", "approve"]
+            "enabled": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
             },
-            "inline_comments": { "type": "boolean" },
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "x-luna-studio": { "exposure": "read_only" }
+            },
+            "event": {
+              "enum": ["auto", "comment", "request_changes", "approve"],
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "inline_comments": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
+            },
             "comment_policy": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "inline_evidence": { "enum": ["primary", "all"] },
-                "max_inline_comments": { "type": "integer", "minimum": 1 }
+                "inline_evidence": {
+                  "enum": ["primary", "all"],
+                  "x-luna-studio": { "exposure": "editable" }
+                },
+                "max_inline_comments": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "x-luna-studio": { "exposure": "editable" }
+                }
               }
             }
           }
