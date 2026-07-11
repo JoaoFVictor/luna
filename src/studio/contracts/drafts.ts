@@ -17,14 +17,19 @@ export const StudioBaseFileSchema = z
   .object({
     file: StudioPathSchema,
     sha256: StudioDigestSchema.nullable(),
-    content_ref: StudioDigestSchema.nullable()
+    content_ref: StudioDigestSchema.nullable(),
+    mode: z.number().int().min(0).max(0o777).nullable()
   })
   .strict()
   .superRefine((file, context) => {
-    if ((file.sha256 === null) !== (file.content_ref === null)) {
+    if (
+      (file.sha256 === null) !== (file.content_ref === null) ||
+      (file.sha256 === null) !== (file.mode === null)
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Base file hash and content reference must both be present or absent"
+        message:
+          "Base file hash, content reference, and mode must all be present or absent"
       });
     }
   });

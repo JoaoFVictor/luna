@@ -16,10 +16,11 @@ import {
 import { loadStudioRoutingDefinition } from "../application/routing/router-definition-loader.js";
 import { simulateStudioRouting } from "../application/routing/routing-simulator.js";
 import type { StudioServerServices } from "./studio-server.js";
+import { createNativeStudioAuthoringServices } from "./native-authoring-services.js";
 
 type NativeStudioPlatform = Pick<
   LunaPlatform,
-  "capabilityRegistry" | "inputAdapterRegistry"
+  "capabilityRegistry" | "capabilityManifests" | "inputAdapterRegistry"
 >;
 
 export type NativeStudioServicesOptions = {
@@ -53,6 +54,14 @@ export async function createNativeStudioServices(
   const capabilityCatalog = createStudioCapabilityCatalog(
     platform.capabilityRegistry
   );
+  const authoring = createNativeStudioAuthoringServices({
+    projectRoot: options.projectRoot,
+    configRoot: options.configRoot,
+    platform,
+    technicalCatalogFingerprint: () =>
+      capabilityCatalog.technical_fingerprint
+  });
+  await authoring.initialize();
   const loadRouting = async () =>
     await loadStudioRoutingDefinition({
       configRoot: options.configRoot,

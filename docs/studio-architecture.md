@@ -257,7 +257,7 @@ Every change set includes:
 
 - schema version, draft id, optimistic revisions, and primary resource;
 - all affected resources and explicitly allowed paths;
-- base file hashes, current content hashes, and tombstones;
+- base file hashes and modes, current content hashes, and tombstones;
 - dependency hashes, base bundle hash, draft hash, and separate technical and
   presentation catalog fingerprints;
 - line-ending and mode metadata when they matter;

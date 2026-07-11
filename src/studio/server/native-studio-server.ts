@@ -17,7 +17,7 @@ export type StartNativeStudioServerOptions = Omit<
   readonly app?: AppConfig;
   readonly platform?: Pick<
     LunaPlatform,
-    "capabilityRegistry" | "inputAdapterRegistry"
+    "capabilityRegistry" | "capabilityManifests" | "inputAdapterRegistry"
   >;
   readonly previews?: StudioAdapterPreviewPort;
   readonly startServer?: typeof startStudioServer;

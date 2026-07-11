@@ -128,7 +128,11 @@ function pathDetails(file: StudioPath): { readonly file: StudioPath } {
 function sourceConflict(
   file: StudioPath,
   expectedSha256: string | null,
-  actualSha256: string | null
+  actualSha256: string | null,
+  modes: {
+    readonly expected: number | null;
+    readonly actual: number | null;
+  } | undefined = undefined
 ): StudioSnapshotError {
   return new StudioSnapshotError(
     "studio_snapshot_source_conflict",
@@ -137,7 +141,10 @@ function sourceConflict(
       details: {
         file,
         expectedSha256,
-        actualSha256
+        actualSha256,
+        ...(modes === undefined
+          ? {}
+          : { expectedMode: modes.expected, actualMode: modes.actual })
       }
     }
   );
@@ -308,7 +315,7 @@ async function readBoundedSourceFile(
   expectedSha256: string,
   budget: StudioSnapshotWorkBudget,
   faultInjector?: StudioValidationSnapshotFaultInjector
-): Promise<Buffer> {
+): Promise<{ readonly content: Buffer; readonly mode: number }> {
   const sourcePath = await canonicalSourceFile(
     roots,
     file,
@@ -382,7 +389,8 @@ async function readBoundedSourceFile(
             { cause, details: pathDetails(file) }
           );
         }
-        return result;
+        const finalMetadata = await handle.stat();
+        return { content: result, mode: finalMetadata.mode & 0o777 };
       }
       total += bytesRead;
       if (total > maxBytes) {
@@ -518,12 +526,13 @@ export class FileSystemStudioValidationSnapshot
         verifiedFiles.push({
           file: baseFile.file,
           role: "base",
-          sha256: baseFile.sha256
+          sha256: baseFile.sha256,
+          mode: baseFile.mode
         });
       }
 
       for (const dependency of changeSet.dependencies) {
-        await this.materializeDependency(
+        const mode = await this.materializeDependency(
           roots,
           physicalSourceRoots,
           dependency,
@@ -532,7 +541,8 @@ export class FileSystemStudioValidationSnapshot
         verifiedFiles.push({
           file: dependency.file,
           role: "dependency",
-          sha256: dependency.sha256
+          sha256: dependency.sha256,
+          mode
         });
       }
 
@@ -585,9 +595,15 @@ export class FileSystemStudioValidationSnapshot
         budget,
         this.faultInjector
       );
-      const currentDigest = digestBytes(current);
-      if (currentDigest !== baseFile.sha256) {
-        throw sourceConflict(baseFile.file, baseFile.sha256, currentDigest);
+      const currentDigest = digestBytes(current.content);
+      if (
+        currentDigest !== baseFile.sha256 ||
+        current.mode !== baseFile.mode
+      ) {
+        throw sourceConflict(baseFile.file, baseFile.sha256, currentDigest, {
+          expected: baseFile.mode,
+          actual: current.mode
+        });
       }
     }
 
@@ -658,8 +674,8 @@ export class FileSystemStudioValidationSnapshot
     sourceRoots: SourceRoots,
     dependency: StudioDependency,
     budget: StudioSnapshotWorkBudget
-  ): Promise<void> {
-    const content = await readBoundedSourceFile(
+  ): Promise<number> {
+    const current = await readBoundedSourceFile(
       sourceRoots,
       dependency.file,
       this.maxSourceFileBytes,
@@ -667,7 +683,7 @@ export class FileSystemStudioValidationSnapshot
       budget,
       this.faultInjector
     );
-    const actualDigest = digestBytes(content);
+    const actualDigest = digestBytes(current.content);
     if (actualDigest !== dependency.sha256) {
       throw sourceConflict(
         dependency.file,
@@ -675,7 +691,12 @@ export class FileSystemStudioValidationSnapshot
         actualDigest
       );
     }
-    budget.account(dependency.file, content.byteLength, "materialize");
-    await writeSnapshotFile(roots, dependency.file, content);
+    budget.account(
+      dependency.file,
+      current.content.byteLength,
+      "materialize"
+    );
+    await writeSnapshotFile(roots, dependency.file, current.content);
+    return current.mode;
   }
 }

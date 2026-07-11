@@ -12,6 +12,7 @@ export type StudioSnapshotVerifiedFile = {
   readonly file: StudioPath;
   readonly role: "base" | "dependency";
   readonly sha256: string | null;
+  readonly mode: number | null;
 };
 
 export type StudioValidationSnapshotPort = {
@@ -33,6 +34,8 @@ export type StudioSnapshotErrorDetails = {
   readonly file?: StudioPath;
   readonly expectedSha256?: string | null;
   readonly actualSha256?: string | null;
+  readonly expectedMode?: number | null;
+  readonly actualMode?: number | null;
   readonly actualBytes?: number;
   readonly maxBytes?: number;
   readonly actualFiles?: number;

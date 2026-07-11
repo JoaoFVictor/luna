@@ -184,6 +184,12 @@ function assertChangeSetInvariants(changeSet: StudioChangeSet): void {
         `Base file content reference does not match its hash: ${key}`
       );
     }
+    if ((baseFile.sha256 === null) !== (baseFile.mode === null)) {
+      throw changeSetError(
+        "draft_base_content_mismatch",
+        `Base file mode does not match its hash presence: ${key}`
+      );
+    }
   }
 
   for (const change of changeSet.changes) {

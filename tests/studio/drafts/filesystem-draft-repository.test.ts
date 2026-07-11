@@ -124,7 +124,8 @@ function draftWithBlobs(input: {
           path: `workflows/sample-${draftId.at(-1)}/workflow.yaml`
         },
         sha256: input.baseDigest,
-        content_ref: input.baseDigest
+        content_ref: input.baseDigest,
+        mode: 0o644
       }
     ],
     dependencies: [],

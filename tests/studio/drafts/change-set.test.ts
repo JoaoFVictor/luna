@@ -32,7 +32,8 @@ function draftInput() {
       {
         file: workflowFile,
         sha256: digest("old"),
-        content_ref: digest("old")
+        content_ref: digest("old"),
+        mode: 0o644
       }
     ],
     dependencies: [],
@@ -64,6 +65,42 @@ describe("Studio change sets", () => {
     expect(first.record_revision).toBe(1);
     expect(first.content_revision).toBe(1);
     expect(first.layout_revision).toBe(0);
+  });
+
+  it("includes the base file mode in content identity", () => {
+    const regular = draft();
+    const executable = createStudioChangeSet({
+      ...draftInput(),
+      baseFiles: draftInput().baseFiles.map((file) => ({
+        ...file,
+        mode: 0o755
+      }))
+    });
+
+    expect(executable.draft_hash).not.toBe(regular.draft_hash);
+  });
+
+  it("requires explicit base mode metadata with matching presence", () => {
+    const current = draft();
+    const base = current.base_files[0]!;
+    expect(
+      StudioChangeSetSchema.safeParse({
+        ...current,
+        base_files: [
+          {
+            file: base.file,
+            sha256: base.sha256,
+            content_ref: base.content_ref
+          }
+        ]
+      }).success
+    ).toBe(false);
+    expect(
+      StudioChangeSetSchema.safeParse({
+        ...current,
+        base_files: [{ ...base, mode: null }]
+      }).success
+    ).toBe(false);
   });
 
   it.each([
@@ -224,7 +261,9 @@ describe("Studio change sets", () => {
   it("uses a null base entry for a newly created file", () => {
     const created = createStudioChangeSet({
       ...draftInput(),
-      baseFiles: [{ file: workflowFile, sha256: null, content_ref: null }],
+      baseFiles: [
+        { file: workflowFile, sha256: null, content_ref: null, mode: null }
+      ],
       changes: [
         {
           action: "write",
@@ -247,7 +286,8 @@ describe("Studio change sets", () => {
           {
             file: workflowFile,
             sha256: digest("old"),
-            content_ref: digest("different-content")
+            content_ref: digest("different-content"),
+            mode: 0o644
           }
         ]
       })
@@ -259,7 +299,7 @@ describe("Studio change sets", () => {
       createStudioChangeSet({
         ...draftInput(),
         baseFiles: [
-          { file: workflowFile, sha256: null, content_ref: null }
+          { file: workflowFile, sha256: null, content_ref: null, mode: null }
         ],
         changes: [
           {

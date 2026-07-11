@@ -7,6 +7,7 @@ import {
 } from "vitest";
 import {
   access,
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -129,6 +130,7 @@ describe("filesystem Studio validation snapshot", () => {
     const agentContent = "id: helper\n";
     const configContent = "enabled: true\n";
     await writeSource(projectRoot, workflowPath, originalWorkflow);
+    await chmod(path.join(projectRoot, workflowPath), 0o755);
     await writeSource(projectRoot, removedPath, removedContent);
     await writeSource(projectRoot, agentPath, agentContent);
     await writeSource(projectRoot, "unrelated/private.txt", "not copied\n");
@@ -138,17 +140,20 @@ describe("filesystem Studio validation snapshot", () => {
         {
           file: { root: "project", path: workflowPath },
           sha256: digest(originalWorkflow),
-          content_ref: digest(originalWorkflow)
+          content_ref: digest(originalWorkflow),
+          mode: 0o755
         },
         {
           file: { root: "project", path: removedPath },
           sha256: digest(removedContent),
-          content_ref: digest(removedContent)
+          content_ref: digest(removedContent),
+          mode: 0o644
         },
         {
           file: { root: "config", path: configPath },
           sha256: null,
-          content_ref: null
+          content_ref: null,
+          mode: null
         }
       ],
       dependencies: [
@@ -215,6 +220,12 @@ describe("filesystem Studio validation snapshot", () => {
     expect((await stat(path.join(snapshot.projectRoot, workflowPath))).mode & 0o777)
       .toBe(0o600);
     expect(snapshot.verifiedFiles).toHaveLength(4);
+    expect(snapshot.verifiedFiles).toContainEqual({
+      file: { root: "project", path: workflowPath },
+      role: "base",
+      sha256: digest(originalWorkflow),
+      mode: 0o755
+    });
     expect(await readFile(path.join(projectRoot, workflowPath), "utf8")).toBe(
       originalWorkflow
     );
@@ -236,7 +247,12 @@ describe("filesystem Studio validation snapshot", () => {
     await writeSource(projectRoot, file.path, "externally changed\n");
     const existingFixture = draftFixture({
       baseFiles: [
-        { file, sha256: digest(original), content_ref: digest(original) }
+        {
+          file,
+          sha256: digest(original),
+          content_ref: digest(original),
+          mode: 0o644
+        }
       ],
       blobContents: [original]
     });
@@ -258,8 +274,20 @@ describe("filesystem Studio validation snapshot", () => {
     });
 
     await writeSource(projectRoot, file.path, original);
+    await chmod(path.join(projectRoot, file.path), 0o600);
+    await expect(existingSnapshots.create(existingFixture.draft)).rejects.toMatchObject({
+      code: "studio_snapshot_source_conflict",
+      details: {
+        file,
+        expectedSha256: digest(original),
+        actualSha256: digest(original),
+        expectedMode: 0o644,
+        actualMode: 0o600
+      }
+    });
+    await chmod(path.join(projectRoot, file.path), 0o644);
     const newFixture = draftFixture({
-      baseFiles: [{ file, sha256: null, content_ref: null }],
+      baseFiles: [{ file, sha256: null, content_ref: null, mode: null }],
       blobContents: []
     });
     const newSnapshots = new FileSystemStudioValidationSnapshot({
@@ -326,7 +354,8 @@ describe("filesystem Studio validation snapshot", () => {
             path: "workflows/sample/workflow.yaml"
           },
           sha256: digest(content),
-          content_ref: digest(content)
+          content_ref: digest(content),
+          mode: 0o644
         }
       ],
       blobContents: [content]
@@ -356,7 +385,12 @@ describe("filesystem Studio validation snapshot", () => {
     await writeSource(projectRoot, file.path, content);
     const fixture = draftFixture({
       baseFiles: [
-        { file, sha256: digest(content), content_ref: digest(content) }
+        {
+          file,
+          sha256: digest(content),
+          content_ref: digest(content),
+          mode: 0o644
+        }
       ],
       blobContents: ["wrong content\n"]
     });
@@ -425,7 +459,8 @@ describe("filesystem Studio validation snapshot", () => {
         {
           file: workflowFile,
           sha256: digest(workflowBase),
-          content_ref: digest(workflowBase)
+          content_ref: digest(workflowBase),
+          mode: 0o644
         }
       ],
       changes: [
@@ -478,7 +513,7 @@ describe("filesystem Studio validation snapshot", () => {
 
     const deleted = draftFixture({
       baseFiles: [
-        { file, sha256: digest(base), content_ref: digest(base) }
+        { file, sha256: digest(base), content_ref: digest(base), mode: 0o644 }
       ],
       changes: [
         { action: "delete", file, base_sha256: digest(base) }
@@ -505,7 +540,7 @@ describe("filesystem Studio validation snapshot", () => {
     const overlay = "x";
     const overlaid = draftFixture({
       baseFiles: [
-        { file, sha256: digest(base), content_ref: digest(base) }
+        { file, sha256: digest(base), content_ref: digest(base), mode: 0o644 }
       ],
       changes: [
         {
@@ -547,7 +582,7 @@ describe("filesystem Studio validation snapshot", () => {
     } as const;
     const content = "12345";
     const fixture = draftFixture({
-      baseFiles: [{ file, sha256: null, content_ref: null }],
+      baseFiles: [{ file, sha256: null, content_ref: null, mode: null }],
       changes: [
         {
           action: "write",
@@ -633,7 +668,12 @@ describe("filesystem Studio validation snapshot", () => {
     await writeSource(outsideRoot, "workflow.yaml", content);
     const fixture = draftFixture({
       baseFiles: [
-        { file, sha256: digest(content), content_ref: digest(content) }
+        {
+          file,
+          sha256: digest(content),
+          content_ref: digest(content),
+          mode: 0o644
+        }
       ],
       blobContents: [content]
     });
@@ -673,7 +713,12 @@ describe("filesystem Studio validation snapshot", () => {
     await writeSource(projectRoot, file.path, "changed\n");
     const fixture = draftFixture({
       baseFiles: [
-        { file, sha256: digest(expected), content_ref: digest(expected) }
+        {
+          file,
+          sha256: digest(expected),
+          content_ref: digest(expected),
+          mode: 0o644
+        }
       ],
       blobContents: [expected]
     });

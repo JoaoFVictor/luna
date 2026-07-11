@@ -119,7 +119,8 @@ async function minimumWorkflowProject(): Promise<{
         path: `workflows/minimum/${filename}`
       },
       sha256: digest(content),
-      content_ref: digest(content)
+      content_ref: digest(content),
+      mode: 0o644
     });
   }
   return { projectRoot, contents, baseFiles };
@@ -341,7 +342,8 @@ describe("Studio draft canonical validation", () => {
       baseFiles.push({
         file: { root: "project", path: relativePath },
         sha256: digest(content),
-        content_ref: digest(content)
+        content_ref: digest(content),
+        mode: 0o644
       });
     }
     const draft = changeSet({
@@ -427,7 +429,8 @@ describe("Studio draft canonical validation", () => {
     const configFile: StudioBaseFile = {
       file: { root: "config", path: "workflows/minimum.yaml" },
       sha256: digest(configContent),
-      content_ref: digest(configContent)
+      content_ref: digest(configContent),
+      mode: 0o644
     };
     dependencyContents.set(digest(configContent), configContent);
     const draft = changeSet({
