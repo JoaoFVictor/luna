@@ -151,14 +151,19 @@ type StudioFieldHintBase = {
 
 type StudioFieldHint =
   | (StudioFieldHintBase & {
-      control?: "text" | "textarea" | "number" | "json";
+      control?: never;
+      placeholder?: never;
+      option_labels?: never;
+    })
+  | (StudioFieldHintBase & {
+      control: "text" | "textarea" | "number" | "json";
       placeholder?: string;
-      options?: never;
+      option_labels?: never;
     })
   | (StudioFieldHintBase & {
       control: "switch";
       placeholder?: never;
-      options?: never;
+      option_labels?: never;
     })
   | (StudioFieldHintBase & {
       control: "select";
@@ -178,6 +183,10 @@ type StudioPresentation = {
   field_hints?: Readonly<Record<JsonPointer, StudioFieldHint>>;
 };
 ```
+
+User-visible presentation strings are nonblank, except that an explicitly empty
+`placeholder` is allowed. A hint without `control` carries only label and
+description copy.
 
 Each `field_hints` key is a canonical RFC 6901 JSON Pointer into the editable
 schema owned by that registration. The empty string addresses the schema root;
@@ -200,7 +209,7 @@ object or array. `select` additionally requires a finite string domain declared
 by the technical schema through `enum`, `const`, or equivalent `oneOf` branches.
 The Studio derives selectable values only from that domain. Optional
 `option_labels` may relabel known values but cannot add, remove, or alter them;
-unknown label keys are rejected and missing labels fall back to the raw value.
+when present, its keys must cover that domain exactly.
 
 The manifest or registration that owns the technical contract also owns its
 presentation field; there is no second descriptor registry. Technical behavior
@@ -223,7 +232,13 @@ Drafts are versioned change sets stored under:
 ```
 
 Directories use mode `0700` and files use `0600` where supported. Large content is
-content-addressed instead of embedded repeatedly in metadata.
+content-addressed instead of embedded repeatedly in metadata. Blobs are not an
+independent persistence API: `create` and `update` receive the change set and its
+new blobs as one locked mutation. The repository rejects duplicate, mismatched,
+or unreferenced blobs before writing anything. A configurable aggregate quota
+limits the entire drafts store in addition to per-file limits; the first locked
+access after startup removes incomplete creates, atomic-write remnants, and blobs
+not referenced by durable metadata.
 
 A file reference uses a logical root and a relative path:
 
@@ -240,12 +255,39 @@ The configured `configRoot` is a distinct root and may live outside `projectRoot
 
 Every change set includes:
 
-- schema version, draft id, optimistic version, and primary resource;
+- schema version, draft id, optimistic revisions, and primary resource;
 - all affected resources and explicitly allowed paths;
 - base file hashes, current content hashes, and tombstones;
-- dependency hashes, base bundle hash, draft hash, and catalog fingerprint;
+- dependency hashes, base bundle hash, draft hash, and separate technical and
+  presentation catalog fingerprints;
 - line-ending and mode metadata when they matter;
 - local layout and validation status.
+
+`record_revision` is the monotonic optimistic concurrency version for every
+persisted draft mutation, including validation-status-only updates.
+`content_revision` advances only when applicable content changes, while
+`layout_revision` advances only for editor layout changes. `draft_hash` remains
+the identity of applicable technical content and intentionally excludes status,
+layout, and persistence-only revisions. Each revision advances if and only if its
+corresponding semantics changed; builders and repository validation both reject
+no-op updates and revision-only updates.
+
+Draft enumeration is a stable, bounded page over storage entries. It reads only
+`change-set.json`, never blob bodies, and returns a sanitized diagnostic beside
+each unreadable draft rather than failing the entire page.
+
+Delete has its own filesystem commit protocol. Under the drafts lock, the live
+directory is renamed to a versioned hidden tombstone and the drafts directory is
+synced. Any failure after rename is reported as `commit_ambiguous`; retrying with
+the same expected revisions recognizes the tombstone as the same logical delete.
+Tombstones remain hidden for a configurable retry window and are garbage-collected
+after expiry on a later locked access. A reused draft id is rejected while its
+tombstone exists.
+
+`technical_catalog_fingerprint` binds compilation/apply authority and is included
+in `draft_hash`. `presentation_catalog_fingerprint` detects stale labels, examples,
+field hints, and other UX projections; it does not invalidate otherwise identical
+technical content or authorize apply.
 
 The authoritative validation snapshot is current source plus the complete change
 set overlay. Loaders and compiler run against that snapshot; drafts are never
@@ -270,7 +312,8 @@ The apply service:
 1. acquires a cross-process lock;
 2. validates the confirmation token and all hashes under that lock;
 3. stages content on the same filesystem as each target root;
-4. syncs staged files and directories;
+4. sets file modes through open descriptors, then syncs staged files and every
+   newly created directory entry through its parent directory;
 5. creates deterministic backups of affected paths only;
 6. installs changes in deterministic order;
 7. reloads and validates the installed resources;
@@ -284,8 +327,9 @@ evidence is ambiguous. Cleanup is retryable after either terminal state. An
 ambiguous failure is never reported as success.
 
 `plan-apply` returns a short-lived opaque token bound to the draft version and
-hash, base/dependency hashes, catalog fingerprint, compiler contract version, and
-the exact diff. `apply` also requires `If-Match` and an idempotency key.
+hash, base/dependency hashes, technical catalog fingerprint, compiler contract
+version, and the exact diff. `apply` also requires `If-Match` and an idempotency
+key.
 
 ## LS-007: Control API Boundary
 
@@ -389,6 +433,24 @@ rules evaluate only `{ invocation }`; an adapter id is not persisted as a predic
 because it is not part of the Invocation contract. Rules may use normalized fields
 such as `source`, `event`, `action`, subject, or repository, so they cannot
 distinguish two adapters that intentionally produce the same envelope.
+
+For example, the Studio may author the equivalent routing rule outside the
+workflow:
+
+```yaml
+- id: github-pull-request-review
+  when:
+    expression: >-
+      $.invocation.source = "github" and
+      $.invocation.event = "pull_request"
+  target: workflow:code-review
+```
+
+This means “an Invocation normalized as GitHub pull request runs code-review”,
+not “the workflow belongs to the GitHub adapter”. If future routing must
+distinguish two physical adapters that emit the same normalized envelope, the
+trusted Invocation contract must first gain an explicit adapter-origin field;
+the Studio must not infer one from browser input.
 
 The edited `RouterDefinition` is a separate config-root resource in the same
 multi-resource draft. Its location comes from the canonical config loader:

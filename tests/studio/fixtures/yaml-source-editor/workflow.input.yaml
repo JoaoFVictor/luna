@@ -1,0 +1,15 @@
+# workflow comment
+id: sample
+mode: read_only # keep mode note
+capabilities: [agents, reports]
+nodes:
+  - id: analyze
+    type: agent
+    agent: code-reviewer
+    retry:
+      attempts: 2 # preserve retry note
+      backoff_ms: 500
+  - id: report
+    type: built_in
+    uses: reports.final_report
+    after: [analyze]

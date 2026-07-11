@@ -13,7 +13,6 @@ import {
 import { InvocationSchema } from "../../core/router/invocation.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import { resumeContextFromMetadata } from "../../runtime/workflow/interrupts.js";
-import { loadWorkflowDefinition } from "../../core/workflow/definition.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";
 import {
@@ -36,6 +35,7 @@ import { buildNativeWorkflowAgentInputs } from "./native-agent-inputs.js";
 import {
   compileNativeWorkflow,
   loadNativeRunContext,
+  loadNativeWorkflowDefinition,
   loadWorkflowRuntimeConfig,
   runtimeCompositionConfig,
   workflowUsesAgents
@@ -133,11 +133,11 @@ export async function resumeNativeWorkflowTarget(
     RepositoriesConfigSchema
   );
   const agentsRoot = path.join(input.projectRoot, "agents");
-  const definition = await loadWorkflowDefinition(
-    path.join(input.projectRoot, "workflows"),
-    input.target.id,
-    { agentsRoot, capabilityRegistry: platform.capabilityRegistry }
-  );
+  const definition = await loadNativeWorkflowDefinition({
+    projectRoot: input.projectRoot,
+    workflowId: input.target.id,
+    platform
+  });
   const nativeWorkflow = await compileNativeWorkflow({
     workflow: definition,
     agentsRoot,

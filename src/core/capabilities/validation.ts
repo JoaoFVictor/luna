@@ -3,26 +3,13 @@ import type {
   CapabilityReExports
 } from "./manifest.js";
 import type { PatternRegistration } from "./pattern-registration.js";
+import type { JsonSchemaLike } from "./json-schema-types.js";
+import type { StudioPresentable } from "./studio-presentation.js";
+import { validateStudioPresentation } from "./studio-presentation-validation.js";
+import { CapabilityValidationError } from "./validation-error.js";
 
-type CapabilityValidationCode =
-  | "capability_id_invalid"
-  | "capability_id_namespace"
-  | "capability_registration_id_mismatch"
-  | "capability_registration_forbidden"
-  | "capability_composition_forbidden"
-  | "capability_core_reserved"
-  | "capability_manifest_forbidden"
-  | "pattern_registration_forbidden";
-
-export class CapabilityValidationError extends Error {
-  readonly code: CapabilityValidationCode;
-
-  constructor(code: CapabilityValidationCode, message: string) {
-    super(message);
-    this.name = "CapabilityValidationError";
-    this.code = code;
-  }
-}
+export { validateStudioPresentation } from "./studio-presentation-validation.js";
+export { CapabilityValidationError } from "./validation-error.js";
 
 const REGISTRATION_FIELDS = [
   "patterns",
@@ -43,6 +30,7 @@ const COMPOSITION_ALLOWED_FIELDS = new Set([
   "id",
   "kind",
   "version",
+  "presentation",
   "depends_on",
   "presets",
   "docs",
@@ -53,6 +41,7 @@ const EXECUTION_ALLOWED_FIELDS = new Set([
   "id",
   "kind",
   "version",
+  "presentation",
   "depends_on",
   "patterns",
   "built_ins",
@@ -82,6 +71,7 @@ const MANIFEST_FORBIDDEN_FIELDS = [
 const REGISTRATION_ALLOWED_FIELDS = {
   patterns: new Set([
     "id",
+    "presentation",
     "declaring_node_type",
     "input_schema",
     "output_schema",
@@ -91,6 +81,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
   ]),
   built_ins: new Set([
     "id",
+    "presentation",
     "input_schema",
     "output_schema",
     "required_ports",
@@ -98,6 +89,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
   ]),
   tools: new Set([
     "id",
+    "presentation",
     "protocol",
     "input_schema",
     "output_schema",
@@ -107,6 +99,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
   ]),
   gates: new Set([
     "id",
+    "presentation",
     "input_schema",
     "decision_schema",
     "output_schema",
@@ -116,6 +109,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
   ]),
   policies: new Set([
     "id",
+    "presentation",
     "config_schema",
     "local_context_roots",
     "side_effect_semantics",
@@ -126,6 +120,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
   ]),
   ports: new Set([
     "id",
+    "presentation",
     "capability",
     "option_schema",
     "lifecycle",
@@ -133,6 +128,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
   ]),
   artifact_publishers: new Set([
     "id",
+    "presentation",
     "source_node_ownership",
     "path_policy",
     "overwrite_policy",
@@ -140,7 +136,7 @@ const REGISTRATION_ALLOWED_FIELDS = {
     "backend_requirements",
     "manifest_transaction"
   ]),
-  schemas: new Set(["id", "schema"])
+  schemas: new Set(["id", "presentation", "schema"])
 } as const;
 
 const RE_EXPORT_FIELDS = [
@@ -179,6 +175,30 @@ export function validateCapabilityManifest<T extends CapabilityManifest>(
   manifest: T
 ): T {
   validateCapabilityId(manifest.id, "Capability id");
+
+  if (Object.hasOwn(manifest, "presentation")) {
+    validateStudioPresentation(
+      manifest.presentation,
+      `Capability ${manifest.id} presentation`
+    );
+  }
+
+  validateRegistrationPresentations(
+    manifest.built_ins,
+    (item) => item.input_schema
+  );
+  validateRegistrationPresentations(manifest.tools, (item) => item.input_schema);
+  validateRegistrationPresentations(manifest.gates, (item) => item.input_schema);
+  validateRegistrationPresentations(
+    manifest.policies,
+    (item) => item.config_schema
+  );
+  validateRegistrationPresentations(manifest.ports, (item) => item.option_schema);
+  validateRegistrationPresentations(
+    manifest.artifact_publishers,
+    (item) => item.config_schema
+  );
+  validateRegistrationPresentations(manifest.schemas, (item) => item.schema);
 
   for (const dependency of manifest.depends_on ?? []) {
     validateCapabilityId(dependency, "Capability dependency id");
@@ -304,11 +324,34 @@ function validateRegistrationShape(
   }
 }
 
+function validateRegistrationPresentations<T extends StudioPresentable>(
+  registrations: Readonly<Record<string, T>> | undefined,
+  ownerSchema: (registration: T) => JsonSchemaLike | undefined
+): void {
+  for (const [id, registration] of Object.entries(registrations ?? {})) {
+    if (Object.hasOwn(registration, "presentation")) {
+      validateStudioPresentation(
+        registration.presentation,
+        `Registration ${id} presentation`,
+        ownerSchema(registration)
+      );
+    }
+  }
+}
+
 export function validatePatternRegistration<T extends PatternRegistration>(
   capabilityId: string,
   registration: T
 ): T {
   validateNamespacedId(capabilityId, registration.id);
+
+  if (Object.hasOwn(registration, "presentation")) {
+    validateStudioPresentation(
+      registration.presentation,
+      `Pattern ${registration.id} presentation`,
+      registration.input_schema
+    );
+  }
 
   const candidate = registration as T & Record<string, unknown>;
   for (const field of FORBIDDEN_PATTERN_FIELDS) {

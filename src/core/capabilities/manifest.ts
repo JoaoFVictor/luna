@@ -1,5 +1,6 @@
 import type { JsonSchemaLike } from "./json-schema-types.js";
 import type { PatternRegistration } from "./pattern-registration.js";
+import type { StudioPresentable } from "./studio-presentation.js";
 
 export type CapabilityKind = "execution" | "composition";
 
@@ -9,12 +10,12 @@ export type CapabilityDoc = {
   readonly url?: string;
 };
 
-export type SchemaRegistration = {
+export type SchemaRegistration = StudioPresentable & {
   readonly id: string;
   readonly schema: JsonSchemaLike;
 };
 
-export type BuiltInRegistration = {
+export type BuiltInRegistration = StudioPresentable & {
   readonly id: string;
   readonly input_schema: JsonSchemaLike;
   readonly output_schema: JsonSchemaLike;
@@ -22,7 +23,7 @@ export type BuiltInRegistration = {
   readonly side_effect_policy?: string;
 };
 
-export type ToolRegistration = {
+export type ToolRegistration = StudioPresentable & {
   readonly id: string;
   readonly protocol: "local" | "mcp";
   readonly input_schema: JsonSchemaLike;
@@ -32,7 +33,7 @@ export type ToolRegistration = {
   readonly allowlist_required?: boolean;
 };
 
-export type GateRegistration = {
+export type GateRegistration = StudioPresentable & {
   readonly id: string;
   readonly input_schema: JsonSchemaLike;
   readonly decision_schema: JsonSchemaLike;
@@ -42,7 +43,7 @@ export type GateRegistration = {
   readonly repair_feedback_schema?: JsonSchemaLike;
 };
 
-export type PolicyRegistration = {
+export type PolicyRegistration = StudioPresentable & {
   readonly id: string;
   readonly config_schema: JsonSchemaLike;
   readonly local_context_roots?: readonly string[];
@@ -53,7 +54,7 @@ export type PolicyRegistration = {
   readonly error_codes?: readonly string[];
 };
 
-export type PortRegistration = {
+export type PortRegistration = StudioPresentable & {
   readonly id: string;
   readonly capability: string;
   readonly option_schema: JsonSchemaLike;
@@ -61,7 +62,7 @@ export type PortRegistration = {
   readonly error_codes?: readonly string[];
 };
 
-export type ArtifactPublisherRegistration = {
+export type ArtifactPublisherRegistration = StudioPresentable & {
   readonly id: string;
   readonly source_node_ownership: "declaring_node";
   readonly path_policy: "declared_path" | "capability_scoped";
@@ -81,7 +82,7 @@ export type CapabilityReExports = {
   readonly artifact_publishers?: readonly string[];
 };
 
-export type CapabilityManifest = {
+export type CapabilityManifest = StudioPresentable & {
   readonly id: string;
   readonly kind: CapabilityKind;
   readonly version: string;

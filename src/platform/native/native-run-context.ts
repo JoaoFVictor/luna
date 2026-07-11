@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { loadAgentDefinition } from "../../capabilities/agents/agent-loader.js";
+import { loadWorkflowDefinitionWithAgentDigests } from "../../capabilities/agents/workflow-definition-loader.js";
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
 import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
 import { createCapabilityRegistry } from "../../core/capabilities/registry.js";
@@ -19,7 +20,6 @@ import {
 import { runtimeError } from "../../core/runtime/errors.js";
 import { isInsideRoot } from "../../core/security/path.js";
 import { compileWorkflow, type CompiledWorkflow } from "../../core/workflow/compiler.js";
-import { loadWorkflowDefinition } from "../../core/workflow/definition.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import { resolveRepository } from "../../core/workflow/workspace-resolver.js";
 import type { RuntimeCompositionConfig } from "../../runtime/composition/app-config.js";
@@ -69,11 +69,11 @@ export async function loadNativeRunContext(
     RepositoriesConfigSchema
   );
   const agentsRoot = path.join(projectRoot, "agents");
-  const workflow = await loadWorkflowDefinition(
-    path.join(projectRoot, "workflows"),
-    target.id,
-    { agentsRoot, capabilityRegistry: platform.capabilityRegistry }
-  );
+  const workflow = await loadNativeWorkflowDefinition({
+    projectRoot,
+    workflowId: target.id,
+    platform
+  });
   const nativeWorkflow = await compileNativeWorkflow({
     workflow,
     agentsRoot,
@@ -101,6 +101,25 @@ export async function loadNativeRunContext(
     run,
     runtimeConfig: runtimeCompositionConfig(app, projectRoot)
   };
+}
+
+export async function loadNativeWorkflowDefinition({
+  projectRoot,
+  workflowId,
+  platform = nativeLunaPlatformRegistrations
+}: {
+  readonly projectRoot: string;
+  readonly workflowId: string;
+  readonly platform?: Pick<NativeLunaPlatformRegistrations, "capabilityRegistry">;
+}): Promise<WorkflowDefinition> {
+  return await loadWorkflowDefinitionWithAgentDigests(
+    path.join(projectRoot, "workflows"),
+    workflowId,
+    {
+      agentsRoot: path.join(projectRoot, "agents"),
+      capabilityRegistry: platform.capabilityRegistry
+    }
+  );
 }
 
 export async function compileNativeWorkflow({

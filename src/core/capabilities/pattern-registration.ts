@@ -1,4 +1,5 @@
 import type { JsonSchemaLike } from "./json-schema-types.js";
+import type { StudioPresentable } from "./studio-presentation.js";
 export type { JsonSchemaLike } from "./json-schema-types.js";
 
 export type PatternExpansionBoundary = {
@@ -10,7 +11,7 @@ export type PatternExecutionPolicy = {
   readonly batch_exclusion_keys?: readonly string[];
 };
 
-export type PatternRegistration = {
+export type PatternRegistration = StudioPresentable & {
   readonly id: string;
   readonly declaring_node_type: "pattern";
   readonly input_schema: JsonSchemaLike;
