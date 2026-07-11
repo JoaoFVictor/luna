@@ -2,7 +2,18 @@ import jsonata from "jsonata";
 import { z } from "zod";
 import { WORKFLOW_ID_PATTERN } from "./invocation.js";
 
-const NonEmptyStringSchema = z.string().min(1);
+export const ROUTER_RULE_ID_MAX_LENGTH = 128;
+export const ROUTER_RULE_EXPRESSION_MAX_LENGTH = 8 * 1_024;
+export const ROUTER_DEFINITION_MAX_RULES = 256;
+
+const RouterRuleIdSchema = z
+  .string()
+  .min(1)
+  .max(ROUTER_RULE_ID_MAX_LENGTH);
+const RouterRuleExpressionSchema = z
+  .string()
+  .min(1)
+  .max(ROUTER_RULE_EXPRESSION_MAX_LENGTH);
 const WorkflowTargetStringSchema = z
   .string()
   .regex(new RegExp(`^workflow:${WORKFLOW_ID_PATTERN.slice(1, -1)}$`));
@@ -10,16 +21,20 @@ const TargetExpressionSchema = z.literal("$.invocation.target");
 
 export const RouterRuleSchema = z
   .object({
-    id: NonEmptyStringSchema,
+    id: RouterRuleIdSchema,
     when: z
       .object({
-        expression: NonEmptyStringSchema
+        expression: RouterRuleExpressionSchema
       })
       .strict(),
     target: z.union([WorkflowTargetStringSchema, TargetExpressionSchema])
   })
   .strict()
   .superRefine((rule, context) => {
+    if (rule.when.expression.length > ROUTER_RULE_EXPRESSION_MAX_LENGTH) {
+      return;
+    }
+
     try {
       jsonata(rule.when.expression);
     } catch {
@@ -37,17 +52,24 @@ export const RouterDefinitionSchema = z
   .object({
     type: z.literal("router"),
     version: z.literal("2026-06"),
-    rules: z.array(RouterRuleSchema).min(1)
+    rules: z
+      .array(RouterRuleSchema)
+      .min(1)
+      .max(ROUTER_DEFINITION_MAX_RULES)
   })
   .strict()
   .superRefine((definition, context) => {
+    if (definition.rules.length > ROUTER_DEFINITION_MAX_RULES) {
+      return;
+    }
+
     const ids = new Set<string>();
 
     definition.rules.forEach((rule, index) => {
       if (ids.has(rule.id)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Duplicate router rule id: ${rule.id}`,
+          message: "Router rule ids must be unique",
           path: ["rules", index, "id"]
         });
       }

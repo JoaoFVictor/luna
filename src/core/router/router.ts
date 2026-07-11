@@ -7,10 +7,46 @@ import {
 } from "./invocation.js";
 import type { RouterDefinition, RouterRule } from "./router-definition.js";
 
-type RouterErrorCode =
+export type RouterErrorCode =
   | "router_expression_failed"
   | "router_invalid_target"
   | "router_no_match";
+
+export type RouterRuleEvaluation =
+  | {
+      readonly outcome: "boolean";
+      readonly ruleIndex: number;
+      readonly ruleId: string;
+      readonly expressionPath: string;
+      readonly result: boolean;
+    }
+  | {
+      readonly outcome: "error";
+      readonly ruleIndex: number;
+      readonly ruleId: string;
+      readonly expressionPath: string;
+      readonly error: RouterError;
+    };
+
+export type RouteInvocationDecision =
+  | {
+      readonly outcome: "matched";
+      readonly target: RouteTarget;
+      readonly matchedRule: {
+        readonly ruleIndex: number;
+        readonly ruleId: string;
+      };
+      readonly evaluations: readonly RouterRuleEvaluation[];
+    }
+  | {
+      readonly outcome: "error";
+      readonly error: RouterError;
+      readonly matchedRule?: {
+        readonly ruleIndex: number;
+        readonly ruleId: string;
+      };
+      readonly evaluations: readonly RouterRuleEvaluation[];
+    };
 
 export class RouterError extends Error {
   readonly code: RouterErrorCode;
@@ -74,33 +110,97 @@ async function evaluateExpression(
 ): Promise<unknown> {
   try {
     return await jsonata(rule.when.expression).evaluate({ invocation });
-  } catch (cause) {
+  } catch {
     throw routerError(
       "router_expression_failed",
-      cause instanceof Error ? cause.message : `Router expression failed at ${path}.`,
+      `Router expression failed at ${path}.`,
       path
     );
   }
+}
+
+export async function decideInvocationRoute(
+  invocation: Invocation,
+  router: RouterDefinition
+): Promise<RouteInvocationDecision> {
+  const evaluations: RouterRuleEvaluation[] = [];
+
+  for (const [index, rule] of router.rules.entries()) {
+    const expressionPath = `$.rules[${index}].when.expression`;
+    let evaluated: unknown;
+
+    try {
+      evaluated = await evaluateExpression(rule, invocation, expressionPath);
+    } catch (cause) {
+      if (cause instanceof RouterError) {
+        evaluations.push({
+          outcome: "error",
+          ruleIndex: index,
+          ruleId: rule.id,
+          expressionPath,
+          error: cause
+        });
+        return {
+          outcome: "error",
+          error: cause,
+          evaluations
+        };
+      }
+      throw cause;
+    }
+
+    const matched = evaluated === true;
+    evaluations.push({
+      outcome: "boolean",
+      ruleIndex: index,
+      ruleId: rule.id,
+      expressionPath,
+      result: matched
+    });
+
+    if (!matched) {
+      continue;
+    }
+
+    const targetPath = `$.rules[${index}].target`;
+    try {
+      return {
+        outcome: "matched",
+        target: parseTargetValue(
+          rule.target === "$.invocation.target" ? invocation.target : rule.target,
+          targetPath
+        ),
+        matchedRule: { ruleIndex: index, ruleId: rule.id },
+        evaluations
+      };
+    } catch (cause) {
+      if (cause instanceof RouterError) {
+        return {
+          outcome: "error",
+          error: cause,
+          matchedRule: { ruleIndex: index, ruleId: rule.id },
+          evaluations
+        };
+      }
+      throw cause;
+    }
+  }
+
+  return {
+    outcome: "error",
+    error: routerError("router_no_match", "No router rule matched invocation."),
+    evaluations
+  };
 }
 
 export async function routeInvocation(
   invocation: Invocation,
   router: RouterDefinition
 ): Promise<RouteTarget> {
-  for (const [index, rule] of router.rules.entries()) {
-    const expressionPath = `$.rules[${index}].when.expression`;
-    const matched = await evaluateExpression(rule, invocation, expressionPath);
-
-    if (matched !== true) {
-      continue;
-    }
-
-    const targetPath = `$.rules[${index}].target`;
-    return parseTargetValue(
-      rule.target === "$.invocation.target" ? invocation.target : rule.target,
-      targetPath
-    );
+  const decision = await decideInvocationRoute(invocation, router);
+  if (decision.outcome === "error") {
+    throw decision.error;
   }
 
-  throw routerError("router_no_match", "No router rule matched invocation.");
+  return decision.target;
 }

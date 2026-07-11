@@ -3,6 +3,7 @@ import {
   officialCapabilityRegistry
 } from "../../capabilities/registry.js";
 import type { InputAdapterRegistry } from "../../adapters/registry.js";
+import type { RegisteredInputAdapter } from "../../adapters/types.js";
 import {
   createCapabilityRegistry,
   type CapabilityRegistry
@@ -38,7 +39,7 @@ import {
 } from "./native-built-ins.js";
 
 export type NativeLunaPlatformRegistrations = {
-  readonly inputAdapterRegistry: InputAdapterRegistry;
+  readonly inputAdapterRegistry: InputAdapterRegistry<RegisteredInputAdapter>;
   readonly agentRuntimeFactories: Readonly<Record<string, AgentRuntimeFactory>>;
   readonly workflowRuntimeFactories: Readonly<Record<
     string,
