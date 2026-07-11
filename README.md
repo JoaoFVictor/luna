@@ -217,12 +217,12 @@ docker compose up --build
 To start only the Studio and its storage-permission initializer:
 
 ```bash
-docker compose up --build studio
-docker compose logs studio
+docker compose up -d --build studio
 ```
 
-Open the `Luna Studio:` capability URL printed in the Studio log. Compose
-publishes it only at `http://127.0.0.1:43110`; do not remove the loopback IP
+Open `http://127.0.0.1:43110`. The browser establishes its local session
+automatically; no token or log lookup is required. Compose publishes the Studio
+only on loopback; do not remove the loopback IP
 from the port mapping while Studio uses local sessions. The container listens
 on its bridge wildcard only through the explicit container-mode CLI flag, while
 Host and Origin validation remain pinned to the public loopback authority.

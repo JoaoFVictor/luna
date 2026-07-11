@@ -6,7 +6,7 @@ export function BootstrapScreen() {
       <div className="text-center" role="status">
         <div className="mx-auto size-8 animate-pulse rounded-xl bg-primary" />
         <p className="mt-4 text-sm font-medium">Abrindo sessão local segura…</p>
-        <p className="mt-1 text-xs text-muted-foreground">A capability da URL será removida antes de carregar o Studio.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Isso acontece automaticamente e leva apenas um instante.</p>
       </div>
     </main>
   )
@@ -21,7 +21,7 @@ export function BootstrapFailure({ error }: { error: unknown }) {
         <h1 className="mt-2 text-2xl font-semibold">{described.title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{described.message}</p>
         <p className="mt-4 rounded-lg border bg-muted p-3 text-xs text-muted-foreground">
-          Inicie novamente com <code>luna studio</code> e abra a URL completa impressa no terminal. A capability é descartável e nunca é persistida no navegador.
+          Confirme que o Studio está em execução e recarregue <code>http://127.0.0.1:43110</code>.
         </p>
       </div>
     </main>

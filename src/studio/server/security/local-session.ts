@@ -208,31 +208,18 @@ export class StudioLocalSessionManager {
       );
     }
 
-    const sessionToken = opaqueToken();
-    const csrfToken = opaqueToken();
-    const actorBinding = opaqueToken();
-    const expiry = sessionExpiry(this.now(), this.sessionTtlMs);
-    const exchange = {
-      csrfToken,
-      expiresAt: expiry.expiresAt,
-      setCookie: this.sessionCookie(sessionToken),
-      principal: {
-        id: "local-user",
-        authentication: "local-session"
-      } as const
-    };
+    const exchange = this.createSession();
 
     // Consume the one-time capability only after every fallible value needed
     // by the response has been validated and materialized.
     this.bootstrapToken = undefined;
-    const expiresAtMs = expiry.expiresAtMs;
-    this.sessions.set(tokenKey(sessionToken), {
-      csrfToken,
-      actorBinding,
-      expiresAtMs
-    });
-
     return exchange;
+  }
+
+  establishLocal(request: StudioSessionRequest): StudioSessionExchange {
+    this.assertRequestSource(request, true);
+    this.assertJsonContentType(request.contentType);
+    return this.createSession();
   }
 
   validatePublicRequest(
@@ -290,6 +277,27 @@ export class StudioLocalSessionManager {
     return {
       principal: { id: "local-user", authentication: "local-session" },
       actorBinding: session.record.actorBinding
+    };
+  }
+
+  private createSession(): StudioSessionExchange {
+    const sessionToken = opaqueToken();
+    const csrfToken = opaqueToken();
+    const actorBinding = opaqueToken();
+    const expiry = sessionExpiry(this.now(), this.sessionTtlMs);
+    this.sessions.set(tokenKey(sessionToken), {
+      csrfToken,
+      actorBinding,
+      expiresAtMs: expiry.expiresAtMs
+    });
+    return {
+      csrfToken,
+      expiresAt: expiry.expiresAt,
+      setCookie: this.sessionCookie(sessionToken),
+      principal: {
+        id: "local-user",
+        authentication: "local-session"
+      }
     };
   }
 

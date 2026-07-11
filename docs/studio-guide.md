@@ -52,16 +52,15 @@ npm run studio:build
 LUNA_CONFIG_ROOT=config npm run dev -- studio
 ```
 
-O bind padrão é `127.0.0.1:43110`. O terminal imprime uma URL semelhante a:
+O bind padrão é `127.0.0.1:43110`. Depois de iniciar o processo, abra:
 
 ```text
-Luna Studio: http://127.0.0.1:43110/#capability=<valor-descartavel>
+http://127.0.0.1:43110
 ```
 
-Abra a URL completa. A capability no fragmento é trocada uma única vez por uma
-sessão local e removida da barra do navegador. Não compartilhe essa URL. Se a
-capability for consumida sem que a sessão seja preservada, reinicie o processo e
-abra a nova URL impressa.
+O navegador cria a sessão local automaticamente. Não é necessário copiar token,
+consultar logs ou abrir uma URL especial. Cookies HttpOnly, CSRF e validações de
+Host e Origin continuam protegendo as operações do Studio.
 
 Opções genéricas do comando:
 
@@ -82,11 +81,10 @@ export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"
 export LUNA_STUDIO_CHECKOUT_ID="$(pwd -P | sha256sum | cut -c1-24)"
 install -d -m 0700 .runs .luna/studio
-docker compose up --build studio
-docker compose logs studio
+docker compose up -d --build studio
 ```
 
-Abra a URL `Luna Studio:` exibida no log. O Compose publica apenas
+Abra `http://127.0.0.1:43110`. O Compose publica apenas
 `127.0.0.1:43110:43110`. O processo escuta no wildcard da bridge do container,
 mas a autoridade pública, o `Host`, o `Origin` e a porta publicada continuam
 presos ao loopback.

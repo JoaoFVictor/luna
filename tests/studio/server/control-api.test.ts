@@ -408,6 +408,60 @@ describe("Studio Control API", () => {
     await server.close();
   });
 
+  it("establishes a protected local session from the normal loopback URL", async () => {
+    const { server } = await fixture();
+    const established = await server.inject({
+      method: "POST",
+      url: "/api/studio/v1/session/local",
+      headers: {
+        host,
+        origin,
+        "content-type": "application/json",
+        "sec-fetch-site": "same-origin"
+      },
+      payload: {}
+    });
+    const cookie = established.headers["set-cookie"];
+    const csrf = established.json<{ csrf_token: string }>().csrf_token;
+    const protectedMutation = await server.inject({
+      method: "POST",
+      url: "/api/studio/v1/test-mutation",
+      headers: {
+        host,
+        origin,
+        cookie,
+        "content-type": "application/json",
+        "x-luna-csrf": csrf
+      },
+      payload: {}
+    });
+
+    expect(established.statusCode).toBe(200);
+    expect(cookie).toContain("HttpOnly");
+    expect(established.json()).toMatchObject({ mode: "local-single-user" });
+    expect(protectedMutation.statusCode).toBe(200);
+    await server.close();
+  });
+
+  it("rejects cross-origin automatic local sessions", async () => {
+    const { server } = await fixture();
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/studio/v1/session/local",
+      headers: {
+        host,
+        origin: "https://evil.example",
+        "content-type": "application/json",
+        "sec-fetch-site": "cross-site"
+      },
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.headers["set-cookie"]).toBeUndefined();
+    await server.close();
+  });
+
   it("validates strict request bodies without leaking schema details", async () => {
     const { server } = await fixture();
     const response = await server.inject({

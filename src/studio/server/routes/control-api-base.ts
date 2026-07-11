@@ -10,6 +10,7 @@ import {
 import {
   StudioCsrfRotationRequestSchema,
   StudioHealthResponseSchema,
+  StudioLocalSessionRequestSchema,
   StudioSessionExchangeRequestSchema,
   StudioSessionStateResponseSchema,
   type StudioLocalPrincipal
@@ -23,6 +24,7 @@ import {
   STUDIO_API_PREFIX,
   STUDIO_CSRF_ROTATION_PATH,
   STUDIO_HEALTH_PATH,
+  STUDIO_LOCAL_SESSION_PATH,
   STUDIO_SESSION_EXCHANGE_PATH,
   studioSessionRequest
 } from "../control-api-boundary.js";
@@ -68,6 +70,20 @@ export function registerStudioControlApiBaseRoutes(
       csrf_token: exchange.csrfToken,
       expires_at: exchange.expiresAt,
       principal: exchange.principal,
+      mode: "local-single-user"
+    });
+  });
+
+  server.post(STUDIO_LOCAL_SESSION_PATH, async (request, reply) => {
+    parseStudioRequest(StudioLocalSessionRequestSchema, request.body);
+    const session = options.sessions.establishLocal(
+      studioSessionRequest(request)
+    );
+    reply.header("Set-Cookie", session.setCookie);
+    return StudioSessionStateResponseSchema.parse({
+      csrf_token: session.csrfToken,
+      expires_at: session.expiresAt,
+      principal: session.principal,
       mode: "local-single-user"
     });
   });

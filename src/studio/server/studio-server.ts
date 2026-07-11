@@ -257,8 +257,7 @@ export async function startStudioServer(
     });
     const listen = options.listen ?? defaultListen;
     await listen(server, { host, port });
-    const capability = sessions.bootstrapCapability();
-    const launchUrl = `${origin}/#capability=${encodeURIComponent(capability)}`;
+    const launchUrl = `${origin}/`;
     options.output?.write(`Luna Studio: ${launchUrl}\n`);
     const runningServer = server;
     return {

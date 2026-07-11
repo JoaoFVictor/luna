@@ -9,6 +9,11 @@ export const STUDIO_API_PREFIX = "/api/studio/v1"
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"])
 const MAX_CAPABILITY_LENGTH = 4096
+const RECOVERABLE_LOCAL_SESSION_ERRORS = new Set([
+  "studio_session_missing",
+  "studio_session_invalid",
+  "studio_session_expired",
+])
 
 export class StudioApiError extends Error {
   readonly status: number
@@ -146,15 +151,35 @@ export class StudioHttpClient implements StudioHttpClientApi {
 
     if (this.#csrfToken !== undefined) return this.#sessionState
 
-    const state = await this.request(
-      "/session/csrf",
-      {
-        method: "POST",
-        body: {},
-        csrf: "session-establishment",
-      },
-      studioResponseContracts.session,
-    )
+    let state: SessionState
+    try {
+      state = await this.request(
+        "/session/csrf",
+        {
+          method: "POST",
+          body: {},
+          csrf: "session-establishment",
+        },
+        studioResponseContracts.session,
+      )
+    } catch (cause) {
+      if (
+        !(cause instanceof StudioApiError) ||
+        cause.status !== 401 ||
+        !RECOVERABLE_LOCAL_SESSION_ERRORS.has(cause.code)
+      ) {
+        throw cause
+      }
+      state = await this.request(
+        "/session/local",
+        {
+          method: "POST",
+          body: {},
+          csrf: "session-establishment",
+        },
+        studioResponseContracts.session,
+      )
+    }
     return this.#acceptSession(state)
   }
 

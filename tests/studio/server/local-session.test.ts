@@ -25,6 +25,52 @@ function exchange(sessionManager: StudioLocalSessionManager): StudioSessionExcha
 }
 
 describe("Studio local session manager", () => {
+  it("establishes a same-origin local session without a launch capability", () => {
+    const sessionManager = manager();
+    const capability = sessionManager.bootstrapCapability();
+    const result = sessionManager.establishLocal({
+      host,
+      origin,
+      contentType: "application/json",
+      secFetchSite: "same-origin"
+    });
+
+    expect(result.setCookie).toContain("luna_studio_session=");
+    expect(result.setCookie).toContain("HttpOnly");
+    expect(result.setCookie).toContain("SameSite=Strict");
+    expect(sessionManager.bootstrapCapability()).toBe(capability);
+    expect(
+      sessionManager.authenticateMutation({
+        host,
+        origin,
+        cookie: result.setCookie,
+        csrfToken: result.csrfToken,
+        contentType: "application/json",
+        secFetchSite: "same-origin"
+      })
+    ).toEqual({ id: "local-user", authentication: "local-session" });
+  });
+
+  it("rejects cross-origin or non-JSON local session establishment", () => {
+    const sessionManager = manager();
+    const request = {
+      host,
+      origin,
+      contentType: "application/json",
+      secFetchSite: "same-origin"
+    } as const;
+
+    expect(() =>
+      sessionManager.establishLocal({
+        ...request,
+        origin: "https://evil.example"
+      })
+    ).toThrow(expect.objectContaining({ code: "studio_origin_forbidden" }));
+    expect(() =>
+      sessionManager.establishLocal({ ...request, contentType: "text/plain" })
+    ).toThrow(expect.objectContaining({ code: "studio_content_type_invalid" }));
+  });
+
   it("exchanges a one-time startup capability for an HttpOnly session", () => {
     const sessionManager = manager();
     const result = exchange(sessionManager);

@@ -64,7 +64,7 @@ const services: StudioServerServices = {
 };
 
 describe("Studio local server launcher", () => {
-  it("binds to loopback and emits the capability only in the URL fragment", async () => {
+  it("binds to loopback and emits the normal local URL", async () => {
     const writes: string[] = [];
     const listen = vi.fn(async (
       _server: FastifyInstance,
@@ -83,10 +83,7 @@ describe("Studio local server launcher", () => {
       host: "127.0.0.1",
       port: 43_110
     });
-    expect(handle.launchUrl).toMatch(
-      /^http:\/\/127\.0\.0\.1:43110\/#capability=[A-Za-z0-9_-]+$/
-    );
-    expect(handle.launchUrl).not.toContain("?capability=");
+    expect(handle.launchUrl).toBe("http://127.0.0.1:43110/");
     expect(writes).toEqual([`Luna Studio: ${handle.launchUrl}\n`]);
     await handle.close();
   });
@@ -131,9 +128,7 @@ describe("Studio local server launcher", () => {
       host: "0.0.0.0",
       port: 43_110
     });
-    expect(handle.launchUrl).toMatch(
-      /^http:\/\/127\.0\.0\.1:43112\/#capability=[A-Za-z0-9_-]+$/
-    );
+    expect(handle.launchUrl).toBe("http://127.0.0.1:43112/");
 
     const allowed = await handle.server.inject({
       method: "GET",
@@ -222,9 +217,7 @@ describe("Studio local server launcher", () => {
       listen: async () => undefined
     });
 
-    expect(handle.launchUrl).toMatch(
-      /^http:\/\/127\.0\.0\.1\/#capability=[A-Za-z0-9_-]+$/
-    );
+    expect(handle.launchUrl).toBe("http://127.0.0.1/");
     const response = await handle.server.inject({
       method: "GET",
       url: "/health",

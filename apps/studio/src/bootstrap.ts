@@ -1,8 +1,8 @@
 import { studioApi } from "@/api/client"
 import "@/index.css"
 
-// Calling the async bootstrap consumes and removes #capability synchronously,
-// before the React application and its dependency graph are imported.
+// Bootstrap restores an existing cookie and transparently creates a
+// loopback-only local session when this browser has none.
 const bootstrap = studioApi.bootstrap()
 // Mark an early network rejection as observed while the UI chunk is loading;
 // mountStudio still receives the original promise and renders the real error.

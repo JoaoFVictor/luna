@@ -131,8 +131,9 @@ read-only preflight requires `.runs` and `.luna/studio` to be owned by
 `HOST_UID` with mode `0700`; it fails rather than modifying an unsafe bind.
 
 The Studio is independently startable with `docker compose up --build studio`.
-Its production React assets are built into the image, and its one-time local
-capability URL is printed by `docker compose logs studio`. The port mapping is
+Its production React assets are built into the image, and opening
+`http://127.0.0.1:43110` establishes the local browser session automatically.
+No token or log lookup is required. The port mapping is
 fixed to `127.0.0.1:43110:43110`: the process explicitly opts into a wildcard
 listener inside the container bridge, but accepts Host and Origin only for the
 public `127.0.0.1:43110` authority. Only this service receives read-write

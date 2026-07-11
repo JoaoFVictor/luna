@@ -26,6 +26,11 @@ export type StudioSessionExchangeRequest = z.infer<
   typeof StudioSessionExchangeRequestSchema
 >;
 
+export const StudioLocalSessionRequestSchema = z.object({}).strict();
+export type StudioLocalSessionRequest = z.infer<
+  typeof StudioLocalSessionRequestSchema
+>;
+
 export const StudioCsrfRotationRequestSchema = z.object({}).strict();
 export type StudioCsrfRotationRequest = z.infer<
   typeof StudioCsrfRotationRequestSchema

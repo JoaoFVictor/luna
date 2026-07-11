@@ -120,6 +120,34 @@ describe("StudioApiClient domain modules", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it("creates a local session automatically when the browser has no cookie", async () => {
+    const missingSession = {
+      error: {
+        code: "studio_session_missing",
+        message: "Session missing",
+        details: {},
+        request_id: "request-session-missing",
+      },
+    }
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json(missingSession, 401))
+      .mockResolvedValueOnce(json(validSession))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const client = new StudioApiClient()
+
+    await expect(client.bootstrap()).resolves.toEqual({
+      mode: "full",
+      expiresAt: validSession.expires_at,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/studio/v1/session/csrf")
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/studio/v1/session/local")
+    expect(fetchMock.mock.calls[1][1]?.body).toBe("{}")
+    expect(client.canMutate()).toBe(true)
+  })
+
   it("keeps the flat spyable API while parsing catalog domain responses", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

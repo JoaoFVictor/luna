@@ -6,14 +6,13 @@ served by the loopback-only Studio server on the same origin as
 
 ## Session bootstrap
 
-The CLI launch URL carries a one-use `#capability=...` fragment. The client
-removes that fragment synchronously when bootstrap starts, exchanges it for the
-HttpOnly local session cookie and keeps the returned CSRF token only in memory.
-It is never written to browser storage. A full reload can reuse the cookie for
-catalog access and requests a fresh in-memory CSRF token from `/session/csrf`.
-That restores mutation authority only while the same local session is still
-valid. After the cookie expires or the server restarts, reopen the fresh URL
-printed by `luna studio`.
+Opening the normal loopback URL establishes an HttpOnly local session
+automatically. The client first reuses an existing cookie through
+`/session/csrf`; when the cookie is missing, invalid, or expired, it requests a
+new loopback-only session from `/session/local`. The returned CSRF token stays
+only in memory and is never written to browser storage. The legacy one-use
+capability exchange remains accepted for compatibility, but is not required for
+normal startup.
 
 The interface always identifies itself as local single-user mode. It does not
 claim user identity, RBAC, remote deployment safety or authentication features.

@@ -17,6 +17,7 @@ import {
 export const STUDIO_API_PREFIX = "/api/studio/v1";
 export const STUDIO_SESSION_EXCHANGE_PATH =
   `${STUDIO_API_PREFIX}/session/exchange`;
+export const STUDIO_LOCAL_SESSION_PATH = `${STUDIO_API_PREFIX}/session/local`;
 export const STUDIO_CSRF_ROTATION_PATH = `${STUDIO_API_PREFIX}/session/csrf`;
 export const STUDIO_HEALTH_PATH = "/health";
 
@@ -268,6 +269,11 @@ export function registerStudioControlApiBoundary(
         return;
       }
       if (path === STUDIO_SESSION_EXCHANGE_PATH) {
+        requireJsonContentType(request);
+        sessions.validatePublicRequest(source, true);
+        return;
+      }
+      if (path === STUDIO_LOCAL_SESSION_PATH) {
         requireJsonContentType(request);
         sessions.validatePublicRequest(source, true);
         return;
