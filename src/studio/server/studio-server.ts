@@ -7,6 +7,7 @@ import {
   registerStudioControlApi,
   type StudioControlApiOptions
 } from "./control-api.js";
+import { onceStudioServiceDisposer } from "./service-lifecycle.js";
 import { StudioLocalSessionManager } from "./security/local-session.js";
 
 const DEFAULT_STUDIO_HOST = "127.0.0.1";
@@ -31,13 +32,16 @@ const DEFAULT_FASTIFY_LOGGER: Exclude<
   }
 };
 
-export type StudioServerServices = Omit<StudioControlApiOptions, "sessions">;
+export type StudioServerServices = Omit<StudioControlApiOptions, "sessions"> & {
+  readonly dispose?: () => Promise<void> | void;
+};
 
 export type CreateStudioServerOptions = {
   readonly sessions: StudioLocalSessionManager;
   readonly services: StudioServerServices;
   readonly bodyLimitBytes?: number;
   readonly logger?: FastifyServerOptions["logger"];
+  readonly registerControlApi?: typeof registerStudioControlApi;
 };
 
 export type StartStudioServerOptions = {
@@ -114,12 +118,36 @@ async function defaultListen(
   await server.listen(address);
 }
 
-async function closeAfterStartupFailure(
-  server: FastifyInstance,
+async function closeOwnedServer(
+  server: FastifyInstance | undefined,
+  dispose: () => Promise<void>
+): Promise<void> {
+  let failure: unknown;
+
+  try {
+    if (server !== undefined) {
+      await server.close();
+    }
+  } catch (cause) {
+    failure = cause;
+  }
+  try {
+    await dispose();
+  } catch (cause) {
+    failure ??= cause;
+  }
+  if (failure !== undefined) {
+    throw failure;
+  }
+}
+
+async function releaseAfterStartupFailure(
+  server: FastifyInstance | undefined,
+  dispose: () => Promise<void>,
   primaryCause: unknown
 ): Promise<never> {
   try {
-    await server.close();
+    await closeOwnedServer(server, dispose);
   } catch {
     // Preserve the authoritative startup failure.
   }
@@ -129,57 +157,73 @@ async function closeAfterStartupFailure(
 export async function createStudioServer(
   options: CreateStudioServerOptions
 ): Promise<FastifyInstance> {
-  const server = Fastify({
-    bodyLimit: bodyLimit(options.bodyLimitBytes),
-    logger: options.logger ?? DEFAULT_FASTIFY_LOGGER,
-    trustProxy: false
-  });
-  await registerStudioControlApi(server, {
-    sessions: options.sessions,
-    ...options.services
-  });
-  return server;
+  const dispose = onceStudioServiceDisposer(options.services.dispose);
+  let server: FastifyInstance | undefined;
+
+  try {
+    server = Fastify({
+      bodyLimit: bodyLimit(options.bodyLimitBytes),
+      logger: options.logger ?? DEFAULT_FASTIFY_LOGGER,
+      trustProxy: false
+    });
+    server.addHook("onClose", async () => {
+      await dispose();
+    });
+    const { dispose: _dispose, ...controlApi } = options.services;
+    const registerControlApi =
+      options.registerControlApi ?? registerStudioControlApi;
+    await registerControlApi(server, {
+      sessions: options.sessions,
+      ...controlApi
+    });
+    return server;
+  } catch (cause) {
+    return await releaseAfterStartupFailure(server, dispose, cause);
+  }
 }
 
 export async function startStudioServer(
   options: StartStudioServerOptions
 ): Promise<StudioServerHandle> {
-  const host = options.host ?? DEFAULT_STUDIO_HOST;
-  const port = options.port ?? DEFAULT_STUDIO_PORT;
-  assertLoopbackHost(host);
-  assertPort(port);
-  const hostAndPort = authority(host, port);
-  const origin = `http://${hostAndPort}`;
-  const sessions = new StudioLocalSessionManager({
-    allowedHosts: [hostAndPort],
-    allowedOrigins: [origin],
-    ...(options.sessionTtlMs === undefined
-      ? {}
-      : { sessionTtlMs: options.sessionTtlMs })
-  });
-  const server = await createStudioServer({
-    sessions,
-    services: options.services,
-    ...(options.bodyLimitBytes === undefined
-      ? {}
-      : { bodyLimitBytes: options.bodyLimitBytes }),
-    ...(options.logger === undefined ? {} : { logger: options.logger })
-  });
-  const listen = options.listen ?? defaultListen;
+  const dispose = onceStudioServiceDisposer(options.services.dispose);
+  let server: FastifyInstance | undefined;
 
   try {
+    const host = options.host ?? DEFAULT_STUDIO_HOST;
+    const port = options.port ?? DEFAULT_STUDIO_PORT;
+    assertLoopbackHost(host);
+    assertPort(port);
+    const hostAndPort = authority(host, port);
+    const origin = `http://${hostAndPort}`;
+    const sessions = new StudioLocalSessionManager({
+      allowedHosts: [hostAndPort],
+      allowedOrigins: [origin],
+      ...(options.sessionTtlMs === undefined
+        ? {}
+        : { sessionTtlMs: options.sessionTtlMs })
+    });
+    server = await createStudioServer({
+      sessions,
+      services: { ...options.services, dispose },
+      ...(options.bodyLimitBytes === undefined
+        ? {}
+        : { bodyLimitBytes: options.bodyLimitBytes }),
+      ...(options.logger === undefined ? {} : { logger: options.logger })
+    });
+    const listen = options.listen ?? defaultListen;
     await listen(server, { host, port });
     const capability = sessions.bootstrapCapability();
     const launchUrl = `${origin}/#capability=${encodeURIComponent(capability)}`;
     options.output?.write(`Luna Studio: ${launchUrl}\n`);
+    const runningServer = server;
     return {
-      server,
+      server: runningServer,
       launchUrl,
       async close() {
-        await server.close();
+        await closeOwnedServer(runningServer, dispose);
       }
     };
   } catch (cause) {
-    return await closeAfterStartupFailure(server, cause);
+    return await releaseAfterStartupFailure(server, dispose, cause);
   }
 }

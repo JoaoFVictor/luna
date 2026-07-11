@@ -89,15 +89,39 @@ describe("Studio local server launcher", () => {
   });
 
   it.each(["0.0.0.0", "192.168.1.20", "localhost", "::"])(
-    "rejects non-loopback bind %s before listening",
+    "rejects non-loopback bind %s and releases owned services",
     async (host) => {
       const listen = vi.fn();
+      const dispose = vi.fn();
       await expect(
-        startStudioServer({ services, host, logger: false, listen })
+        startStudioServer({
+          services: { ...services, dispose },
+          host,
+          logger: false,
+          listen
+        })
       ).rejects.toMatchObject({
         code: "studio_server_configuration_invalid"
       });
       expect(listen).not.toHaveBeenCalled();
+      expect(dispose).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each([0, 65_536, 1.5])(
+    "rejects invalid port %s and releases owned services",
+    async (port) => {
+      const dispose = vi.fn();
+      await expect(
+        startStudioServer({
+          services: { ...services, dispose },
+          port,
+          logger: false
+        })
+      ).rejects.toMatchObject({
+        code: "studio_server_configuration_invalid"
+      });
+      expect(dispose).toHaveBeenCalledOnce();
     }
   );
 
@@ -116,6 +140,71 @@ describe("Studio local server launcher", () => {
       })
     ).rejects.toBe(primary);
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to direct disposal when closing a failed startup also fails", async () => {
+    const primary = new Error("listen failed");
+    const dispose = vi.fn();
+    let close: ReturnType<typeof vi.spyOn> | undefined;
+
+    await expect(
+      startStudioServer({
+        services: { ...services, dispose },
+        logger: false,
+        listen: async (server) => {
+          close = vi
+            .spyOn(server, "close")
+            .mockRejectedValueOnce(new Error("close failed"));
+          throw primary;
+        }
+      })
+    ).rejects.toBe(primary);
+    expect(close).toHaveBeenCalledOnce();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes composed service resources on normal and failed startup", async () => {
+    const normalDispose = vi.fn();
+    const normal = await startStudioServer({
+      services: { ...services, dispose: normalDispose },
+      logger: false,
+      listen: async () => undefined
+    });
+    await normal.close();
+    expect(normalDispose).toHaveBeenCalledOnce();
+
+    const failedDispose = vi.fn();
+    await expect(
+      startStudioServer({
+        services: { ...services, dispose: failedDispose },
+        logger: false,
+        listen: async () => {
+          throw new Error("listen failed");
+        }
+      })
+    ).rejects.toThrow("listen failed");
+    expect(failedDispose).toHaveBeenCalledOnce();
+  });
+
+  it("closes and disposes when Control API registration fails", async () => {
+    const primary = new Error("route registration failed");
+    const dispose = vi.fn();
+    const sessions = new StudioLocalSessionManager({
+      allowedHosts: ["127.0.0.1:43110"],
+      allowedOrigins: ["http://127.0.0.1:43110"]
+    });
+
+    await expect(
+      createStudioServer({
+        sessions,
+        services: { ...services, dispose },
+        logger: false,
+        registerControlApi: async () => {
+          throw primary;
+        }
+      })
+    ).rejects.toBe(primary);
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it("enforces the configured body limit at the real Fastify boundary", async () => {

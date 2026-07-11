@@ -15,6 +15,9 @@ import {
 } from "../application/inputs/adapter-preview-port.js";
 import { loadStudioRoutingDefinition } from "../application/routing/router-definition-loader.js";
 import { simulateStudioRouting } from "../application/routing/routing-simulator.js";
+import { createStudioExpressionService } from "../application/expressions/expression-evaluator.js";
+import { createStudioSchemaValidationService } from "../application/schemas/schema-instance-validator.js";
+import { createSqliteRunStore } from "../adapters/sqlite/run-store.js";
 import type { StudioServerServices } from "./studio-server.js";
 import { createNativeStudioAuthoringServices } from "./native-authoring-services.js";
 
@@ -62,6 +65,16 @@ export async function createNativeStudioServices(
       capabilityCatalog.technical_fingerprint
   });
   await authoring.initialize();
+  const expressionService = createStudioExpressionService();
+  const schemaService = createStudioSchemaValidationService();
+  const runStore = await createSqliteRunStore({
+    filePath: path.join(
+      options.projectRoot,
+      ".luna",
+      "studio",
+      "runs.sqlite"
+    )
+  });
   const loadRouting = async () =>
     await loadStudioRoutingDefinition({
       configRoot: options.configRoot,
@@ -97,6 +110,21 @@ export async function createNativeStudioServices(
       routingDefinition: loadRouting,
       simulateRouting: async (_principal, request) =>
         await simulateStudioRouting(request, await loadRouting())
+    },
+    expressions: {
+      evaluateExpression: async (_principal, request, signal) =>
+        await expressionService.evaluate(request, signal)
+    },
+    schemas: {
+      validateSchemaInstance: async (_principal, request, signal) =>
+        await schemaService.validate(request, signal)
+    },
+    runs: {
+      catalog: runStore.catalog,
+      events: runStore.events
+    },
+    dispose() {
+      runStore.close();
     }
   };
 }

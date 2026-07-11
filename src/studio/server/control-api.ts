@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import {
   StudioAgentCatalogSchema,
   type StudioAgentCatalog
@@ -31,6 +31,18 @@ import {
   type StudioInputRoutingControl
 } from "./routes/input-routing.js";
 import { studioDomainHttpError } from "./domain-error.js";
+import {
+  registerStudioExpressionRoutes,
+  type StudioExpressionControl
+} from "./routes/expressions.js";
+import {
+  registerStudioSchemaRoutes,
+  type StudioSchemaControl
+} from "./routes/schemas.js";
+import {
+  registerStudioRunRoutes,
+  type StudioRunControl
+} from "./routes/runs.js";
 
 const API_PREFIX = "/api/studio/v1";
 const SESSION_EXCHANGE_PATH = `${API_PREFIX}/session/exchange`;
@@ -59,6 +71,9 @@ export type StudioControlApiOptions = {
   readonly sessions: StudioLocalSessionManager;
   readonly queries: StudioControlApiQueries;
   readonly inputRouting: StudioInputRoutingControl;
+  readonly expressions?: StudioExpressionControl;
+  readonly schemas?: StudioSchemaControl;
+  readonly runs?: StudioRunControl;
 };
 
 class StudioRequestValidationError extends Error {
@@ -68,7 +83,10 @@ class StudioRequestValidationError extends Error {
   }
 }
 
-function parseRequest<T>(schema: ZodType<T>, value: unknown): T {
+function parseRequest<T>(
+  schema: ZodType<T, ZodTypeDef, unknown>,
+  value: unknown
+): T {
   const parsed = schema.safeParse(value);
   if (!parsed.success) {
     throw new StudioRequestValidationError();
@@ -397,4 +415,28 @@ export async function registerStudioControlApi(
     principalFor: authenticatedPrincipal,
     parseRequest
   });
+  if (options.expressions !== undefined) {
+    await registerStudioExpressionRoutes(server, {
+      apiPrefix: API_PREFIX,
+      control: options.expressions,
+      principalFor: authenticatedPrincipal,
+      parseRequest
+    });
+  }
+  if (options.schemas !== undefined) {
+    await registerStudioSchemaRoutes(server, {
+      apiPrefix: API_PREFIX,
+      control: options.schemas,
+      principalFor: authenticatedPrincipal,
+      parseRequest
+    });
+  }
+  if (options.runs !== undefined) {
+    await registerStudioRunRoutes(server, {
+      apiPrefix: API_PREFIX,
+      control: options.runs,
+      principalFor: authenticatedPrincipal,
+      parseRequest
+    });
+  }
 }

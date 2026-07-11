@@ -62,7 +62,18 @@ describe("native Studio service composition", () => {
       authentication: "local-session"
     } as const;
 
-    const [library, agents, workflows, adapters, routing, simulation] =
+    const signal = new AbortController().signal;
+    const [
+      library,
+      agents,
+      workflows,
+      adapters,
+      routing,
+      simulation,
+      expression,
+      schema,
+      runs
+    ] =
       await Promise.all([
         services.queries.capabilities(principal),
         services.queries.agents(principal),
@@ -75,8 +86,20 @@ describe("native Studio service composition", () => {
             source: "github",
             event: "pull_request"
           }
-        })
+        }),
+        services.expressions?.evaluateExpression(
+          principal,
+          { expression: "$.value + 1", fixture: { value: 1 } },
+          signal
+        ),
+        services.schemas?.validateSchemaInstance(
+          principal,
+          { schema: { type: "string" }, instance: "valid" },
+          signal
+        ),
+        services.runs?.catalog.list()
       ]);
+    await services.dispose?.();
 
     expect(library.registrations.length).toBeGreaterThan(0);
     expect(agents).toMatchObject({ status: "complete", agents: [] });
@@ -95,5 +118,12 @@ describe("native Studio service composition", () => {
       status: "matched",
       target: { type: "workflow", id: "code-review" }
     });
+    expect(expression).toEqual({
+      status: "evaluated",
+      result: { kind: "json", value: 2 },
+      diagnostics: []
+    });
+    expect(schema).toEqual({ status: "valid", diagnostics: [] });
+    expect(runs).toMatchObject({ items: [], next_cursor: null });
   });
 });

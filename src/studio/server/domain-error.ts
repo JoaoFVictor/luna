@@ -1,5 +1,10 @@
 import { StudioAdapterPreviewError } from "../application/inputs/input-adapters.js";
 import { StudioRoutingDefinitionLoadError } from "../application/routing/router-definition-loader.js";
+import {
+  RUN_STORE_ERROR_CODES,
+  RunStoreError,
+  type RunStoreErrorCode
+} from "../application/runs/errors.js";
 
 export type StudioDomainHttpError = {
   readonly statusCode: number;
@@ -85,6 +90,105 @@ function routingError(
   }
 }
 
+const RUN_ERRORS: Readonly<Record<RunStoreErrorCode, StudioDomainHttpError>> = {
+  run_already_exists: {
+    statusCode: 409,
+    code: "run_already_exists",
+    message: "The run already exists"
+  },
+  run_cursor_invalid: {
+    statusCode: 400,
+    code: "run_cursor_invalid",
+    message: "The run cursor is invalid"
+  },
+  run_cursor_expired: {
+    statusCode: 410,
+    code: "run_cursor_expired",
+    message: "The run cursor has expired"
+  },
+  run_cursor_tampered: {
+    statusCode: 400,
+    code: "run_cursor_tampered",
+    message: "The run cursor is invalid"
+  },
+  run_event_id_conflict: {
+    statusCode: 409,
+    code: "run_event_id_conflict",
+    message: "The run event conflicts with existing state"
+  },
+  run_event_sequence_conflict: {
+    statusCode: 409,
+    code: "run_event_sequence_conflict",
+    message: "The run event sequence changed"
+  },
+  run_idempotency_conflict: {
+    statusCode: 409,
+    code: "run_idempotency_conflict",
+    message: "The run request conflicts with an earlier request"
+  },
+  run_invalid_input: {
+    statusCode: 400,
+    code: "run_invalid_input",
+    message: "The run request is invalid"
+  },
+  run_not_found: {
+    statusCode: 404,
+    code: "run_not_found",
+    message: "The requested run was not found"
+  },
+  run_owner_conflict: {
+    statusCode: 409,
+    code: "run_owner_conflict",
+    message: "The run is owned by another executor"
+  },
+  run_revision_conflict: {
+    statusCode: 409,
+    code: "run_revision_conflict",
+    message: "The run changed before this request completed"
+  },
+  run_store_busy: {
+    statusCode: 503,
+    code: "run_store_busy",
+    message: "The run store is busy"
+  },
+  run_store_closed: {
+    statusCode: 503,
+    code: "run_store_closed",
+    message: "The run store is unavailable"
+  },
+  run_store_corrupt: {
+    statusCode: 500,
+    code: "run_store_corrupt",
+    message: "The run store is unavailable"
+  },
+  run_store_io_failed: {
+    statusCode: 500,
+    code: "run_store_io_failed",
+    message: "The run store could not complete the request"
+  },
+  run_store_schema_unsupported: {
+    statusCode: 500,
+    code: "run_store_schema_unsupported",
+    message: "The run store schema is unsupported"
+  },
+  run_terminal_immutable: {
+    statusCode: 409,
+    code: "run_terminal_immutable",
+    message: "The terminal run cannot be changed"
+  },
+  run_transition_invalid: {
+    statusCode: 409,
+    code: "run_transition_invalid",
+    message: "The run transition is invalid"
+  }
+};
+
+// Compile-time exhaustiveness is carried by RUN_ERRORS; this runtime guard
+// prevents a future code from being silently omitted by generated adapters.
+if (Object.keys(RUN_ERRORS).length !== RUN_STORE_ERROR_CODES.length) {
+  throw new Error("Studio run HTTP error mapping is incomplete");
+}
+
 export function studioDomainHttpError(
   error: unknown
 ): StudioDomainHttpError | undefined {
@@ -93,6 +197,9 @@ export function studioDomainHttpError(
   }
   if (error instanceof StudioRoutingDefinitionLoadError) {
     return routingError(error);
+  }
+  if (error instanceof RunStoreError) {
+    return RUN_ERRORS[error.code];
   }
   return undefined;
 }
