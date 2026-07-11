@@ -1,5 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  link,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rmdir,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import path from "node:path";
 import type { ObservabilityRecorder } from "../observability/tracing.js";
 import { slugify } from "../security/path.js";
@@ -61,8 +71,12 @@ function nextContentionDelayMs(): number {
 }
 
 function acquisitionToken(): string {
-  return randomBytes(8).toString("hex");
+  return randomBytes(16).toString("hex");
 }
+
+const RELEASE_RETRY_DELAY_MS = 25;
+const MAX_RELEASE_RETRY_DELAY_MS = 1000;
+const OWNER_CLAIM_PATTERN = /^owner\.[a-f0-9]{32}\.claim$/u;
 
 function validatePositiveSafeInteger(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 1) {
@@ -201,51 +215,135 @@ export class RunLockManager {
     mode: LockMode,
     lockDir: string
   ): Promise<ReleaseLock> {
-    let released = false;
+    let releaseState: "active" | "release_requested" | "released" = "active";
+    let releaseAttempt: Promise<void> | undefined;
+    let releaseRetry: NodeJS.Timeout | undefined;
+    let releaseRetryDelayMs = RELEASE_RETRY_DELAY_MS;
     let heartbeat: NodeJS.Timeout | undefined;
+    let heartbeatTail = Promise.resolve();
     const token = acquisitionToken();
 
-    const writeOwner = async () => {
-      await this.writeOwnerIfCurrent(lockDir, resource, mode, token);
+    const runHeartbeat = () => {
+      heartbeatTail = heartbeatTail
+        .then(async () => {
+          if (releaseState !== "active") {
+            return;
+          }
+          await this.writeOwnerIfCurrent(lockDir, resource, mode, token);
+        })
+        .catch((cause) => {
+          this.log("warn", "luna.lock.heartbeat.failed", {
+            "luna.resource": resource,
+            mode,
+            error: cause instanceof Error ? cause.message : String(cause)
+          });
+        });
+    };
+
+    const startHeartbeat = () => {
+      if (releaseState !== "active" || heartbeat !== undefined) {
+        return;
+      }
+      heartbeat = setInterval(runHeartbeat, this.heartbeatIntervalMs);
+      heartbeat.unref();
+    };
+
+    const stopHeartbeat = () => {
+      if (heartbeat !== undefined) {
+        clearInterval(heartbeat);
+        heartbeat = undefined;
+      }
+    };
+
+    const clearReleaseRetry = () => {
+      if (releaseRetry !== undefined) {
+        clearTimeout(releaseRetry);
+        releaseRetry = undefined;
+      }
+    };
+
+    let attemptRelease: () => Promise<void>;
+    const scheduleReleaseRetry = () => {
+      if (releaseState !== "release_requested" || releaseRetry !== undefined) {
+        return;
+      }
+      const delayMs = releaseRetryDelayMs;
+      releaseRetryDelayMs = Math.min(
+        MAX_RELEASE_RETRY_DELAY_MS,
+        releaseRetryDelayMs * 2
+      );
+      releaseRetry = setTimeout(() => {
+        releaseRetry = undefined;
+        void attemptRelease().catch((cause) => {
+          this.log("warn", "luna.lock.release.retry_failed", {
+            "luna.resource": resource,
+            mode,
+            error: cause instanceof Error ? cause.message : String(cause)
+          });
+        });
+      }, delayMs);
+      releaseRetry.unref();
     };
 
     try {
       await this.writeOwner(lockDir, resource, mode, token);
+      const published = await this.readOwner(lockDir);
+      if (published?.owner_token !== token) {
+        throw new Error("Lock ownership changed while it was being published");
+      }
     } catch (cause) {
-      await rm(lockDir, { recursive: true, force: true });
+      try {
+        await this.releaseIfCurrent(lockDir, token);
+      } catch {
+        // A failed activation never deletes a path it cannot prove it owns.
+        // Ownerless remnants are recovered only after staleAfterMs.
+      }
       throw cause;
     }
 
-    heartbeat = setInterval(() => {
-      void writeOwner().catch((cause) => {
-        this.log("warn", "luna.lock.heartbeat.failed", {
-          "luna.resource": resource,
-          mode,
-          error: cause instanceof Error ? cause.message : String(cause)
-        });
-      });
-    }, this.heartbeatIntervalMs);
-    heartbeat.unref();
+    startHeartbeat();
 
     this.log("info", "luna.lock.acquired", {
       "luna.resource": resource,
       mode
     });
 
-    return async () => {
-      if (released) {
+    attemptRelease = async () => {
+      if (releaseState === "released") {
         return;
       }
-      released = true;
-      if (heartbeat !== undefined) {
-        clearInterval(heartbeat);
+      if (releaseAttempt !== undefined) {
+        return await releaseAttempt;
       }
-      await this.releaseIfCurrent(lockDir, token);
-      this.log("info", "luna.lock.released", {
-        "luna.resource": resource,
-        mode
-      });
+
+      releaseState = "release_requested";
+      stopHeartbeat();
+      const attempt = (async () => {
+        try {
+          await heartbeatTail;
+          await this.releaseIfCurrent(lockDir, token);
+          releaseState = "released";
+          clearReleaseRetry();
+          this.log("info", "luna.lock.released", {
+            "luna.resource": resource,
+            mode
+          });
+        } catch (cause) {
+          scheduleReleaseRetry();
+          throw cause;
+        }
+      })();
+      releaseAttempt = attempt;
+      try {
+        await attempt;
+      } finally {
+        if (releaseAttempt === attempt) {
+          releaseAttempt = undefined;
+        }
+      }
     };
+
+    return async () => await attemptRelease();
   }
 
   private lockDir(resource: string): string {
@@ -285,17 +383,39 @@ export class RunLockManager {
     return parseOwnerMetadata(content);
   }
 
+  private async ownerFileExists(directory: string): Promise<boolean> {
+    try {
+      await lstat(this.ownerPath(directory));
+      return true;
+    } catch (cause) {
+      if (isErrno(cause, "ENOENT")) {
+        return false;
+      }
+      throw cause;
+    }
+  }
+
   private async writeOwner(
     directory: string,
     resource: string,
     mode: LockMode,
     ownerToken: string
   ): Promise<void> {
+    const claimPath = path.join(directory, `owner.${ownerToken}.claim`);
     await writeFile(
-      this.ownerPath(directory),
+      claimPath,
       `${JSON.stringify(this.ownerMetadata(resource, mode, ownerToken), null, 2)}\n`,
-      { encoding: "utf8", mode: 0o600 }
+      { encoding: "utf8", mode: 0o600, flag: "wx" }
     );
+    try {
+      await link(claimPath, this.ownerPath(directory));
+    } finally {
+      try {
+        await rm(claimPath, { force: true });
+      } catch {
+        // A published owner remains authoritative; release removes leftovers.
+      }
+    }
   }
 
   private async writeOwnerIfCurrent(
@@ -343,11 +463,7 @@ export class RunLockManager {
 
     const quarantinedOwner = await this.readOwner(quarantine);
     if (quarantinedOwner?.owner_token !== ownerToken) {
-      try {
-        await rename(quarantine, directory);
-      } catch {
-        await rm(quarantine, { recursive: true, force: true });
-      }
+      await this.restoreQuarantineBestEffort(quarantine, directory);
       return;
     }
 
@@ -360,6 +476,10 @@ export class RunLockManager {
   ): Promise<void> {
     const owner = await this.readOwner(lockDir);
     if (owner === undefined) {
+      if (!(await this.ownerFileExists(lockDir))) {
+        await this.tryRecoverOwnerlessLock(resource, lockDir);
+        return;
+      }
       this.log("warn", "luna.lock.owner_metadata_corrupt", {
         "luna.resource": resource
       });
@@ -382,7 +502,9 @@ export class RunLockManager {
       return;
     }
 
-    const quarantine = `${lockDir}.stale-${owner.owner_token ?? acquisitionToken()}`;
+    const quarantine = `${lockDir}.stale-${
+      owner.owner_token ?? "legacy"
+    }-${acquisitionToken()}`;
     try {
       await rename(lockDir, quarantine);
     } catch (cause) {
@@ -390,7 +512,6 @@ export class RunLockManager {
         return;
       }
       if (isErrno(cause, "EEXIST")) {
-        await rm(quarantine, { recursive: true, force: true });
         return;
       }
       throw cause;
@@ -403,11 +524,7 @@ export class RunLockManager {
       quarantinedOwner.run_id !== owner.run_id ||
       quarantinedOwner.owner_token !== owner.owner_token
     ) {
-      try {
-        await rename(quarantine, lockDir);
-      } catch {
-        await rm(quarantine, { recursive: true, force: true });
-      }
+      await this.restoreQuarantineBestEffort(quarantine, lockDir);
       return;
     }
 
@@ -417,6 +534,92 @@ export class RunLockManager {
       owner_run_id: owner.run_id,
       owner_pid: owner.pid
     });
+  }
+
+  private async tryRecoverOwnerlessLock(
+    resource: string,
+    lockDir: string
+  ): Promise<void> {
+    let metadata;
+    try {
+      metadata = await lstat(lockDir);
+    } catch (cause) {
+      if (isErrno(cause, "ENOENT")) {
+        return;
+      }
+      throw cause;
+    }
+    if (
+      !metadata.isDirectory() ||
+      !Number.isFinite(metadata.mtimeMs) ||
+      Date.now() - metadata.mtimeMs < this.staleAfterMs
+    ) {
+      return;
+    }
+    let initialEntries: string[];
+    try {
+      initialEntries = await readdir(lockDir);
+    } catch (cause) {
+      if (isErrno(cause, "ENOENT")) {
+        return;
+      }
+      throw cause;
+    }
+    if (initialEntries.some((entry) => !OWNER_CLAIM_PATTERN.test(entry))) {
+      this.log("warn", "luna.lock.ownerless_contents_ambiguous", {
+        "luna.resource": resource
+      });
+      return;
+    }
+
+    const quarantine = `${lockDir}.ownerless-${acquisitionToken()}`;
+    try {
+      await rename(lockDir, quarantine);
+    } catch (cause) {
+      if (isErrno(cause, "ENOENT") || isErrno(cause, "EEXIST")) {
+        return;
+      }
+      throw cause;
+    }
+
+    try {
+      const entries = await readdir(quarantine);
+      if (
+        (await this.ownerFileExists(quarantine)) ||
+        entries.some((entry) => !OWNER_CLAIM_PATTERN.test(entry))
+      ) {
+        await this.restoreQuarantineBestEffort(quarantine, lockDir);
+        return;
+      }
+      for (const entry of entries) {
+        await rm(path.join(quarantine, entry), { force: true });
+      }
+      await rmdir(quarantine);
+    } catch (cause) {
+      if (isErrno(cause, "ENOTEMPTY") || isErrno(cause, "EEXIST")) {
+        await this.restoreQuarantineBestEffort(quarantine, lockDir);
+        return;
+      }
+      if (!isErrno(cause, "ENOENT")) {
+        throw cause;
+      }
+    }
+
+    this.log("warn", "luna.lock.ownerless_stale_recovered", {
+      "luna.resource": resource
+    });
+  }
+
+  private async restoreQuarantineBestEffort(
+    quarantine: string,
+    lockDir: string
+  ): Promise<void> {
+    try {
+      await rename(quarantine, lockDir);
+    } catch {
+      // Preserve ambiguous quarantine evidence instead of deleting or
+      // overwriting a lock that appeared during recovery.
+    }
   }
 
   private log(
