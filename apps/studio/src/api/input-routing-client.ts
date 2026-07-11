@@ -1,4 +1,4 @@
-import type { AdapterPreview } from "@/api/types"
+import type { AdapterPreview, RoutingSaveRequest } from "@/api/types"
 import { studioResponseContracts } from "@/api/response-contracts"
 import type { StudioRequest } from "@/api/client-core"
 
@@ -71,6 +71,22 @@ export class StudioInputRoutingClient {
       "/configuration/routing",
       { signal },
       studioResponseContracts.routing,
+    )
+  }
+
+  readonly routingEditor = (signal?: AbortSignal) => {
+    return this.#request(
+      "/configuration/routing/editor",
+      { signal },
+      studioResponseContracts.routingEditor,
+    )
+  }
+
+  readonly saveRouting = (input: RoutingSaveRequest) => {
+    return this.#request(
+      "/configuration/routing/editor",
+      { method: "PATCH", body: input },
+      studioResponseContracts.routingSaveResult,
     )
   }
 }

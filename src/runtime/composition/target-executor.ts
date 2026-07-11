@@ -6,6 +6,7 @@ import type { LunaRuntimeState } from "../../core/runtime/state.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import type { Invocation, RouteTarget } from "../../core/router/invocation.js";
 import type { CompiledWorkflow } from "../../core/workflow/compiler.js";
+import type { WorkflowExecutionScope } from "../../core/workflow/execution-scope.js";
 import type {
   WorkflowLifecycleProjectionErrorObserver,
   WorkflowNodeLifecycleObserver
@@ -35,6 +36,8 @@ export type NativeWorkflowRunInput = TargetExecutorInput & {
   readonly run?: RunHandle;
   /** A validated, pinned workflow config supplied by the control plane. */
   readonly workflowConfig?: JsonValue;
+  /** Optional bounded execution scope. Omitted means the complete workflow. */
+  readonly executionScope?: WorkflowExecutionScope;
   /** Control-plane lease cancellation propagated into runtime work. */
   readonly signal?: AbortSignal;
   /**

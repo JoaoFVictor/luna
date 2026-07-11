@@ -5,7 +5,7 @@ import { Link } from "react-router-dom"
 
 import { runQuery, workflowRunsQuery } from "@/api/queries"
 import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
-import { RunStatusBadge } from "@/components/status-badge"
+import { RunStatusBadge, runStatusLabel } from "@/components/status-badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
@@ -45,9 +45,9 @@ export function WorkflowRunsPanel({
     return (
       <div className="p-4 sm:p-6">
         <PageEmpty
-          title="Este workflow ainda não tem runs"
-          description="A aba mostra execuções reais persistidas. Use Launch após aplicar uma definição válida."
-          action={<Link className={buttonVariants()} to="/launch">Abrir Launch</Link>}
+          title="Este workflow ainda não foi executado"
+          description="Teste com uma entrada e a execução aparecerá aqui com os resultados de cada passo."
+          action={<Link className={buttonVariants()} to={`/launch?workflow=${encodeURIComponent(workflowId)}`}>Testar workflow</Link>}
         />
       </div>
     )
@@ -66,13 +66,13 @@ export function WorkflowRunsPanel({
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>Run selecionada</CardTitle>
+              <CardTitle>Execução selecionada</CardTitle>
               <CardDescription>
-                Últimas 100 runs filtradas no servidor por workflow; o grafo sempre vem do snapshot da run.
+                Compare o que aconteceu com a versão atual sem trocar de editor.
               </CardDescription>
             </div>
-            <Link className={buttonVariants({ variant: "outline", size: "sm" })} to="/launch">
-              Nova run <ExternalLinkIcon aria-hidden="true" />
+            <Link className={buttonVariants({ variant: "outline", size: "sm" })} to={`/launch?workflow=${encodeURIComponent(workflowId)}`}>
+              Nova execução <ExternalLinkIcon aria-hidden="true" />
             </Link>
           </div>
         </CardHeader>
@@ -87,21 +87,21 @@ export function WorkflowRunsPanel({
             >
               {runs.data.items.map((run) => (
                 <NativeSelectOption key={run.run_id} value={run.run_id}>
-                  {formatDateTime(run.created_at)} · {run.status} · {shortDigest(run.run_id, 12)}
+                  {formatDateTime(run.created_at)} · {runStatusLabel(run.status)} · {shortDigest(run.run_id, 12)}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
             <FieldDescription>
-              Alterar a seleção não executa nem modifica o draft.
+              A seleção serve apenas para inspeção e não modifica o draft.
             </FieldDescription>
           </Field>
 
           {summary !== undefined && (
             <div className="flex flex-wrap items-center gap-2">
               <RunStatusBadge status={summary.status} />
-              <Badge variant="outline">{summary.completeness}</Badge>
+              <Badge variant="outline">{summary.completeness === "complete" ? "Dados completos" : summary.completeness === "partial" ? "Dados parciais" : "Histórica"}</Badge>
               {summary.workflow_revision !== undefined && (
-                <Badge variant="outline">revision {shortDigest(summary.workflow_revision)}</Badge>
+                <Badge variant="outline">versão {shortDigest(summary.workflow_revision)}</Badge>
               )}
               <Link
                 className={buttonVariants({ variant: "link", size: "sm" })}
@@ -115,14 +115,14 @@ export function WorkflowRunsPanel({
           {compiledRevision === undefined ? (
             <Alert>
               <InfoIcon aria-hidden="true" />
-              <AlertTitle>Draft ainda não compilado nesta sessão</AlertTitle>
-              <AlertDescription>Compile para comparar a revisão atual com a revisão executada.</AlertDescription>
+              <AlertTitle>A versão atual ainda está sendo verificada</AlertTitle>
+              <AlertDescription>Quando a verificação terminar, o Studio comparará esta execução com o draft.</AlertDescription>
             </Alert>
           ) : record?.workflow_revision === undefined ? (
             <Alert>
               <InfoIcon aria-hidden="true" />
-              <AlertTitle>Run sem revisão comparável</AlertTitle>
-              <AlertDescription>O record é legado ou parcial; o Studio não infere equivalência.</AlertDescription>
+              <AlertTitle>Execução sem versão comparável</AlertTitle>
+              <AlertDescription>Este registro é histórico ou parcial; o Studio não presume que as versões são iguais.</AlertDescription>
             </Alert>
           ) : (
             <Alert variant={exactRevisionMatches ? "default" : "destructive"}>

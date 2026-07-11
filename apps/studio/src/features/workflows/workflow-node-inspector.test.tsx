@@ -109,6 +109,8 @@ function renderInspector(
       expressionFixtures={{}}
       onSaveExpressionFixture={vi.fn()}
       onRemoveExpressionFixture={vi.fn()}
+      note=""
+      onSaveNote={vi.fn()}
     />,
   )
   return onOperations

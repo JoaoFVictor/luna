@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineInputAdapters } from "../../../src/adapters/registry.js";
 import { createStudioConfigurationPosture } from "../../../src/studio/application/configuration/posture.js";
+import { StudioProviderHealthTracker } from "../../../src/studio/application/inputs/provider-health.js";
 
 const temporaryDirectories: string[] = [];
 const SECRET_MODEL = "secret-provider/private-model";
@@ -75,6 +76,10 @@ describe("Studio configuration posture", () => {
         })
       }
     ]);
+    const providerHealth = new StudioProviderHealthTracker({
+      now: () => new Date("2026-07-11T12:00:00.000Z")
+    });
+    providerHealth.markHealthy("github", "github-pr-url");
     const posture = createStudioConfigurationPosture({
       projectRoot,
       configRoot,
@@ -92,6 +97,7 @@ describe("Studio configuration posture", () => {
       },
       env: { PRIVATE_MODEL: SECRET_MODEL },
       inputAdapters,
+      providerHealth,
       agents: async () => ({
         status: "complete",
         fingerprint: `sha256:${"a".repeat(64)}`,
@@ -179,7 +185,9 @@ describe("Studio configuration posture", () => {
       {
         id: "github",
         adapter_ids: ["github-pr-url"],
-        credential_status: "not_checked"
+        credential_status: "verified_by_preview",
+        checked_at: "2026-07-11T12:00:00.000Z",
+        checked_adapter_id: "github-pr-url"
       }
     ]);
     expect(runtime).toEqual({

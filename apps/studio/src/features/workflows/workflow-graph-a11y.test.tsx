@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { render } from "@testing-library/react"
+import { act, render } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkflowGraph } from "@/features/workflows/workflow-graph"
 
@@ -24,7 +24,7 @@ describe("WorkflowGraph accessibility contract", () => {
   it("keeps nodes and edges focusable with localized keyboard guidance", () => {
     render(
       <WorkflowGraph
-        compiled={{
+        graph={{
           nodes: [
             {
               id: "review",
@@ -71,5 +71,29 @@ describe("WorkflowGraph accessibility contract", () => {
     const aria = captured.props?.ariaLabelConfig as Record<string, unknown>
     expect(aria["controls.zoomIn.ariaLabel"]).toBe("Aumentar zoom")
     expect(aria["node.a11yDescription.default"]).toContain("Pressione Enter")
+  })
+
+  it("keeps the clicked edge selected so its contextual actions can render", () => {
+    render(
+      <WorkflowGraph
+        graph={{
+          nodes: [
+            { id: "source", kind: "built_in", capability_id: "one", can_create_pending_interrupt: false },
+            { id: "target", kind: "built_in", capability_id: "two", can_create_pending_interrupt: false },
+          ],
+          edges: [{ from: "source", to: "target" }],
+        }}
+        onDeleteDependency={vi.fn()}
+      />,
+    )
+
+    const clickEdge = captured.props?.onEdgeClick as (
+      event: unknown,
+      edge: { id: string },
+    ) => void
+    act(() => clickEdge({}, { id: "source:target:0" }))
+
+    const edges = captured.props?.edges as Array<{ id: string; selected: boolean }>
+    expect(edges[0]).toMatchObject({ id: "source:target:0", selected: true })
   })
 })

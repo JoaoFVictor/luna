@@ -123,10 +123,10 @@ describe("AgentStructuredEditor", () => {
 
   it("uses canonical mode authority to block write tools for read-only agents", () => {
     renderEditor()
-    fireEvent.click(screen.getByRole("tab", { name: /Resources/u }))
+    fireEvent.click(screen.getByRole("tab", { name: /Recursos e permissões/u }))
     expect(screen.getByLabelText("Adicionar tool repository.read-file").getAttribute("aria-disabled")).not.toBe("true")
     expect(screen.getByLabelText("Adicionar tool repository.write-file").getAttribute("aria-disabled")).toBe("true")
-    expect(screen.getByText("write local")).toBeTruthy()
+    expect(screen.getByText("Edita arquivos")).toBeTruthy()
   })
 
   it("preserves unsaved section state while moving between studio tabs", () => {
@@ -134,8 +134,8 @@ describe("AgentStructuredEditor", () => {
     const description = screen.getByLabelText("Descrição") as HTMLTextAreaElement
     fireEvent.change(description, { target: { value: "Updated only in the form" } })
 
-    fireEvent.click(screen.getByRole("tab", { name: /Resources/u }))
-    fireEvent.click(screen.getByRole("tab", { name: /General/u }))
+    fireEvent.click(screen.getByRole("tab", { name: /Recursos e permissões/u }))
+    fireEvent.click(screen.getByRole("tab", { name: /Identidade/u }))
 
     expect((screen.getByLabelText("Descrição") as HTMLTextAreaElement).value)
       .toBe("Updated only in the form")
@@ -173,7 +173,7 @@ describe("AgentStructuredEditor", () => {
       output_schema: "contract.json",
     })
 
-    fireEvent.click(screen.getByRole("tab", { name: /Output contract/u }))
+    fireEvent.click(screen.getByRole("tab", { name: /Formato da resposta/u }))
     expect(screen.getByRole("option", { name: "contract.json" })).toBeTruthy()
   })
 
@@ -186,7 +186,7 @@ describe("AgentStructuredEditor", () => {
     }
     renderEditor(false, vi.fn(), [instructions, decoy])
 
-    fireEvent.click(screen.getByRole("tab", { name: /Output contract/u }))
+    fireEvent.click(screen.getByRole("tab", { name: /Formato da resposta/u }))
     expect(screen.getByText("Schema registrado: findings.review_output")).toBeTruthy()
     expect(screen.queryByRole("option", { name: "findings.review_output" })).toBeNull()
   })

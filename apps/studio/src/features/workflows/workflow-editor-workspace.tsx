@@ -6,11 +6,14 @@ import {
   FileJsonIcon,
   GitBranchIcon,
   ShieldAlertIcon,
+  Settings2Icon,
 } from "lucide-react"
+import { useState } from "react"
 
 import type { DraftItem } from "@/api/types"
 import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { draftFileKey } from "@/features/drafts/draft-file-session"
@@ -19,7 +22,7 @@ import { DraftFilesEditor } from "@/features/workflows/draft-files-editor"
 import { ProblemsPanel } from "@/features/workflows/problems-panel"
 import type { WorkflowEditorController } from "@/features/workflows/use-workflow-editor-controller"
 import { WorkflowDesignView } from "@/features/workflows/workflow-design-view"
-import { workflowPositions } from "@/features/workflows/workflow-layout"
+import { workflowCanvasLayout } from "@/features/workflows/workflow-layout"
 import { WorkflowRunsPanel } from "@/features/workflows/workflow-runs-panel"
 import { WorkflowSchemasEditor } from "@/features/workflows/workflow-schemas-editor"
 import { shortDigest } from "@/lib/format"
@@ -27,11 +30,13 @@ import { shortDigest } from "@/lib/format"
 function WorkflowDesignWorkspace({
   draft,
   editor,
+  onTestThroughNode,
 }: {
   draft: DraftItem
   editor: WorkflowEditorController
+  onTestThroughNode: (nodeId: string) => void
 }) {
-  const { agents, library, sourceView } = editor.resources
+  const { agents, inputAdapters, library, routing, sourceView } = editor.resources
   if (library.isPending || agents.isPending || sourceView.isPending) {
     return <div className="p-6"><PageLoading label="Carregando autoridade de edição" /></div>
   }
@@ -48,22 +53,27 @@ function WorkflowDesignWorkspace({
   return (
     <WorkflowDesignView
       compiled={editor.view.compiled}
+      workflowId={draft.primary_resource.id}
+      diagnostics={editor.view.validation?.diagnostics}
       source={sourceView.data.value}
       library={library.data}
       agents={agents.data.agents}
+      adapters={inputAdapters.data}
+      routing={routing.data}
       agentCatalogComplete={agents.data.status === "complete"}
-      positions={workflowPositions(draft.layout)}
+      canvasLayout={workflowCanvasLayout(draft.layout)}
       selectedNodeId={editor.view.selectedNodeId}
       canMutate={editor.permissions.canRunCommands}
       pending={editor.pending.structuredEdit || editor.pending.saveLayout}
-      canCompile={editor.permissions.canRunCommands}
-      onCompile={editor.actions.compile}
       onOperations={editor.actions.editSource}
-      onPositionsChange={editor.actions.savePositions}
+      onCanvasLayoutChange={editor.actions.saveCanvasLayout}
       expressionFixtures={editor.view.expressionFixtures}
+      nodeNotes={editor.view.nodeNotes}
       onSaveExpressionFixture={editor.actions.saveExpressionFixture}
       onRemoveExpressionFixture={editor.actions.removeExpressionFixture}
+      onSaveNodeNote={editor.actions.saveNodeNote}
       onSelectNode={editor.view.setSelectedNodeId}
+      onTestThroughNode={onTestThroughNode}
     />
   )
 }
@@ -98,10 +108,13 @@ function CompiledWorkflowView({ editor }: { editor: WorkflowEditorController }) 
 export function WorkflowEditorWorkspace({
   draft,
   editor,
+  onTestThroughNode,
 }: {
   draft: DraftItem
   editor: WorkflowEditorController
+  onTestThroughNode: (nodeId: string) => void
 }) {
+  const [technicalOpen, setTechnicalOpen] = useState(false)
   const yamlFiles = editor.files.files.filter(
     (file) => file.file.path.endsWith(".yaml") || file.file.path.endsWith(".yml"),
   )
@@ -118,23 +131,34 @@ export function WorkflowEditorWorkspace({
       onValueChange={editor.view.setActive}
       className="min-h-0 flex-1 gap-0"
     >
-      <div className="overflow-x-auto border-b px-4">
+      <div className="flex items-center justify-between gap-3 overflow-x-auto border-b px-4">
         <TabsList variant="line" className="h-10">
           <TabsTrigger value="design"><GitBranchIcon aria-hidden="true" /> Design</TabsTrigger>
-          <TabsTrigger value="yaml"><Code2Icon aria-hidden="true" /> YAML</TabsTrigger>
-          <TabsTrigger value="schemas"><FileJsonIcon aria-hidden="true" /> Schemas</TabsTrigger>
-          <TabsTrigger value="compiled"><BracesIcon aria-hidden="true" /> Compiled</TabsTrigger>
-          <TabsTrigger value="diff"><FileDiffIcon aria-hidden="true" /> Diff</TabsTrigger>
-          <TabsTrigger value="runs"><ActivityIcon aria-hidden="true" /> Run</TabsTrigger>
+          <TabsTrigger value="runs"><ActivityIcon aria-hidden="true" /> Execuções</TabsTrigger>
           <TabsTrigger value="problems">
-            <ShieldAlertIcon aria-hidden="true" /> Problems
+            <ShieldAlertIcon aria-hidden="true" /> Problemas
             {diagnosticCount > 0 && <Badge variant="destructive">{diagnosticCount}</Badge>}
           </TabsTrigger>
+          {technicalOpen && (
+            <>
+              <TabsTrigger value="yaml"><Code2Icon aria-hidden="true" /> YAML</TabsTrigger>
+              <TabsTrigger value="schemas"><FileJsonIcon aria-hidden="true" /> Schemas</TabsTrigger>
+              <TabsTrigger value="compiled"><BracesIcon aria-hidden="true" /> Compilado</TabsTrigger>
+              <TabsTrigger value="diff"><FileDiffIcon aria-hidden="true" /> Diff</TabsTrigger>
+            </>
+          )}
         </TabsList>
+        <Button size="sm" variant={technicalOpen ? "secondary" : "ghost"} onClick={() => setTechnicalOpen((current) => !current)}>
+          <Settings2Icon aria-hidden="true" /> Técnico
+        </Button>
       </div>
 
       <TabsContent value="design" className="min-h-0">
-        <WorkflowDesignWorkspace draft={draft} editor={editor} />
+        <WorkflowDesignWorkspace
+          draft={draft}
+          editor={editor}
+          onTestThroughNode={onTestThroughNode}
+        />
       </TabsContent>
 
       <TabsContent value="yaml" className="min-h-0">

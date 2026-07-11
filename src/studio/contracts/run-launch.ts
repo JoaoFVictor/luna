@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WorkflowExecutionScopeSchema } from "../../core/workflow/execution-scope.js";
 import { WorkflowIdSchema } from "../../core/router/invocation.js";
 import { boundedStudioJsonValueSchema } from "./bounded-json.js";
 import { StudioDigestSchema } from "./digests.js";
@@ -85,7 +86,8 @@ export const StudioRunPlanRequestSchema = z
     input_provenance: StudioRunInputProvenanceSchema.default({
       kind: "invocation"
     }),
-    repository_id: StudioRunBoundedIdSchema.optional()
+    repository_id: StudioRunBoundedIdSchema.optional(),
+    execution_scope: WorkflowExecutionScopeSchema.default({ kind: "workflow" })
   })
   .strict()
   .superRefine((request, context) => {
@@ -136,6 +138,7 @@ const StudioRunRepositoryResolutionSchema = z
 export const StudioRunPlanResolutionSchema = z
   .object({
     workflow_id: WorkflowIdSchema,
+    execution_scope: WorkflowExecutionScopeSchema,
     mode: StudioRunModeSchema,
     workflow_revision: StudioDigestSchema,
     definition_bundle_hash: StudioDigestSchema,
@@ -164,6 +167,7 @@ export const StudioRunExecutionSnapshotSchema = z
   .object({
     schema_version: z.literal(1),
     workflow_id: WorkflowIdSchema,
+    execution_scope: WorkflowExecutionScopeSchema,
     mode: StudioRunModeSchema,
     workflow_revision: StudioDigestSchema,
     definition_bundle_hash: StudioDigestSchema,
@@ -205,6 +209,7 @@ export const StudioRunPlanSchema = z
     created_at: StudioRunTimestampSchema,
     expires_at: StudioRunTimestampSchema,
     workflow_id: WorkflowIdSchema,
+    execution_scope: WorkflowExecutionScopeSchema,
     mode: StudioRunModeSchema,
     workflow_revision: StudioDigestSchema,
     definition_bundle_hash: StudioDigestSchema,

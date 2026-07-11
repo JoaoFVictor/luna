@@ -1,10 +1,8 @@
-import { CheckCircle2Icon, FileDiffIcon, GitBranchIcon, PlayIcon, SaveIcon } from "lucide-react"
-import { Link } from "react-router-dom"
-
+import { CheckCircle2Icon, FileDiffIcon, LoaderCircleIcon, PlayIcon, Redo2Icon, Undo2Icon } from "lucide-react"
 import type { ApplyResult, DraftItem, DraftValidationResult } from "@/api/types"
 import { DraftStatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { formatDateTime, shortDigest } from "@/lib/format"
 
 function ToolbarButton({
@@ -33,9 +31,11 @@ export function WorkflowEditorHeader({
   compiling,
   planning,
   applyResult,
-  onSave,
-  onValidate,
-  onCompile,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onTest,
   onPlanApply,
 }: {
   draft: DraftItem
@@ -47,9 +47,11 @@ export function WorkflowEditorHeader({
   compiling: boolean
   planning: boolean
   applyResult?: ApplyResult
-  onSave: () => void
-  onValidate: () => void
-  onCompile: () => void
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
+  onTest: () => void
   onPlanApply: () => void
 }) {
   const canRunCommands = canMutate && !hasLocalChanges
@@ -60,36 +62,48 @@ export function WorkflowEditorHeader({
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="truncate font-heading text-lg font-semibold">{draft.primary_resource.id}</h1>
             <DraftStatusBadge status={draft.status} />
-            {hasLocalChanges && <Badge variant="destructive">Alteração local não salva</Badge>}
-            {validation?.compiled && <Badge variant="secondary">Compilado</Badge>}
+            {saving ? (
+              <Badge variant="outline"><LoaderCircleIcon className="animate-spin" aria-hidden="true" /> Salvando…</Badge>
+            ) : hasLocalChanges ? (
+              <Badge variant="outline">Alterações pendentes</Badge>
+            ) : (
+              <Badge variant="outline"><CheckCircle2Icon aria-hidden="true" /> Salvo</Badge>
+            )}
+            {(validation?.diagnostics.length ?? 0) > 0 && (
+              <Badge variant="destructive">
+                {validation?.diagnostics.length} problema{validation?.diagnostics.length === 1 ? "" : "s"}
+              </Badge>
+            )}
+            {validation?.status === "valid" && validation.compiled && (
+              <Badge variant="secondary">Pronto para testar</Badge>
+            )}
+            {(validating || compiling) && (
+              <Badge variant="outline"><LoaderCircleIcon className="animate-spin" aria-hidden="true" /> Verificando…</Badge>
+            )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Draft {shortDigest(draft.draft_id, 12)} · revision {draft.record_revision} · atualizado {formatDateTime(draft.updated_at)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ToolbarButton variant="outline" pending={saving} pendingLabel="Salvando…" disabled={!canMutate || !hasLocalChanges} onClick={onSave}>
-            <SaveIcon aria-hidden="true" /> Salvar <span className="sr-only">(Ctrl+S)</span>
+          <div className="flex" role="group" aria-label="Histórico de edição">
+            <Button variant="ghost" size="icon" disabled={!canUndo} onClick={onUndo} title="Desfazer (Ctrl+Z)">
+              <Undo2Icon aria-hidden="true" /><span className="sr-only">Desfazer</span>
+            </Button>
+            <Button variant="ghost" size="icon" disabled={!canRedo} onClick={onRedo} title="Refazer (Ctrl+Shift+Z)">
+              <Redo2Icon aria-hidden="true" /><span className="sr-only">Refazer</span>
+            </Button>
+          </div>
+          <Button variant="outline" onClick={onTest}>
+            <PlayIcon aria-hidden="true" /> Testar
+          </Button>
+          <ToolbarButton pending={planning} pendingLabel="Preparando…" disabled={!canRunCommands || draft.status !== "valid"} onClick={onPlanApply}>
+            <FileDiffIcon aria-hidden="true" /> Aplicar
           </ToolbarButton>
-          <ToolbarButton variant="outline" pending={validating} pendingLabel="Validando…" disabled={!canRunCommands} onClick={onValidate}>
-            <CheckCircle2Icon aria-hidden="true" /> Validar
-          </ToolbarButton>
-          <ToolbarButton variant="outline" pending={compiling} pendingLabel="Compilando…" disabled={!canRunCommands} onClick={onCompile}>
-            <GitBranchIcon aria-hidden="true" /> Compilar <span className="sr-only">(Ctrl+Enter)</span>
-          </ToolbarButton>
-          <ToolbarButton pending={planning} pendingLabel="Planejando…" disabled={!canRunCommands || draft.status !== "valid"} onClick={onPlanApply}>
-            <FileDiffIcon aria-hidden="true" /> Diff &amp; apply
-          </ToolbarButton>
-          <Link
-            className={buttonVariants({ variant: "outline" })}
-            to={`/launch?workflow=${encodeURIComponent(draft.primary_resource.id)}`}
-          >
-            <PlayIcon aria-hidden="true" /> Preparar launch
-          </Link>
         </div>
       </div>
       {!canMutate && <p className="mt-2 text-xs text-muted-foreground">Sessão somente leitura: a projeção pode ser inspecionada, mas comandos de autoria estão bloqueados.</p>}
-      {hasLocalChanges && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Salve o draft antes de validar, compilar ou planejar o apply.</p>}
+      {hasLocalChanges && <p className="mt-2 text-xs text-muted-foreground">As alterações serão salvas automaticamente.</p>}
       {applyResult !== undefined && (
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100" role="status">
           <CheckCircle2Icon className="size-4" aria-hidden="true" /> Aplicado em {formatDateTime(applyResult.committed_at)} · operação {shortDigest(applyResult.operation_id, 12)}. Nenhum commit ou push foi criado.

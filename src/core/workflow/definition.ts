@@ -267,7 +267,13 @@ function analyzeParsedGraph(graph: ParsedWorkflowGraph): void {
       throw new WorkflowDefinitionError(
         (cause as { code: WorkflowDefinitionErrorCode }).code,
         cause.message,
-        { path: (cause as { path?: string }).path }
+        {
+          path: (cause as { path?: string }).path,
+          nodeId: (cause as { nodeId?: string }).nodeId,
+          edge: (cause as {
+            edge?: { readonly from: string; readonly to: string };
+          }).edge
+        }
       );
     }
     throw cause;

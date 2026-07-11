@@ -22,6 +22,19 @@ export type WorkflowSourceOutlineEntry = {
   node?: WorkflowSourceNode
 }
 
+export type WorkflowSourceGraph = {
+  readonly nodes: readonly {
+    readonly id: string
+    readonly kind: "built_in" | "agent" | "pattern" | "interrupt"
+    readonly capability_id: string
+    readonly can_create_pending_interrupt: boolean
+  }[]
+  readonly edges: readonly {
+    readonly from: string
+    readonly to: string
+  }[]
+}
+
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
@@ -100,6 +113,108 @@ export function workflowSourceOutlineEntries(
 export function workflowSourceCapabilities(source: JsonValue): string[] {
   if (!isRecord(source) || !Array.isArray(source.capabilities)) return []
   return source.capabilities.filter((value): value is string => typeof value === "string")
+}
+
+export function workflowSourceGraph(
+  nodes: readonly WorkflowSourceNode[],
+): WorkflowSourceGraph {
+  const knownIds = new Set(nodes.map((node) => node.id))
+  return {
+    nodes: nodes.map((node) => ({
+      id: node.id,
+      kind: node.type === "human_gate" ? "interrupt" : node.type,
+      capability_id: node.registrationId,
+      can_create_pending_interrupt: node.type === "human_gate",
+    })),
+    edges: nodes.flatMap((node) => {
+      const after = workflowNodeField(node, "after")
+      return Array.isArray(after)
+        ? after.flatMap((dependency) =>
+            typeof dependency === "string" && knownIds.has(dependency)
+              ? [{ from: dependency, to: node.id }]
+              : [],
+          )
+        : []
+    }),
+  }
+}
+
+export function connectWorkflowNodesOperations(
+  nodes: readonly WorkflowSourceNode[],
+  sourceId: string,
+  targetId: string,
+): YamlSourceOperation[] {
+  const source = nodes.find((node) => node.id === sourceId)
+  const target = nodes.find((node) => node.id === targetId)
+  if (
+    source === undefined ||
+    target === undefined ||
+    sourceId === targetId ||
+    workflowDependencyWouldCycle(nodes, targetId, sourceId)
+  ) {
+    return []
+  }
+  const after = workflowNodeField(target, "after")
+  const dependencies = Array.isArray(after)
+    ? after.filter((value): value is string => typeof value === "string")
+    : []
+  if (dependencies.includes(sourceId)) return []
+  return [{
+    op: "set",
+    path: ["nodes", target.index, "after"],
+    value: [...dependencies, sourceId],
+  }]
+}
+
+export function disconnectWorkflowNodesOperations(
+  nodes: readonly WorkflowSourceNode[],
+  sourceId: string,
+  targetId: string,
+): YamlSourceOperation[] {
+  const target = nodes.find((node) => node.id === targetId)
+  if (target === undefined) return []
+  const after = workflowNodeField(target, "after")
+  if (!Array.isArray(after)) return []
+  const dependencies = after.filter(
+    (value): value is string => typeof value === "string",
+  )
+  if (!dependencies.includes(sourceId)) return []
+  const next = dependencies.filter((dependency) => dependency !== sourceId)
+  return [next.length === 0
+    ? { op: "delete", path: ["nodes", target.index, "after"] }
+    : { op: "set", path: ["nodes", target.index, "after"], value: next }]
+}
+
+function nodesWithoutDependency(
+  nodes: readonly WorkflowSourceNode[],
+  sourceId: string,
+  targetId: string,
+): WorkflowSourceNode[] {
+  return nodes.map((node) => {
+    if (node.id !== targetId) return node
+    const after = workflowNodeField(node, "after")
+    if (!Array.isArray(after)) return node
+    const next = after.filter((value) => value !== sourceId)
+    const value = { ...node.value }
+    if (next.length === 0) delete value.after
+    else value.after = next
+    return { ...node, value }
+  })
+}
+
+export function reconnectWorkflowNodesOperations(
+  nodes: readonly WorkflowSourceNode[],
+  previousSourceId: string,
+  previousTargetId: string,
+  nextSourceId: string,
+  nextTargetId: string,
+): YamlSourceOperation[] {
+  if (previousSourceId === nextSourceId && previousTargetId === nextTargetId) return []
+  const disconnect = disconnectWorkflowNodesOperations(nodes, previousSourceId, previousTargetId)
+  if (disconnect.length === 0) return []
+  const disconnectedNodes = nodesWithoutDependency(nodes, previousSourceId, previousTargetId)
+  const connect = connectWorkflowNodesOperations(disconnectedNodes, nextSourceId, nextTargetId)
+  return connect.length === 0 ? [] : [...disconnect, ...connect]
 }
 
 export function addWorkflowCapabilityOperations(

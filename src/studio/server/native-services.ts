@@ -10,11 +10,13 @@ import {
   previewStudioInputAdapter
 } from "../application/inputs/input-adapters.js";
 import { previewStudioInputRoute } from "../application/inputs/input-route-preview.js";
+import { StudioProviderHealthTracker } from "../application/inputs/provider-health.js";
 import {
   type StudioAdapterPreviewPort
 } from "../application/inputs/adapter-preview-port.js";
 import { loadStudioRoutingDefinition } from "../application/routing/router-definition-loader.js";
 import { isolatedStudioRoutingSimulationPort } from "../application/routing/routing-simulator.js";
+import { StudioRoutingEditorService } from "../application/routing/routing-editor.js";
 import { createStudioExpressionService } from "../application/expressions/expression-evaluator.js";
 import { createStudioSchemaValidationService } from "../application/schemas/schema-instance-validator.js";
 import { MemoryStudioAgentTestConfirmations } from "../adapters/memory/agent-test-confirmations.js";
@@ -36,6 +38,7 @@ import { createNativeStudioAuthoringServices } from "./native-authoring-services
 import { createNativeStudioDraftAuthoringSurface } from "./native-draft-authoring-surface.js";
 import { createNativeStudioConfigurationSurface } from "./native-configuration-surface.js";
 import { createNativeStudioResourceHistorySurface } from "./native-resource-history-surface.js";
+import { FileSystemStudioLockManager } from "../adapters/filesystem/studio-lock-manager.js";
 import {
   createNativeStudioRunSubsystem,
   type NativeStudioRunPlatform
@@ -71,6 +74,7 @@ export async function createNativeStudioServices(
   options: NativeStudioServicesOptions
 ): Promise<StudioServerServices> {
   const platform = await resolvePlatform(options);
+  const providerHealth = new StudioProviderHealthTracker();
   const previews =
     options.previews ??
     createNativeStudioAdapterPreviews({
@@ -131,7 +135,8 @@ export async function createNativeStudioServices(
     ...(options.app === undefined ? {} : { app: options.app }),
     platform,
     authoring,
-    catalogs
+    catalogs,
+    providerHealth
   });
   const resourceHistory = createNativeStudioResourceHistorySurface({
     projectRoot: options.projectRoot,
@@ -148,6 +153,12 @@ export async function createNativeStudioServices(
       configRoot: options.configRoot,
       ...(options.app === undefined ? {} : { app: options.app })
     });
+  const routingEditor = new StudioRoutingEditorService({
+    configRoot: options.configRoot,
+    ...(options.app === undefined ? {} : { app: options.app }),
+    load: loadRouting,
+    locks: new FileSystemStudioLockManager({ projectRoot: options.projectRoot })
+  });
   const runSubsystem = await createNativeStudioRunSubsystem({
     projectRoot: options.projectRoot,
     configRoot: options.configRoot,
@@ -182,21 +193,32 @@ export async function createNativeStudioServices(
     inputRouting: {
       listInputAdapters: () =>
         listStudioInputAdapters(platform.inputAdapterRegistry, previews),
-      previewInputAdapter: async (_principal, request, signal) =>
-        await previewStudioInputAdapter(request, {
+      previewInputAdapter: async (_principal, request, signal) => {
+        const result = await previewStudioInputAdapter(request, {
           registry: platform.inputAdapterRegistry,
           previews,
           signal
-        }),
-      previewInputRoute: async (_principal, request, signal) =>
-        await previewStudioInputRoute(request, {
+        });
+        const adapter = platform.inputAdapterRegistry.require(request.adapter_id);
+        providerHealth.markHealthy(adapter.source, adapter.id);
+        return result;
+      },
+      previewInputRoute: async (_principal, request, signal) => {
+        const result = await previewStudioInputRoute(request, {
           registry: platform.inputAdapterRegistry,
           previews,
           routing: await loadRouting(),
           routingSimulator,
           signal
-        }),
+        });
+        const adapter = platform.inputAdapterRegistry.require(request.adapter_id);
+        providerHealth.markHealthy(adapter.source, adapter.id);
+        return result;
+      },
       routingDefinition: loadRouting,
+      routingEditor: async () => await routingEditor.get(),
+      saveRoutingDefinition: async (_principal, request) =>
+        await routingEditor.save(request),
       simulateRouting: async (_principal, request, signal) =>
         await routingSimulator.simulate(request, await loadRouting(), { signal })
     },

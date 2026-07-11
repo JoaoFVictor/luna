@@ -1,10 +1,76 @@
 import type {
+  AgentCatalogItem,
   CapabilitySummary,
   CapabilityRegistration,
   JsonValue,
 } from "@/api/types"
+import { humanizeTechnicalId } from "@/lib/presentation"
 
 export type WorkflowCatalogNodeKind = "built_in" | "pattern" | "agent" | "human_gate"
+
+export type WorkflowPaletteItem = {
+  readonly id: string
+  readonly kind: WorkflowCatalogNodeKind
+  readonly title: string
+  readonly summary: string
+  readonly category: string
+  readonly tags: readonly string[]
+  readonly hasExternalEffect: boolean
+}
+
+export type WorkflowNodePresentation = {
+  readonly title: string
+  readonly summary?: string
+}
+
+export function humanizeWorkflowIdentifier(id: string): string {
+  return humanizeTechnicalId(id)
+}
+
+export function workflowNodePaletteItems(
+  registrations: readonly CapabilityRegistration[],
+  agents: readonly AgentCatalogItem[],
+): WorkflowPaletteItem[] {
+  const registered = (["built_in", "pattern", "human_gate"] as const).flatMap(
+    (kind) => workflowNodeRegistrations(registrations, kind).map((registration) => ({
+      id: registration.id,
+      kind,
+      title: registration.presentation.title === registration.id
+        ? humanizeWorkflowIdentifier(registration.id)
+        : registration.presentation.title,
+      summary: registration.presentation.summary ?? "Executa uma ação determinística disponível neste projeto.",
+      category: registration.presentation.category ?? (
+        kind === "human_gate" ? "Aprovação humana" : kind === "pattern" ? "Fluxo" : "Ações"
+      ),
+      tags: registration.presentation.tags ?? [],
+      hasExternalEffect:
+        registration.registration_kind === "built_in" &&
+        registration.side_effect_policy !== undefined,
+    })),
+  )
+  const agentItems = agents.map((agent) => ({
+    id: agent.id,
+    kind: "agent" as const,
+    title: humanizeWorkflowIdentifier(agent.id),
+    summary: agent.description,
+    category: "Agents",
+    tags: [agent.mode, ...agent.tools],
+    hasExternalEffect: agent.mode === "trusted_local_write",
+  }))
+  return [...registered, ...agentItems].sort((left, right) =>
+    left.category.localeCompare(right.category) || left.title.localeCompare(right.title),
+  )
+}
+
+export function workflowNodePresentations(
+  registrations: readonly CapabilityRegistration[],
+  agents: readonly AgentCatalogItem[],
+): ReadonlyMap<string, WorkflowNodePresentation> {
+  return new Map(workflowNodePaletteItems(registrations, agents).map((item) => [
+    `${item.kind}:${item.id}`,
+    { title: item.title, summary: item.summary },
+  ]))
+}
 
 export function workflowNodeCapabilityIds(
   capabilities: readonly CapabilitySummary[],

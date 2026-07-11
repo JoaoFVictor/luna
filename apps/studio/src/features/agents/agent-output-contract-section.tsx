@@ -49,8 +49,11 @@ export function AgentOutputContractSection({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 sm:px-6 sm:pt-6">
         <div>
-          <h2 className="flex items-center gap-2 text-sm font-semibold"><FileJsonIcon className="size-4" aria-hidden="true" /> Output contract</h2>
-          <code className="text-xs text-muted-foreground">{file.file.path}</code>
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-semibold"><FileJsonIcon className="size-4" aria-hidden="true" /> Formato da resposta</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Defina os campos que este agent deve entregar para os próximos passos do workflow.</p>
+          </div>
+          <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Arquivo técnico</summary><code>{file.file.path}</code></details>
         </div>
         <Badge variant={tooLarge ? "destructive" : "outline"}>{bytes.toLocaleString()} bytes UTF-8</Badge>
       </div>
@@ -63,7 +66,7 @@ export function AgentOutputContractSection({
       />
       <div className="flex flex-wrap items-center gap-2 px-4 pb-4 sm:px-6 sm:pb-6">
         <Button disabled={disabled || pending || !editor.dirty || tooLarge} onClick={() => onSave(editor.value)}>
-          <SaveIcon aria-hidden="true" />{pending ? "Salvando…" : "Salvar Output contract"}
+          <SaveIcon aria-hidden="true" />{pending ? "Salvando…" : "Salvar formato"}
         </Button>
         {editor.dirty && <Button variant="ghost" onClick={editor.reset}>Descartar alterações</Button>}
         {!editor.dirty && <Badge variant="outline">sincronizado</Badge>}

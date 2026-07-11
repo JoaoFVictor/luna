@@ -19,11 +19,11 @@ import {
 const destinations = [
   { label: "Início", to: "/", icon: HouseIcon, shortcut: "G H" },
   { label: "Workflows", to: "/workflows", icon: NetworkIcon, shortcut: "G W" },
-  { label: "Launch", to: "/launch", icon: RocketIcon, shortcut: "G X" },
+  { label: "Executar", to: "/launch", icon: RocketIcon, shortcut: "G X" },
   { label: "Agents", to: "/agents", icon: BotIcon, shortcut: "G A" },
-  { label: "Library", to: "/library", icon: BoxesIcon, shortcut: "G L" },
-  { label: "Configuration", to: "/configuration", icon: Settings2Icon, shortcut: "G C" },
-  { label: "Runs", to: "/runs", icon: PlayIcon, shortcut: "G R" },
+  { label: "Blocos", to: "/library", icon: BoxesIcon, shortcut: "G L" },
+  { label: "Conexões", to: "/configuration", icon: Settings2Icon, shortcut: "G C" },
+  { label: "Execuções", to: "/runs", icon: PlayIcon, shortcut: "G R" },
 ] as const
 
 const shortcutDestinations = new Map(

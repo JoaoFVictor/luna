@@ -65,6 +65,7 @@ async function fixture() {
         created_at: "2026-07-11T12:00:00.000Z",
         expires_at: "2026-07-11T12:05:00.000Z",
         workflow_id: "pinned-workflow",
+        execution_scope: { kind: "workflow" },
         mode: "read_only",
         workflow_revision: digest("a"),
         definition_bundle_hash: digest("b"),

@@ -15,6 +15,7 @@ import type { LunaRuntimeState } from "../runtime/state.js";
 import type { ResolvedToolCatalog } from "../tools/resolved-catalog.js";
 import type { CompiledWorkflow, CompiledWorkflowNode } from "./compiler.js";
 import type { WorkflowDefinition } from "./definition-types.js";
+import type { WorkflowExecutionScope } from "./execution-scope.js";
 import type { WorkflowLockManager } from "./runner-locks.js";
 import type { WorkflowRuntimeContext } from "./runtime-context.js";
 import type {
@@ -83,6 +84,8 @@ export type RunWorkflowInput = {
   readonly invocation: JsonValue;
   readonly config: JsonValue;
   readonly run: RunHandle;
+  /** A bounded partial run validates the terminal node output, not the full workflow output schema. */
+  readonly executionScope?: WorkflowExecutionScope;
   readonly signal?: AbortSignal;
   readonly runtimeContext?: WorkflowRuntimeContext;
   readonly backends: RuntimeBackends;

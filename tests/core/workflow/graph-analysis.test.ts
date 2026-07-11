@@ -10,6 +10,20 @@ describe("workflow graph analysis", () => {
           { id: "b", type: "built_in", after: ["a"] }
         ]
       })
-    ).toThrow(expect.objectContaining({ code: "workflow_cycle_detected" }));
+    ).toThrow(expect.objectContaining({
+      code: "workflow_cycle_detected",
+      nodeId: "a"
+    }));
+  });
+
+  it("identifies the authoritative node and edge for an unknown dependency", () => {
+    expect(() => analyzeWorkflowGraph({
+      nodes: [{ id: "publish", type: "built_in", after: ["missing"] }]
+    })).toThrow(expect.objectContaining({
+      code: "workflow_reference_unknown",
+      nodeId: "publish",
+      edge: { from: "missing", to: "publish" },
+      path: "$.nodes[0].after[0]"
+    }));
   });
 });

@@ -5,13 +5,13 @@ import {
   useState,
   type FormEvent,
 } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { RouteIcon } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 
 import { studioApi } from "@/api/client"
-import { inputAdaptersQuery } from "@/api/queries"
-import type { AdapterRoutingPreview } from "@/api/types"
+import { inputAdaptersQuery, studioKeys } from "@/api/queries"
+import type { AdapterRoutingPreview, RunPlanInput } from "@/api/types"
 import { useStudioSession } from "@/app/studio-context"
 import { PageHeader } from "@/components/page-header"
 import { PageError, PageLoading } from "@/components/page-state"
@@ -37,9 +37,18 @@ type PreviewRequest = {
   controller: AbortController
 }
 
-export function LaunchPage() {
+export function LaunchPage({
+  expectedWorkflow: expectedWorkflowOverride,
+  executionScope = { kind: "workflow" },
+  embedded = false,
+}: {
+  expectedWorkflow?: string
+  executionScope?: RunPlanInput["execution_scope"]
+  embedded?: boolean
+} = {}) {
   const [params] = useSearchParams()
   const session = useStudioSession()
+  const queryClient = useQueryClient()
   const adapters = useQuery(inputAdaptersQuery)
   const launch = useRunLaunch()
   const invalidateRunLaunch = launch.invalidate
@@ -52,13 +61,18 @@ export function LaunchPage() {
   const [previewResult, setPreviewResult] = useState<AdapterRoutingPreview>()
   const previewGeneration = useRef(0)
   const activePreview = useRef<AbortController | undefined>(undefined)
-  const expectedWorkflow = params.get("workflow") ?? ""
+  const expectedWorkflow = expectedWorkflowOverride ?? params.get("workflow") ?? ""
+  const requestedAdapter = params.get("adapter") ?? ""
 
   useEffect(() => {
-    if (adapterId === "" && adapters.data?.adapters[0] !== undefined) {
+    if (adapterId !== "") return
+    const requested = adapters.data?.adapters.find((adapter) => adapter.id === requestedAdapter)
+    if (requested !== undefined) {
+      setAdapterId(requested.id)
+    } else if (adapters.data?.adapters[0] !== undefined) {
       setAdapterId(adapters.data.adapters[0].id)
     }
-  }, [adapterId, adapters.data])
+  }, [adapterId, adapters.data, requestedAdapter])
 
   const selectedAdapter = adapters.data?.adapters.find(
     (adapter) => adapter.id === adapterId,
@@ -100,6 +114,7 @@ export function LaunchPage() {
       ),
     onSuccess: (next, request) => {
       if (request.generation === previewGeneration.current) setPreviewResult(next)
+      void queryClient.invalidateQueries({ queryKey: studioKeys.configurationProviders })
     },
     onError: (error, request) => {
       if (request.generation !== previewGeneration.current) return
@@ -140,12 +155,13 @@ export function LaunchPage() {
     event.preventDefault()
     const built = buildRunPlanInput({
       mode: inputMode,
+      executionScope,
       adapterId,
       opaqueInput,
       invocationJson,
       acknowledgedAdapterEffects: acknowledged,
     })
-    if (!built.success) {
+    if (built.success === false) {
       launch.invalidate()
       setInputError(built.message)
       return
@@ -176,20 +192,27 @@ export function LaunchPage() {
   const acceptanceUnknown = launch.notice?.kind === "acceptance_unknown"
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6">
-      <PageHeader
-        eyebrow="Execução real"
-        title="Launch"
-        description="Envie uma string a um adapter registrado ou uma invocation JSON. Primeiro o backend gera um plano autoritativo; somente depois de duas confirmações explícitas ele aceita o run na fila."
-      />
+    <div className={embedded
+      ? "mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 pb-6"
+      : "mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6"}
+    >
+      {!embedded && (
+        <PageHeader
+          eyebrow="Workflow"
+          title={expectedWorkflow === "" ? "Executar workflow" : `Testar ${expectedWorkflow}`}
+          description="Escolha uma entrada, confira o workflow selecionado e revise os efeitos antes de executar."
+        />
+      )}
 
-      <Alert>
-        <RouteIcon aria-hidden="true" />
-        <AlertTitle>Adapter, routing preview e execução são etapas distintas</AlertTitle>
-        <AlertDescription>
-          O adapter produz a invocation e o router first-match decide o workflow. O preview ajuda a explicar essa decisão, mas não substitui o plano revalidado no servidor.
-        </AlertDescription>
-      </Alert>
+      {executionScope.kind === "through_node" && (
+        <Alert>
+          <RouteIcon aria-hidden="true" />
+          <AlertTitle>Teste parcial até {executionScope.node_id}</AlertTitle>
+          <AlertDescription>
+            Serão executados somente este passo e todas as dependências anteriores dele.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <form onSubmit={createPlan} className="space-y-4">
         <LaunchInputCard
@@ -233,11 +256,11 @@ export function LaunchPage() {
           <RouteIcon aria-hidden="true" />
           <AlertTitle>
             {launch.prepared.plan.workflow_id === expectedWorkflow
-              ? "O plano corresponde ao workflow esperado"
-              : "O workflow esperado não corresponde ao routing autoritativo"}
+              ? "Entrada pronta para este workflow"
+              : "Esta entrada foi direcionada para outro workflow"}
           </AlertTitle>
           <AlertDescription>
-            Esperado <code>{expectedWorkflow}</code>; o backend planejou <code>{launch.prepared.plan.workflow_id}</code>. Essa comparação nunca altera a rota.
+            Você abriu <code>{expectedWorkflow}</code>, mas a primeira regra correspondente escolheu <code>{launch.prepared.plan.workflow_id}</code>. Revise as regras de routing antes de continuar.
           </AlertDescription>
         </Alert>
       )}

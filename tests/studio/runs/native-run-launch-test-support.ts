@@ -56,6 +56,7 @@ export type NativeFixture = {
 
 export const request: StudioRunPlanRequest = {
   workflow_id: "pinned-workflow",
+  execution_scope: { kind: "workflow" },
   invocation: {
     version: "2026-06",
     source: "studio",

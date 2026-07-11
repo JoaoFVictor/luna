@@ -85,6 +85,8 @@ export class StudioApiClient implements StudioApiSurface {
   declare readonly previewInputRoute: StudioInputRoutingClient["previewInputRoute"]
   declare readonly simulateRouting: StudioInputRoutingClient["simulateRouting"]
   declare readonly routing: StudioInputRoutingClient["routing"]
+  declare readonly routingEditor: StudioInputRoutingClient["routingEditor"]
+  declare readonly saveRouting: StudioInputRoutingClient["saveRouting"]
 
   declare readonly workflowConfiguration: StudioConfigurationClient["workflowConfiguration"]
   declare readonly createConfigurationDraft: StudioConfigurationClient["createConfigurationDraft"]
@@ -112,15 +114,27 @@ export const studioApi = new StudioApiClient()
 export function describeStudioError(error: unknown): {
   title: string
   message: string
+  technicalMessage?: string
+  code?: string
   requestId?: string
 } {
   if (error instanceof StudioApiError) {
+    if (error.status === 404) {
+      return {
+        title: "Recurso não encontrado",
+        message: "Ele pode ter sido removido ou não estar disponível nesta sessão. Volte à lista e escolha outro item.",
+        technicalMessage: error.message,
+        code: error.code,
+        ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
+      }
+    }
     return {
       title:
         error.code === "studio_server_unreachable"
           ? "Servidor local indisponível"
           : "Não foi possível concluir a operação",
       message: error.message,
+      code: error.code,
       ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
     }
   }

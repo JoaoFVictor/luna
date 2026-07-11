@@ -172,11 +172,11 @@ export function AgentStructuredEditor({
       <Tabs defaultValue="general">
         <div className="overflow-x-auto">
           <TabsList variant="line" className="h-10">
-            <TabsTrigger value="general"><Settings2Icon aria-hidden="true" /> General</TabsTrigger>
-            <TabsTrigger value="instructions"><FileTextIcon aria-hidden="true" /> Instructions</TabsTrigger>
-            <TabsTrigger value="output"><FileJsonIcon aria-hidden="true" /> Output contract</TabsTrigger>
-            <TabsTrigger value="resources"><BracesIcon aria-hidden="true" /> Resources</TabsTrigger>
-            <TabsTrigger value="usage"><UsersIcon aria-hidden="true" /> Usage &amp; impact</TabsTrigger>
+            <TabsTrigger value="general"><Settings2Icon aria-hidden="true" /> Identidade</TabsTrigger>
+            <TabsTrigger value="instructions"><FileTextIcon aria-hidden="true" /> Instruções</TabsTrigger>
+            <TabsTrigger value="resources"><BracesIcon aria-hidden="true" /> Recursos e permissões</TabsTrigger>
+            <TabsTrigger value="output"><FileJsonIcon aria-hidden="true" /> Formato da resposta</TabsTrigger>
+            <TabsTrigger value="usage"><UsersIcon aria-hidden="true" /> Onde é usado</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="general" className="pt-5" keepMounted>

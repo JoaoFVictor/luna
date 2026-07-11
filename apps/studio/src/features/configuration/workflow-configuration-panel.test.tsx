@@ -122,7 +122,7 @@ describe("WorkflowConfigurationPanel", () => {
     )
 
     expect(await screen.findByText("Ativado")).toBeDefined()
-    expect(screen.queryByRole("button", { name: "Criar draft de config" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Começar a editar" })).toBeNull()
     expect(loadDraft).toHaveBeenCalledWith(WORKFLOW_ID, DRAFT_ID, expect.any(AbortSignal))
   })
 
@@ -145,7 +145,7 @@ describe("WorkflowConfigurationPanel", () => {
     expect(screen.queryByText(PRIVATE_CANARY)).toBeNull()
     expect(document.body.textContent).not.toContain(PRIVATE_CANARY)
 
-    fireEvent.click(screen.getByRole("button", { name: "Criar draft de config" }))
+    fireEvent.click(screen.getByRole("button", { name: "Começar a editar" }))
     await waitFor(() =>
       expect(
         screen.getByRole("switch", { name: "Enabled" }).hasAttribute("data-disabled"),
@@ -155,6 +155,7 @@ describe("WorkflowConfigurationPanel", () => {
     expect(provider.disabled).toBe(true)
 
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }))
+    fireEvent.click(screen.getByRole("button", { name: "Salvar alterações (1)" }))
     await waitFor(() =>
       expect(patch).toHaveBeenCalledWith(
         WORKFLOW_ID,
@@ -213,17 +214,17 @@ describe("WorkflowConfigurationPanel", () => {
     })
 
     await screen.findByText("Enabled")
-    fireEvent.click(screen.getByRole("button", { name: "Criar draft de config" }))
-    fireEvent.click(await screen.findByRole("button", { name: "Validar draft" }))
+    fireEvent.click(screen.getByRole("button", { name: "Começar a editar" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Verificar alterações" }))
     await waitFor(() =>
       expect(
-        (screen.getByRole("button", { name: "Planejar apply" }) as HTMLButtonElement)
+        (screen.getByRole("button", { name: "Revisar e aplicar" }) as HTMLButtonElement)
           .disabled,
       ).toBe(false),
     )
-    fireEvent.click(screen.getByRole("button", { name: "Planejar apply" }))
+    fireEvent.click(screen.getByRole("button", { name: "Revisar e aplicar" }))
     fireEvent.click(
-      await screen.findByRole("button", { name: "Confirmar apply" }),
+      await screen.findByRole("button", { name: "Confirmar aplicação" }),
     )
     fireEvent.click(await screen.findByRole("button", { name: "Aplicar configuração" }))
     await waitFor(() => expect(apply).toHaveBeenCalledTimes(1))

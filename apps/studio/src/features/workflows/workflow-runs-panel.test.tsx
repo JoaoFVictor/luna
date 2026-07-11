@@ -141,8 +141,8 @@ describe("WorkflowRunsPanel", () => {
       { wrapper: wrapper(queryClient()) },
     )
 
-    expect(await screen.findByText("Este workflow ainda não tem runs")).toBeDefined()
-    expect(screen.getByRole("link", { name: "Abrir Launch" })).toBeDefined()
+    expect(await screen.findByText("Este workflow ainda não foi executado")).toBeDefined()
+    expect(screen.getByRole("link", { name: "Testar workflow" })).toBeDefined()
     await waitFor(() => expect(detail).not.toHaveBeenCalled())
   })
 })

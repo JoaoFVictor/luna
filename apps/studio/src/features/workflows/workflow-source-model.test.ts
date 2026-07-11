@@ -3,7 +3,11 @@ import type { AgentCatalogItem, CapabilityCatalog, JsonValue } from "@/api/types
 
 import {
   addWorkflowCapabilityOperations,
+  connectWorkflowNodesOperations,
+  disconnectWorkflowNodesOperations,
+  reconnectWorkflowNodesOperations,
   workflowDependencyWouldCycle,
+  workflowSourceGraph,
   workflowSourceOutlineEntries,
   workflowSourceNodes,
 } from "@/features/workflows/workflow-source-model"
@@ -65,6 +69,44 @@ describe("workflow source model", () => {
     expect(workflowDependencyWouldCycle(nodes, "first", "third")).toBe(true)
     expect(workflowDependencyWouldCycle(nodes, "second", "third")).toBe(true)
     expect(workflowDependencyWouldCycle(nodes, "third", "first")).toBe(false)
+  })
+
+  it("projects and edits visual dependencies without accepting invalid edges", () => {
+    const nodes = workflowSourceNodes(source)
+    expect(workflowSourceGraph(nodes).edges).toEqual([
+      { from: "first", to: "second" },
+      { from: "first", to: "third" },
+      { from: "second", to: "third" },
+    ])
+    expect(connectWorkflowNodesOperations(nodes, "first", "second")).toEqual([])
+    expect(connectWorkflowNodesOperations(nodes, "third", "first")).toEqual([])
+    expect(connectWorkflowNodesOperations(nodes, "missing", "first")).toEqual([])
+    const disconnectedNodes = workflowSourceNodes({
+      nodes: [
+        { id: "source", type: "built_in", uses: "runtime.preflight" },
+        { id: "target", type: "built_in", uses: "reports.final_report" },
+      ],
+    })
+    expect(connectWorkflowNodesOperations(disconnectedNodes, "source", "target")).toEqual([{
+      op: "set",
+      path: ["nodes", 1, "after"],
+      value: ["source"],
+    }])
+    expect(disconnectWorkflowNodesOperations(nodes, "first", "second")).toEqual([{
+      op: "delete",
+      path: ["nodes", 1, "after"],
+    }])
+    expect(reconnectWorkflowNodesOperations(nodes, "first", "second", "third", "second")).toEqual([])
+    expect(reconnectWorkflowNodesOperations(nodes, "first", "third", "second", "first")).toEqual([])
+    const reconnectableNodes = workflowSourceNodes({ nodes: [
+      { id: "a", type: "built_in", uses: "runtime.preflight" },
+      { id: "b", type: "built_in", uses: "runtime.preflight", after: ["a"] },
+      { id: "c", type: "built_in", uses: "reports.final_report" },
+    ] })
+    expect(reconnectWorkflowNodesOperations(reconnectableNodes, "a", "b", "b", "c")).toEqual([
+      { op: "delete", path: ["nodes", 1, "after"] },
+      { op: "set", path: ["nodes", 2, "after"], value: ["b"] },
+    ])
   })
 
   it("keeps every malformed or duplicate source item addressable by index", () => {

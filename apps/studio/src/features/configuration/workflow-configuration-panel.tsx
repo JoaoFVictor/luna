@@ -1,21 +1,11 @@
-import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
 import {
-  CheckCircle2Icon,
   FileCheck2Icon,
   RefreshCwIcon,
   SaveIcon,
+  SearchIcon,
   ShieldAlertIcon,
 } from "lucide-react"
-import { toast } from "sonner"
-
-import { studioApi } from "@/api/client"
-import { studioKeys, workflowConfigurationQuery } from "@/api/queries"
-import type {
-  ConfigurationApplyPlan,
-  ConfigurationDraft,
-  JsonValue,
-} from "@/api/types"
 import { useStudioSession } from "@/app/studio-context"
 import { PageError, PageLoading } from "@/components/page-state"
 import { DraftStatusBadge } from "@/components/status-badge"
@@ -32,6 +22,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Card,
   CardContent,
@@ -39,26 +30,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import { ConfigurationFieldEditor } from "./configuration-field-editor"
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "A operação de configuração falhou."
-}
+import { useWorkflowConfigurationController } from "./use-workflow-configuration-controller"
+import { WorkflowConfigurationPlan } from "./workflow-configuration-plan"
 
 function fieldPath(path: readonly string[]): string {
   return path.join(".")
 }
 
-function projectedValue(present: boolean, value: JsonValue | undefined): string {
-  return present ? JSON.stringify(value) : "ausente"
-}
-
-function applyIdempotencyKey(
-  draft: ConfigurationDraft,
-  plan: Extract<ConfigurationApplyPlan, { status: "ready" }>,
-): string {
-  return `configuration:${draft.draft_id}:${plan.record_revision}:${plan.draft_hash}`
+function humanizeSegment(value: string): string {
+  const words = value.replaceAll(/[_-]+/g, " ")
+  return words.charAt(0).toLocaleUpperCase() + words.slice(1)
 }
 
 export function WorkflowConfigurationPanel({
@@ -69,101 +51,24 @@ export function WorkflowConfigurationPanel({
   initialDraftId?: string
 }) {
   const session = useStudioSession()
-  const queryClient = useQueryClient()
-  const installed = useQuery(workflowConfigurationQuery(workflowId))
-  const initialDraft = useQuery({
-    queryKey: ["configuration", "workflow", workflowId, "draft", initialDraftId],
-    queryFn: ({ signal }) => studioApi.configurationDraft(workflowId, initialDraftId ?? "", signal),
-    enabled: initialDraftId !== undefined,
-  })
-  const [draft, setDraft] = useState<ConfigurationDraft>()
-  const [plan, setPlan] = useState<ConfigurationApplyPlan>()
-  const [confirmApply, setConfirmApply] = useState(false)
-
-  useEffect(() => {
-    setDraft(undefined)
-    setPlan(undefined)
-    setConfirmApply(false)
-  }, [initialDraftId, workflowId])
-
-  useEffect(() => {
-    if (initialDraft.data !== undefined) setDraft(initialDraft.data)
-  }, [initialDraft.data])
-
-  const createDraft = useMutation({
-    mutationFn: () => studioApi.createConfigurationDraft(workflowId),
-    onSuccess: (created) => {
-      setDraft(created)
-      setPlan(undefined)
-      toast.success("Draft privado de configuração criado.")
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  })
-  const patchDraft = useMutation({
-    mutationFn: async (update: { path: readonly string[]; value: JsonValue }) => {
-      if (draft === undefined) throw new Error("Crie um draft antes de editar.")
-      return await studioApi.patchConfigurationDraft(
-        workflowId,
-        draft.draft_id,
-        draft.etag,
-        [{ path: [...update.path], value: update.value }],
-      )
-    },
-    onSuccess: (updated) => {
-      setDraft(updated)
-      setPlan(undefined)
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  })
-  const validateDraft = useMutation({
-    mutationFn: async () => {
-      if (draft === undefined) throw new Error("Crie um draft antes de validar.")
-      return await studioApi.validateConfigurationDraft(
-        workflowId,
-        draft.draft_id,
-        draft.etag,
-      )
-    },
-    onSuccess: (result) => {
-      setDraft(result.draft)
-      setPlan(undefined)
-      if (result.validation.status === "valid") toast.success("Configuração validada.")
-      else toast.error("A configuração ainda possui erros de validação.")
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  })
-  const planApply = useMutation({
-    mutationFn: async () => {
-      if (draft === undefined) throw new Error("Crie um draft antes de planejar.")
-      return await studioApi.planConfigurationApply(workflowId, draft.draft_id)
-    },
-    onSuccess: (next) => setPlan(next),
-    onError: (error) => toast.error(errorMessage(error)),
-  })
-  const applyDraft = useMutation({
-    mutationFn: async () => {
-      if (draft === undefined || plan?.status !== "ready") {
-        throw new Error("O plano confirmado não está disponível.")
-      }
-      return await studioApi.applyConfigurationDraft(
-        workflowId,
-        draft.draft_id,
-        draft.etag,
-        plan.plan_token,
-        applyIdempotencyKey(draft, plan),
-      )
-    },
-    onSuccess: async () => {
-      setConfirmApply(false)
-      setDraft(undefined)
-      setPlan(undefined)
-      await queryClient.invalidateQueries({
-        queryKey: studioKeys.workflowConfiguration(workflowId),
-      })
-      toast.success("Configuração aplicada à fonte canônica.")
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  })
+  const [search, setSearch] = useState("")
+  const controller = useWorkflowConfigurationController(workflowId, initialDraftId)
+  const {
+    installed,
+    initialDraft,
+    draft,
+    plan,
+    confirmApply,
+    setConfirmApply,
+    setPendingUpdates,
+    pendingUpdateList,
+    createDraft,
+    patchDraft,
+    validateDraft,
+    planApply,
+    applyDraft,
+    mutationPending,
+  } = controller
 
   if (installed.isPending) return <PageLoading label="Carregando configuração" />
   if (installed.isError) {
@@ -176,13 +81,20 @@ export function WorkflowConfigurationPanel({
     return <PageError error={initialDraft.error} retry={() => void initialDraft.refetch()} />
   }
 
-  const configuration = draft?.configuration ?? installed.data
-  const mutationPending =
-    createDraft.isPending ||
-    patchDraft.isPending ||
-    validateDraft.isPending ||
-    planApply.isPending ||
-    applyDraft.isPending
+  const configuration = controller.configuration
+  if (configuration === undefined) return <PageLoading label="Carregando configuração" />
+  const searchTerm = search.trim().toLocaleLowerCase()
+  const visibleFields = configuration.fields.filter((field) =>
+    searchTerm.length === 0 ||
+    field.path.some((segment) => segment.toLocaleLowerCase().includes(searchTerm)) ||
+    field.title?.toLocaleLowerCase().includes(searchTerm) === true ||
+    field.description?.toLocaleLowerCase().includes(searchTerm) === true,
+  )
+  const fieldGroups = visibleFields.reduce<Record<string, typeof configuration.fields>>((groups, field) => {
+    const group = (field.path.length >= 3 ? field.path[1] : field.path[0]) ?? "geral"
+    groups[group] = [...(groups[group] ?? []), field]
+    return groups
+  }, {})
 
   return (
     <div className="space-y-4">
@@ -191,22 +103,38 @@ export function WorkflowConfigurationPanel({
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <CardTitle>Config de {workflowId}</CardTitle>
+                <CardTitle>Configurações de {workflowId}</CardTitle>
                 <CardDescription>
-                  Form gerado do JSON Schema; nenhum campo é inferido por nome.
+                  Altere os valores relacionados e salve tudo de uma vez.
                 </CardDescription>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Badge variant={configuration.status === "ready" ? "secondary" : "outline"}>
-                  {configuration.status}
+                  {configuration.status === "ready" ? "Pronta" : configuration.status === "not_declared" ? "Não configurada" : "Com problemas"}
                 </Badge>
-                <Badge variant="outline">raw YAML desabilitado</Badge>
                 {draft !== undefined && <DraftStatusBadge status={draft.status} />}
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 text-sm sm:grid-cols-3">
+            {configuration.fields.length > 8 && (
+              <div className="space-y-2">
+                <div className="relative max-w-md">
+                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-8" placeholder="Buscar configuração" aria-label="Buscar configurações" />
+                </div>
+                <nav className="flex flex-wrap gap-1" aria-label="Seções da configuração">
+                  {Object.keys(fieldGroups).map((group) => (
+                    <a key={group} href={`#config-${group}`} className="rounded-md border px-2 py-1 text-xs hover:bg-muted">
+                      {humanizeSegment(group)}
+                    </a>
+                  ))}
+                </nav>
+              </div>
+            )}
+            <details className="rounded-lg border p-3 text-sm">
+              <summary className="cursor-pointer text-muted-foreground">Resumo técnico</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg border p-3">
                 <p className="text-muted-foreground">Classificados</p>
                 <p className="mt-1 text-xl font-semibold">
@@ -223,7 +151,7 @@ export function WorkflowConfigurationPanel({
                 <p className="text-muted-foreground">Referências $.config</p>
                 <p className="mt-1 text-xl font-semibold">{configuration.references.length}</p>
               </div>
-            </div>
+            </div></details>
 
             {configuration.diagnostics.map((diagnostic, index) => (
               <Alert key={`${diagnostic.code}:${index}`} variant={diagnostic.severity === "error" ? "destructive" : "default"}>
@@ -248,16 +176,39 @@ export function WorkflowConfigurationPanel({
                 </AlertDescription>
               </Alert>
             ) : (
-              <div className="space-y-3">
-                {configuration.fields.map((field) => (
-                  <ConfigurationFieldEditor
-                    key={field.expression}
-                    field={field}
-                    canMutate={session.canMutate && draft !== undefined}
-                    pending={mutationPending}
-                    onSave={(path, value) => patchDraft.mutate({ path, value })}
-                  />
+              <div className="space-y-6">
+                {Object.entries(fieldGroups).map(([group, fields]) => (
+                  <section key={group} id={`config-${group}`} className="scroll-mt-6 space-y-3">
+                    <div>
+                      <h3 className="font-medium">{humanizeSegment(group)}</h3>
+                      <p className="text-xs text-muted-foreground">{fields.length} {fields.length === 1 ? "configuração" : "configurações"}</p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {fields.map((field) => (
+                        <ConfigurationFieldEditor
+                          key={field.expression}
+                          field={field}
+                          canMutate={session.canMutate && draft !== undefined}
+                          pending={mutationPending}
+                          onChange={(path, value) => {
+                            const key = fieldPath(path)
+                            setPendingUpdates((current) => {
+                              const next = { ...current }
+                              if (value === undefined || JSON.stringify(value) === JSON.stringify(field.value)) delete next[key]
+                              else next[key] = { path, value }
+                              return next
+                            })
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </section>
                 ))}
+                {visibleFields.length === 0 && (
+                  <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    Nenhuma configuração corresponde à busca.
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
@@ -266,9 +217,9 @@ export function WorkflowConfigurationPanel({
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Draft e apply</CardTitle>
+              <CardTitle>Alterações</CardTitle>
               <CardDescription>
-                O YAML privado permanece no backend; a UI envia somente path e valor classificados.
+                Salve, revise e aplique quando estiver pronto.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -283,27 +234,35 @@ export function WorkflowConfigurationPanel({
                   onClick={() => createDraft.mutate()}
                 >
                   <SaveIcon aria-hidden="true" />
-                  {createDraft.isPending ? "Criando…" : "Criar draft de config"}
+                  {createDraft.isPending ? "Preparando…" : "Começar a editar"}
                 </Button>
               ) : (
                 <>
                   <Button
-                    variant="outline"
                     className="w-full"
-                    disabled={mutationPending}
-                    onClick={() => validateDraft.mutate()}
+                    disabled={mutationPending || pendingUpdateList.length === 0}
+                    onClick={() => patchDraft.mutate(pendingUpdateList)}
                   >
-                    <FileCheck2Icon aria-hidden="true" />
-                    {validateDraft.isPending ? "Validando…" : "Validar draft"}
+                    <SaveIcon aria-hidden="true" />
+                    {patchDraft.isPending ? "Salvando…" : `Salvar alterações${pendingUpdateList.length > 0 ? ` (${pendingUpdateList.length})` : ""}`}
                   </Button>
                   <Button
                     variant="outline"
                     className="w-full"
-                    disabled={mutationPending || draft.status !== "valid"}
+                    disabled={mutationPending || pendingUpdateList.length > 0}
+                    onClick={() => validateDraft.mutate()}
+                  >
+                    <FileCheck2Icon aria-hidden="true" />
+                    {validateDraft.isPending ? "Verificando…" : "Verificar alterações"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={mutationPending || pendingUpdateList.length > 0 || draft.status !== "valid"}
                     onClick={() => planApply.mutate()}
                   >
                     <RefreshCwIcon aria-hidden="true" />
-                    {planApply.isPending ? "Calculando…" : "Planejar apply"}
+                    {planApply.isPending ? "Preparando…" : "Revisar e aplicar"}
                   </Button>
                 </>
               )}
@@ -315,7 +274,9 @@ export function WorkflowConfigurationPanel({
             </CardContent>
           </Card>
 
-          <Card>
+          <details className="rounded-xl border bg-card p-4">
+            <summary className="cursor-pointer font-medium">Referências técnicas</summary>
+          <Card className="mt-3 border-0 shadow-none">
             <CardHeader>
               <CardTitle>Referências</CardTitle>
               <CardDescription>Expressions encontradas na definição do workflow.</CardDescription>
@@ -335,74 +296,11 @@ export function WorkflowConfigurationPanel({
                 </ul>
               )}
             </CardContent>
-          </Card>
+          </Card></details>
         </div>
       </div>
 
-      {plan !== undefined && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Plano seguro de apply</CardTitle>
-            <CardDescription>
-              Somente valores classificados aparecem no diff. Diff textual e YAML privado não são enviados ao browser.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {plan.status === "conflicted" ? (
-              <Alert variant="destructive">
-                <ShieldAlertIcon aria-hidden="true" />
-                <AlertTitle>A fonte mudou depois da criação do draft</AlertTitle>
-                <AlertDescription>
-                  Recrie o draft antes de aplicar. {plan.conflicts.length} conflito(s) detectado(s).
-                </AlertDescription>
-              </Alert>
-            ) : plan.changes.length === 0 ? (
-              <Alert>
-                <AlertTitle>Nenhuma mudança classificada</AlertTitle>
-                <AlertDescription>O draft não altera valores expostos pelo Studio.</AlertDescription>
-              </Alert>
-            ) : (
-              <div className="space-y-3">
-                {plan.changes.map((change) => (
-                  <div key={fieldPath(change.path)} className="rounded-lg border p-3 text-sm">
-                    <code>{fieldPath(change.path)}</code>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                      <div className="rounded bg-muted p-2">
-                        <span className="text-xs text-muted-foreground">Antes</span>
-                        <pre className="mt-1 overflow-x-auto text-xs">
-                          {projectedValue(change.before_present, change.before)}
-                        </pre>
-                      </div>
-                      <div className="rounded bg-muted p-2">
-                        <span className="text-xs text-muted-foreground">Depois</span>
-                        <pre className="mt-1 overflow-x-auto text-xs">
-                          {projectedValue(change.after_present, change.after)}
-                        </pre>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {plan.status === "ready" && plan.changes.length > 0 && (
-              <>
-                <Separator />
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs text-muted-foreground">
-                    Token expira em {new Date(plan.expires_at).toLocaleString("pt-BR")}.
-                  </p>
-                  <Button
-                    disabled={mutationPending || draft === undefined}
-                    onClick={() => setConfirmApply(true)}
-                  >
-                    <CheckCircle2Icon aria-hidden="true" /> Confirmar apply
-                  </Button>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {plan !== undefined && <WorkflowConfigurationPlan plan={plan} mutationPending={mutationPending} draftExists={draft !== undefined} onConfirm={() => setConfirmApply(true)} />}
 
       <AlertDialog open={confirmApply} onOpenChange={setConfirmApply}>
         <AlertDialogContent>

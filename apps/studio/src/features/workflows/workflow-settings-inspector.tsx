@@ -69,6 +69,9 @@ export function WorkflowSettingsInspector({
         </div>
       </Field>
 
+      <details className="rounded-lg border">
+        <summary className="cursor-pointer px-3 py-2 font-medium">Representação técnica</summary>
+        <div className="space-y-5 border-t p-3">
       <Field>
         <FieldLabel>Capabilities declaradas</FieldLabel>
         <FieldDescription>
@@ -105,6 +108,8 @@ export function WorkflowSettingsInspector({
       <WorkflowJsonField label="Execution" path={["execution"]} value={rootField(source, "execution")} canMutate={canMutate} pending={pending} onOperations={onOperations} />
       <WorkflowJsonField label="Observability" path={["observability"]} value={rootField(source, "observability")} canMutate={canMutate} pending={pending} onOperations={onOperations} />
       <WorkflowJsonField label="Subagent policy" path={["subagent_policy"]} value={rootField(source, "subagent_policy")} canMutate={canMutate} pending={pending} onOperations={onOperations} />
+        </div>
+      </details>
     </div>
   )
 }

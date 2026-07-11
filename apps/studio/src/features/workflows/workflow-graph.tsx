@@ -1,133 +1,40 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   Background,
   Controls,
-  Handle,
   MarkerType,
   MiniMap,
-  Position,
   ReactFlow,
+  type Connection,
   type Edge,
-  type Node,
-  type NodeProps,
 } from "@xyflow/react"
 import {
-  BanIcon,
-  BotIcon,
-  BoxIcon,
-  CircleCheckIcon,
-  CircleXIcon,
-  ClockIcon,
-  GitPullRequestArrowIcon,
-  LoaderCircleIcon,
-  PaperclipIcon,
-  PauseCircleIcon,
-  PauseIcon,
-  SkipForwardIcon,
-  TriangleAlertIcon,
-  type LucideIcon,
-} from "lucide-react"
-
-import type {
-  CompiledWorkflowNode,
-  RunGraphNodeStatus,
-} from "@/api/types"
-import { Badge } from "@/components/ui/badge"
-import {
   autoWorkflowPositions,
-  workflowNodeRanks,
   type WorkflowNodePosition,
   type WorkflowPositions,
 } from "@/features/workflows/workflow-layout"
-import { focusWorkflowOutlineSibling } from "@/features/workflows/workflow-outline-keyboard"
-import { cn } from "@/lib/utils"
+import { workflowExecutionDescription, type WorkflowNodeExecution } from "@/features/workflows/workflow-execution-presentation"
+import type { WorkflowGraphModel } from "@/features/workflows/workflow-graph-model"
+import {
+  workflowDependencyEdgeTypes,
+  type WorkflowDependencyEdge,
+} from "@/features/workflows/workflow-dependency-edge"
+import type { WorkflowNodePresentation } from "@/features/workflows/workflow-node-catalog"
+import type { WorkflowNodeDiagnostic } from "@/features/workflows/workflow-node-diagnostics"
+import { workflowNodeTypes, type WorkflowFlowNode } from "@/features/workflows/workflow-node-card"
+import type { WorkflowCanvasGroup, WorkflowLayoutDirection } from "@/features/workflows/workflow-layout"
+import { workflowGroupNodeTypes, type WorkflowGroupNode } from "@/features/workflows/workflow-group-card"
 
-export type WorkflowGraphNode = Pick<
-  CompiledWorkflowNode,
-  "id" | "kind" | "capability_id" | "can_create_pending_interrupt"
->
-
-export type WorkflowGraphModel = {
-  readonly nodes: readonly WorkflowGraphNode[]
-  readonly edges: readonly {
-    readonly from: string
-    readonly to: string
-  }[]
-}
-
-export type WorkflowNodeExecution = {
-  readonly status?: RunGraphNodeStatus
-  readonly attemptCount?: number
-  readonly artifactCount?: number
-  readonly primaryFailure?: boolean
-}
-
-type WorkflowNodeData = {
-  compiled: WorkflowGraphNode
-  execution?: WorkflowNodeExecution
-}
-
-type WorkflowFlowNode = Node<WorkflowNodeData, "workflow-node">
+export { workflowGraphModel, type WorkflowGraphModel, type WorkflowGraphNode } from "@/features/workflows/workflow-graph-model"
+export type { WorkflowNodeExecution } from "@/features/workflows/workflow-execution-presentation"
+export { WorkflowOutline } from "@/features/workflows/workflow-outline"
 
 const EMPTY_EXECUTION: ReadonlyMap<string, WorkflowNodeExecution> = new Map()
-
-const nodeIcons = {
-  built_in: BoxIcon,
-  agent: BotIcon,
-  pattern: GitPullRequestArrowIcon,
-  interrupt: PauseIcon,
-} as const
-
-const statusPresentation: Record<
-  RunGraphNodeStatus,
-  { readonly label: string; readonly icon: LucideIcon; readonly className: string }
-> = {
-  pending: {
-    label: "Pendente",
-    icon: ClockIcon,
-    className: "border-muted-foreground/40",
-  },
-  running: {
-    label: "Em execução",
-    icon: LoaderCircleIcon,
-    className: "border-sky-500/70 bg-sky-500/5",
-  },
-  waiting_for_input: {
-    label: "Aguardando entrada",
-    icon: PauseCircleIcon,
-    className: "border-amber-500/70 bg-amber-500/5",
-  },
-  succeeded: {
-    label: "Concluído",
-    icon: CircleCheckIcon,
-    className: "border-emerald-500/70 bg-emerald-500/5",
-  },
-  failed: {
-    label: "Falhou",
-    icon: CircleXIcon,
-    className: "border-destructive bg-destructive/5",
-  },
-  skipped_inactive: {
-    label: "Ignorado: inativo",
-    icon: SkipForwardIcon,
-    className: "border-muted-foreground/40 bg-muted/30",
-  },
-  skipped_dependency_failed: {
-    label: "Ignorado: dependência falhou",
-    icon: TriangleAlertIcon,
-    className: "border-amber-500/70 bg-amber-500/5",
-  },
-  cancelled: {
-    label: "Cancelado",
-    icon: BanIcon,
-    className: "border-muted-foreground/40 bg-muted/30",
-  },
-  timed_out: {
-    label: "Tempo esgotado",
-    icon: ClockIcon,
-    className: "border-destructive bg-destructive/5",
-  },
-}
+const EMPTY_PRESENTATIONS: ReadonlyMap<string, WorkflowNodePresentation> = new Map()
+const EMPTY_DIAGNOSTICS: ReadonlyMap<string, readonly WorkflowNodeDiagnostic[]> = new Map()
+const EMPTY_EDGE_DIAGNOSTICS: ReadonlyMap<string, readonly WorkflowNodeDiagnostic[]> = new Map()
+const EMPTY_AUTHORING_STATES: ReadonlyMap<string, "ready" | "unchecked"> = new Map()
+const WORKFLOW_NODE_TYPES = { ...workflowNodeTypes, ...workflowGroupNodeTypes }
 
 const workflowAriaLabelConfig = {
   "node.a11yDescription.default":
@@ -154,156 +61,163 @@ const workflowAriaLabelConfig = {
   "handle.ariaLabel": "Ponto de conexão do node",
 } as const
 
-function executionDescription(execution: WorkflowNodeExecution | undefined): string {
-  if (execution?.status === undefined) return "estado não observado"
-  const status = statusPresentation[execution.status].label
-  const attempts =
-    execution.attemptCount === undefined
-      ? ""
-      : `, ${execution.attemptCount} tentativa${execution.attemptCount === 1 ? "" : "s"}`
-  const artifacts =
-    execution.artifactCount === undefined
-      ? ""
-      : `, ${execution.artifactCount} artifact${execution.artifactCount === 1 ? "" : "s"}`
-  const failure = execution.primaryFailure ? ", falha principal da execução" : ""
-  return `${status}${attempts}${artifacts}${failure}`
-}
-
-function ExecutionBadges({ execution }: { execution?: WorkflowNodeExecution }) {
-  if (execution?.status === undefined) return null
-  const presentation = statusPresentation[execution.status]
-  const StatusIcon = presentation.icon
-  return (
-    <div className="mt-2 flex flex-wrap gap-1">
-      <Badge variant="outline" className={presentation.className}>
-        <StatusIcon
-          className={cn(execution.status === "running" && "motion-safe:animate-spin")}
-          aria-hidden="true"
-        />
-        {presentation.label}
-      </Badge>
-      {execution.attemptCount !== undefined && (
-        <Badge variant="outline">
-          {execution.attemptCount} tentativa{execution.attemptCount === 1 ? "" : "s"}
-        </Badge>
-      )}
-      {execution.artifactCount !== undefined && execution.artifactCount > 0 && (
-        <Badge variant="outline">
-          <PaperclipIcon aria-hidden="true" />
-          {execution.artifactCount} artifact{execution.artifactCount === 1 ? "" : "s"}
-        </Badge>
-      )}
-      {execution.primaryFailure && (
-        <Badge variant="destructive">
-          <TriangleAlertIcon aria-hidden="true" /> Falha principal
-        </Badge>
-      )}
-    </div>
-  )
-}
-
-function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
-  const Icon = nodeIcons[data.compiled.kind]
-  const stateClass =
-    data.execution?.status === undefined
-      ? undefined
-      : statusPresentation[data.execution.status].className
-  return (
-    <div
-      className={cn(
-        "min-w-48 rounded-xl border bg-card px-3 py-2 text-card-foreground shadow-sm",
-        stateClass,
-        selected && "border-primary ring-2 ring-primary/20",
-      )}
-    >
-      <Handle type="target" position={Position.Top} className="opacity-0" />
-      <div className="flex items-start gap-2">
-        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Icon className="size-4" aria-hidden="true" />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{data.compiled.id}</p>
-          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-            {data.compiled.capability_id}
-          </p>
-        </div>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1">
-        <Badge variant="outline">{data.compiled.kind}</Badge>
-        {data.compiled.can_create_pending_interrupt && (
-          <Badge variant="secondary">pode interromper</Badge>
-        )}
-      </div>
-      <ExecutionBadges execution={data.execution} />
-      <Handle type="source" position={Position.Bottom} className="opacity-0" />
-    </div>
-  )
-}
-
-const nodeTypes = { "workflow-node": WorkflowNodeCard }
-
 function graphElements(
   compiled: WorkflowGraphModel,
   positions: WorkflowPositions,
   execution: ReadonlyMap<string, WorkflowNodeExecution>,
+  connectable: boolean,
+  presentations: ReadonlyMap<string, WorkflowNodePresentation>,
+  dependenciesDeletable: boolean,
+  onInsertDependency: ((sourceId: string, targetId: string) => void) | undefined,
+  onDeleteDependency: ((sourceId: string, targetId: string) => void) | undefined,
+  diagnostics: ReadonlyMap<string, readonly WorkflowNodeDiagnostic[]>,
+  edgeDiagnostics: ReadonlyMap<string, readonly WorkflowNodeDiagnostic[]>,
+  authoringStates: ReadonlyMap<string, "ready" | "unchecked">,
+  direction: WorkflowLayoutDirection,
 ): {
   nodes: WorkflowFlowNode[]
-  edges: Edge[]
+  edges: WorkflowDependencyEdge[]
 } {
   const automatic = autoWorkflowPositions(compiled)
   const nodes = compiled.nodes.map((node) => {
     const nodeExecution = execution.get(node.id)
+    const sourceKind = node.kind === "interrupt" ? "human_gate" : node.kind
+    const presentation = presentations.get(`${sourceKind}:${node.capability_id}`)
+    const nodeDiagnostics = diagnostics.get(node.id)
     return {
       id: node.id,
       type: "workflow-node" as const,
       data: {
         compiled: node,
+        direction,
+        ...(presentation === undefined ? {} : { presentation }),
+        ...(nodeDiagnostics === undefined ? {} : { diagnostics: nodeDiagnostics }),
+        ...(authoringStates.get(node.id) === undefined ? {} : { authoringState: authoringStates.get(node.id) }),
         ...(nodeExecution === undefined ? {} : { execution: nodeExecution }),
       },
       position: positions[node.id] ?? automatic[node.id] ?? { x: 0, y: 0 },
-      connectable: false,
+      zIndex: 1,
+      connectable,
       selectable: true,
       focusable: true,
       deletable: false,
-      ariaLabel: `Node ${node.id}, tipo ${node.kind}, capability ${node.capability_id}, ${executionDescription(nodeExecution)}`,
+      ariaLabel: `Node ${node.id}, tipo ${node.kind}, capability ${node.capability_id}, ${workflowExecutionDescription(nodeExecution)}`,
     }
   })
   const edges = compiled.edges.map((edge, index) => ({
     id: `${edge.from}:${edge.to}:${index}`,
     source: edge.from,
     target: edge.to,
-    type: "smoothstep",
+    type: "workflow-dependency" as const,
+    data: {
+      ...(onInsertDependency === undefined ? {} : { onInsert: onInsertDependency }),
+      ...(onDeleteDependency === undefined ? {} : { onDelete: onDeleteDependency }),
+      ...(edgeDiagnostics.get(`${edge.from}\u0000${edge.to}`) === undefined
+        ? {}
+        : { diagnostics: edgeDiagnostics.get(`${edge.from}\u0000${edge.to}`) }),
+    },
     markerEnd: { type: MarkerType.ArrowClosed },
     selectable: true,
     focusable: true,
-    deletable: false,
-    ariaLabel: `${edge.from} executa antes de ${edge.to}`,
+    deletable: dependenciesDeletable,
+    ariaLabel: `${edge.from} executa antes de ${edge.to}${edgeDiagnostics.has(`${edge.from}\u0000${edge.to}`) ? ", conexão com problema" : ""}`,
   }))
   return { nodes, edges }
 }
 
+function groupNodes(
+  groups: readonly WorkflowCanvasGroup[],
+  nodes: readonly WorkflowFlowNode[],
+): WorkflowGroupNode[] {
+  const positions = new Map(nodes.map((node) => [node.id, node.position]))
+  return groups.flatMap((group) => {
+    const members = group.nodeIds.flatMap((nodeId) => {
+      const position = positions.get(nodeId)
+      return position === undefined ? [] : [position]
+    })
+    if (members.length === 0) return []
+    const minX = Math.min(...members.map((position) => position.x)) - 35
+    const minY = Math.min(...members.map((position) => position.y)) - 45
+    const maxX = Math.max(...members.map((position) => position.x)) + 230
+    const maxY = Math.max(...members.map((position) => position.y)) + 125
+    return [{
+      id: `studio-group:${group.id}`,
+      type: "workflow-group" as const,
+      data: { title: group.title },
+      position: { x: minX, y: minY },
+      style: { width: maxX - minX, height: maxY - minY, pointerEvents: "none" },
+      draggable: false,
+      selectable: false,
+      connectable: false,
+      focusable: false,
+      deletable: false,
+      zIndex: 0,
+      ariaLabel: `Grupo visual ${group.title}`,
+    }]
+  })
+}
+
 export function WorkflowGraph({
-  compiled,
+  graph,
   selectedNodeId,
   positions = {},
   canMove = false,
   execution = EMPTY_EXECUTION,
   onMoveNode,
   onSelectNode,
+  onConnectNodes,
+  onDeleteDependency,
+  onReconnectDependency,
+  isValidConnection,
+  onConnectToEmpty,
+  onInsertDependency,
+  presentations = EMPTY_PRESENTATIONS,
+  diagnostics = EMPTY_DIAGNOSTICS,
+  edgeDiagnostics = EMPTY_EDGE_DIAGNOSTICS,
+  authoringStates = EMPTY_AUTHORING_STATES,
+  direction = "vertical",
+  groups = [],
 }: {
-  compiled: WorkflowGraphModel
+  graph: WorkflowGraphModel
   selectedNodeId?: string
   positions?: WorkflowPositions
   canMove?: boolean
   execution?: ReadonlyMap<string, WorkflowNodeExecution>
   onMoveNode?: (nodeId: string, position: WorkflowNodePosition) => void
   onSelectNode?: (nodeId: string) => void
+  onConnectNodes?: (sourceId: string, targetId: string) => void
+  onDeleteDependency?: (sourceId: string, targetId: string) => void
+  onReconnectDependency?: (previousSourceId: string, previousTargetId: string, nextSourceId: string, nextTargetId: string) => void
+  isValidConnection?: (sourceId: string, targetId: string) => boolean
+  onConnectToEmpty?: (sourceId: string) => void
+  onInsertDependency?: (sourceId: string, targetId: string) => void
+  presentations?: ReadonlyMap<string, WorkflowNodePresentation>
+  diagnostics?: ReadonlyMap<string, readonly WorkflowNodeDiagnostic[]>
+  edgeDiagnostics?: ReadonlyMap<string, readonly WorkflowNodeDiagnostic[]>
+  authoringStates?: ReadonlyMap<string, "ready" | "unchecked">
+  direction?: WorkflowLayoutDirection
+  groups?: readonly WorkflowCanvasGroup[]
 }) {
+  const canConnect = onConnectNodes !== undefined
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string>()
   const elements = useMemo(
-    () => graphElements(compiled, positions, execution),
-    [compiled, execution, positions],
+    () => graphElements(
+      graph,
+      positions,
+      execution,
+      canConnect,
+      presentations,
+      onDeleteDependency !== undefined,
+      onInsertDependency,
+      onDeleteDependency,
+      diagnostics,
+      edgeDiagnostics,
+      authoringStates,
+      direction,
+    ),
+    [authoringStates, canConnect, diagnostics, direction, edgeDiagnostics, execution, graph, onDeleteDependency, onInsertDependency, positions, presentations],
   )
-  const nodes = useMemo(
+  const workflowNodes = useMemo(
     () =>
       elements.nodes.map((node) => ({
         ...node,
@@ -312,25 +226,71 @@ export function WorkflowGraph({
       })),
     [canMove, elements.nodes, selectedNodeId],
   )
+  const nodes = useMemo(() => [...groupNodes(groups, workflowNodes), ...workflowNodes], [groups, workflowNodes])
+  const edges = useMemo(
+    () => elements.edges.map((edge) => ({
+      ...edge,
+      selected: edge.id === selectedEdgeId,
+    })),
+    [elements.edges, selectedEdgeId],
+  )
 
   return (
     <div className="h-full min-h-96 w-full" aria-label="DAG compilada do workflow">
       <ReactFlow
         aria-label="Canvas navegável da DAG do workflow"
         nodes={nodes}
-        edges={elements.edges}
-        nodeTypes={nodeTypes}
-        onNodeClick={(_event, node) => onSelectNode?.(node.id)}
-        onNodeDragStop={(_event, node) => onMoveNode?.(node.id, node.position)}
-        onPaneClick={() => onSelectNode?.("")}
+        edges={edges}
+        nodeTypes={WORKFLOW_NODE_TYPES}
+        edgeTypes={workflowDependencyEdgeTypes}
+        onNodeClick={(_event, node) => {
+          if (node.type === "workflow-group") return
+          setSelectedEdgeId(undefined)
+          onSelectNode?.(node.id)
+        }}
+        onEdgeClick={(_event, edge) => {
+          setSelectedEdgeId(edge.id)
+          onSelectNode?.("")
+        }}
+        onNodeDragStop={(_event, node) => {
+          if (node.type !== "workflow-group") onMoveNode?.(node.id, node.position)
+        }}
+        onConnect={(connection: Connection) => {
+          if (connection.source !== null && connection.target !== null) {
+            onConnectNodes?.(connection.source, connection.target)
+          }
+        }}
+        onConnectEnd={(_event, connectionState) => {
+          if (connectionState.fromNode !== null && connectionState.toNode === null) {
+            onConnectToEmpty?.(connectionState.fromNode.id)
+          }
+        }}
+        onEdgesDelete={(edges) => {
+          for (const edge of edges) onDeleteDependency?.(edge.source, edge.target)
+        }}
+        onReconnect={(previous: Edge, connection: Connection) => {
+          if (connection.source !== null && connection.target !== null) {
+            onReconnectDependency?.(previous.source, previous.target, connection.source, connection.target)
+          }
+        }}
+        isValidConnection={(connection) =>
+          connection.source !== null &&
+          connection.target !== null &&
+          (isValidConnection?.(connection.source, connection.target) ?? true)
+        }
+        onPaneClick={() => {
+          setSelectedEdgeId(undefined)
+          onSelectNode?.("")
+        }}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.25}
+        fitViewOptions={{ padding: 0.2, minZoom: 0.45, maxZoom: 1 }}
+        minZoom={0.4}
         maxZoom={1.6}
         nodesDraggable={canMove}
-        nodesConnectable={false}
+        nodesConnectable={canConnect}
         nodesFocusable
         edgesFocusable
+        edgesReconnectable={onReconnectDependency !== undefined}
         disableKeyboardA11y={false}
         ariaLabelConfig={workflowAriaLabelConfig}
         proOptions={{ hideAttribution: true }}
@@ -340,64 +300,5 @@ export function WorkflowGraph({
         <Controls showInteractive={false} aria-label="Controles de visualização da DAG" />
       </ReactFlow>
     </div>
-  )
-}
-
-export function WorkflowOutline({
-  compiled,
-  selectedNodeId,
-  execution = EMPTY_EXECUTION,
-  onSelectNode,
-}: {
-  compiled: WorkflowGraphModel
-  selectedNodeId?: string
-  execution?: ReadonlyMap<string, WorkflowNodeExecution>
-  onSelectNode: (nodeId: string) => void
-}) {
-  const ranks = useMemo(() => workflowNodeRanks(compiled), [compiled])
-  const ordered = useMemo(
-    () =>
-      [...compiled.nodes].sort((left, right) => {
-        const byRank = (ranks.get(left.id) ?? 0) - (ranks.get(right.id) ?? 0)
-        return byRank === 0 ? left.id.localeCompare(right.id) : byRank
-      }),
-    [compiled.nodes, ranks],
-  )
-  return (
-    <ol className="space-y-1" aria-label="Outline navegável da DAG compilada">
-      {ordered.map((node, index) => {
-        const nodeExecution = execution.get(node.id)
-        return (
-          <li key={node.id}>
-            <button
-              type="button"
-              className={cn(
-                "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",
-                nodeExecution?.status !== undefined &&
-                  statusPresentation[nodeExecution.status].className,
-                selectedNodeId === node.id && "border-primary bg-primary/5",
-              )}
-              onClick={() => onSelectNode(node.id)}
-              onKeyDown={(event) => focusWorkflowOutlineSibling(event, index)}
-              data-outline-node={node.id}
-              aria-pressed={selectedNodeId === node.id}
-              aria-label={`${node.id}, ${node.capability_id}, ${executionDescription(nodeExecution)}`}
-            >
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
-                {index + 1}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{node.id}</span>
-                <span className="block truncate font-mono text-[11px] text-foreground">
-                  {node.capability_id}
-                </span>
-                <ExecutionBadges execution={nodeExecution} />
-              </span>
-              <Badge variant="outline">{node.kind}</Badge>
-            </button>
-          </li>
-        )
-      })}
-    </ol>
   )
 }

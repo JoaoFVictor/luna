@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   WorkflowGraph,
   WorkflowOutline,
+  workflowGraphModel,
   type WorkflowNodeExecution,
 } from "@/features/workflows/workflow-graph"
 
@@ -168,6 +169,9 @@ export function RunGraphPanel({
 
   const response = graph.data
   const selected = response.graph.nodes.find((node) => node.id === selectedNodeId)
+  const selectedObservation = response.overlay.observation === "observed"
+    ? response.overlay.nodes.find((node) => node.node_id === selectedNodeId)?.observed_output
+    : undefined
   return (
     <Card>
       <CardHeader>
@@ -229,7 +233,7 @@ export function RunGraphPanel({
           </TabsList>
           <TabsContent value="graph" className="mt-3 h-[34rem] overflow-hidden rounded-lg border bg-muted/20">
             <WorkflowGraph
-              compiled={response.graph}
+              graph={workflowGraphModel(response.graph)}
               selectedNodeId={selectedNodeId}
               execution={execution}
               onSelectNode={(nodeId) => setSelectedNodeId(nodeId || undefined)}
@@ -238,7 +242,7 @@ export function RunGraphPanel({
           <TabsContent value="outline" className="mt-3 rounded-lg border p-3">
             <ScrollArea className="max-h-[32rem]">
               <WorkflowOutline
-                compiled={response.graph}
+                compiled={workflowGraphModel(response.graph)}
                 selectedNodeId={selectedNodeId}
                 execution={execution}
                 onSelectNode={setSelectedNodeId}
@@ -248,11 +252,29 @@ export function RunGraphPanel({
         </Tabs>
 
         {selected !== undefined && (
-          <div className="rounded-lg border p-3" aria-live="polite">
+          <div className="space-y-3 rounded-lg border p-3" aria-live="polite">
             <p className="text-sm font-medium">Node selecionado: {selected.id}</p>
             <p className="break-all font-mono text-xs text-muted-foreground">
               {selected.capability_id}
             </p>
+            {selectedObservation !== undefined && (
+              <div>
+                <p className="text-xs font-medium">Estrutura da saída observada</p>
+                <p className="text-xs text-muted-foreground">
+                  Os valores foram removidos no servidor; somente caminhos e tipos são exibidos.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {selectedObservation.fields
+                    .filter((field) => field.path.length > 0)
+                    .map((field) => (
+                      <Badge key={field.path.join(".")} variant="outline">
+                        {field.path.join(".")} · {field.value_type}
+                      </Badge>
+                    ))}
+                  {selectedObservation.truncated && <Badge variant="secondary">lista truncada</Badge>}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </CardContent>

@@ -470,9 +470,23 @@ export const StudioProviderConfigurationSchema = z
         .object({
           id: z.string().min(1).max(256),
           adapter_ids: z.array(z.string().min(1).max(256)),
-          credential_status: z.literal("not_checked")
+          credential_status: z.enum(["not_checked", "verified_by_preview"]),
+          checked_at: z.string().datetime({ offset: true }).optional(),
+          checked_adapter_id: z.string().min(1).max(256).optional()
         })
         .strict()
+        .superRefine((provider, context) => {
+          const verified = provider.credential_status === "verified_by_preview";
+          if (verified !== (
+            provider.checked_at !== undefined &&
+            provider.checked_adapter_id !== undefined
+          )) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Verified providers require exact preview evidence"
+            });
+          }
+        })
     )
   })
   .strict();

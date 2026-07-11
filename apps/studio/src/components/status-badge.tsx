@@ -26,6 +26,10 @@ const RUN_LABELS: Record<RunStatus, string> = {
   cancelled: "Cancelada",
 }
 
+export function runStatusLabel(status: RunStatus): string {
+  return RUN_LABELS[status]
+}
+
 export function RunStatusBadge({ status }: { status: RunStatus }) {
   const terminalSuccess = status === "succeeded"
   const terminalFailure = ["failed", "timed_out", "cancelled", "rejected"].includes(

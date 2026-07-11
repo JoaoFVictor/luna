@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator"
 import { formatDateTime } from "@/lib/format"
 import type { RunLaunchNotice } from "@/features/launch/use-run-launch"
+import { launchEffectLabel } from "@/features/launch/launch-presentation"
 
 type ConfirmationProps = {
   plan: RunPlan
@@ -46,29 +47,28 @@ function PlanIdentity({ plan }: { plan: RunPlan }) {
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle>Plano autoritativo</CardTitle>
+            <CardTitle>Antes de executar</CardTitle>
             <CardDescription>
-              Gerado pelo backend com a configuração instalada e revalidado antes do dispatch.
+              Confira a entrada, o workflow escolhido e o que esta execução poderá fazer.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">{plan.mode}</Badge>
             <Badge variant={plan.confirmation_required ? "destructive" : "secondary"}>
-              {plan.confirmation_required ? "efeitos exigem confirmação" : "sem write declarado"}
+              {plan.confirmation_required ? "Pode causar efeitos externos" : "Sem escrita declarada"}
             </Badge>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
         <dl className="grid gap-4 sm:grid-cols-2">
-          <ExactValue label="Workflow" value={plan.workflow_id} />
-          <ExactValue label="Workflow revision" value={plan.workflow_revision} />
-          <ExactValue label="Definition bundle" value={plan.definition_bundle_hash} />
-          <ExactValue label="Catalog fingerprint" value={plan.catalog_fingerprint} />
-          <ExactValue label="Execution snapshot" value={plan.execution_snapshot_hash} />
-          <ExactValue label="Invocation hash" value={plan.invocation_hash} />
-          <ExactValue label="Config hash" value={plan.config_hash} />
-          <ExactValue label="Plan ID" value={plan.plan_id} />
+          <ExactValue label="Workflow escolhido" value={plan.workflow_id} />
+          <ExactValue label="Modo" value={plan.mode} />
+          <ExactValue
+            label="Escopo"
+            value={plan.execution_scope.kind === "workflow"
+              ? "Workflow completo"
+              : `Até o passo ${plan.execution_scope.node_id}`}
+          />
         </dl>
 
         <Separator />
@@ -82,19 +82,19 @@ function PlanIdentity({ plan }: { plan: RunPlan }) {
             </p>
           </div>
           <div>
-            <p className="text-xs font-medium text-muted-foreground">Proveniência</p>
+            <p className="text-xs font-medium text-muted-foreground">Entrada</p>
             {plan.input_provenance.kind === "adapter" ? (
               <p className="mt-1 break-all text-sm">
-                adapter <code>{plan.input_provenance.adapter_id}</code> · input {plan.input_provenance.adapter_input_hash}
+                Carregada por <code>{plan.input_provenance.adapter_id}</code>
               </p>
             ) : (
-              <p className="mt-1 text-sm">invocation JSON enviada diretamente</p>
+              <p className="mt-1 text-sm">Invocation JSON fornecida manualmente</p>
             )}
           </div>
         </div>
 
         <div className="rounded-lg border p-3">
-          <p className="text-xs font-medium text-muted-foreground">Repository resolvido</p>
+          <p className="text-xs font-medium text-muted-foreground">Repositório</p>
           {plan.repository_id === undefined ? (
             <p className="mt-1 text-sm">
               {plan.repository_required
@@ -109,9 +109,18 @@ function PlanIdentity({ plan }: { plan: RunPlan }) {
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground">
-          A configuração relevante não é devolvida ao navegador; o hash acima prende exatamente os valores privados usados no plano.
-        </p>
+        <details className="rounded-lg border">
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Identidade técnica e hashes</summary>
+          <dl className="grid gap-4 border-t p-3 sm:grid-cols-2">
+            <ExactValue label="Workflow revision" value={plan.workflow_revision} />
+            <ExactValue label="Definition bundle" value={plan.definition_bundle_hash} />
+            <ExactValue label="Catalog fingerprint" value={plan.catalog_fingerprint} />
+            <ExactValue label="Execution snapshot" value={plan.execution_snapshot_hash} />
+            <ExactValue label="Invocation hash" value={plan.invocation_hash} />
+            <ExactValue label="Config hash" value={plan.config_hash} />
+            <ExactValue label="Plan ID" value={plan.plan_id} />
+          </dl>
+        </details>
       </CardContent>
     </Card>
   )
@@ -121,14 +130,13 @@ function Effects({ plan }: { plan: RunPlan }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Efeitos e incertezas</CardTitle>
+        <CardTitle>O que poderá acontecer</CardTitle>
         <CardDescription>
-          Potencial é o que as registrations e policies permitem; resolvido é o que o preflight conseguiu determinar. Isso não é o ledger do que de fato ocorreu.
+          Esta é a revisão de permissões e efeitos conhecidos antes da execução.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        <EffectList title="Potenciais / declarados" effects={plan.potential_effects} />
-        <EffectList title="Resolvidos no preflight" effects={plan.resolved_effects} />
+        <EffectList title="Efeitos conhecidos" effects={plan.resolved_effects.length > 0 ? plan.resolved_effects : plan.potential_effects} />
 
         <section aria-labelledby="run-plan-uncertainties">
           <h3 id="run-plan-uncertainties" className="text-sm font-semibold">Incertezas</h3>
@@ -139,7 +147,7 @@ function Effects({ plan }: { plan: RunPlan }) {
               {plan.effect_uncertainties.map((uncertainty) => (
                 <li key={uncertainty.uncertainty_id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{uncertainty.kind}</span>
+                    <span className="font-medium">{launchEffectLabel(uncertainty.kind)}</span>
                     {uncertainty.may_include_unlisted_write && (
                       <Badge variant="destructive">pode incluir write não listado</Badge>
                     )}
@@ -152,7 +160,7 @@ function Effects({ plan }: { plan: RunPlan }) {
         </section>
 
         <section aria-labelledby="run-plan-warnings">
-          <h3 id="run-plan-warnings" className="text-sm font-semibold">Warnings</h3>
+          <h3 id="run-plan-warnings" className="text-sm font-semibold">Avisos</h3>
           {plan.warnings.length === 0 ? (
             <p className="mt-2 text-sm text-muted-foreground">Nenhum warning adicional.</p>
           ) : (
@@ -184,7 +192,7 @@ function EffectList({ title, effects }: { title: string; effects: readonly Effec
           {effects.map((effect) => (
             <li key={effect.effect_id} className="rounded-lg border p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{effect.category}</span>
+                <span className="font-medium">{launchEffectLabel(effect.category)}</span>
                 {effect.confirmation_required && <Badge variant="destructive">confirmação obrigatória</Badge>}
                 {"resolution_source" in effect && <Badge variant="outline">{effect.resolution_source}</Badge>}
               </div>
@@ -212,9 +220,9 @@ function Confirmation(props: ConfirmationProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Confirmação do run real</CardTitle>
+        <CardTitle>Confirmar execução</CardTitle>
         <CardDescription>
-          Validate/Compile não são safe test. Este botão envia o plano para a fila real do runtime local.
+          A execução pode chamar modelos, processos, providers e alterar o repositório conforme os efeitos acima.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -230,31 +238,21 @@ function Confirmation(props: ConfirmationProps) {
           <input
             type="checkbox"
             className="mt-0.5 size-4 accent-primary"
-            checked={props.realRunConfirmed}
-            onChange={(event) => props.onRealRunConfirmedChange(event.target.checked)}
+            checked={props.realRunConfirmed && props.listedEffectsConfirmed}
+            onChange={(event) => {
+              props.onRealRunConfirmedChange(event.target.checked)
+              props.onListedEffectsConfirmedChange(event.target.checked)
+            }}
           />
           <span>
-            <strong>Confirmo um run real.</strong>
-            <span className="mt-1 block text-muted-foreground">Ele pode chamar modelos, processos, providers e modificar repository conforme o plano.</span>
-          </span>
-        </label>
-
-        <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
-          <input
-            type="checkbox"
-            className="mt-0.5 size-4 accent-primary"
-            checked={props.listedEffectsConfirmed}
-            onChange={(event) => props.onListedEffectsConfirmedChange(event.target.checked)}
-          />
-          <span>
-            <strong>Li os efeitos listados e as incertezas.</strong>
-            <span className="mt-1 block text-muted-foreground">Entendo que tools dinâmicas e branches podem impedir uma projeção completa antes do runtime.</span>
+            <strong>Revisei a entrada e os efeitos desta execução.</strong>
+            <span className="mt-1 block text-muted-foreground">Quero enviar este workflow para a fila local agora.</span>
           </span>
         </label>
 
         <Button className="w-full" disabled={!executable} onClick={props.onExecute}>
           <PlayIcon aria-hidden="true" />
-          {props.executing ? "Enviando para a fila…" : "Executar run real"}
+          {props.executing ? "Iniciando…" : "Executar workflow"}
         </Button>
       </CardContent>
     </Card>

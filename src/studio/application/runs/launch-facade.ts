@@ -258,7 +258,8 @@ export class StudioRunLaunchFacade {
       workflow_id: initialRoute.workflowId,
       invocation: resolved.invocation,
       config: installed.config,
-      input_provenance: resolved.provenance
+      input_provenance: resolved.provenance,
+      execution_scope: parsed.data.execution_scope
     }, context, signal));
 
     const currentRouting = await installedRouting(this.#routing);

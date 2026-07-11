@@ -2,7 +2,6 @@ import { useEffect } from "react"
 import { EyeIcon, FileTextIcon, SaveIcon, ShieldCheckIcon } from "lucide-react"
 import { STUDIO_DRAFT_AUTHORING_LIMITS } from "../../../../../src/studio/contracts/draft-authoring.js"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -37,19 +36,15 @@ export function AgentInstructionsSection({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="flex items-center gap-2 text-sm font-semibold"><FileTextIcon className="size-4" aria-hidden="true" /> Instructions</h2>
-          <code className="text-xs text-muted-foreground">{path}</code>
+          <h2 className="flex items-center gap-2 text-sm font-semibold"><FileTextIcon className="size-4" aria-hidden="true" /> Instruções</h2>
+          <p className="text-xs text-muted-foreground">Diga como o agent deve raciocinar, agir e responder.</p>
         </div>
         <div className="flex gap-2">
           <Badge variant={tooLarge ? "destructive" : "outline"}>{editor.value.length.toLocaleString()} caracteres</Badge>
           <Badge variant={tooLarge ? "destructive" : "outline"}>{bytes.toLocaleString()} bytes UTF-8</Badge>
         </div>
       </div>
-      <Alert>
-        <ShieldCheckIcon aria-hidden="true" />
-        <AlertTitle>Preview sem HTML ativo</AlertTitle>
-        <AlertDescription>O preview Markdown renderiza somente headings, listas, quotes e code fences. HTML e links permanecem texto inerte.</AlertDescription>
-      </Alert>
+      <details className="rounded-lg border p-3 text-xs text-muted-foreground"><summary className="cursor-pointer"><ShieldCheckIcon className="mr-2 inline size-4" aria-hidden="true" />Detalhes do arquivo e preview</summary><p className="mt-2"><code>{path}</code>. O preview não executa HTML nem abre links.</p></details>
       <Tabs defaultValue="edit">
         <TabsList>
           <TabsTrigger value="edit"><FileTextIcon aria-hidden="true" /> Editar</TabsTrigger>
@@ -75,7 +70,7 @@ export function AgentInstructionsSection({
       </Tabs>
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={disabled || pending || !editor.dirty || tooLarge} onClick={() => onSave(editor.value)}>
-          <SaveIcon aria-hidden="true" />{pending ? "Salvando…" : "Salvar Instructions"}
+          <SaveIcon aria-hidden="true" />{pending ? "Salvando…" : "Salvar instruções"}
         </Button>
         {editor.dirty && <Button variant="ghost" onClick={editor.reset}>Descartar alterações</Button>}
         {!editor.dirty && <Badge variant="outline">sincronizado</Badge>}

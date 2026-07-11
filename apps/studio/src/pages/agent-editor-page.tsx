@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeftIcon, CheckCircle2Icon, FileDiffIcon, SaveIcon, Trash2Icon } from "lucide-react"
-import { useBlocker, useNavigate, useParams } from "react-router-dom"
+import { ArrowLeftIcon, CheckCircle2Icon, FileDiffIcon, LoaderCircleIcon, PlayIcon, Settings2Icon, Trash2Icon } from "lucide-react"
+import { useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { studioApi } from "@/api/client"
-import { invalidateStudioAppliedResource } from "@/api/invalidation"
 import {
   agentsQuery,
   configurationModelsQuery,
@@ -17,15 +16,13 @@ import {
   workflowsQuery,
 } from "@/api/queries"
 import type {
-  ApplyPlan,
-  ApplyResult,
   DraftFile,
   DraftItem,
   DraftValidationResult,
   StudioPath,
   YamlSourceOperation,
 } from "@/api/types"
-import { useEditorState, useStudioSession } from "@/app/studio-context"
+import { useStudioSession } from "@/app/studio-context"
 import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
 import { DraftStatusBadge } from "@/components/status-badge"
 import {
@@ -46,12 +43,15 @@ import {
   type DraftFileSessionSnapshot,
 } from "@/features/drafts/draft-file-session"
 import { useDraftFileSession } from "@/features/drafts/use-draft-file-session"
+import { useDraftNavigationGuard } from "@/features/drafts/use-draft-navigation-guard"
 import { ApplyPlanDialog } from "@/features/workflows/apply-plan-dialog"
 import { DraftFilesEditor } from "@/features/workflows/draft-files-editor"
 import { ProblemsPanel } from "@/features/workflows/problems-panel"
 import { AgentDraftTestBench } from "@/features/agents/agent-draft-test-bench"
 import { agentSideEffectPreview } from "@/features/agents/agent-side-effect-preview"
 import { AgentStructuredEditor } from "@/features/agents/agent-structured-editor"
+import { useAgentEditorAutomation } from "@/features/agents/use-agent-editor-automation"
+import { useAgentApplyActions } from "@/features/agents/use-agent-apply-actions"
 import { authoringAuthorityUnavailable } from "@/features/drafts/authoring-authority"
 import { formatDateTime, shortDigest } from "@/lib/format"
 
@@ -60,7 +60,6 @@ export function AgentEditorPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const session = useStudioSession()
-  const { setHasLocalChanges } = useEditorState()
   const draft = useQuery(draftQuery(draftId))
   const agentFile: StudioPath = {
     root: "project",
@@ -77,14 +76,18 @@ export function AgentEditorPage() {
   const runtime = useQuery(configurationRuntimeQuery)
   const files = useDraftFileSession(draft.data)
   const [validation, setValidation] = useState<DraftValidationResult>()
-  const [plan, setPlan] = useState<ApplyPlan>()
-  const [planOpen, setPlanOpen] = useState(false)
-  const [applyKey, setApplyKey] = useState<string>()
-  const [applyResult, setApplyResult] = useState<ApplyResult>()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [structuredLocalChanges, setStructuredLocalChanges] = useState(false)
+  const [activeView, setActiveView] = useState("studio")
+  const [technicalOpen, setTechnicalOpen] = useState(false)
   const hasLocalChanges = files.hasLocalChanges || structuredLocalChanges
-  const navigationBlocker = useBlocker(hasLocalChanges)
+  const navigationBlocker = useDraftNavigationGuard(hasLocalChanges)
+  const applyActions = useAgentApplyActions({
+    draftId,
+    draft: draft.data,
+    refetchDraft: draft.refetch,
+  })
+  const { plan, setPlan, planOpen, setPlanOpen, applyResult, setApplyResult, planApply, apply, remove } = applyActions
 
   const publishDraft = useCallback(
     (next: DraftItem, snapshot: DraftFileSessionSnapshot) => {
@@ -110,21 +113,6 @@ export function AgentEditorPage() {
     },
     [files],
   )
-
-  useEffect(() => {
-    setHasLocalChanges(hasLocalChanges)
-    return () => setHasLocalChanges(false)
-  }, [hasLocalChanges, setHasLocalChanges])
-
-  useEffect(() => {
-    if (!hasLocalChanges) return
-    const warning = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ""
-    }
-    window.addEventListener("beforeunload", warning)
-    return () => window.removeEventListener("beforeunload", warning)
-  }, [hasLocalChanges])
 
   const save = useMutation({
     mutationFn: (snapshot: DraftFileSessionSnapshot) => {
@@ -232,70 +220,20 @@ export function AgentEditorPage() {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Falha ao validar"),
   })
 
-  const planApply = useMutation({
-    mutationFn: () => studioApi.planApply(draftId),
-    onMutate: () => {
-      setPlan(undefined)
-      setApplyKey(undefined)
-      setPlanOpen(true)
-    },
-    onSuccess: (next) => {
-      setPlan(next)
-      setApplyKey(next.status === "ready" ? crypto.randomUUID() : undefined)
-    },
-    onError: (error) => {
-      setPlanOpen(false)
-      toast.error(error instanceof Error ? error.message : "Falha ao planejar apply")
-    },
+  const saveCurrent = useCallback(() => withSnapshot((snapshot) => save.mutate(snapshot)), [save, withSnapshot])
+  const validateCurrent = useCallback(() => withSnapshot((snapshot) => validate.mutate(snapshot)), [validate, withSnapshot])
+  useAgentEditorAutomation({
+    canMutate: session.canMutate,
+    hasFileChanges: files.hasLocalChanges,
+    hasLocalChanges,
+    contentRevision: draft.data?.content_revision,
+    saving: save.isPending,
+    editing: structuredEdit.isPending,
+    writing: structuredFileWrite.isPending,
+    validating: validate.isPending,
+    save: saveCurrent,
+    validate: validateCurrent,
   })
-
-  const apply = useMutation({
-    mutationFn: async () => {
-      if (draft.data === undefined || plan?.status !== "ready" || applyKey === undefined) {
-        throw new Error("O plano de apply não está pronto")
-      }
-      return studioApi.applyDraft(draftId, draft.data.etag, plan.plan_token, applyKey)
-    },
-    onSuccess: async (result) => {
-      setApplyResult(result)
-      setPlanOpen(false)
-      setPlan(undefined)
-      if (draft.data?.primary_resource.kind === "agent") {
-        await invalidateStudioAppliedResource(
-          queryClient,
-          draft.data.primary_resource,
-        )
-      }
-      await draft.refetch()
-      toast.success("Agent aplicado ao projeto; nenhum commit ou push foi criado")
-    },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Apply falhou"),
-  })
-
-  const remove = useMutation({
-    mutationFn: async () => {
-      if (draft.data === undefined) throw new Error("Draft indisponível")
-      await studioApi.deleteDraft(draftId, draft.data.etag)
-    },
-    onSuccess: () => {
-      setHasLocalChanges(false)
-      void queryClient.invalidateQueries({ queryKey: studioKeys.drafts })
-      void navigate("/agents")
-    },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Falha ao remover draft"),
-  })
-
-  useEffect(() => {
-    const shortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase() !== "s") return
-      event.preventDefault()
-      if (session.canMutate && files.hasLocalChanges && !save.isPending) {
-        withSnapshot((snapshot) => save.mutate(snapshot))
-      }
-    }
-    window.addEventListener("keydown", shortcut)
-    return () => window.removeEventListener("keydown", shortcut)
-  }, [files.hasLocalChanges, save, session.canMutate, withSnapshot])
 
   const whereUsed = useMemo(
     () => (workflows.data?.workflows ?? []).filter(
@@ -349,20 +287,19 @@ export function AgentEditorPage() {
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <Button variant="ghost" size="sm" className="mb-1 -ml-2" onClick={() => void navigate("/agents")}><ArrowLeftIcon aria-hidden="true" /> Agents</Button>
-            <div className="flex flex-wrap items-center gap-2"><h1 className="font-heading text-lg font-semibold">{draft.data.primary_resource.id}</h1><DraftStatusBadge status={draft.data.status} />{hasLocalChanges && <Badge variant="destructive">Alteração local não salva</Badge>}</div>
+            <div className="flex flex-wrap items-center gap-2"><h1 className="font-heading text-lg font-semibold">{draft.data.primary_resource.id}</h1><DraftStatusBadge status={draft.data.status} />{save.isPending ? <Badge variant="outline"><LoaderCircleIcon className="animate-spin" aria-hidden="true" /> Salvando…</Badge> : hasLocalChanges ? <Badge variant="outline">Alterações pendentes</Badge> : <Badge variant="outline"><CheckCircle2Icon aria-hidden="true" /> Salvo</Badge>}{validate.isPending && <Badge variant="outline"><LoaderCircleIcon className="animate-spin" aria-hidden="true" /> Verificando…</Badge>}</div>
             <p className="mt-1 text-xs text-muted-foreground">Draft {shortDigest(draftId, 12)} · revision {draft.data.record_revision} · atualizado {formatDateTime(draft.data.updated_at)}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" disabled={!session.canMutate || !files.hasLocalChanges || save.isPending} onClick={() => withSnapshot((snapshot) => save.mutate(snapshot))}><SaveIcon aria-hidden="true" />{save.isPending ? "Salvando…" : "Salvar"}</Button>
-            <Button variant="outline" disabled={!canRunCommands || validate.isPending} onClick={() => withSnapshot((snapshot) => validate.mutate(snapshot))}><CheckCircle2Icon aria-hidden="true" />{validate.isPending ? "Validando…" : "Validar"}</Button>
-            <Button disabled={!canRunCommands || draft.data.status !== "valid" || planApply.isPending} onClick={() => planApply.mutate()}><FileDiffIcon aria-hidden="true" />Diff &amp; apply</Button>
+            <Button variant="outline" onClick={() => setActiveView("test-bench")}><PlayIcon aria-hidden="true" /> Testar</Button>
+            <Button disabled={!canRunCommands || draft.data.status !== "valid" || planApply.isPending} onClick={() => planApply.mutate()}><FileDiffIcon aria-hidden="true" />Aplicar</Button>
           </div>
         </div>
         {applyResult !== undefined && <p className="mt-2 text-xs text-emerald-700" role="status">Aplicado em {formatDateTime(applyResult.committed_at)}; operação {shortDigest(applyResult.operation_id, 12)}.</p>}
       </header>
 
-      <Tabs defaultValue="studio" className="min-h-0 flex-1 gap-0">
-        <div className="border-b px-4"><TabsList variant="line"><TabsTrigger value="studio">Agent Studio</TabsTrigger><TabsTrigger value="test-bench">Test Bench</TabsTrigger><TabsTrigger value="files">Raw fallback</TabsTrigger><TabsTrigger value="problems">Problems</TabsTrigger></TabsList></div>
+      <Tabs value={activeView} onValueChange={setActiveView} className="min-h-0 flex-1 gap-0">
+        <div className="flex items-center justify-between border-b px-4"><TabsList variant="line"><TabsTrigger value="studio">Configurar</TabsTrigger><TabsTrigger value="test-bench">Testar</TabsTrigger><TabsTrigger value="problems">Problemas</TabsTrigger>{technicalOpen && <TabsTrigger value="files">Arquivos</TabsTrigger>}</TabsList><Button size="sm" variant={technicalOpen ? "secondary" : "ghost"} onClick={() => setTechnicalOpen((current) => !current)}><Settings2Icon aria-hidden="true" /> Técnico</Button></div>
         <TabsContent value="studio" className="min-h-0" keepMounted>
           {structuredAuthorityPending ? (
             <div className="p-6"><PageLoading label="Carregando autoridade do agent" /></div>

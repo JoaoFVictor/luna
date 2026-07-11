@@ -12,8 +12,9 @@ import type {
 import { RunGraphPanel } from "@/features/runs/run-graph-panel"
 
 vi.mock("@/features/workflows/workflow-graph", () => ({
-  WorkflowGraph: ({ compiled, execution }: {
-    compiled: { nodes: Array<{ id: string }> }
+  workflowGraphModel: (graph: { nodes: Array<{ id: string }> }) => graph,
+  WorkflowGraph: ({ graph, execution }: {
+    graph: { nodes: Array<{ id: string }> }
     execution: ReadonlyMap<string, {
       status?: string
       attemptCount?: number
@@ -22,7 +23,7 @@ vi.mock("@/features/workflows/workflow-graph", () => ({
     }>
   }) => (
     <div data-testid="workflow-graph">
-      {compiled.nodes.map((node) => {
+      {graph.nodes.map((node) => {
         const state = execution.get(node.id)
         return (
           <p key={node.id}>

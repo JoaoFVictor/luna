@@ -6,7 +6,7 @@ import {
 } from "@/features/launch/launch-input"
 
 describe("buildRunPlanInput", () => {
-  it("builds the two canonical public variants without execution fields", () => {
+  it("builds both canonical public variants with an explicit execution scope", () => {
     const adapter = buildRunPlanInput({
       mode: "adapter",
       adapterId: "task-url",
@@ -26,6 +26,7 @@ describe("buildRunPlanInput", () => {
       success: true,
       input: {
         kind: "adapter",
+        execution_scope: { kind: "workflow" },
         adapter_id: "task-url",
         input: { kind: "cli", value: "opaque://task/42" },
         acknowledged_effects: ["network_read"],
@@ -35,6 +36,7 @@ describe("buildRunPlanInput", () => {
       success: true,
       input: {
         kind: "invocation",
+        execution_scope: { kind: "workflow" },
         invocation: { version: "2026-06", source: "studio", event: "manual" },
       },
     })

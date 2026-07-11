@@ -30,6 +30,7 @@ function digest(label: string): string {
 function request(): StudioRunPlanRequest {
   return {
     workflow_id: "code-review",
+    execution_scope: { kind: "workflow" },
     invocation: {
       version: "2026-06",
       source: "github",
@@ -123,7 +124,8 @@ function resolution(
         message: "The run executes on this host"
       }
     ],
-    ...overrides
+    ...overrides,
+    execution_scope: overrides.execution_scope ?? { kind: "workflow" }
   };
 }
 
@@ -461,6 +463,14 @@ describe("StudioRunLaunchService", () => {
       })
     });
     await expect(repositoryMismatch.service.plan(request(), context()))
+      .rejects.toMatchObject({ code: "studio_run_plan_resolution_mismatch" });
+
+    const scopeMismatch = createFixture({
+      resolve: () => resolution({
+        execution_scope: { kind: "through_node", node_id: "review" }
+      })
+    });
+    await expect(scopeMismatch.service.plan(request(), context()))
       .rejects.toMatchObject({ code: "studio_run_plan_resolution_mismatch" });
   });
 

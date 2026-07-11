@@ -22,6 +22,7 @@ import { runtimeError } from "../../core/runtime/errors.js";
 import { isInsideRoot } from "../../core/security/path.js";
 import { compileWorkflow, type CompiledWorkflow } from "../../core/workflow/compiler.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
+import { scopeWorkflowDefinition } from "../../core/workflow/execution-scope.js";
 import { resolveRepository } from "../../core/workflow/workspace-resolver.js";
 import type { RuntimeCompositionConfig } from "../../runtime/composition/app-config.js";
 import type {
@@ -62,7 +63,8 @@ export async function loadNativeRunContext(
     projectRoot,
     configRoot,
     definitionRoots,
-    run: preallocatedRun
+    run: preallocatedRun,
+    executionScope
   }: NativeWorkflowRunInput,
   dependencies: NativeRunContextDependencies = {}
 ): Promise<NativeRunContext> {
@@ -80,11 +82,15 @@ export async function loadNativeRunContext(
     RepositoriesConfigSchema
   );
   const agentsRoot = path.join(definitionProjectRoot, "agents");
-  const workflow = await loadNativeWorkflowDefinition({
+  const installedWorkflow = await loadNativeWorkflowDefinition({
     projectRoot: definitionProjectRoot,
     workflowId: target.id,
     platform
   });
+  const workflow = scopeWorkflowDefinition(
+    installedWorkflow,
+    executionScope ?? { kind: "workflow" }
+  );
   const nativeWorkflow = await compileNativeWorkflow({
     workflow,
     agentsRoot,

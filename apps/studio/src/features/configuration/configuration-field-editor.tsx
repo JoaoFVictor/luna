@@ -1,24 +1,35 @@
 import { useEffect, useId, useMemo, useState } from "react"
-import { LockKeyholeIcon, SaveIcon } from "lucide-react"
+import { LockKeyholeIcon } from "lucide-react"
 
 import type { ConfigurationField, JsonValue } from "@/api/types"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { humanizeTechnicalId } from "@/lib/presentation"
 
 type ConfigurationFieldEditorProps = {
   field: ConfigurationField
   canMutate: boolean
   pending: boolean
-  onSave: (path: readonly string[], value: JsonValue) => void
+  onChange: (path: readonly string[], value: JsonValue | undefined) => void
 }
 
 function displayName(field: ConfigurationField): string {
-  return field.title ?? field.path.at(-1) ?? field.expression
+  return field.title ?? humanizeTechnicalId(field.path.at(-1) ?? field.expression)
+}
+
+const VALUE_TYPE_LABELS: Record<ConfigurationField["value_type"], string> = {
+  string: "Texto",
+  boolean: "Sim ou não",
+  integer: "Número inteiro",
+  number: "Número",
+  string_array: "Lista de textos",
+  boolean_array: "Lista de opções",
+  integer_array: "Lista de inteiros",
+  number_array: "Lista de números",
 }
 
 function valueText(field: ConfigurationField): string {
@@ -71,7 +82,7 @@ export function ConfigurationFieldEditor({
   field,
   canMutate,
   pending,
-  onSave,
+  onChange,
 }: ConfigurationFieldEditorProps) {
   const inputId = useId()
   const serverText = valueText(field)
@@ -89,18 +100,18 @@ export function ConfigurationFieldEditor({
   )
   const changed =
     candidate !== undefined && JSON.stringify(candidate) !== JSON.stringify(field.value)
-  const help = field.description ?? field.expression
+  const help = field.description
   const selectedEnumIndex =
     field.enum_values?.findIndex((value) => value === field.value) ?? -1
 
   return (
-    <div className="grid gap-3 rounded-xl border bg-card/50 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+    <div className="rounded-xl border bg-card/50 p-4">
       <Field className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <FieldLabel htmlFor={inputId}>
             {displayName(field)}
           </FieldLabel>
-          <Badge variant="outline">{field.value_type}</Badge>
+          <Badge variant="outline">{VALUE_TYPE_LABELS[field.value_type]}</Badge>
           {field.exposure === "read_only" && (
             <Badge variant="secondary">
               <LockKeyholeIcon aria-hidden="true" /> somente leitura
@@ -115,7 +126,7 @@ export function ConfigurationFieldEditor({
               id={inputId}
               checked={field.value === true}
               disabled={!editable}
-              onCheckedChange={(checked) => onSave(field.path, checked)}
+              onCheckedChange={(checked) => onChange(field.path, checked)}
               aria-label={displayName(field)}
             />
             <span className="text-sm text-muted-foreground">
@@ -130,12 +141,12 @@ export function ConfigurationFieldEditor({
             disabled={!editable}
             onChange={(event) => {
               const selected = field.enum_values?.[Number(event.target.value)]
-              if (selected !== undefined) onSave(field.path, selected)
+              if (selected !== undefined) onChange(field.path, selected)
             }}
           >
             {field.enum_values.map((value, index) => (
               <NativeSelectOption key={index} value={String(index)}>
-                {String(value)}
+                {typeof value === "string" ? humanizeTechnicalId(value, true) : String(value)}
               </NativeSelectOption>
             ))}
           </NativeSelect>
@@ -145,7 +156,11 @@ export function ConfigurationFieldEditor({
             value={text}
             disabled={!editable}
             rows={Math.max(3, Array.isArray(field.value) ? field.value.length : 3)}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value
+              setText(next)
+              onChange(field.path, arrayValue(field, next))
+            }}
             placeholder="Um valor por linha"
           />
         ) : (
@@ -159,28 +174,20 @@ export function ConfigurationFieldEditor({
             maxLength={field.max_length}
             value={text}
             disabled={!editable}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value
+              setText(next)
+              onChange(field.path, scalarValue(field, next))
+            }}
             autoComplete="off"
           />
         )}
-        <FieldDescription>
-          {help}
-          {field.value_type.endsWith("_array") ? " · um valor por linha" : ""}
-        </FieldDescription>
+        {(help !== undefined || field.value_type.endsWith("_array")) && <FieldDescription>
+          {help}{field.value_type.endsWith("_array") ? `${help === undefined ? "" : " · "}um valor por linha` : ""}
+        </FieldDescription>}
       </Field>
 
-      {field.value_type !== "boolean" && field.enum_values === undefined && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="sm:mt-7"
-          disabled={!editable || !changed}
-          onClick={() => candidate !== undefined && onSave(field.path, candidate)}
-        >
-          <SaveIcon aria-hidden="true" /> Salvar campo
-        </Button>
-      )}
+      {changed && <p className="mt-2 text-xs text-muted-foreground">Alteração pronta para salvar</p>}
     </div>
   )
 }

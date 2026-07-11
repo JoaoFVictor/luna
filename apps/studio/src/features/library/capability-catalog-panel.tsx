@@ -24,6 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { presentationTitle } from "@/lib/presentation"
+import { capabilityCategory } from "./library-presentation"
 
 const reExportLabels: Record<keyof CapabilitySummary["re_exports"], string> = {
   built_ins: "Built-ins",
@@ -87,26 +89,18 @@ function CapabilityDetails({
   return (
     <>
       <SheetHeader>
-        <SheetTitle>{capability.presentation.title}</SheetTitle>
+        <SheetTitle>{presentationTitle(capability.id, capability.presentation.title)}</SheetTitle>
         <SheetDescription>{capability.presentation.summary ?? capability.id}</SheetDescription>
       </SheetHeader>
       <ScrollArea className="min-h-0 flex-1 px-4 pb-4">
         <div className="space-y-6">
           <div className="flex flex-wrap gap-2">
-            <Badge>{capability.kind}</Badge>
-            <Badge variant="outline">{capability.id}@{capability.version}</Badge>
-            {capability.presentation.category !== undefined && (
-              <Badge variant="secondary">{capability.presentation.category}</Badge>
-            )}
+            <Badge variant="secondary">{capabilityCategory(capability.id, capability.presentation.category)}</Badge>
+            <Badge variant="outline">{ownedRegistrations.length} blocos</Badge>
           </div>
 
           <section className="space-y-2">
-            <h2 className="text-sm font-medium">Dependências</h2>
-            <ValueBadges values={capability.depends_on} />
-          </section>
-
-          <section className="space-y-2">
-            <h2 className="text-sm font-medium">Consumidores ativos</h2>
+            <h2 className="text-sm font-medium">Usado atualmente em</h2>
             {consumers === undefined ? (
               <p className="text-xs text-muted-foreground">Índice de consumidores indisponível nesta resposta.</p>
             ) : (
@@ -123,14 +117,14 @@ function CapabilityDetails({
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-sm font-medium">Registrations próprias</h2>
+            <h2 className="text-sm font-medium">Blocos disponíveis</h2>
             {ownedRegistrations.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Nenhuma registration própria.</p>
+              <p className="text-xs text-muted-foreground">Nenhum bloco disponível.</p>
             ) : (
               <ul className="space-y-1">
                 {ownedRegistrations.map((registration) => (
                   <li key={`${registration.registration_kind}:${registration.id}`} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs">
-                    <code className="break-all">{registration.id}</code>
+                    <span><span className="block font-medium">{presentationTitle(registration.id, registration.presentation.title)}</span><code className="block break-all text-muted-foreground">{registration.id}</code></span>
                     <Badge variant="outline">{registration.registration_kind}</Badge>
                   </li>
                 ))}
@@ -138,6 +132,17 @@ function CapabilityDetails({
             )}
           </section>
 
+          <details className="rounded-lg border p-3">
+            <summary className="cursor-pointer text-sm font-medium">Detalhes técnicos</summary>
+            <div className="mt-4 space-y-5">
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium">Identificação</h2>
+            <ValueBadges values={[`${capability.id}@${capability.version}`, capability.kind]} />
+          </section>
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium">Dependências</h2>
+            <ValueBadges values={capability.depends_on} />
+          </section>
           <section className="space-y-2">
             <h2 className="text-sm font-medium">Presets</h2>
             {presets.length === 0 ? (
@@ -202,6 +207,8 @@ function CapabilityDetails({
               ))}
             </section>
           )}
+            </div>
+          </details>
         </div>
       </ScrollArea>
     </>
@@ -235,20 +242,19 @@ export function CapabilityCatalogPanel({
     <>
       <div className="overflow-hidden rounded-xl border">
         <Table>
-          <TableHeader><TableRow><TableHead>Capability</TableHead><TableHead>Kind</TableHead><TableHead>Versão</TableHead><TableHead>Dependências</TableHead><TableHead>Registrations</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Grupo de blocos</TableHead><TableHead>Categoria</TableHead><TableHead>Blocos</TableHead><TableHead>Em uso</TableHead></TableRow></TableHeader>
           <TableBody>
             {filtered.map((capability) => (
               <TableRow key={capability.id}>
                 <TableCell>
                   <button type="button" onClick={() => setSelected(capability)} className="flex max-w-md items-start gap-2 text-left font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">
                     <BoxesIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span><span className="block">{capability.presentation.title}</span><span className="block font-mono text-xs font-normal text-muted-foreground">{capability.id}</span></span>
+                    <span><span className="block">{presentationTitle(capability.id, capability.presentation.title)}</span><span className="block font-mono text-xs font-normal text-muted-foreground">{capability.id}</span></span>
                   </button>
                 </TableCell>
-                <TableCell><Badge variant="outline">{capability.kind}</Badge></TableCell>
-                <TableCell className="font-mono text-xs">{capability.version}</TableCell>
-                <TableCell>{capability.depends_on.length}</TableCell>
+                <TableCell><Badge variant="outline">{capabilityCategory(capability.id, capability.presentation.category)}</Badge></TableCell>
                 <TableCell>{registrations.filter((registration) => registration.owner.capability_id === capability.id).length}</TableCell>
+                <TableCell>{(consumers?.capabilities[capability.id]?.workflows.length ?? 0) + (consumers?.capabilities[capability.id]?.agents.length ?? 0)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

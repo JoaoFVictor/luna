@@ -9,10 +9,16 @@ import {
   StudioAdapterPreviewSchema,
   StudioAdapterRoutingPreviewSchema,
   StudioInputAdapterCatalogSchema,
+  StudioRoutingEditorSchema,
+  StudioRoutingSaveRequestSchema,
+  StudioRoutingSaveResultSchema,
   StudioRoutingSimulationSchema,
   type StudioAdapterPreview,
   type StudioAdapterRoutingPreview,
   type StudioInputAdapterCatalog,
+  type StudioRoutingEditor,
+  type StudioRoutingSaveRequest,
+  type StudioRoutingSaveResult,
   type StudioRoutingSimulation
 } from "../../contracts/input-routing.js";
 import type { StudioLocalPrincipal } from "../../contracts/control-api.js";
@@ -47,6 +53,13 @@ export type StudioInputRoutingControl = {
     request: unknown,
     signal: AbortSignal
   ) => Promise<StudioRoutingSimulation>;
+  readonly routingEditor?: (
+    principal: StudioLocalPrincipal
+  ) => Promise<StudioRoutingEditor>;
+  readonly saveRoutingDefinition?: (
+    principal: StudioLocalPrincipal,
+    request: StudioRoutingSaveRequest
+  ) => Promise<StudioRoutingSaveResult>;
 };
 
 export type StudioInputRoutingRouteOptions = {
@@ -107,6 +120,25 @@ export async function registerStudioInputRoutingRoutes(
       await options.control.routingDefinition(options.principalFor(request))
     )
   );
+
+  if (
+    options.control.routingEditor !== undefined &&
+    options.control.saveRoutingDefinition !== undefined
+  ) {
+    server.get(`${options.apiPrefix}/configuration/routing/editor`, async (request) =>
+      StudioRoutingEditorSchema.parse(
+        await options.control.routingEditor?.(options.principalFor(request))
+      )
+    );
+    server.patch(`${options.apiPrefix}/configuration/routing/editor`, async (request) =>
+      StudioRoutingSaveResultSchema.parse(
+        await options.control.saveRoutingDefinition?.(
+          options.principalFor(request),
+          options.parseRequest(StudioRoutingSaveRequestSchema, request.body)
+        )
+      )
+    );
+  }
 
   server.post(`${options.apiPrefix}/routing/simulate`, async (request, reply) =>
     await withStudioRequestAbort(request, reply, async (signal) =>

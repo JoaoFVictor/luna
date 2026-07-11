@@ -153,6 +153,43 @@ afterEach(async () => {
 });
 
 describe("Studio draft canonical validation", () => {
+  it("projects authoritative node and edge locations for canvas diagnostics", async () => {
+    const resource = { kind: "workflow", id: "minimum" } as const;
+    const draft = changeSet({ resources: [resource], baseFiles: [] });
+    const service = new StudioDraftValidationService({
+      snapshots: {
+        async create() {
+          return {
+            projectRoot: "/unused-project",
+            configRoot: "/unused-config",
+            verifiedFiles: [],
+            async dispose() {}
+          };
+        }
+      },
+      definitions: {
+        async validate() {
+          throw new StudioCanonicalDefinitionError(
+            "workflow_reference_unknown",
+            "Workflow dependency is unknown.",
+            {
+              fieldPath: "$.nodes[1].after[0]",
+              nodeId: "publish",
+              edge: { from: "missing", to: "publish" }
+            }
+          );
+        }
+      }
+    });
+
+    const result = await service.validate(draft);
+    expect(result.diagnostics[0]).toMatchObject({
+      node_id: "publish",
+      field_path: "$.nodes[1].after[0]",
+      edge: { from: "missing", to: "publish" }
+    });
+  });
+
   it("drops oversized semantic locations instead of failing DTO projection", async () => {
     const resource = { kind: "workflow", id: "minimum" } as const;
     const draft = changeSet({

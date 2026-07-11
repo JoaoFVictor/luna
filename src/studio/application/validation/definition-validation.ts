@@ -23,6 +23,8 @@ export class StudioCanonicalDefinitionError extends Error {
   readonly code: string;
   readonly fieldPath?: string;
   readonly capability?: string;
+  readonly nodeId?: string;
+  readonly edge?: { readonly from: string; readonly to: string };
 
   constructor(
     code: string,
@@ -31,6 +33,8 @@ export class StudioCanonicalDefinitionError extends Error {
       readonly cause?: unknown;
       readonly fieldPath?: string;
       readonly capability?: string;
+      readonly nodeId?: string;
+      readonly edge?: { readonly from: string; readonly to: string };
     } = {}
   ) {
     super(message, { cause: options.cause });
@@ -38,5 +42,7 @@ export class StudioCanonicalDefinitionError extends Error {
     this.code = code;
     this.fieldPath = options.fieldPath;
     this.capability = options.capability;
+    this.nodeId = options.nodeId;
+    this.edge = options.edge;
   }
 }

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { redactString } from "../../../core/security/redactor.js";
 import type { LunaRuntimeState } from "../../../core/runtime/state.js";
 import { validateCheckpointState } from "../../../core/runtime/state.js";
 import { WorkflowIdSchema } from "../../../core/router/invocation.js";
@@ -8,6 +9,7 @@ import { sha256Digest } from "../../../core/workflow/definition-digests.js";
 import { StudioDigestSchema } from "../../contracts/digests.js";
 import {
   MAX_RUN_GRAPH_NODES,
+  MAX_RUN_GRAPH_OBSERVED_FIELDS,
   RunGraphOverlayNodeSchema,
   RunGraphSchema,
   type RunGraphOverlayNode
@@ -314,10 +316,73 @@ function projectOutcomeNodes(
       RunGraphOverlayNodeSchema.parse({
         node_id: graphNode.id,
         status: status.status,
-        ...(attempts === undefined ? {} : { attempt_count: attempts.count })
+        ...(attempts === undefined ? {} : { attempt_count: attempts.count }),
+        ...(state.steps[graphNode.id] === undefined
+          ? {}
+          : { observed_output: observedOutputShape(state.steps[graphNode.id]) })
       })
     ];
   });
+}
+
+function observedValueType(value: unknown):
+  "null" | "boolean" | "number" | "string" | "object" | "array" {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (typeof value === "object") return "object";
+  return typeof value as "boolean" | "number" | "string";
+}
+
+function observedOutputShape(value: unknown) {
+  const fields: Array<{
+    readonly path: string[];
+    readonly value_type: ReturnType<typeof observedValueType>;
+  }> = [];
+  const pending: Array<{ readonly path: string[]; readonly value: unknown }> = [
+    { path: [], value }
+  ];
+  let nextPending = 0;
+  let truncated = false;
+  const enqueue = (entry: { readonly path: string[]; readonly value: unknown }) => {
+    if (pending.length >= MAX_RUN_GRAPH_OBSERVED_FIELDS) {
+      truncated = true;
+      return;
+    }
+    pending.push(entry);
+  };
+  while (nextPending < pending.length) {
+    const current = pending[nextPending];
+    nextPending += 1;
+    if (current === undefined) break;
+    if (fields.length >= MAX_RUN_GRAPH_OBSERVED_FIELDS) {
+      truncated = true;
+      break;
+    }
+    fields.push({
+      path: current.path,
+      value_type: observedValueType(current.value)
+    });
+    if (current.path.length >= 16) {
+      if (typeof current.value === "object" && current.value !== null) {
+        truncated = true;
+      }
+      continue;
+    }
+    if (Array.isArray(current.value)) {
+      if (current.value[0] !== undefined) {
+        enqueue({ path: [...current.path, "*"], value: current.value[0] });
+      }
+    } else if (typeof current.value === "object" && current.value !== null) {
+      for (const [key, nested] of Object.entries(current.value)) {
+        const boundedKey = key.length === 0 ? "<empty>" : key.slice(0, 128);
+        enqueue({
+          path: [...current.path, redactString(boundedKey) === boundedKey ? boundedKey : "<redacted>"],
+          value: nested
+        });
+      }
+    }
+  }
+  return { redaction: "values_removed" as const, truncated, fields };
 }
 
 export function projectStoredRunGraphOutcome(input: {

@@ -7,13 +7,13 @@ import type {
   YamlSourceOperation,
 } from "@/api/types"
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Separator } from "@/components/ui/separator"
 import { WorkflowExpressionBuilder } from "@/features/workflows/workflow-expression-builder"
+import { workflowSchemaFields } from "@/features/workflows/workflow-data-mapping"
 import type { WorkflowExpressionFixtures } from "@/features/workflows/workflow-expression-fixtures"
-import { WorkflowJsonField } from "@/features/workflows/workflow-json-field"
+import { WorkflowNodeAdvancedFields, WorkflowNodeDependencies } from "@/features/workflows/workflow-node-advanced-sections"
 import {
   reconcileWorkflowBuiltInPolicies,
   workflowAgentCapabilityIds,
@@ -21,17 +21,14 @@ import {
   workflowNodeRegistrations,
 } from "@/features/workflows/workflow-node-catalog"
 import { WorkflowNodeContractSummary } from "@/features/workflows/workflow-node-contract-summary"
-import {
-  WorkflowNodeDeleteControl,
-  WorkflowNodeIdentityEditor,
-} from "@/features/workflows/workflow-node-refactor-controls"
-import { WorkflowNodeResourcesEditor } from "@/features/workflows/workflow-node-resources-editor"
+import { WorkflowNodeNoteEditor } from "@/features/workflows/workflow-node-note-editor"
+import { WorkflowNodeIdentityEditor } from "@/features/workflows/workflow-node-refactor-controls"
 import {
   addWorkflowCapabilityOperations,
-  workflowDependencyWouldCycle,
   workflowNodeField,
   type WorkflowSourceNode,
 } from "@/features/workflows/workflow-source-model"
+import { presentationTitle } from "@/lib/presentation"
 
 export function WorkflowNodeInspector({
   source,
@@ -45,6 +42,8 @@ export function WorkflowNodeInspector({
   expressionFixtures,
   onSaveExpressionFixture,
   onRemoveExpressionFixture,
+  note,
+  onSaveNote,
 }: {
   source: JsonValue
   nodes: readonly WorkflowSourceNode[]
@@ -57,6 +56,8 @@ export function WorkflowNodeInspector({
   expressionFixtures: WorkflowExpressionFixtures
   onSaveExpressionFixture: (name: string, value: JsonValue) => void
   onRemoveExpressionFixture: (name: string) => void
+  note: string
+  onSaveNote: (note: string) => void
 }) {
   const registrations = useMemo(
     () => workflowNodeRegistrations(library.registrations, selected.type),
@@ -71,6 +72,19 @@ export function WorkflowNodeInspector({
     : []
   const policyValue = workflowNodeField(selected, "policies")
   const policies = Array.isArray(policyValue) ? policyValue : []
+  const availableSourceFields = useMemo(() => new Map(nodes.map((node) => {
+    if (node.type === "agent") {
+      const agent = agents.find((candidate) => candidate.id === node.registrationId)
+      return [node.id, workflowSchemaFields(agent?.output_schema)] as const
+    }
+    const registration = library.registrations.find(
+      (candidate) => candidate.id === node.registrationId,
+    )
+    const outputSchema = registration !== undefined && "output_schema" in registration
+      ? registration.output_schema
+      : undefined
+    return [node.id, workflowSchemaFields(outputSchema)] as const
+  })), [agents, library.registrations, nodes])
 
   const changeRegistration = (registrationId: string) => {
     if (selected.type === "agent") {
@@ -171,7 +185,7 @@ export function WorkflowNodeInspector({
         >
           {(selected.type === "agent" ? agents : registrations).map((option) => (
             <NativeSelectOption key={option.id} value={option.id}>
-              {option.id}
+              {"presentation" in option ? presentationTitle(option.id, option.presentation.title) : presentationTitle(option.id, option.id)}
             </NativeSelectOption>
           ))}
         </NativeSelect>
@@ -189,6 +203,13 @@ export function WorkflowNodeInspector({
       </Field>
 
       <WorkflowNodeContractSummary node={selected} library={library} agents={agents} />
+
+      <WorkflowNodeNoteEditor
+        nodeId={selected.id}
+        note={note}
+        disabled={!canMutate || pending}
+        onSave={onSaveNote}
+      />
 
       {selected.type === "pattern" && (
         <Field>
@@ -235,39 +256,7 @@ export function WorkflowNodeInspector({
         </Field>
       )}
 
-      <Separator />
-      <Field>
-        <FieldLabel>After / dependências</FieldLabel>
-        <FieldDescription>
-          Arestas semânticas da DAG. Dependências que criariam ciclo são bloqueadas antes da escrita.
-        </FieldDescription>
-        <div className="space-y-2 rounded-lg border p-3">
-          {nodes.filter((node) => node.id !== selected.id).map((node) => {
-            const selectedDependency = dependencies.includes(node.id)
-            const wouldCycle =
-              !selectedDependency &&
-              workflowDependencyWouldCycle(nodes, selected.id, node.id)
-            return (
-              <label key={node.id} className="flex items-center gap-2">
-                <Checkbox
-                  checked={selectedDependency}
-                  disabled={!canMutate || pending || wouldCycle}
-                  onCheckedChange={(checked) => toggleDependency(node.id, checked === true)}
-                />
-                <span className="font-mono text-xs">
-                  {node.id}
-                  {wouldCycle && (
-                    <span className="font-sans text-foreground"> (criaria ciclo)</span>
-                  )}
-                </span>
-              </label>
-            )
-          })}
-          {nodes.length === 1 && (
-            <span className="text-xs text-muted-foreground">Nenhum outro node.</span>
-          )}
-        </div>
-      </Field>
+      <WorkflowNodeDependencies nodes={nodes} selected={selected} dependencies={dependencies} canMutate={canMutate} pending={pending} onToggle={toggleDependency} />
 
       <Separator />
       <WorkflowExpressionBuilder
@@ -279,87 +268,14 @@ export function WorkflowNodeInspector({
         fixtures={expressionFixtures}
         onSaveFixture={onSaveExpressionFixture}
         onRemoveFixture={onRemoveExpressionFixture}
+        suggestedFields={workflowSchemaFields(
+          selectedRegistration !== undefined && "input_schema" in selectedRegistration
+            ? selectedRegistration.input_schema
+            : undefined,
+        )}
+        availableSourceFields={availableSourceFields}
       />
-      <WorkflowJsonField
-        label="Input JSON avançado"
-        description="Visão bruta sincronizada para objetos que não cabem no builder."
-        path={["nodes", selected.index, "input"]}
-        value={workflowNodeField(selected, "input")}
-        canMutate={canMutate}
-        pending={pending}
-        onOperations={onOperations}
-      />
-
-      {selected.type === "agent" && (
-        <>
-          <WorkflowJsonField
-            label="Retry"
-            description="Política de retry pertencente ao node agent."
-            path={["nodes", selected.index, "retry"]}
-            value={workflowNodeField(selected, "retry")}
-            canMutate={canMutate}
-            pending={pending}
-            onOperations={onOperations}
-          />
-          <WorkflowJsonField
-            label="Runtime requirements"
-            path={["nodes", selected.index, "runtime_requirements"]}
-            value={workflowNodeField(selected, "runtime_requirements")}
-            canMutate={canMutate}
-            pending={pending}
-            onOperations={onOperations}
-          />
-        </>
-      )}
-      {selected.type === "pattern" && (
-        <>
-          <WorkflowJsonField
-            label="Repair"
-            description="Repair permanece no pattern; nunca é gravado no agent reutilizável."
-            path={["nodes", selected.index, "repair"]}
-            value={workflowNodeField(selected, "repair")}
-            canMutate={canMutate}
-            pending={pending}
-            onOperations={onOperations}
-          />
-          <WorkflowJsonField
-            label="Capabilities locais"
-            path={["nodes", selected.index, "capabilities"]}
-            value={workflowNodeField(selected, "capabilities")}
-            canMutate={canMutate}
-            pending={pending}
-            onOperations={onOperations}
-          />
-        </>
-      )}
-      {selected.type === "human_gate" && (
-        <WorkflowJsonField
-          label="Decision"
-          description="Configuração semântica do interrupt; approval remoto não é executado por esta UI."
-          path={["nodes", selected.index, "decision"]}
-          value={workflowNodeField(selected, "decision")}
-          canMutate={canMutate}
-          pending={pending}
-          onOperations={onOperations}
-        />
-      )}
-
-      <WorkflowNodeResourcesEditor
-        source={source}
-        selected={selected}
-        library={library}
-        canMutate={canMutate}
-        pending={pending}
-        onOperations={onOperations}
-      />
-
-      <WorkflowNodeDeleteControl
-        nodes={nodes}
-        selected={selected}
-        canMutate={canMutate}
-        pending={pending}
-        onOperations={onOperations}
-      />
+      <WorkflowNodeAdvancedFields source={source} nodes={nodes} selected={selected} library={library} canMutate={canMutate} pending={pending} onOperations={onOperations} />
     </div>
   )
 }

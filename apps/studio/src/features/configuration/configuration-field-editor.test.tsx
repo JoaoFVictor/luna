@@ -29,13 +29,13 @@ describe("ConfigurationFieldEditor", () => {
           field={field(["a-b", "c"], { title: "First" })}
           canMutate
           pending={false}
-          onSave={vi.fn()}
+          onChange={vi.fn()}
         />
         <ConfigurationFieldEditor
           field={field(["a", "b-c"], { title: "Second" })}
           canMutate
           pending={false}
-          onSave={vi.fn()}
+          onChange={vi.fn()}
         />
       </>,
     )
@@ -48,7 +48,7 @@ describe("ConfigurationFieldEditor", () => {
   })
 
   it("does not turn an empty numeric input into zero", () => {
-    const onSave = vi.fn()
+    const onChange = vi.fn()
     render(
       <ConfigurationFieldEditor
         field={field(["count"], {
@@ -58,19 +58,16 @@ describe("ConfigurationFieldEditor", () => {
         })}
         canMutate
         pending={false}
-        onSave={onSave}
+        onChange={onChange}
       />,
     )
 
     fireEvent.change(screen.getByLabelText("Count"), { target: { value: "" } })
-    const save = screen.getByRole("button", { name: "Salvar campo" })
-    expect((save as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(save)
-    expect(onSave).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenLastCalledWith(["count"], undefined)
   })
 
   it("selects enum values by option index instead of string coercion", () => {
-    const onSave = vi.fn()
+    const onChange = vi.fn()
     render(
       <ConfigurationFieldEditor
         field={field(["choice"], {
@@ -80,15 +77,15 @@ describe("ConfigurationFieldEditor", () => {
         })}
         canMutate
         pending={false}
-        onSave={onSave}
+        onChange={onChange}
       />,
     )
 
     const select = screen.getByLabelText("Choice") as HTMLSelectElement
     expect([...select.options].map((option) => option.value)).toEqual(["0", "1"])
     fireEvent.change(select, { target: { value: "0" } })
-    expect(onSave).toHaveBeenLastCalledWith(["choice"], 1)
+    expect(onChange).toHaveBeenLastCalledWith(["choice"], 1)
     fireEvent.change(select, { target: { value: "1" } })
-    expect(onSave).toHaveBeenLastCalledWith(["choice"], "1")
+    expect(onChange).toHaveBeenLastCalledWith(["choice"], "1")
   })
 })

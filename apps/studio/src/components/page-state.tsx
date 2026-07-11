@@ -38,8 +38,15 @@ export function PageError({
       <AlertTitle>{described.title}</AlertTitle>
       <AlertDescription>
         <p>{described.message}</p>
-        {described.requestId !== undefined && (
-          <p className="mt-1 font-mono text-xs">Request ID: {described.requestId}</p>
+        {(described.requestId !== undefined || described.code !== undefined || described.technicalMessage !== undefined) && (
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs">Detalhes técnicos</summary>
+            <div className="mt-1 space-y-1 font-mono text-xs">
+              {described.code !== undefined && <p>Código: {described.code}</p>}
+              {described.requestId !== undefined && <p>Request ID: {described.requestId}</p>}
+              {described.technicalMessage !== undefined && <p>{described.technicalMessage}</p>}
+            </div>
+          </details>
         )}
         {retry !== undefined && (
           <Button className="mt-3" variant="outline" size="sm" onClick={retry}>

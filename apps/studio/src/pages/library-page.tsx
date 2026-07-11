@@ -27,7 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { CapabilityCatalogPanel } from "@/features/library/capability-catalog-panel"
-import { shortDigest } from "@/lib/format"
+import { presentationTitle } from "@/lib/presentation"
 
 const kindLabels: Record<RegistrationKind, string> = {
   built_in: "Built-in",
@@ -66,45 +66,44 @@ export function LibraryPage() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6">
       <PageHeader
-        eyebrow="Registry efetivamente carregado"
-        title="Library"
-        description="A fonte da paleta e dos contratos técnicos. Tools e schemas são referências; não viram workflow nodes."
+        eyebrow="Peças reutilizáveis"
+        title="Blocos"
+        description="Veja o que você pode usar para montar workflows e agents. Abra um bloco para entender sua função e onde ele já é usado."
       />
       {library.data !== undefined && (
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-          <span>{library.data.capabilities.length} capabilities</span><span aria-hidden="true">·</span>
-          <span>{library.data.registrations.length} registrations</span><span aria-hidden="true">·</span>
-          <span className="font-mono">catalog {shortDigest(library.data.technical_fingerprint)}</span>
+          <span>{library.data.capabilities.length} grupos</span><span aria-hidden="true">·</span>
+          <span>{library.data.registrations.length} blocos disponíveis</span>
         </div>
       )}
       <div className="relative w-full max-w-md">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-        <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-8" placeholder="Buscar capability, registration ou metadata" aria-label="Buscar na Library" />
+        <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-8" placeholder="Buscar por nome, função ou categoria" aria-label="Buscar blocos" />
       </div>
 
       {library.isPending ? (
-        <PageLoading label="Carregando Library" />
+        <PageLoading label="Carregando blocos" />
       ) : library.isError ? (
         <PageError error={library.error} retry={() => void library.refetch()} />
       ) : (
         <Tabs defaultValue="capabilities" className="gap-4">
           <TabsList>
-            <TabsTrigger value="capabilities">Capabilities</TabsTrigger>
-            <TabsTrigger value="registrations">Registrations</TabsTrigger>
+            <TabsTrigger value="capabilities">Catálogo</TabsTrigger>
+            <TabsTrigger value="registrations">Registry técnico</TabsTrigger>
           </TabsList>
           <TabsContent value="capabilities">
             <CapabilityCatalogPanel capabilities={library.data.capabilities} registrations={library.data.registrations} consumers={library.data.consumers} search={search} />
           </TabsContent>
           <TabsContent value="registrations" className="space-y-4">
             <div className="flex flex-col gap-2 sm:flex-row">
-              <NativeSelect value={kind} onChange={(event) => setKind(event.target.value as RegistrationKind | "all")} aria-label="Filtrar tipo de registration">
+              <NativeSelect value={kind} onChange={(event) => setKind(event.target.value as RegistrationKind | "all")} aria-label="Filtrar tipo técnico">
                 <NativeSelectOption value="all">Todos os tipos</NativeSelectOption>
                 {Object.entries(kindLabels).map(([value, label]) => <NativeSelectOption key={value} value={value}>{label}</NativeSelectOption>)}
               </NativeSelect>
             </div>
 
             {filtered.length === 0 ? (
-              <PageEmpty title="Nenhuma registration encontrada" description="Ajuste os filtros ou confira os manifests carregados pelo servidor." />
+              <PageEmpty title="Nenhum registro encontrado" description="Ajuste os filtros ou confira os manifests carregados pelo servidor." />
             ) : (
               <div className="overflow-hidden rounded-xl border">
                 <Table>
@@ -135,7 +134,7 @@ export function LibraryPage() {
           {selected !== undefined && (
             <>
               <SheetHeader>
-                <SheetTitle>{selected.presentation.title}</SheetTitle>
+                <SheetTitle>{presentationTitle(selected.id, selected.presentation.title)}</SheetTitle>
                 <SheetDescription>{selected.presentation.summary ?? selected.id}</SheetDescription>
               </SheetHeader>
               <ScrollArea className="min-h-0 flex-1 px-4 pb-4">

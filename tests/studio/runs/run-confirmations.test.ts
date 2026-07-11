@@ -13,6 +13,7 @@ const ACTOR_B = studioRunSecretDigest("actor-session-b");
 function binding(): StudioRunConfirmationBinding {
   const request = {
     workflow_id: "demo",
+    execution_scope: { kind: "workflow" as const },
     invocation: {
       version: "2026-06" as const,
       source: "manual",

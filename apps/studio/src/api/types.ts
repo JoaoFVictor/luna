@@ -30,6 +30,7 @@ import type {
   StudioDraftValidationResponse,
   StudioDraftSourceView,
   StudioDraftTemplateCatalog,
+  StudioDraftTemplateSelection,
   StudioYamlSourceOperation,
 } from "../../../../src/studio/contracts/draft-authoring.js"
 import type {
@@ -39,6 +40,9 @@ import type {
   StudioInputAdapterSummary,
   StudioPublicInvocation,
   StudioRoutingDiagnostic,
+  StudioRoutingEditor,
+  StudioRoutingSaveRequest,
+  StudioRoutingSaveResult,
   StudioRoutingSimulation,
 } from "../../../../src/studio/contracts/input-routing.js"
 import type {
@@ -152,14 +156,13 @@ export type DraftSourceView = StudioDraftSourceView
 export type YamlSourceOperation = StudioYamlSourceOperation
 export type DraftCreateRequest = StudioDraftCreateRequest
 export type DraftCreateSource = StudioDraftCreateRequest["source"]
-export type AgentDraftCreateSource = Extract<
-  StudioDraftCreateRequest,
-  { resource: { kind: "agent" } }
->["source"]
-export type WorkflowDraftCreateSource = Extract<
-  StudioDraftCreateRequest,
-  { resource: { kind: "workflow" } }
->["source"]
+export type AgentDraftCreateSource =
+  | { readonly mode: "existing" }
+  | { readonly mode: "blank"; readonly model_profile: string }
+export type WorkflowDraftCreateSource =
+  | { readonly mode: "existing" }
+  | { readonly mode: "blank" }
+  | StudioDraftTemplateSelection
 export type DraftTemplateCatalog = StudioDraftTemplateCatalog
 export type DraftTemplate = DraftTemplateCatalog["templates"][number]
 export type ExpressionEvaluation = StudioExpressionEvaluation
@@ -205,6 +208,9 @@ export type AdapterPreview = StudioAdapterPreview
 export type AdapterRoutingPreview = StudioAdapterRoutingPreview
 export type RoutingDiagnostic = StudioRoutingDiagnostic
 export type RoutingSimulation = StudioRoutingSimulation
+export type RoutingEditor = StudioRoutingEditor
+export type RoutingSaveRequest = StudioRoutingSaveRequest
+export type RoutingSaveResult = StudioRoutingSaveResult
 export type RouterDefinition = CoreRouterDefinition
 
 export type WorkflowConfiguration = StudioWorkflowConfiguration

@@ -30,7 +30,12 @@ export const StudioValidationDiagnosticSchema = z
       .string()
       .min(1)
       .max(STUDIO_VALIDATION_CAPABILITY_MAX_LENGTH)
-      .optional()
+      .optional(),
+    node_id: z.string().min(1).max(256).optional(),
+    edge: z.object({
+      from: z.string().min(1).max(256),
+      to: z.string().min(1).max(256)
+    }).strict().optional()
   })
   .strict();
 export type StudioValidationDiagnostic = z.infer<

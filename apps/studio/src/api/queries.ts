@@ -35,6 +35,7 @@ export const studioKeys = {
     ["studio", "run", runId, "logs", levels] as const,
   inputAdapters: ["studio", "input-adapters"] as const,
   routing: ["studio", "routing"] as const,
+  routingEditor: ["studio", "routing", "editor"] as const,
   workflowConfiguration: (workflowId: string) =>
     ["studio", "configuration", "workflow", workflowId] as const,
   configurationDraft: (workflowId: string, draftId: string) =>
@@ -128,6 +129,11 @@ export const inputAdaptersQuery = queryOptions({
 export const routingQuery = queryOptions({
   queryKey: studioKeys.routing,
   queryFn: ({ signal }) => studioApi.routing(signal),
+})
+
+export const routingEditorQuery = queryOptions({
+  queryKey: studioKeys.routingEditor,
+  queryFn: ({ signal }) => studioApi.routingEditor(signal),
 })
 
 export function workflowConfigurationQuery(workflowId: string) {

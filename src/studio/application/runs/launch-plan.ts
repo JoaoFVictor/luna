@@ -5,6 +5,7 @@ import {
   type StudioRunPlanRequest,
   type StudioRunPlanResolution
 } from "../../contracts/run-launch.js";
+import { workflowExecutionScopesEqual } from "../../../core/workflow/execution-scope.js";
 import { studioRunValueDigest } from "./launch-digests.js";
 import { studioRunLaunchError } from "./launch-errors.js";
 
@@ -64,6 +65,12 @@ export function assertStudioRunResolutionMatchesRequest(
       "Resolved workflow does not match the requested workflow"
     );
   }
+  if (!workflowExecutionScopesEqual(request.execution_scope, resolution.execution_scope)) {
+    throw studioRunLaunchError(
+      "studio_run_plan_resolution_mismatch",
+      "Resolved execution scope does not match the requested scope"
+    );
+  }
   if (
     request.repository_id !== undefined &&
     resolution.repository.repository_id !== request.repository_id
@@ -82,6 +89,7 @@ export function createStudioRunExecutionSnapshot(
   const material = {
     schema_version: 1,
     workflow_id: resolution.workflow_id,
+    execution_scope: resolution.execution_scope,
     mode: resolution.mode,
     workflow_revision: resolution.workflow_revision,
     definition_bundle_hash: resolution.definition_bundle_hash,

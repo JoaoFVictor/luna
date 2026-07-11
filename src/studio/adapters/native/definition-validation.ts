@@ -104,7 +104,9 @@ function definitionFailure(
           ...(cause.path === undefined ? {} : { fieldPath: cause.path }),
           ...(cause.capability === undefined
             ? {}
-            : { capability: cause.capability })
+            : { capability: cause.capability }),
+          ...(cause.nodeId === undefined ? {} : { nodeId: cause.nodeId }),
+          ...(cause.edge === undefined ? {} : { edge: cause.edge })
         }
       : cause instanceof ConfigError ||
           (cause instanceof RuntimeError && cause.code === "runtime_invalid_json")

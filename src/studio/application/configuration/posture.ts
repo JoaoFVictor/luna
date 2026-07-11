@@ -21,6 +21,7 @@ import {
   type StudioRuntimeConfiguration
 } from "../../contracts/configuration.js";
 import type { StudioWorkflowCatalog } from "../../contracts/workflow-catalog.js";
+import type { StudioProviderHealthTracker } from "../inputs/provider-health.js";
 
 const ENV_MODEL = /^\$\{([A-Z0-9_]+)\}$/;
 const ENV_MODEL_WITH_FALLBACK = /^\$\{([A-Z0-9_]+):-([^}\s]+)\}$/;
@@ -36,6 +37,7 @@ type StudioConfigurationPostureOptions = {
   >;
   readonly agents: () => Promise<StudioAgentCatalog>;
   readonly workflows: () => Promise<StudioWorkflowCatalog>;
+  readonly providerHealth?: Pick<StudioProviderHealthTracker, "get">;
 };
 
 export type StudioConfigurationPostureService = {
@@ -264,7 +266,16 @@ export function createStudioConfigurationPosture(
           .map(([id, adapterIds]) => ({
             id,
             adapter_ids: adapterIds.sort(),
-            credential_status: "not_checked"
+            ...(() => {
+              const observation = options.providerHealth?.get(id);
+              return observation === undefined
+                ? { credential_status: "not_checked" as const }
+                : {
+                    credential_status: "verified_by_preview" as const,
+                    checked_at: observation.checkedAt,
+                    checked_adapter_id: observation.adapterId
+                  };
+            })()
           }))
       });
     },

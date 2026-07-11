@@ -20,6 +20,7 @@ export const DEFAULT_INVOCATION_JSON = JSON.stringify(
 
 export function buildRunPlanInput(options: {
   mode: LaunchInputMode
+  executionScope?: RunPlanInput["execution_scope"]
   adapterId: string
   opaqueInput: string
   invocationJson: string
@@ -32,6 +33,7 @@ export function buildRunPlanInput(options: {
       adapter_id: options.adapterId,
       input: { kind: "cli", value: options.opaqueInput },
       acknowledged_effects: options.acknowledgedAdapterEffects,
+      execution_scope: options.executionScope ?? { kind: "workflow" },
     }
   } else {
     let invocation: unknown
@@ -43,7 +45,11 @@ export function buildRunPlanInput(options: {
         message: "A invocation precisa ser um documento JSON válido.",
       }
     }
-    candidate = { kind: "invocation", invocation }
+    candidate = {
+      kind: "invocation",
+      invocation,
+      execution_scope: options.executionScope ?? { kind: "workflow" },
+    }
   }
 
   const parsed = StudioRunPlanInputSchema.safeParse(candidate)

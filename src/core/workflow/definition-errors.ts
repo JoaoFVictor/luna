@@ -25,16 +25,25 @@ export class WorkflowDefinitionError extends Error {
   readonly code: WorkflowDefinitionErrorCode;
   readonly path?: string;
   readonly capability?: string;
+  readonly nodeId?: string;
+  readonly edge?: { readonly from: string; readonly to: string };
 
   constructor(
     code: WorkflowDefinitionErrorCode,
     message: string,
-    options: { path?: string; capability?: string } = {}
+    options: {
+      path?: string;
+      capability?: string;
+      nodeId?: string;
+      edge?: { readonly from: string; readonly to: string };
+    } = {}
   ) {
     super(message);
     this.name = "WorkflowDefinitionError";
     this.code = code;
     this.path = options.path;
     this.capability = options.capability;
+    this.nodeId = options.nodeId;
+    this.edge = options.edge;
   }
 }

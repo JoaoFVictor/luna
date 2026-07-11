@@ -110,6 +110,36 @@ function runInput({
 }
 
 describe("runtime-neutral workflow runner engine", () => {
+  it("does not apply the full workflow output schema to a bounded through-node run", async () => {
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState,
+      nodes,
+      runNode
+    }) => {
+      const node = nodes[0];
+      if (node === undefined) throw new Error("missing test node");
+      const result = await runNode(node, initialState);
+      if (result.kind !== "completed") throw new Error("unexpected wait");
+      return { kind: "completed", state: { ...initialState, ...result.update } };
+    };
+    const invalidFullOutput = {
+      ...runInput({ runId: "engine-full-output-validation" }),
+      workflow: { ...workflow, output_schema_content: { type: "string" } },
+      builtIns: { "runtime.noop": async () => ({}) }
+    } satisfies RunWorkflowInput;
+    await expect(runCompiledWorkflowWithScheduler(invalidFullOutput, scheduler))
+      .rejects.toThrow("Final workflow output failed schema validation");
+
+    const partial = {
+      ...runInput({ runId: "engine-partial-output-validation" }),
+      workflow: { ...workflow, output_schema_content: { type: "string" } },
+      executionScope: { kind: "through_node", node_id: "noop" },
+      builtIns: { "runtime.noop": async () => ({}) }
+    } satisfies RunWorkflowInput;
+    await expect(runCompiledWorkflowWithScheduler(partial, scheduler))
+      .resolves.toMatchObject({ status: "succeeded", output: {} });
+  });
+
   it("saves a terminal failed checkpoint when the scheduler fails", async () => {
     const stores = backends();
     const input = runInput({

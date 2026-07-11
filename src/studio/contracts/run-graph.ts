@@ -10,6 +10,7 @@ import {
 
 export const MAX_RUN_GRAPH_NODES = 10_000;
 export const MAX_RUN_GRAPH_EDGES = 50_000;
+export const MAX_RUN_GRAPH_OBSERVED_FIELDS = 256;
 
 const BoundedIdSchema = z.string().trim().min(1).max(256);
 
@@ -90,7 +91,15 @@ export const RunGraphOverlayNodeSchema = z
   .object({
     node_id: BoundedIdSchema,
     status: RunGraphNodeStatusSchema,
-    attempt_count: z.number().int().safe().nonnegative().optional()
+    attempt_count: z.number().int().safe().nonnegative().optional(),
+    observed_output: z.object({
+      redaction: z.literal("values_removed"),
+      truncated: z.boolean(),
+      fields: z.array(z.object({
+        path: z.array(z.string().min(1).max(128)).max(16),
+        value_type: z.enum(["null", "boolean", "number", "string", "object", "array"])
+      }).strict()).max(MAX_RUN_GRAPH_OBSERVED_FIELDS)
+    }).strict().optional()
   })
   .strict();
 export type RunGraphOverlayNode = z.infer<typeof RunGraphOverlayNodeSchema>;

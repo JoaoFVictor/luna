@@ -62,7 +62,8 @@ function planFor(
     warnings: [],
     confirmation_required: false,
     confirmation_token: "t".repeat(48),
-    ...overrides
+    ...overrides,
+    execution_scope: overrides.execution_scope ?? request.execution_scope
   };
 }
 
@@ -126,6 +127,7 @@ describe("StudioRunLaunchFacade", () => {
         payload: privatePayload
       },
       config: installed.config,
+      execution_scope: { kind: "workflow" },
       input_provenance: {
         kind: "adapter",
         adapter_id: "private-task",

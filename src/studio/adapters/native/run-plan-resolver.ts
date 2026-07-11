@@ -1,5 +1,6 @@
 import { matchesJsonSchema } from "../../../core/capabilities/json-schema.js";
 import type { JsonValue } from "../../../core/runtime/json.js";
+import { WorkflowExecutionScopeError } from "../../../core/workflow/execution-scope.js";
 import { loadNativeRunContext } from "../../../platform/native/native-run-context.js";
 import { assertNativeWorkflowAgentModelProfiles } from "../../../platform/native/native-agent-model-profiles.js";
 import type { NativeLunaPlatformRegistrations } from "../../../platform/native/native-platform-registrations.js";
@@ -97,16 +98,30 @@ export class NativeStudioRunPlanResolver
     const resolution = await withMaterializedNativeStudioRunSnapshot(
       snapshot,
       async (definitionRoots) => {
-        const context = await loadNativeRunContext(
-          {
-            projectRoot: this.#projectRoot,
-            configRoot: this.#configRoot,
-            definitionRoots,
-            target: { type: "workflow", id: request.workflow_id },
-            invocation: request.invocation
-          },
-          { platform: this.#platform }
-        );
+        let context: NativeRunContext;
+        try {
+          context = await loadNativeRunContext(
+            {
+              projectRoot: this.#projectRoot,
+              configRoot: this.#configRoot,
+              definitionRoots,
+              target: { type: "workflow", id: request.workflow_id },
+              invocation: request.invocation,
+              executionScope: request.execution_scope
+            },
+            { platform: this.#platform }
+          );
+        } catch (cause) {
+          if (cause instanceof WorkflowExecutionScopeError) {
+            throw studioRunLaunchError(
+              "studio_run_plan_resolution_invalid",
+              "Execution scope references a node that does not exist in the workflow",
+              { node_id: cause.nodeId },
+              { cause }
+            );
+          }
+          throw cause;
+        }
         try {
           await assertNativeWorkflowAgentModelProfiles({
             workflow: context.workflow,
@@ -144,6 +159,7 @@ export class NativeStudioRunPlanResolver
         });
         return {
           workflow_id: context.workflow.id,
+          execution_scope: request.execution_scope,
           mode: context.workflow.mode,
           workflow_revision: context.workflow.revision,
           definition_bundle_hash: snapshot.bundle_hash,

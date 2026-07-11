@@ -1,84 +1,65 @@
-import { useMemo, useState, type FormEvent } from "react"
-import { PlusIcon } from "lucide-react"
+import { useMemo, useState } from "react"
+import { BotIcon, BoxIcon, GitBranchIcon, PlusIcon, SearchIcon, ShieldAlertIcon } from "lucide-react"
 
 import type {
   AgentCatalogItem,
   CapabilityCatalog,
-  CapabilityRegistration,
   JsonValue,
   YamlSourceOperation,
 } from "@/api/types"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { createWorkflowNodeOperations } from "@/features/workflows/workflow-node-creation"
 import {
-  workflowAgentCapabilityIds,
-  workflowBuiltInPolicyEntry,
-  type WorkflowCatalogNodeKind,
-  workflowNodeRegistrations,
+  workflowNodePaletteItems,
+  type WorkflowPaletteItem,
 } from "@/features/workflows/workflow-node-catalog"
-import {
-  addWorkflowCapabilityOperations,
-  type WorkflowSourceNode,
-} from "@/features/workflows/workflow-source-model"
+import type { WorkflowSourceNode } from "@/features/workflows/workflow-source-model"
 
-const NODE_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
+const kindIcon = {
+  built_in: BoxIcon,
+  pattern: GitBranchIcon,
+  agent: BotIcon,
+  human_gate: ShieldAlertIcon,
+} as const
 
-function selectionCapabilities(
-  library: CapabilityCatalog,
-  kind: WorkflowCatalogNodeKind,
-  registrationId: string,
-  agent: AgentCatalogItem | undefined,
-): string[] {
-  const registration = library.registrations.find((item) => item.id === registrationId)
-  const policyCapability = registration?.registration_kind === "built_in" &&
-    registration.side_effect_policy !== undefined
-    ? library.registrations.find((item) => item.id === registration.side_effect_policy)?.owner.capability_id
-    : undefined
-  return [...new Set([
-    ...(kind === "agent"
-      ? workflowAgentCapabilityIds(
-          library.capabilities,
-          library.registrations,
-          agent?.output_schema_reference,
-        )
-      : [registration?.owner.capability_id]),
-    policyCapability,
-  ].filter((value): value is string => value !== undefined))]
-}
-
-function newNode(
-  kind: WorkflowCatalogNodeKind,
-  id: string,
-  registrationId: string,
-  registration: CapabilityRegistration | undefined,
-  agent: AgentCatalogItem | undefined,
-  registrations: readonly CapabilityRegistration[],
-): Record<string, JsonValue> {
-  if (kind === "agent") {
-    return {
-      id,
-      type: "agent",
-      agent: registrationId,
-      output_schema: agent?.output_schema_reference ?? "output.schema.json",
-    }
-  }
-  const node: Record<string, JsonValue> = { id, type: kind, uses: registrationId }
-  const policy = kind === "built_in"
-    ? workflowBuiltInPolicyEntry(registrations, registration)
-    : undefined
-  if (policy !== undefined) node.policies = [policy]
-  return node
+function PaletteOption({
+  item,
+  onSelect,
+}: {
+  item: WorkflowPaletteItem
+  onSelect: (item: WorkflowPaletteItem) => void
+}) {
+  const Icon = kindIcon[item.kind]
+  return (
+    <button
+      type="button"
+      className="flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => onSelect(item)}
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+        <Icon className="size-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">{item.title}</span>
+          {item.hasExternalEffect && <Badge variant="outline">Efeito externo</Badge>}
+        </span>
+        <span className="mt-1 block text-xs text-muted-foreground">{item.summary}</span>
+        <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground">{item.id}</span>
+      </span>
+    </button>
+  )
 }
 
 export function WorkflowNodeAdd({
@@ -88,7 +69,12 @@ export function WorkflowNodeAdd({
   agents,
   canMutate,
   pending,
+  afterNodeId,
+  beforeNodeId,
   onOperations,
+  onAdded,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   source: JsonValue
   nodes: readonly WorkflowSourceNode[]
@@ -96,112 +82,93 @@ export function WorkflowNodeAdd({
   agents: readonly AgentCatalogItem[]
   canMutate: boolean
   pending: boolean
+  afterNodeId?: string
+  beforeNodeId?: string
   onOperations: (operations: readonly YamlSourceOperation[]) => void
+  onAdded?: (nodeId: string) => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [id, setId] = useState("")
-  const [kind, setKind] = useState<WorkflowCatalogNodeKind>("built_in")
-  const options = useMemo(
-    () => kind === "agent" ? agents : workflowNodeRegistrations(library.registrations, kind),
-    [agents, kind, library],
+  const [localOpen, setLocalOpen] = useState(false)
+  const [search, setSearch] = useState("")
+  const open = controlledOpen ?? localOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setLocalOpen(next)
+    onOpenChange?.(next)
+    if (!next) setSearch("")
+  }
+  const items = useMemo(
+    () => workflowNodePaletteItems(library.registrations, agents),
+    [agents, library.registrations],
   )
-  const [registrationId, setRegistrationId] = useState("")
-  const selectedId = options.some((option) => option.id === registrationId)
-    ? registrationId
-    : options[0]?.id ?? ""
-  const duplicate = nodes.some((node) => node.id === id)
-  const valid = NODE_ID.test(id) && id.length <= 128 && !duplicate && selectedId.length > 0
+  const filtered = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase()
+    return term.length === 0
+      ? items
+      : items.filter((item) =>
+          [item.title, item.summary, item.category, item.id, ...item.tags]
+            .some((value) => value.toLocaleLowerCase().includes(term)),
+        )
+  }, [items, search])
+  const grouped = useMemo(() => {
+    const categories = new Map<string, WorkflowPaletteItem[]>()
+    for (const item of filtered) {
+      categories.set(item.category, [...(categories.get(item.category) ?? []), item])
+    }
+    return categories
+  }, [filtered])
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (!valid) return
-    const selectedRegistration = library.registrations.find(
-      (registration) => registration.id === selectedId,
-    )
-    const selectedAgent = agents.find((agent) => agent.id === selectedId)
-    const capabilities = selectionCapabilities(library, kind, selectedId, selectedAgent)
-    if (capabilities.length === 0) return
-    const operations: YamlSourceOperation[] = addWorkflowCapabilityOperations(source, capabilities)
-    operations.push({
-      op: "sequence_insert",
-      path: ["nodes"],
-      value: newNode(
-        kind,
-        id,
-        selectedId,
-        selectedRegistration,
-        selectedAgent,
-        library.registrations,
-      ),
+  const select = (item: WorkflowPaletteItem) => {
+    const created = createWorkflowNodeOperations({
+      source,
+      nodes,
+      library,
+      agents,
+      kind: item.kind,
+      registrationId: item.id,
+      ...(afterNodeId === undefined ? {} : { afterNodeId }),
+      ...(beforeNodeId === undefined ? {} : { beforeNodeId }),
     })
-    onOperations(operations)
+    if (created === undefined) return
+    onOperations(created.operations)
+    onAdded?.(created.id)
     setOpen(false)
-    setId("")
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button size="sm" disabled={!canMutate || pending} />}>
-        <PlusIcon aria-hidden="true" /> Adicionar node
+        <PlusIcon aria-hidden="true" /> Adicionar passo
       </DialogTrigger>
-      <DialogContent>
-        <form onSubmit={submit} className="contents">
-          <DialogHeader>
-            <DialogTitle>Adicionar node</DialogTitle>
-            <DialogDescription>
-              Registrations vêm da Library carregada; o compiler do servidor decide se a combinação é válida.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Field data-invalid={duplicate || (id.length > 0 && !NODE_ID.test(id))}>
-              <FieldLabel htmlFor="new-workflow-node-id">ID</FieldLabel>
-              <Input id="new-workflow-node-id" value={id} onChange={(event) => setId(event.target.value)} />
-              <FieldDescription>Único dentro do workflow.</FieldDescription>
-              {duplicate && <FieldError>Já existe um node com este ID.</FieldError>}
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="new-workflow-node-kind">Tipo</FieldLabel>
-              <NativeSelect
-                id="new-workflow-node-kind"
-                value={kind}
-                onChange={(event) => {
-                  setKind(event.target.value as WorkflowCatalogNodeKind)
-                  setRegistrationId("")
-                }}
-                className="w-full"
-              >
-                <NativeSelectOption value="built_in">Built-in</NativeSelectOption>
-                <NativeSelectOption value="pattern">Pattern</NativeSelectOption>
-                <NativeSelectOption value="agent">Agent</NativeSelectOption>
-                <NativeSelectOption value="human_gate">Human gate</NativeSelectOption>
-              </NativeSelect>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="new-workflow-node-registration">
-                {kind === "agent" ? "Agent" : "Registration"}
-              </FieldLabel>
-              <NativeSelect
-                id="new-workflow-node-registration"
-                value={selectedId}
-                onChange={(event) => setRegistrationId(event.target.value)}
-                className="w-full"
-              >
-                {options.map((option) => (
-                  <NativeSelectOption key={option.id} value={option.id}>{option.id}</NativeSelectOption>
-                ))}
-              </NativeSelect>
-              {selectedId.length > 0 && (
-                <FieldDescription>
-                  A mesma operação declara, se ausentes, todas as capabilities exigidas por registration, schema e policy: <code>{selectionCapabilities(library, kind, selectedId, agents.find((agent) => agent.id === selectedId)).join(", ") || "desconhecida"}</code>.
-                </FieldDescription>
-              )}
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button type="submit" disabled={!valid || pending}>Adicionar</Button>
-          </DialogFooter>
-        </form>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>O que acontece em seguida?</DialogTitle>
+          <DialogDescription>
+            Escolha uma ação, um agent ou um controle de fluxo. Os requisitos técnicos são adicionados automaticamente.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input
+            autoFocus
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por ação, agent ou resultado..."
+            className="pl-9"
+          />
+        </div>
+        <ScrollArea className="max-h-[60vh] pr-3">
+          {grouped.size === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">Nenhum bloco corresponde à busca.</p>
+          ) : [...grouped].map(([category, options]) => (
+            <section key={category} className="mb-5 last:mb-0">
+              <h3 className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">{category}</h3>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {options.map((item) => <PaletteOption key={`${item.kind}:${item.id}`} item={item} onSelect={select} />)}
+              </div>
+            </section>
+          ))}
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   )

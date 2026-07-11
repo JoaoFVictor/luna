@@ -218,6 +218,7 @@ export class StudioRunLaunchService<DispatchPayload> {
         created_at: isoTimestamp(createdAt),
         expires_at: isoTimestamp(issued.expiresAt),
         workflow_id: snapshot.workflow_id,
+        execution_scope: snapshot.execution_scope,
         mode: snapshot.mode,
         workflow_revision: snapshot.workflow_revision,
         definition_bundle_hash: snapshot.definition_bundle_hash,

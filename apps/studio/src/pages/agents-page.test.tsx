@@ -104,9 +104,9 @@ describe("AgentsPage", () => {
 
     render(<AgentsPage />, { wrapper: wrapper("/agents?new=1") })
 
-    const id = await screen.findByLabelText("ID do agent")
-    const profile = screen.getByLabelText("Model profile")
-    const submit = screen.getByRole("button", { name: "Criar draft" })
+    const id = await screen.findByLabelText("Nome curto")
+    const profile = screen.getByLabelText("Modelo inicial")
+    const submit = screen.getByRole("button", { name: "Continuar" })
     expect((submit as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.change(id, { target: { value: "reviewer" } })
@@ -138,11 +138,11 @@ describe("AgentsPage", () => {
 
     render(<AgentsPage />, { wrapper: wrapper("/agents?new=1") })
 
-    fireEvent.change(await screen.findByLabelText("ID do agent"), {
+    fireEvent.change(await screen.findByLabelText("Nome curto"), {
       target: { value: "reviewer" },
     })
     expect(screen.getByText("Nenhum model profile válido está disponível em config/models.yaml.")).toBeTruthy()
-    expect((screen.getByRole("button", { name: "Criar draft" }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole("button", { name: "Continuar" }) as HTMLButtonElement).disabled).toBe(true)
     expect(create).not.toHaveBeenCalled()
   })
 
@@ -162,7 +162,7 @@ describe("AgentsPage", () => {
     })
 
     expect(await screen.findByText("Nenhum agent válido carregado")).toBeTruthy()
-    expect(screen.queryByLabelText("ID do agent")).toBeNull()
+    expect(screen.queryByLabelText("Nome curto")).toBeNull()
     expect(create).not.toHaveBeenCalled()
   })
 })

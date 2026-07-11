@@ -160,6 +160,7 @@ export class NativeStudioRunExecutor {
         definitionRoots,
         target: job.run.route_target,
         invocation: job.request.invocation,
+        executionScope: job.request.execution_scope,
         workflowConfig: job.request.config,
         run: job.run,
         signal,

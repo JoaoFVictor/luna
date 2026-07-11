@@ -2,7 +2,6 @@ import { useEffect, useMemo } from "react"
 import { LockKeyholeIcon, SaveIcon } from "lucide-react"
 
 import type { ModelConfiguration, YamlSourceOperation } from "@/api/types"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
@@ -14,6 +13,16 @@ import {
   type AgentGeneralForm,
 } from "@/features/agents/agent-definition-model"
 import { useServerBackedForm } from "@/features/agents/use-server-backed-form"
+import { humanizeTechnicalId } from "@/lib/presentation"
+
+function profileLabel(profile: ModelConfiguration["profiles"][number]): string {
+  const depth = profile.reasoning_effort === "high"
+    ? "raciocínio profundo"
+    : profile.reasoning_effort === "low"
+      ? "mais rápido"
+      : "equilibrado"
+  return `${humanizeTechnicalId(profile.id)} · ${depth}`
+}
 
 export function AgentGeneralSection({
   agent,
@@ -49,13 +58,10 @@ export function AgentGeneralSection({
 
   return (
     <div className="space-y-5">
-      <Alert>
-        <LockKeyholeIcon aria-hidden="true" />
-        <AlertTitle>ID e diretório são imutáveis neste draft</AlertTitle>
-        <AlertDescription>
-          {agent.id || "ID indisponível"}. Renomear exige um novo agent e revisão explícita dos consumidores; este formulário nunca faz rename implícito.
-        </AlertDescription>
-      </Alert>
+      <details className="rounded-lg border p-3 text-xs text-muted-foreground">
+        <summary className="cursor-pointer font-medium text-foreground"><LockKeyholeIcon className="mr-2 inline size-4" aria-hidden="true" />Identificação técnica</summary>
+        <p className="mt-2">ID: <code>{agent.id || "indisponível"}</code>. Para renomear sem quebrar workflows, crie outro agent e revise os usos.</p>
+      </details>
       <div className="grid gap-4 lg:grid-cols-2">
         <Field className="lg:col-span-2">
           <FieldLabel htmlFor="agent-description">Descrição</FieldLabel>
@@ -66,10 +72,10 @@ export function AgentGeneralSection({
             maxLength={2_000}
             onChange={(event) => form.setValue({ ...form.value, description: event.target.value })}
           />
-          <FieldDescription>Responsabilidade reutilizável do agent. Gates, retries e artifact plans pertencem ao workflow.</FieldDescription>
+          <FieldDescription>Explique em uma frase o resultado que este especialista deve produzir.</FieldDescription>
         </Field>
         <Field>
-          <FieldLabel htmlFor="agent-model-profile">Model profile</FieldLabel>
+          <FieldLabel htmlFor="agent-model-profile">Modelo</FieldLabel>
           <NativeSelect
             id="agent-model-profile"
             value={form.value.modelProfile}
@@ -81,17 +87,20 @@ export function AgentGeneralSection({
             )}
             {(models?.profiles ?? []).map((profile) => (
               <NativeSelectOption key={profile.id} value={profile.id}>
-                {profile.id} · {profile.reasoning_effort} · {profile.transport}
+                {profileLabel(profile)}
               </NativeSelectOption>
             ))}
           </NativeSelect>
-          <FieldDescription>Lista projetada de `config/models.yaml`; nenhum secret ou valor de environment é exposto.</FieldDescription>
-          {models?.diagnostics.map((diagnostic) => (
-            <p key={diagnostic.code} className="text-xs text-destructive">{diagnostic.message}</p>
-          ))}
+          <FieldDescription>Escolha entre mais velocidade, profundidade de raciocínio ou equilíbrio.</FieldDescription>
+          {(models?.diagnostics.length ?? 0) > 0 && (
+            <details className="text-xs text-destructive">
+              <summary className="cursor-pointer">Alguns modelos não puderam ser carregados</summary>
+              <ul className="mt-1 space-y-1 font-mono">{models?.diagnostics.map((diagnostic) => <li key={diagnostic.code}>{diagnostic.message}</li>)}</ul>
+            </details>
+          )}
         </Field>
         <Field>
-          <FieldLabel htmlFor="agent-mode">Mode</FieldLabel>
+          <FieldLabel htmlFor="agent-mode">Permissão</FieldLabel>
           <NativeSelect
             id="agent-mode"
             value={form.value.mode}
@@ -105,11 +114,11 @@ export function AgentGeneralSection({
                   : "",
             })}
           >
-            <NativeSelectOption value="" disabled>Selecione um mode</NativeSelectOption>
-            <NativeSelectOption value="read_only">read_only</NativeSelectOption>
-            <NativeSelectOption value="trusted_local_write">trusted_local_write</NativeSelectOption>
+            <NativeSelectOption value="" disabled>Selecione uma permissão</NativeSelectOption>
+            <NativeSelectOption value="read_only">Somente leitura</NativeSelectOption>
+            <NativeSelectOption value="trusted_local_write">Pode editar arquivos locais</NativeSelectOption>
           </NativeSelect>
-          <FieldDescription>O modo controla quais tools o runtime pode materializar. Trusted write não concede commit, push ou criação de PR.</FieldDescription>
+          <FieldDescription>Editar arquivos não permite commit, push ou criação de pull request.</FieldDescription>
         </Field>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -117,11 +126,11 @@ export function AgentGeneralSection({
           disabled={disabled || pending || operations.length === 0 || !valid}
           onClick={() => onSave(operations)}
         >
-          <SaveIcon aria-hidden="true" />{pending ? "Salvando…" : "Salvar General"}
+          <SaveIcon aria-hidden="true" />{pending ? "Salvando…" : "Salvar identidade"}
         </Button>
         {form.dirty && <Button variant="ghost" onClick={form.reset}>Descartar alterações</Button>}
-        {!selectedProfileKnown && <Badge variant="destructive">profile não carregado</Badge>}
-        {!agent.modeIsKnown && <Badge variant="destructive">mode inválido no YAML; selecione explicitamente</Badge>}
+        {!selectedProfileKnown && <Badge variant="destructive">modelo indisponível</Badge>}
+        {!agent.modeIsKnown && <Badge variant="destructive">permissão inválida; selecione novamente</Badge>}
         {operations.length === 0 && <Badge variant="outline">sincronizado</Badge>}
       </div>
     </div>

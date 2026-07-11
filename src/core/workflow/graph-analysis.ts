@@ -16,12 +16,24 @@ type GraphAnalysisCode =
 export class WorkflowGraphAnalysisError extends Error {
   readonly code: GraphAnalysisCode;
   readonly path?: string;
+  readonly nodeId?: string;
+  readonly edge?: { readonly from: string; readonly to: string };
 
-  constructor(code: GraphAnalysisCode, message: string, path?: string) {
+  constructor(
+    code: GraphAnalysisCode,
+    message: string,
+    options: {
+      readonly path?: string;
+      readonly nodeId?: string;
+      readonly edge?: { readonly from: string; readonly to: string };
+    } = {}
+  ) {
     super(message);
     this.name = "WorkflowGraphAnalysisError";
     this.code = code;
-    this.path = path;
+    this.path = options.path;
+    this.nodeId = options.nodeId;
+    this.edge = options.edge;
   }
 }
 
@@ -36,7 +48,7 @@ export function analyzeWorkflowGraph({
       throw new WorkflowGraphAnalysisError(
         "workflow_node_duplicate",
         `Duplicate workflow node id: ${node.id}`,
-        `$.nodes[${index}].id`
+        { path: `$.nodes[${index}].id`, nodeId: node.id }
       );
     }
     byId.set(node.id, node);
@@ -48,7 +60,11 @@ export function analyzeWorkflowGraph({
         throw new WorkflowGraphAnalysisError(
           "workflow_reference_unknown",
           `Workflow node ${node.id} depends on unknown node ${dependency}.`,
-          `$.nodes[${index}].after[${dependencyIndex}]`
+          {
+            path: `$.nodes[${index}].after[${dependencyIndex}]`,
+            nodeId: node.id,
+            edge: { from: dependency, to: node.id }
+          }
         );
       }
     });
@@ -74,7 +90,8 @@ function topologicalOrder(
     if (visiting.has(id)) {
       throw new WorkflowGraphAnalysisError(
         "workflow_cycle_detected",
-        `Workflow graph contains a cycle: ${[...path, id].join(" -> ")}.`
+        `Workflow graph contains a cycle: ${[...path, id].join(" -> ")}.`,
+        { nodeId: id }
       );
     }
 

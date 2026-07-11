@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   CableIcon,
-  InfoIcon,
   RouteIcon,
   Settings2Icon,
   ShieldCheckIcon,
 } from "lucide-react"
 import { Link, useSearchParams } from "react-router-dom"
 
-import { inputAdaptersQuery, routingQuery, workflowsQuery } from "@/api/queries"
+import { configurationProvidersQuery, inputAdaptersQuery, routingQuery, workflowsQuery } from "@/api/queries"
 import { PageHeader } from "@/components/page-header"
 import { PageError, PageLoading } from "@/components/page-state"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -25,15 +24,23 @@ import {
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ConfigurationPosture } from "@/features/configuration/configuration-posture"
+import { RoutingEditor } from "@/features/configuration/routing-editor"
+import { routingRuleDescription, routingTargetLabel } from "@/features/configuration/routing-presentation"
 import { WorkflowConfigurationPanel } from "@/features/configuration/workflow-configuration-panel"
+import { launchAdapterDescription, launchAdapterLabel, launchEffectLabel } from "@/features/launch/launch-presentation"
 
 export function ConfigurationPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const requestedWorkflowId = searchParams.get("workflow") ?? ""
   const requestedDraftId = searchParams.get("draft") ?? undefined
   const workflows = useQuery(workflowsQuery)
   const adapters = useQuery(inputAdaptersQuery)
   const routing = useQuery(routingQuery)
+  const providers = useQuery(configurationProvidersQuery)
+  const requestedTab = searchParams.get("tab")
+  const activeTab = requestedTab === "routing" || requestedTab === "adapters" || requestedTab === "posture"
+    ? requestedTab
+    : "workflow"
   const configurableWorkflows = useMemo(
     () => workflows.data?.workflows.filter((workflow) => workflow.config !== undefined) ?? [],
     [workflows.data],
@@ -61,31 +68,32 @@ export function ConfigurationPage() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6">
       <PageHeader
-        eyebrow="Configuração segura"
-        title="Configuration"
-        description="Edite valores de workflow explicitamente classificados, revise o diff seguro e inspecione a postura operacional redigida. Secrets, raw env e auth files ficam fora da Control API."
+        eyebrow="Entradas e comportamento"
+        title="Conexões"
+        description="Configure cada workflow, confira as entradas disponíveis e veja como uma solicitação escolhe o fluxo certo."
       />
-      <Alert>
-        <InfoIcon aria-hidden="true" />
-        <AlertTitle>Adapter e workflow são responsabilidades diferentes</AlertTitle>
-        <AlertDescription>
-          O adapter normaliza a entrada em uma invocation. O router avalia regras determinísticas em ordem e escolhe o workflow. O workflow não declara “vim do adapter X”.
-        </AlertDescription>
-      </Alert>
 
-      <Tabs defaultValue="workflow">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          const next = new URLSearchParams(searchParams)
+          if (value === "workflow") next.delete("tab")
+          else next.set("tab", value)
+          setSearchParams(next, { replace: true })
+        }}
+      >
         <TabsList className="flex h-auto flex-wrap">
           <TabsTrigger value="workflow">
-            <Settings2Icon aria-hidden="true" /> Workflow config
+            <Settings2Icon aria-hidden="true" /> Workflows
           </TabsTrigger>
           <TabsTrigger value="routing">
-            <RouteIcon aria-hidden="true" /> Routing
+            <RouteIcon aria-hidden="true" /> Regras de entrada
           </TabsTrigger>
           <TabsTrigger value="adapters">
-            <CableIcon aria-hidden="true" /> Input adapters
+            <CableIcon aria-hidden="true" /> Entradas
           </TabsTrigger>
           <TabsTrigger value="posture">
-            <ShieldCheckIcon aria-hidden="true" /> Postura operacional
+            <ShieldCheckIcon aria-hidden="true" /> Segurança técnica
           </TabsTrigger>
         </TabsList>
 
@@ -114,7 +122,7 @@ export function ConfigurationPage() {
                   <div>
                     <p className="text-sm font-medium">Workflow</p>
                     <p className="text-xs text-muted-foreground">
-                      O form é derivado do schema do workflow selecionado.
+                      Ajuste os valores usados quando este workflow executar.
                     </p>
                   </div>
                   <NativeSelect
@@ -148,16 +156,17 @@ export function ConfigurationPage() {
           ) : routing.isError ? (
             <PageError error={routing.error} retry={() => void routing.refetch()} />
           ) : (
+            <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Regras first-match</CardTitle>
+                <CardTitle>Qual workflow será escolhido?</CardTitle>
                 <CardDescription>
-                  Version {routing.data.version}. A ordem é semântica e nunca usa decisão de modelo.
+                  As regras são verificadas de cima para baixo. A primeira que combinar define o workflow.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Link className={buttonVariants({ variant: "outline" })} to="/launch">
-                  <RouteIcon aria-hidden="true" /> Simular com adapter e string opaca
+                  <RouteIcon aria-hidden="true" /> Testar uma entrada
                 </Link>
                 {routing.data.rules.map((rule, index) => (
                   <div
@@ -168,45 +177,66 @@ export function ConfigurationPage() {
                       {index + 1}
                     </span>
                     <div className="min-w-0">
-                      <p className="font-medium">{rule.id}</p>
-                      <code className="mt-1 block overflow-x-auto text-xs text-muted-foreground">
-                        {rule.when.expression}
-                      </code>
+                      <p className="font-medium">{routingRuleDescription(rule)}</p>
+                      <p className="text-xs text-muted-foreground">Regra {index + 1} · a ordem é determinística</p>
+                      <details className="mt-2"><summary className="cursor-pointer text-xs text-muted-foreground">Ver condição técnica</summary><code className="mt-1 block overflow-x-auto text-xs text-muted-foreground">{rule.when.expression}</code></details>
                     </div>
-                    <Badge variant="outline">{rule.target}</Badge>
+                    <Badge variant="outline">{routingTargetLabel(rule.target)}</Badge>
                   </div>
                 ))}
               </CardContent>
             </Card>
+            <RoutingEditor workflowIds={workflows.data?.workflows.map((workflow) => workflow.id) ?? []} />
+            </div>
           )}
         </TabsContent>
 
         <TabsContent value="adapters" className="pt-4">
-          {adapters.isPending ? (
-            <PageLoading label="Carregando adapters" />
+          {adapters.isPending || providers.isPending ? (
+            <PageLoading label="Carregando entradas e conexões" />
           ) : adapters.isError ? (
             <PageError error={adapters.error} retry={() => void adapters.refetch()} />
+          ) : providers.isError ? (
+            <PageError error={providers.error} retry={() => void providers.refetch()} />
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              {adapters.data.adapters.map((adapter) => (
+              {adapters.data.adapters.map((adapter) => {
+                const provider = providers.data.providers.find((candidate) => candidate.id === adapter.source)
+                const credentialLabel = provider === undefined
+                  ? "Provider não projetado"
+                  : provider.credential_status === "verified_by_preview"
+                    ? "Conexão verificada nesta sessão"
+                    : "Conexão ainda não testada"
+                return (
                 <Card key={adapter.id}>
                   <CardHeader>
-                    <CardTitle>{adapter.id}</CardTitle>
-                    <CardDescription>{adapter.description}</CardDescription>
+                    <CardTitle>{launchAdapterLabel(adapter.id, adapter.source)}</CardTitle>
+                    <CardDescription>{launchAdapterDescription(adapter.id, adapter.source, adapter.description)}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3 text-sm">
-                    <div className="flex gap-2">
-                      <Badge variant="outline">source: {adapter.source}</Badge>
-                      <Badge variant="outline">CLI string</Badge>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline">{credentialLabel}</Badge>
+                      <Badge variant="outline">Entrada disponível</Badge>
                     </div>
                     <p className="text-muted-foreground">
-                      Preview: {adapter.preview.enabled
-                        ? `habilitado · ${adapter.preview.effects.join(", ") || "sem efeitos declarados"}`
-                        : "indisponível neste adapter"}
+                      {adapter.preview.enabled
+                        ? "Pode ser testada antes de executar."
+                        : "A prévia não está disponível para esta entrada."}
                     </p>
+                    {adapter.preview.enabled && adapter.preview.effects.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {adapter.preview.effects.map((effect) => <Badge key={effect} variant="outline">{launchEffectLabel(effect)}</Badge>)}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Link className={buttonVariants({ variant: "outline", size: "sm" })} to={`/launch?adapter=${encodeURIComponent(adapter.id)}`}>
+                        {provider?.credential_status === "verified_by_preview" ? "Testar novamente" : "Testar conexão"}
+                      </Link>
+                    </div>
+                    <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Detalhes técnicos</summary><p className="mt-2">Adapter: <code>{adapter.id}</code> · provider: <code>{adapter.source}</code></p></details>
                   </CardContent>
                 </Card>
-              ))}
+              )})}
             </div>
           )}
         </TabsContent>

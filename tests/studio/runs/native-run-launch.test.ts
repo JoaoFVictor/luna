@@ -150,6 +150,47 @@ describe("native Studio run planning", () => {
     ]));
   });
 
+  it("plans only the selected node and its ancestors for a partial execution", async () => {
+    const fixture = await writeFixture();
+    await writeFile(
+      fixture.workflowPath,
+      policyBearingAgentAndPatternSource(fixture)
+    );
+    const partialRequest = {
+      ...request,
+      execution_scope: { kind: "through_node" as const, node_id: "analyze" }
+    };
+
+    const plan = await launchService(fixture, {
+      dispatch: async () => {
+        throw new Error("planning must not dispatch");
+      }
+    }).plan(partialRequest, launchContext);
+
+    expect(plan.execution_scope).toEqual(partialRequest.execution_scope);
+    expect(plan.potential_effects.length).toBeGreaterThan(0);
+    expect(plan.potential_effects.every((effect) => effect.node_id === "analyze"))
+      .toBe(true);
+    expect(plan.potential_effects).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ node_id: "policy-pattern" })
+    ]));
+  });
+
+  it("rejects a partial execution target that is not in the workflow", async () => {
+    const fixture = await writeFixture();
+    await expect(launchService(fixture, {
+      dispatch: async () => {
+        throw new Error("invalid scopes must not dispatch");
+      }
+    }).plan({
+      ...request,
+      execution_scope: { kind: "through_node", node_id: "missing" }
+    }, launchContext)).rejects.toMatchObject({
+      code: "studio_run_plan_resolution_invalid",
+      details: { node_id: "missing" }
+    });
+  });
+
   it("blocks planning and execute revalidation when the compiled DAG can interrupt", async () => {
     const fixture = await writeFixture();
     let dispatches = 0;

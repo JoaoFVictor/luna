@@ -14,6 +14,7 @@ import type { StudioCatalogFingerprintPort } from "../application/drafts/authori
 import { createLocalStudioConfigurationControl } from "./configuration-control.js";
 import type { NativeStudioAuthoringServices } from "./native-authoring-services.js";
 import type { StudioConfigurationControl } from "./routes/configuration.js";
+import type { StudioProviderHealthTracker } from "../application/inputs/provider-health.js";
 
 export type NativeStudioConfigurationSurfaceOptions = {
   readonly projectRoot: string;
@@ -35,6 +36,7 @@ export type NativeStudioConfigurationSurfaceOptions = {
     >;
   };
   readonly catalogs: StudioCatalogFingerprintPort;
+  readonly providerHealth?: Pick<StudioProviderHealthTracker, "get">;
 };
 
 export type NativeStudioConfigurationSurface = {
@@ -70,6 +72,7 @@ export function createNativeStudioConfigurationSurface(
     configRoot: options.configRoot,
     ...(options.app === undefined ? {} : { app: options.app }),
     inputAdapters: options.platform.inputAdapterRegistry,
+    ...(options.providerHealth === undefined ? {} : { providerHealth: options.providerHealth }),
     agents: async () =>
       await loadStudioAgentCatalog({
         agentsRoot,

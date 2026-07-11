@@ -29,17 +29,26 @@ export class WorkflowCompilerError extends Error {
   readonly code: WorkflowCompilerErrorCode;
   readonly path?: string;
   readonly capability?: string;
+  readonly nodeId?: string;
+  readonly edge?: { readonly from: string; readonly to: string };
 
   constructor(
     code: WorkflowCompilerErrorCode,
     message: string,
-    options: { path?: string; capability?: string } = {}
+    options: {
+      path?: string;
+      capability?: string;
+      nodeId?: string;
+      edge?: { readonly from: string; readonly to: string };
+    } = {}
   ) {
     super(message);
     this.name = "WorkflowCompilerError";
     this.code = code;
     this.path = options.path;
     this.capability = options.capability;
+    this.nodeId = options.nodeId;
+    this.edge = options.edge;
   }
 }
 

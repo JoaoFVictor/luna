@@ -4,6 +4,8 @@ import {
   InvocationSchema,
   RouteTargetSchema
 } from "../../core/router/invocation.js";
+import { RouterDefinitionSchema } from "../../core/router/router-definition.js";
+import { StudioDigestSchema } from "./digests.js";
 import {
   ROUTER_DEFINITION_MAX_RULES,
   ROUTER_RULE_ID_MAX_LENGTH
@@ -258,6 +260,35 @@ export const StudioRoutingSimulationSchema = z
   .strict();
 export type StudioRoutingSimulation = z.infer<
   typeof StudioRoutingSimulationSchema
+>;
+
+export const StudioRoutingEditorSchema = z.object({
+  definition: RouterDefinitionSchema,
+  revision: StudioDigestSchema,
+  editing: z.literal("cas")
+}).strict();
+export type StudioRoutingEditor = z.infer<typeof StudioRoutingEditorSchema>;
+
+export const StudioRoutingSaveRequestSchema = z.object({
+  expected_revision: StudioDigestSchema,
+  definition: RouterDefinitionSchema
+}).strict();
+export type StudioRoutingSaveRequest = z.infer<
+  typeof StudioRoutingSaveRequestSchema
+>;
+
+export const StudioRoutingSaveResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("saved"),
+    editor: StudioRoutingEditorSchema
+  }).strict(),
+  z.object({
+    status: z.literal("conflict"),
+    current: StudioRoutingEditorSchema
+  }).strict()
+]);
+export type StudioRoutingSaveResult = z.infer<
+  typeof StudioRoutingSaveResultSchema
 >;
 
 export const StudioAdapterRoutingPreviewSchema = z

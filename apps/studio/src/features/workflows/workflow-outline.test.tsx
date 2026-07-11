@@ -55,12 +55,12 @@ describe("WorkflowOutline keyboard navigation", () => {
     )
 
     const failed = screen.getByRole("button", {
-      name: /second, reviewer, Falhou, 2 tentativas, 1 artifact, falha principal/i,
+      name: /second, reviewer, Falhou, 2 tentativas, 1 resultado, falha principal/i,
     })
     expect(failed).toBeDefined()
     expect(screen.getByText("Falhou")).toBeDefined()
     expect(screen.getByText("2 tentativas")).toBeDefined()
-    expect(screen.getByText("1 artifact")).toBeDefined()
+    expect(screen.getByText("1 resultado")).toBeDefined()
     expect(screen.getByText("Falha principal")).toBeDefined()
   })
 })

@@ -1,7 +1,6 @@
 import { CheckCircle2Icon, CircleAlertIcon } from "lucide-react"
 
 import type { AdapterRoutingPreview } from "@/api/types"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -11,25 +10,11 @@ export function AdapterRoutingPreviewPanel({
   result: AdapterRoutingPreview
 }) {
   return (
-    <section className="grid gap-4 lg:grid-cols-2" aria-label="Preview não autoritativo do adapter">
-      <Card>
-        <CardHeader>
-          <CardTitle>Invocation projetada pelo preview</CardTitle>
-          <CardDescription>
-            Campos redigidos: {result.adapter.redacted_fields.join(", ") || "nenhum"}. Esta projeção não é o payload usado pelo run.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs">
-            {JSON.stringify(result.adapter.invocation, null, 2)}
-          </pre>
-        </CardContent>
-      </Card>
-
+    <section aria-label="Prévia da rota da entrada">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            Routing do preview
+            {result.routing.status === "matched" ? "Workflow encontrado" : "Nenhum workflow correspondeu"}
             {result.routing.status === "matched" ? (
               <CheckCircle2Icon className="size-4 text-emerald-600" aria-hidden="true" />
             ) : (
@@ -38,18 +23,12 @@ export function AdapterRoutingPreviewPanel({
           </CardTitle>
           <CardDescription>
             {result.routing.target === null
-              ? "Nenhum target selecionado nesta simulação."
-              : `Target simulado: workflow:${result.routing.target.id}`}
+              ? "Revise a entrada ou as regras ordenadas de routing."
+              : `A primeira regra correspondente escolheu ${result.routing.target.id}.`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Alert>
-            <CircleAlertIcon aria-hidden="true" />
-            <AlertTitle>Preview e plano são operações diferentes</AlertTitle>
-            <AlertDescription>
-              O preview explica parsing e first-match routing. Somente o plano autoritativo abaixo carrega config instalada, captura a definição e pode ser confirmado para execução.
-            </AlertDescription>
-          </Alert>
+          <p className="text-sm text-muted-foreground">As regras são avaliadas de cima para baixo; a primeira correspondência vence.</p>
           <ol className="space-y-2">
             {result.routing.evaluations.map((evaluation) => (
               <li
@@ -58,16 +37,24 @@ export function AdapterRoutingPreviewPanel({
               >
                 <Badge variant="outline">{evaluation.rule_index + 1}</Badge>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">{evaluation.rule_id}</p>
+                  <p className="font-medium">Regra {evaluation.rule_index + 1}</p>
                   <p className="text-xs text-muted-foreground">
                     {evaluation.outcome === "boolean"
-                      ? `resultado: ${String(evaluation.result)}`
+                      ? evaluation.result ? "Correspondeu a esta entrada" : "Não correspondeu"
                       : evaluation.diagnostic.message}
                   </p>
+                  <code className="mt-1 block text-[10px] text-muted-foreground">{evaluation.rule_id}</code>
                 </div>
               </li>
             ))}
           </ol>
+          <details className="rounded-lg border">
+            <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Invocation e campos técnicos</summary>
+            <div className="border-t p-3">
+              <p className="mb-2 text-xs text-muted-foreground">Campos ocultados: {result.adapter.redacted_fields.join(", ") || "nenhum"}.</p>
+              <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs">{JSON.stringify(result.adapter.invocation, null, 2)}</pre>
+            </div>
+          </details>
         </CardContent>
       </Card>
     </section>

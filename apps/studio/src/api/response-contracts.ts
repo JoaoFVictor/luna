@@ -19,6 +19,8 @@ import {
   StudioAdapterPreviewSchema,
   StudioAdapterRoutingPreviewSchema,
   StudioInputAdapterCatalogSchema,
+  StudioRoutingEditorSchema,
+  StudioRoutingSaveResultSchema,
   StudioRoutingSimulationSchema,
 } from "../../../../src/studio/contracts/input-routing.js"
 import {
@@ -108,6 +110,8 @@ export const studioResponseContracts = {
   adapterRoutingPreview: StudioAdapterRoutingPreviewSchema,
   routingSimulation: StudioRoutingSimulationSchema,
   routing: RouterDefinitionSchema,
+  routingEditor: StudioRoutingEditorSchema,
+  routingSaveResult: StudioRoutingSaveResultSchema,
   expressionEvaluation: StudioExpressionEvaluationSchema,
   schemaValidation: StudioSchemaValidationSchema,
   workflowConfiguration: StudioWorkflowConfigurationSchema,

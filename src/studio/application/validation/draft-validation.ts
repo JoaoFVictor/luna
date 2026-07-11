@@ -58,7 +58,9 @@ function canonicalErrorDiagnostic(
     message: error.message,
     resource,
     ...(fieldPath === undefined ? {} : { field_path: fieldPath }),
-    ...(capability === undefined ? {} : { capability })
+    ...(capability === undefined ? {} : { capability }),
+    ...(error.nodeId === undefined ? {} : { node_id: error.nodeId }),
+    ...(error.edge === undefined ? {} : { edge: error.edge })
   });
 }
 

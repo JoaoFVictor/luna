@@ -130,6 +130,9 @@ export async function runNativeWorkflowTarget(
     invocation,
     config: workflowConfig,
     run,
+    ...(input.executionScope === undefined
+      ? {}
+      : { executionScope: input.executionScope }),
     ...execution.input,
     ...nativeWorkflowExecutionControls(input)
   } satisfies RunWorkflowInput;

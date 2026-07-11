@@ -50,21 +50,29 @@ import {
 const navigation = [
   { label: "Início", to: "/", icon: HouseIcon },
   { label: "Workflows", to: "/workflows", icon: NetworkIcon },
-  { label: "Launch", to: "/launch", icon: RocketIcon },
+  { label: "Executar", to: "/launch", icon: RocketIcon },
   { label: "Agents", to: "/agents", icon: BotIcon },
-  { label: "Library", to: "/library", icon: BoxesIcon },
-  { label: "Configuration", to: "/configuration", icon: Settings2Icon },
-  { label: "Runs", to: "/runs", icon: PlayIcon },
+  { label: "Blocos", to: "/library", icon: BoxesIcon },
+  { label: "Conexões", to: "/configuration", icon: Settings2Icon },
+  { label: "Execuções", to: "/runs", icon: PlayIcon },
 ] as const
 
 const segmentLabels: Record<string, string> = {
   workflows: "Workflows",
-  launch: "Launch",
+  launch: "Executar",
   drafts: "Draft",
+  "agent-drafts": "Agents",
   agents: "Agents",
-  library: "Library",
-  configuration: "Configuration",
-  runs: "Runs",
+  library: "Blocos",
+  configuration: "Conexões",
+  runs: "Execuções",
+}
+
+function currentSection(pathname: string): string {
+  const root = pathname.split("/").filter(Boolean)[0] ?? ""
+  if (root === "drafts") return "Workflows"
+  if (root === "agent-drafts") return "Agents"
+  return segmentLabels[root] ?? "Início"
 }
 
 function AppBreadcrumbs() {
@@ -80,6 +88,11 @@ function AppBreadcrumbs() {
         </BreadcrumbItem>
         {segments.map((segment, index) => {
           const path = `/${segments.slice(0, index + 1).join("/")}`
+          const linkPath = segment === "drafts"
+            ? "/workflows"
+            : segment === "agent-drafts"
+              ? "/agents"
+              : path
           const isLast = index === segments.length - 1
           const label = segmentLabels[segment] ?? (segment.length > 24 ? `${segment.slice(0, 8)}…` : segment)
           return (
@@ -89,7 +102,7 @@ function AppBreadcrumbs() {
                 {isLast ? (
                   <BreadcrumbPage>{label}</BreadcrumbPage>
                 ) : (
-                  <BreadcrumbLink render={<Link to={path} />}>{label}</BreadcrumbLink>
+                  <BreadcrumbLink render={<Link to={linkPath} />}>{label}</BreadcrumbLink>
                 )}
               </BreadcrumbItem>
             </Fragment>
@@ -146,7 +159,9 @@ export function AppShell() {
                   const active =
                     item.to === "/"
                       ? location.pathname === "/"
-                      : location.pathname.startsWith(item.to)
+                      : location.pathname.startsWith(item.to) ||
+                        (item.to === "/workflows" && location.pathname.startsWith("/drafts/")) ||
+                        (item.to === "/agents" && location.pathname.startsWith("/agent-drafts/"))
                   return (
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton
@@ -199,7 +214,7 @@ export function AppShell() {
 
         <div className="flex min-h-10 items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
           <ShieldAlertIcon className="size-4 shrink-0" aria-hidden="true" />
-          <strong>Local single-user mode — no user identity or RBAC.</strong>
+          <strong>Modo local para um usuário — sem login ou RBAC.</strong>
           <span className="hidden text-amber-800 sm:inline dark:text-amber-200">
             Não exponha este servidor na rede.
           </span>
@@ -218,7 +233,7 @@ export function AppShell() {
           className="min-h-0 flex-1 overflow-auto outline-none"
         >
           <span className="sr-only" role="status" aria-live="polite">
-            Página atual: {segmentLabels[location.pathname.split("/").filter(Boolean).at(-1) ?? ""] ?? "Início"}
+            Página atual: {currentSection(location.pathname)}
           </span>
           <Outlet />
         </main>

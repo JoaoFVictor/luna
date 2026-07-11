@@ -540,7 +540,10 @@ function assertFinalWorkflowOutput(
   deferredFinalReportIds: ReadonlySet<string>
 ): JsonValue {
   const output = finalWorkflowOutput(input.compiled, state, deferredFinalReportIds);
-  if (!matchesJsonSchema(input.workflow.output_schema_content as JsonSchemaLike, output)) {
+  if (
+    input.executionScope?.kind !== "through_node" &&
+    !matchesJsonSchema(input.workflow.output_schema_content as JsonSchemaLike, output)
+  ) {
     throw runtimeError("Final workflow output failed schema validation", "runtime_node_output_schema_invalid", {
       details: { workflow_id: input.workflow.id }
     });

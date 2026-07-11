@@ -1,7 +1,15 @@
+import { useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 
 import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
 import { Button } from "@/components/ui/button"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { draftHref } from "@/features/drafts/draft-route"
 import { ApplyPlanDialog } from "@/features/workflows/apply-plan-dialog"
 import {
@@ -11,10 +19,14 @@ import {
 import { WorkflowEditorHeader } from "@/features/workflows/workflow-editor-header"
 import { WorkflowEditorWorkspace } from "@/features/workflows/workflow-editor-workspace"
 import { useWorkflowEditorController } from "@/features/workflows/use-workflow-editor-controller"
+import { LaunchPage } from "@/pages/launch-page"
+import type { RunPlanInput } from "@/api/types"
 
 export function WorkflowEditorPage() {
   const { draftId = "" } = useParams()
   const navigate = useNavigate()
+  const [testOpen, setTestOpen] = useState(false)
+  const [testScope, setTestScope] = useState<RunPlanInput["execution_scope"]>({ kind: "workflow" })
   const editor = useWorkflowEditorController(draftId)
   const { draft } = editor
 
@@ -56,13 +68,45 @@ export function WorkflowEditorPage() {
         compiling={editor.pending.compile}
         planning={editor.pending.plan}
         applyResult={editor.apply.result}
-        onSave={editor.actions.save}
-        onValidate={editor.actions.validate}
-        onCompile={editor.actions.compile}
+        canUndo={editor.view.canUndo}
+        canRedo={editor.view.canRedo}
+        onUndo={editor.actions.undo}
+        onRedo={editor.actions.redo}
+        onTest={() => {
+          setTestScope({ kind: "workflow" })
+          setTestOpen(true)
+        }}
         onPlanApply={() => editor.actions.planApply(true)}
       />
 
-      <WorkflowEditorWorkspace draft={draft.data} editor={editor} />
+      <WorkflowEditorWorkspace
+        draft={draft.data}
+        editor={editor}
+        onTestThroughNode={(nodeId) => {
+          setTestScope({ kind: "through_node", node_id: nodeId })
+          setTestOpen(true)
+        }}
+      />
+
+      <Sheet open={testOpen} onOpenChange={setTestOpen}>
+        <SheetContent side="bottom" className="max-h-[88vh] overflow-y-auto">
+          <SheetHeader className="border-b">
+            <SheetTitle>
+              {testScope.kind === "through_node" ? `Executar até ${testScope.node_id}` : `Testar ${draft.data.primary_resource.id}`}
+            </SheetTitle>
+            <SheetDescription>
+              {testScope.kind === "through_node"
+                ? "Executa o passo selecionado e todas as dependências anteriores, sem percorrer o restante do fluxo."
+                : "Escolha dados reais ou uma invocation avançada sem sair do canvas."}
+            </SheetDescription>
+          </SheetHeader>
+          <LaunchPage
+            expectedWorkflow={draft.data.primary_resource.id}
+            executionScope={testScope}
+            embedded
+          />
+        </SheetContent>
+      </Sheet>
 
       <ApplyPlanDialog
         plan={editor.apply.plan}

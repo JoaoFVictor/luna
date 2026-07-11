@@ -167,7 +167,8 @@ describe("run graph snapshot projection", () => {
     });
     state = startNodeAttempt(state, "review", 1);
     state = publishNodeOutput(state, "review", {
-      private_output: "OUTPUT_SECRET"
+      private_output: "OUTPUT_SECRET",
+      "ghp_abcdefghijklmnopqrstuvwxyz123456": true
     });
     state = failNode(state, "review", "PRIVATE_ERROR_REFERENCE");
     state = { ...state, run_status: "failed" };
@@ -179,7 +180,20 @@ describe("run graph snapshot projection", () => {
     });
 
     expect(outcome.nodes).toEqual([
-      { node_id: "review", status: "failed", attempt_count: 1 }
+      {
+        node_id: "review",
+        status: "failed",
+        attempt_count: 1,
+        observed_output: {
+          redaction: "values_removed",
+          truncated: false,
+          fields: [
+            { path: [], value_type: "object" },
+            { path: ["private_output"], value_type: "string" },
+            { path: ["<redacted>"], value_type: "boolean" }
+          ]
+        }
+      }
     ]);
     expect(outcome.nodes).not.toContainEqual(
       expect.objectContaining({ node_id: "publish" })
@@ -189,6 +203,7 @@ describe("run graph snapshot projection", () => {
     expect(serialized).not.toContain("CONFIG_SECRET");
     expect(serialized).not.toContain("OUTPUT_SECRET");
     expect(serialized).not.toContain("PRIVATE_ERROR_REFERENCE");
+    expect(serialized).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz123456");
     expect(StoredRunGraphOutcomeSchema.safeParse(outcome).success).toBe(true);
   });
 
@@ -219,6 +234,30 @@ describe("run graph snapshot projection", () => {
         }
       })
     ).toThrow("unknown graph node");
+  });
+
+  it("bounds observed output traversal for wide objects", () => {
+    const snapshot = projectStoredRunGraphSnapshot({ identity: identity(), compiled: compiled() });
+    let state = createInitialRuntimeState({
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-graph-1",
+        workflow_id: "code-review",
+        attempt: 1,
+        started_at: "2026-07-11T10:00:00.000Z"
+      },
+      workflow: { id: "code-review" }
+    });
+    state = startNodeAttempt(state, "review", 1);
+    state = publishNodeOutput(state, "review", Object.fromEntries(
+      Array.from({ length: 10_000 }, (_, index) => [`field_${index}`, index])
+    ));
+    state = { ...state, run_status: "succeeded" };
+
+    const outcome = projectStoredRunGraphOutcome({ graphSnapshot: snapshot, recordRevision: 2, state });
+    expect(outcome.nodes[0]?.observed_output?.truncated).toBe(true);
+    expect(outcome.nodes[0]?.observed_output?.fields).toHaveLength(256);
   });
 
   it("rejects non-terminal and inconsistent attempt outcomes", () => {

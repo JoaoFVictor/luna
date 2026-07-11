@@ -44,6 +44,7 @@ const routingDefinition: RouterDefinition = {
     }
   ]
 };
+const routingRevision = `sha256:${"5".repeat(64)}`;
 
 const defaultInputRouting: StudioInputRoutingControl = {
   listInputAdapters: () => ({
@@ -95,6 +96,19 @@ const defaultInputRouting: StudioInputRoutingControl = {
     }
   }),
   routingDefinition: () => routingDefinition,
+  routingEditor: async () => ({
+    definition: routingDefinition,
+    revision: routingRevision,
+    editing: "cas"
+  }),
+  saveRoutingDefinition: async (_principal, request) => ({
+    status: "saved",
+    editor: {
+      definition: request.definition,
+      revision: `sha256:${"6".repeat(64)}`,
+      editing: "cas"
+    }
+  }),
   simulateRouting: async () => ({
     status: "matched",
     evaluations: [
@@ -203,6 +217,20 @@ describe("Studio Control API", () => {
       url: "/api/studio/v1/configuration/routing",
       headers: readHeaders
     });
+    const routingEditor = await server.inject({
+      method: "GET",
+      url: "/api/studio/v1/configuration/routing/editor",
+      headers: readHeaders
+    });
+    const routingSave = await server.inject({
+      method: "PATCH",
+      url: "/api/studio/v1/configuration/routing/editor",
+      headers: mutationHeaders,
+      payload: {
+        expected_revision: routingRevision,
+        definition: routingDefinition
+      }
+    });
     const simulation = await server.inject({
       method: "POST",
       url: "/api/studio/v1/routing/simulate",
@@ -236,6 +264,15 @@ describe("Studio Control API", () => {
     });
     expect(routing.statusCode).toBe(200);
     expect(routing.json()).toEqual(routingDefinition);
+    expect(routingEditor.json()).toMatchObject({
+      definition: routingDefinition,
+      revision: routingRevision,
+      editing: "cas"
+    });
+    expect(routingSave.json()).toMatchObject({
+      status: "saved",
+      editor: { definition: routingDefinition }
+    });
     expect(simulation.statusCode).toBe(200);
     expect(simulation.json()).toMatchObject({
       status: "matched",

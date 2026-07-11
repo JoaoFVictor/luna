@@ -10,6 +10,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import type { LaunchInputMode } from "@/features/launch/launch-input"
+import { launchAdapterDescription, launchAdapterLabel, launchEffectLabel } from "@/features/launch/launch-presentation"
 
 type LaunchInputCardProps = {
   adapters: InputAdapterCatalog["adapters"]
@@ -41,26 +42,29 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
   const adapterEffectsAcknowledged = requiredEffects.every((effect) =>
     props.acknowledgedAdapterEffects.includes(effect),
   )
+  const selectedDescription = selectedAdapter === undefined
+    ? "Nenhuma entrada registrada."
+    : launchAdapterDescription(selectedAdapter.id, selectedAdapter.source, selectedAdapter.description)
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Entrada do run</CardTitle>
+        <CardTitle>Escolha uma entrada</CardTitle>
         <CardDescription>
-          O request público aceita somente o union canônico de invocation ou adapter com <code>{`{ kind: "cli", value }`}</code>.
+          Use uma URL ou identificador aceito por uma das fontes configuradas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <fieldset disabled={props.executing} className="space-y-5 disabled:opacity-70">
           <Tabs value={props.mode} onValueChange={props.onModeChange}>
             <TabsList>
-              <TabsTrigger value="adapter"><RouteIcon aria-hidden="true" /> Adapter + string</TabsTrigger>
-              <TabsTrigger value="invocation"><FileJsonIcon aria-hidden="true" /> Invocation JSON</TabsTrigger>
+              <TabsTrigger value="adapter"><RouteIcon aria-hidden="true" /> Entrada comum</TabsTrigger>
+              <TabsTrigger value="invocation"><FileJsonIcon aria-hidden="true" /> Avançado</TabsTrigger>
             </TabsList>
 
             <TabsContent value="adapter" className="space-y-5 pt-4">
               <Field>
-                <FieldLabel htmlFor="launch-adapter">Adapter de origem</FieldLabel>
+                <FieldLabel htmlFor="launch-adapter">Fonte</FieldLabel>
                 <NativeSelect
                   id="launch-adapter"
                   className="w-full"
@@ -69,15 +73,15 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
                 >
                   {props.adapters.map((adapter) => (
                     <NativeSelectOption key={adapter.id} value={adapter.id}>
-                      {adapter.id} · {adapter.source}
+                      {launchAdapterLabel(adapter.id, adapter.source)}
                     </NativeSelectOption>
                   ))}
                 </NativeSelect>
-                <FieldDescription>{selectedAdapter?.description ?? "Nenhum adapter registrado."}</FieldDescription>
+                <FieldDescription>{selectedDescription}</FieldDescription>
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="launch-input">String opaca / URL</FieldLabel>
+                <FieldLabel htmlFor="launch-input">URL ou identificador</FieldLabel>
                 <Input
                   id="launch-input"
                   value={props.opaqueInput}
@@ -85,7 +89,7 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
                   placeholder="https://github.com/org/repo/pull/123"
                   autoComplete="off"
                 />
-                <FieldDescription>O Studio não interpreta esse valor; somente o adapter selecionado pode normalizá-lo.</FieldDescription>
+                <FieldDescription>{selectedDescription}</FieldDescription>
               </Field>
 
               {selectedAdapter?.preview.enabled === false && (
@@ -100,8 +104,8 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
 
               {requiredEffects.length > 0 && (
                 <fieldset className="space-y-2 rounded-lg border p-3">
-                  <legend className="px-1 text-sm font-medium">Efeitos ao carregar o adapter</legend>
-                  <p className="text-xs text-muted-foreground">Estes aceites autorizam o adapter durante o preview ou a criação do plano. Eles não confirmam nem iniciam o run real.</p>
+                  <legend className="px-1 text-sm font-medium">Para carregar esta entrada</legend>
+                  <p className="text-xs text-muted-foreground">Nada será executado ainda. Estas permissões servem somente para localizar e preparar os dados.</p>
                   {requiredEffects.map((effect) => (
                     <label key={effect} className="flex items-center gap-2 text-sm">
                       <input
@@ -113,27 +117,18 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
                         )}
                         className="size-4 accent-primary"
                       />
-                      <code>{effect}</code>
+                      <span>{launchEffectLabel(effect)}</span>
                     </label>
                   ))}
                 </fieldset>
               )}
 
-              <Button
-                type="button"
-                variant="outline"
-                onClick={props.onPreview}
-                disabled={
-                  !props.canMutate ||
-                  selectedAdapter?.preview.enabled !== true ||
-                  props.opaqueInput.trim().length === 0 ||
-                  !adapterEffectsAcknowledged ||
-                  props.previewing
-                }
-              >
-                <RouteIcon aria-hidden="true" />
-                {props.previewing ? "Normalizando e roteando…" : "Preview adapter + routing"}
-              </Button>
+              <details>
+                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">Ver como esta entrada será roteada</summary>
+                <Button type="button" variant="outline" className="mt-2" onClick={props.onPreview} disabled={!props.canMutate || selectedAdapter?.preview.enabled !== true || props.opaqueInput.trim().length === 0 || !adapterEffectsAcknowledged || props.previewing}>
+                  <RouteIcon aria-hidden="true" /> {props.previewing ? "Verificando rota…" : "Verificar rota"}
+                </Button>
+              </details>
             </TabsContent>
 
             <TabsContent value="invocation" className="pt-4">
@@ -146,7 +141,7 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
                   onChange={(event) => props.onInvocationJsonChange(event.target.value)}
                   spellCheck={false}
                 />
-                <FieldDescription>O router instalado ainda decide o workflow; um target conflitante é rejeitado pelo backend.</FieldDescription>
+                <FieldDescription>Modo técnico para uma invocation já normalizada. As regras instaladas ainda decidem o workflow.</FieldDescription>
               </Field>
             </TabsContent>
           </Tabs>
@@ -175,10 +170,10 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
             }
           >
             <PlayIcon aria-hidden="true" />
-            {props.planning ? "Capturando plano…" : "Gerar plano autoritativo"}
+            {props.planning ? "Preparando…" : "Continuar"}
           </Button>
           <p className="text-xs text-muted-foreground">
-            Gerar o plano não inicia o workflow. No modo adapter, ele carrega a origem usando exatamente os efeitos aceitos acima.
+            Você revisará o workflow e os efeitos antes de executar.
           </p>
         </div>
       </CardContent>

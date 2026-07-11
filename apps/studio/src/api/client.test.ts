@@ -11,6 +11,7 @@ const validRunPlan = {
   created_at: "2026-07-11T12:00:00.000Z",
   expires_at: "2026-07-11T12:05:00.000Z",
   workflow_id: "review",
+  execution_scope: { kind: "workflow" },
   mode: "read_only",
   workflow_revision: digest("1"),
   definition_bundle_hash: digest("2"),
@@ -213,6 +214,7 @@ describe("StudioApiClient", () => {
     await client.bootstrap()
     const input: RunPlanInput = {
       kind: "adapter",
+      execution_scope: { kind: "workflow" },
       adapter_id: "task-url",
       input: { kind: "cli" as const, value: "opaque://task/42" },
       acknowledged_effects: ["network_read"],

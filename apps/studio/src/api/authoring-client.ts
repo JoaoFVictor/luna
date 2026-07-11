@@ -1,5 +1,6 @@
 import type {
   DraftCreateRequest,
+  DraftFile,
   ExpressionEvaluationRequest,
   JsonValue,
   SchemaValidationRequest,
@@ -12,12 +13,12 @@ import type { StudioRequest } from "@/api/client-core"
 type DraftFileEdit =
   | {
       action: "write"
-      file: { root: "project" | "config"; path: string }
+      file: DraftFile["file"]
       content: string
     }
   | {
       action: "delete"
-      file: { root: "project" | "config"; path: string }
+      file: DraftFile["file"]
     }
 
 export class StudioAuthoringClient {

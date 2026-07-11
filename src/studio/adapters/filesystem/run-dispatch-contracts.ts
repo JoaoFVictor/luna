@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RouteTargetSchema } from "../../../core/router/invocation.js";
+import { workflowExecutionScopesEqual } from "../../../core/workflow/execution-scope.js";
 import { PreallocateRunInputSchema } from "../../application/runs/ports.js";
 import {
   StudioRunExecutionSnapshotSchema,
@@ -136,6 +137,16 @@ function validateQueuedRun(
       code: z.ZodIssueCode.custom,
       path: ["execution_snapshot"],
       message: "Queued execution definition metadata must match"
+    });
+  }
+  if (!workflowExecutionScopesEqual(
+    job.execution_snapshot.execution_scope,
+    job.request.execution_scope
+  )) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["execution_snapshot", "execution_scope"],
+      message: "Queued execution scopes must match"
     });
   }
   if (
