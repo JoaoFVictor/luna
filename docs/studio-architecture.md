@@ -281,8 +281,16 @@ directory is renamed to a versioned hidden tombstone and the drafts directory is
 synced. Any failure after rename is reported as `commit_ambiguous`; retrying with
 the same expected revisions recognizes the tombstone as the same logical delete.
 Tombstones remain hidden for a configurable retry window and are garbage-collected
-after expiry on a later locked access. A reused draft id is rejected while its
-tombstone exists.
+after expiry on a later locked access. Even when no local tombstone is known, each
+repository instance performs a bounded periodic rescan under the shared lock so it
+discovers crash remnants and tombstones created by another process. A reused draft
+id is rejected while its tombstone exists.
+
+Releasing the cross-process lock is cleanup after the protected operation has
+already produced its authoritative outcome. A release failure is sent without
+waiting to an audit-only callback whose rejection is absorbed; it never turns a
+durably committed create, update, or delete into an apparent failure. Later
+operations may still time out until stale-lock recovery succeeds.
 
 `technical_catalog_fingerprint` binds compilation/apply authority and is included
 in `draft_hash`. `presentation_catalog_fingerprint` detects stale labels, examples,
@@ -379,6 +387,17 @@ The default bind is `127.0.0.1`. A non-loopback bind requires both an explicit C
 flag and a configured non-local identity provider; local capability mode is not
 accepted for remote exposure. The server emits a restrictive CSP, frame denial,
 MIME sniffing protection, referrer policy, and request/body limits.
+
+The local filesystem trust boundary is the operating-system principal that owns
+the project and Studio private roots. Portable Node.js pathname APIs do not expose
+an `openat`/directory-handle transaction for every rename and recursive removal,
+so a hostile process running as that same principal and concurrently replacing a
+protected root directory is outside local mode's guarantee. Inside that boundary,
+Studio directories are private, leaf reads reject symlinks, maintenance first
+renames entries to unpredictable same-directory quarantine names and verifies
+their file identity, and validation reads pin an open handle and compare its
+identity before and after reading. Remote or mutually untrusted filesystem access
+requires a different storage backend and identity threat model.
 
 ## LS-009: Run Ledger, Events, And Catalog
 
