@@ -68,9 +68,18 @@ export function initialRunRecord(input: PreallocateRunInput): RunRecord {
     ...(command.input_provenance === undefined
       ? {}
       : { input_provenance: command.input_provenance }),
+    ...(command.execution_profile === undefined
+      ? {}
+      : { execution_profile: command.execution_profile }),
+    ...(command.execution_profile_hash === undefined
+      ? {}
+      : { execution_profile_hash: command.execution_profile_hash }),
     ...(command.correlation_id === undefined ? {} : { correlation_id: command.correlation_id }),
     ...(command.job_id === undefined ? {} : { job_id: command.job_id }),
     workflow_id: command.workflow_id,
+    ...(command.definition_source === undefined
+      ? {}
+      : { definition_source: command.definition_source }),
     ...command.definition,
     dispatch_status: "queued",
     created_at: command.created_at,

@@ -48,18 +48,24 @@ export function WorkflowExpressionFixtureEditor({
   fieldName,
   expression,
   fixtures,
+  activeFixtureName,
   disabled,
   onSave,
   onRemove,
+  onSelect,
 }: {
   fieldName: string
   expression: string
   fixtures: WorkflowExpressionFixtures
+  activeFixtureName?: string
   disabled: boolean
   onSave: (name: string, value: JsonValue) => void
   onRemove: (name: string) => void
+  onSelect?: (name: string) => void
 }) {
-  const initial = firstFixture(fixtures)
+  const initial = activeFixtureName !== undefined && Object.hasOwn(fixtures, activeFixtureName)
+    ? { name: activeFixtureName, value: fixtures[activeFixtureName] ?? DEFAULT_FIXTURE }
+    : firstFixture(fixtures)
   const id = useId()
   const [fixtureName, setFixtureName] = useState(initial.name)
   const [fixture, setFixture] = useState(formatted(initial.value))
@@ -79,6 +85,18 @@ export function WorkflowExpressionFixtureEditor({
   useEffect(() => {
     if (selectedFixture !== undefined) setFixture(formatted(selectedFixture))
   }, [selectedFixture])
+
+  useEffect(() => {
+    if (
+      activeFixtureName === undefined ||
+      activeFixtureName === fixtureName ||
+      !Object.hasOwn(fixtures, activeFixtureName)
+    ) return
+    setFixtureName(activeFixtureName)
+    setFixture(formatted(fixtures[activeFixtureName] ?? DEFAULT_FIXTURE))
+    setError(undefined)
+    resetEvaluation()
+  }, [activeFixtureName, fixtureName, fixtures, resetEvaluation])
 
   const parseFixture = (): JsonValue | undefined => {
     try {
@@ -103,6 +121,7 @@ export function WorkflowExpressionFixtureEditor({
     }
     setFixtureName(name)
     setFixture(formatted(fixtures[name] ?? DEFAULT_FIXTURE))
+    onSelect?.(name)
   }
 
   return (

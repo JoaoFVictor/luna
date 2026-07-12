@@ -5,6 +5,8 @@ import {
   addWorkflowCapabilityOperations,
   connectWorkflowNodesOperations,
   disconnectWorkflowNodesOperations,
+  removeWorkflowNodeOperations,
+  removeWorkflowNodesOperations,
   reconnectWorkflowNodesOperations,
   workflowDependencyWouldCycle,
   workflowSourceGraph,
@@ -54,6 +56,24 @@ const source: JsonValue = {
 }
 
 describe("workflow source model", () => {
+  it("projects a canonical workflow call without treating its child as a capability", () => {
+    const nodes = workflowSourceNodes({
+      nodes: [{ id: "review", type: "workflow", workflow: "review-child" }],
+    })
+
+    expect(nodes).toEqual([expect.objectContaining({
+      id: "review",
+      type: "workflow",
+      registrationId: "review-child",
+    })])
+    expect(workflowSourceGraph(nodes).nodes).toEqual([{
+      id: "review",
+      kind: "workflow",
+      capability_id: "workflow:review-child",
+      can_create_pending_interrupt: false,
+    }])
+  })
+
   it("deduplicates capabilities across the source and one atomic batch", () => {
     expect(addWorkflowCapabilityOperations(
       { capabilities: ["runtime"] },
@@ -106,6 +126,32 @@ describe("workflow source model", () => {
     expect(reconnectWorkflowNodesOperations(reconnectableNodes, "a", "b", "b", "c")).toEqual([
       { op: "delete", path: ["nodes", 1, "after"] },
       { op: "set", path: ["nodes", 2, "after"], value: ["b"] },
+    ])
+  })
+
+  it("removes a node and every dependency that points to it atomically", () => {
+    const nodes = workflowSourceNodes(source)
+    expect(removeWorkflowNodeOperations(nodes, "first")).toEqual([
+      { op: "delete", path: ["nodes", 1, "after"] },
+      { op: "set", path: ["nodes", 2, "after"], value: ["second"] },
+      { op: "sequence_remove", path: ["nodes"], index: 0 },
+    ])
+    expect(removeWorkflowNodeOperations(nodes, "missing")).toEqual([])
+  })
+
+  it("removes multiple nodes after cleaning surviving dependencies and uses descending indices", () => {
+    const nodes = workflowSourceNodes({ nodes: [
+      { id: "first", type: "built_in", uses: "runtime.preflight" },
+      { id: "second", type: "agent", agent: "reviewer", after: ["first"] },
+      { id: "third", type: "built_in", uses: "reports.final_report", after: ["first", "second"] },
+      { id: "survivor", type: "built_in", uses: "artifacts.write", after: ["first", "second", "external"] },
+    ] })
+
+    expect(removeWorkflowNodesOperations(nodes, ["first", "third", "first", "missing"])).toEqual([
+      { op: "delete", path: ["nodes", 1, "after"] },
+      { op: "set", path: ["nodes", 3, "after"], value: ["second", "external"] },
+      { op: "sequence_remove", path: ["nodes"], index: 2 },
+      { op: "sequence_remove", path: ["nodes"], index: 0 },
     ])
   })
 

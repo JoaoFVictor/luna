@@ -16,6 +16,8 @@ import {
   StudioConfigurationWorkflowParamsSchema,
   StudioModelConfigurationSchema,
   StudioProviderConfigurationSchema,
+  StudioProviderProbeParamsSchema,
+  StudioProviderProbeResultSchema,
   StudioRepositoryConfigurationSchema,
   StudioRuntimeConfigurationSchema,
   StudioWorkflowConfigurationSchema,
@@ -26,11 +28,13 @@ import {
   type StudioConfigurationValidationResponse,
   type StudioModelConfiguration,
   type StudioProviderConfiguration,
+  type StudioProviderProbeResult,
   type StudioRepositoryConfiguration,
   type StudioRuntimeConfiguration,
   type StudioWorkflowConfiguration
 } from "../../contracts/configuration.js";
 import type { StudioLocalPrincipal } from "../../contracts/control-api.js";
+import { withStudioRequestAbort } from "../request-abort.js";
 
 export type StudioConfigurationControl = {
   readonly getWorkflowConfiguration: (
@@ -83,6 +87,11 @@ export type StudioConfigurationControl = {
   readonly providers: (
     principal: StudioLocalPrincipal
   ) => Promise<StudioProviderConfiguration>;
+  readonly testProviderConnection: (
+    principal: StudioLocalPrincipal,
+    providerId: string,
+    signal?: AbortSignal
+  ) => Promise<StudioProviderProbeResult>;
   readonly runtime: (
     principal: StudioLocalPrincipal
   ) => Promise<StudioRuntimeConfiguration>;
@@ -281,6 +290,24 @@ export async function registerStudioConfigurationRoutes(
       await options.control.providers(options.principalFor(request))
     )
   );
+  server.post(`${base}/providers/:providerId/probe`, async (request, reply) => {
+    const params = options.parseRequest(
+      StudioProviderProbeParamsSchema,
+      request.params
+    );
+    options.parseRequest(StudioConfigurationEmptyCommandSchema, request.body ?? {});
+    const result = await withStudioRequestAbort(request, reply, async (signal) =>
+      StudioProviderProbeResultSchema.parse(
+        await options.control.testProviderConnection(
+          options.principalFor(request),
+          params.providerId,
+          signal
+        )
+      )
+    );
+    if (result.status === "unsupported") reply.code(404);
+    return result;
+  });
   server.get(`${base}/runtime`, async (request) =>
     StudioRuntimeConfigurationSchema.parse(
       await options.control.runtime(options.principalFor(request))

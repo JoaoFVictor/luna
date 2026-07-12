@@ -15,6 +15,7 @@ import { createLocalStudioConfigurationControl } from "./configuration-control.j
 import type { NativeStudioAuthoringServices } from "./native-authoring-services.js";
 import type { StudioConfigurationControl } from "./routes/configuration.js";
 import type { StudioProviderHealthTracker } from "../application/inputs/provider-health.js";
+import { StudioProviderHealthProbeService } from "../application/inputs/provider-health-probes.js";
 
 export type NativeStudioConfigurationSurfaceOptions = {
   readonly projectRoot: string;
@@ -25,6 +26,7 @@ export type NativeStudioConfigurationSurfaceOptions = {
     | "capabilityRegistry"
     | "capabilityManifests"
     | "inputAdapterRegistry"
+    | "providerHealthProbeRegistry"
   >;
   readonly authoring: Pick<
     NativeStudioAuthoringServices,
@@ -37,6 +39,7 @@ export type NativeStudioConfigurationSurfaceOptions = {
   };
   readonly catalogs: StudioCatalogFingerprintPort;
   readonly providerHealth?: Pick<StudioProviderHealthTracker, "get">;
+  readonly providerHealthTracker: StudioProviderHealthTracker;
 };
 
 export type NativeStudioConfigurationSurface = {
@@ -72,6 +75,7 @@ export function createNativeStudioConfigurationSurface(
     configRoot: options.configRoot,
     ...(options.app === undefined ? {} : { app: options.app }),
     inputAdapters: options.platform.inputAdapterRegistry,
+    providerHealthProbes: options.platform.providerHealthProbeRegistry,
     ...(options.providerHealth === undefined ? {} : { providerHealth: options.providerHealth }),
     agents: async () =>
       await loadStudioAgentCatalog({
@@ -87,8 +91,14 @@ export function createNativeStudioConfigurationSurface(
         }
       })
   });
+  const providerProbes = new StudioProviderHealthProbeService({
+    projectRoot: options.projectRoot,
+    configRoot: options.configRoot,
+    registry: options.platform.providerHealthProbeRegistry,
+    tracker: options.providerHealthTracker
+  });
   return {
     service,
-    control: createLocalStudioConfigurationControl(service, posture)
+    control: createLocalStudioConfigurationControl(service, posture, providerProbes)
   };
 }

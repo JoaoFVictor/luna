@@ -1,4 +1,4 @@
-import { BanIcon, CircleCheckIcon, CircleXIcon, ClockIcon, LoaderCircleIcon, PaperclipIcon, PauseCircleIcon, SkipForwardIcon, TriangleAlertIcon, type LucideIcon } from "lucide-react"
+import { BanIcon, CircleCheckIcon, CircleXIcon, ClockIcon, DatabaseIcon, LoaderCircleIcon, PaperclipIcon, PauseCircleIcon, SkipForwardIcon, TriangleAlertIcon, type LucideIcon } from "lucide-react"
 
 import type { RunGraphNodeStatus } from "@/api/types"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +9,7 @@ export type WorkflowNodeExecution = {
   readonly attemptCount?: number
   readonly artifactCount?: number
   readonly primaryFailure?: boolean
+  readonly supplied?: boolean
 }
 
 export const workflowStatusPresentation: Record<RunGraphNodeStatus, { readonly label: string; readonly icon: LucideIcon; readonly className: string }> = {
@@ -24,6 +25,7 @@ export const workflowStatusPresentation: Record<RunGraphNodeStatus, { readonly l
 }
 
 export function workflowExecutionDescription(execution: WorkflowNodeExecution | undefined): string {
+  if (execution?.supplied === true) return "saída fornecida por dados salvos; node não executado"
   if (execution?.status === undefined) return "estado não observado"
   const attempts = execution.attemptCount === undefined ? "" : `, ${execution.attemptCount} tentativa${execution.attemptCount === 1 ? "" : "s"}`
   const artifacts = execution.artifactCount === undefined ? "" : `, ${execution.artifactCount} resultado${execution.artifactCount === 1 ? "" : "s"}`
@@ -31,6 +33,9 @@ export function workflowExecutionDescription(execution: WorkflowNodeExecution | 
 }
 
 export function WorkflowExecutionBadges({ execution }: { execution?: WorkflowNodeExecution }) {
+  if (execution?.supplied === true) {
+    return <div className="mt-2 flex flex-wrap gap-1"><Badge className="border-violet-500/60 bg-violet-500/10 text-foreground"><DatabaseIcon aria-hidden="true" /> Dados fornecidos · não executado</Badge></div>
+  }
   if (execution?.status === undefined) return null
   const presentation = workflowStatusPresentation[execution.status]
   const StatusIcon = presentation.icon

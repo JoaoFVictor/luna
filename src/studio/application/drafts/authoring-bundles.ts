@@ -215,6 +215,69 @@ async function collectAgentDependencies(
   }
 }
 
+async function collectWorkflowDependencies(
+  resource: StudioEditableResource,
+  source: StudioAuthoringSourcePort,
+  budget: SourceBudget,
+  editable: ReadonlySet<string>,
+  dependencies: Map<string, ReadStudioFile>,
+  visiting: ReadonlySet<string> = new Set()
+): Promise<void> {
+  const definitionFile = studioEditableDefinitionFile(resource);
+  const definitionKey = studioPathKey(definitionFile);
+  if (editable.has(definitionKey) || visiting.has(definitionKey)) return;
+
+  let definition = dependencies.get(definitionKey);
+  if (definition === undefined) {
+    definition = await readSourceFile(source, definitionFile, budget);
+    if (definition === undefined) return;
+    dependencies.set(definitionKey, definition);
+  }
+
+  const references = discoverStudioWorkflowResources(definition.content);
+  for (const relativePath of references.editable) {
+    await addDependencyIfPresent(
+      dependencies,
+      editable,
+      source,
+      studioEditableResourceFile(resource, relativePath),
+      budget
+    );
+  }
+  for (const agent of references.agents) {
+    await collectAgentDependencies(agent, source, budget, editable, dependencies);
+  }
+  await addDependencyIfPresent(
+    dependencies,
+    editable,
+    source,
+    references.configDependency,
+    budget
+  );
+  if (references.agents.length > 0) {
+    await addDependencyIfPresent(
+      dependencies,
+      editable,
+      source,
+      MODELS_CONFIG_FILE,
+      budget
+    );
+  }
+
+  const nestedVisiting = new Set(visiting);
+  nestedVisiting.add(definitionKey);
+  for (const child of references.workflows) {
+    await collectWorkflowDependencies(
+      child,
+      source,
+      budget,
+      editable,
+      dependencies,
+      nestedVisiting
+    );
+  }
+}
+
 async function existingBundle(
   options: BuildStudioDraftBundleOptions,
   resource: StudioEditableResource
@@ -268,6 +331,15 @@ async function existingBundle(
     for (const agent of workflowReferences.agents) {
       await collectAgentDependencies(
         agent,
+        options.source,
+        budget,
+        editable,
+        dependencies
+      );
+    }
+    for (const child of workflowReferences.workflows) {
+      await collectWorkflowDependencies(
+        child,
         options.source,
         budget,
         editable,
@@ -415,6 +487,25 @@ async function generatedBundle(
         throw new StudioDraftAuthoringError(
           "studio_draft_authoring_resource_invalid",
           `The selected Studio template agent does not exist: ${agent.resource.id}`
+        );
+      }
+    }
+    for (const child of references.workflows) {
+      await collectWorkflowDependencies(
+        child,
+        options.source,
+        budget,
+        editable,
+        dependencies
+      );
+      if (
+        !dependencies.has(
+          studioPathKey(studioEditableDefinitionFile(child))
+        )
+      ) {
+        throw new StudioDraftAuthoringError(
+          "studio_draft_authoring_resource_invalid",
+          `The selected Studio template workflow does not exist: ${child.id}`
         );
       }
     }

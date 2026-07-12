@@ -3,6 +3,7 @@ import { createCapabilityRegistry } from "../../../src/core/capabilities/registr
 import { capabilityManifest } from "../../../src/core/capabilities/manifest.js";
 import { StudioPresentationSchema } from "../../../src/core/capabilities/studio-presentation.js";
 import { nativeLunaPlatformRegistrations } from "../../../src/platform/native/native-platform-registrations.js";
+import { createNativeStudioCapabilityCatalog } from "../../../src/studio/adapters/native/capability-catalog.js";
 import { createStudioCapabilityCatalog } from "../../../src/studio/application/catalog/capability-catalog.js";
 import { StudioRegistrationPresentationSchema } from "../../../src/studio/contracts/capability-catalog.js";
 
@@ -95,6 +96,26 @@ describe("Studio capability catalog", () => {
         network: false,
         external_side_effects: false
       }
+    });
+  });
+
+  it("projects execution requirements from the native built-in runtime metadata", () => {
+    const catalog = createNativeStudioCapabilityCatalog(
+      nativeLunaPlatformRegistrations
+    );
+
+    expect(catalog.registrations.find(
+      (registration) => registration.id === "runtime.preflight"
+    )).toMatchObject({
+      registration_kind: "built_in",
+      requires_repository: true
+    });
+    expect(catalog.registrations.find(
+      (registration) => registration.id === "reports.final_report"
+    )).toMatchObject({
+      registration_kind: "built_in",
+      requires_repository: false,
+      deferred_lifecycle: "final_report"
     });
   });
 

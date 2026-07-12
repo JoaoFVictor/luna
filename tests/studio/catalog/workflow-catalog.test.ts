@@ -111,6 +111,8 @@ describe("Studio workflow catalog", () => {
     expect(catalog.workflows[0]).toMatchObject({
       input_schema: "input.schema.json",
       output_schema: "output.schema.json",
+      input_schema_content: { type: "object" },
+      output_schema_content: { type: "object" },
       config: {
         file: "local.yaml",
         schema: "config.schema.json"
@@ -143,6 +145,59 @@ describe("Studio workflow catalog", () => {
       resource_id: "broken"
     });
     expect(catalog.diagnostics[0]?.message).not.toContain(root);
+  });
+
+  it("projects authoritative synchronous-composition posture for the resolved tree", async () => {
+    const root = await temporaryRoot();
+    await writeMinimalWorkflow(root, "leaf");
+    await writeMinimalWorkflow(root, "nested-safe");
+    await writeFile(path.join(root, "nested-safe", "workflow.yaml"), [
+      "id: nested-safe",
+      "type: workflow",
+      "mode: read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "capabilities: []",
+      "nodes:",
+      "  - id: leaf",
+      "    type: workflow",
+      "    workflow: leaf",
+      "    input: {}",
+      ""
+    ].join("\n"));
+    await writeMinimalWorkflow(root, "approval");
+    await writeFile(path.join(root, "approval", "workflow.yaml"), [
+      "id: approval",
+      "type: workflow",
+      "mode: read_only",
+      "input_schema: input.schema.json",
+      "output_schema: output.schema.json",
+      "capabilities: [hitl]",
+      "nodes:",
+      "  - id: approve",
+      "    type: human_gate",
+      "    uses: hitl.approval",
+      ""
+    ].join("\n"));
+
+    const catalog = await loadStudioWorkflowCatalog({
+      workflowsRoot: root,
+      loadOptions: {
+        agentsRoot: path.join(path.dirname(root), "agents"),
+        capabilityRegistry: nativeLunaPlatformRegistrations.capabilityRegistry
+      }
+    });
+
+    expect(catalog.workflows.find((workflow) => workflow.id === "nested-safe"))
+      .toMatchObject({
+        node_counts: { workflow: 1 },
+        synchronous_composition: "allowed"
+      });
+    expect(catalog.workflows.find((workflow) => workflow.id === "approval"))
+      .toMatchObject({
+        synchronous_composition: "blocked",
+        synchronous_composition_blocked_reason: "human_input"
+      });
   });
 
   it("does not follow symlinked workflow entries", async () => {

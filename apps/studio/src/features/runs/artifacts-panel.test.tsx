@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { studioApi } from "@/api/client"
@@ -83,10 +83,88 @@ function wrapper(queryClient: QueryClient) {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
 describe("ArtifactsPanel", () => {
+  it("stops polling a permanently pending artifact after the terminal deadline", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime("2026-07-10T12:03:00.000Z")
+    const artifacts = vi.spyOn(studioApi, "artifacts")
+      .mockResolvedValue(artifactList("pending"))
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    const view = render(
+      <ArtifactsPanel
+        runId={RUN_ID}
+        expectedCount={1}
+        terminalAt="2026-07-10T12:00:00.000Z"
+      />,
+      { wrapper: wrapper(queryClient) },
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText("Artifact ainda está sendo produzido")).toBeDefined()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000)
+    })
+    expect(artifacts).toHaveBeenCalledOnce()
+    view.unmount()
+    queryClient.clear()
+  })
+
+  it("retries until the terminal record's expected artifact is visible", async () => {
+    vi.useFakeTimers()
+    const artifacts = vi.spyOn(studioApi, "artifacts")
+      .mockResolvedValueOnce({
+        run_id: RUN_ID,
+        items: [],
+        redaction: "best_effort_on_preview",
+      })
+      .mockResolvedValue(artifactList("committed"))
+    vi.spyOn(studioApi, "artifactPreview").mockResolvedValue({
+      kind: "text",
+      metadata: {
+        ...artifactList("committed").items[0],
+        content_length: 4,
+        downloadable: true,
+        raw_download_redaction: "not_applied",
+      },
+      inspected_bytes: 4,
+      truncated: false,
+      integrity: "verified",
+      encoding: "utf-8",
+      text: "safe",
+      redaction: { mode: "best_effort", changed: false },
+      render_policy: "plain_text_only",
+    })
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    const view = render(<ArtifactsPanel runId={RUN_ID} expectedCount={1} />, {
+      wrapper: wrapper(queryClient),
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText("Nenhum artifact exposto pelo reader.")).toBeDefined()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    expect(screen.getByRole("button", { name: /report\.txt committed/ })).toBeDefined()
+    expect(artifacts).toHaveBeenCalledTimes(2)
+    view.unmount()
+    queryClient.clear()
+  })
+
   it("selects a readable artifact before an unavailable pending manifest", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -234,5 +312,42 @@ describe("ArtifactsPanel", () => {
     expect(await screen.findByText(/unexpected/)).toBeDefined()
     expect(view.container.textContent).toContain("[PATH REDACTED]")
     expect(view.container.textContent).not.toContain("C:/Users/alice")
+  })
+
+  it("copies only the redacted preview value", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    vi.spyOn(studioApi, "artifacts").mockResolvedValue(artifactList("committed"))
+    vi.spyOn(studioApi, "artifactPreview").mockResolvedValue({
+      kind: "text",
+      metadata: {
+        ...artifactList("committed").items[0],
+        content_length: 32,
+        downloadable: true,
+        raw_download_redaction: "not_applied",
+      },
+      inspected_bytes: 32,
+      truncated: false,
+      integrity: "verified",
+      encoding: "utf-8",
+      text: "saved at /home/alice/private/report.txt",
+      redaction: { mode: "best_effort", changed: true },
+      render_policy: "plain_text_only",
+    })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+
+    render(<ArtifactsPanel runId={RUN_ID} />, {
+      wrapper: wrapper(queryClient),
+    })
+
+    fireEvent.click(await screen.findByRole("button", { name: "Copiar preview seguro" }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    expect(writeText.mock.calls[0]?.[0]).toContain("[PATH REDACTED]")
+    expect(writeText.mock.calls[0]?.[0]).not.toContain("/home/alice")
   })
 })

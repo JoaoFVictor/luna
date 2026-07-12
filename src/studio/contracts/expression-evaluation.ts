@@ -22,10 +22,14 @@ export const STUDIO_EXPRESSION_RESULT_LIMITS: StudioJsonLimits = {
   maxKeyLength: 256
 };
 
+export const StudioExpressionFixtureSchema = boundedStudioJsonValueSchema(
+  STUDIO_EXPRESSION_FIXTURE_LIMITS
+);
+
 export const StudioExpressionEvaluationRequestSchema = z
   .object({
     expression: z.string().min(1).max(STUDIO_EXPRESSION_MAX_LENGTH),
-    fixture: boundedStudioJsonValueSchema(STUDIO_EXPRESSION_FIXTURE_LIMITS)
+    fixture: StudioExpressionFixtureSchema
   })
   .strict();
 export type StudioExpressionEvaluationRequest = z.infer<

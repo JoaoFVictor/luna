@@ -5,6 +5,7 @@ import type { CapabilityRegistry } from "../../../core/capabilities/registry.js"
 import {
   type WorkflowDefinition
 } from "../../../core/workflow/definition.js";
+import { workflowSupportsSynchronousComposition } from "../../../core/workflow/definition-composition.js";
 import {
   collectWorkflowAgentReferences,
   collectWorkflowRegistrationReferences
@@ -75,11 +76,15 @@ async function assertPhysicalDirectory(
 function summarizeWorkflow(
   definition: WorkflowDefinition
 ): StudioWorkflowSummary {
+  const synchronousComposition = workflowSupportsSynchronousComposition(definition)
+    ? "allowed"
+    : "blocked";
   const nodeCounts = {
     built_in: 0,
     agent: 0,
     pattern: 0,
-    human_gate: 0
+    human_gate: 0,
+    workflow: 0
   };
   for (const node of definition.graph.nodes) {
     nodeCounts[node.type] += 1;
@@ -110,6 +115,12 @@ function summarizeWorkflow(
       definition.output_schema,
       `workflow ${definition.id} output schema`
     ),
+    input_schema_content: definition.input_schema_content,
+    output_schema_content: definition.output_schema_content,
+    synchronous_composition: synchronousComposition,
+    ...(synchronousComposition === "blocked"
+      ? { synchronous_composition_blocked_reason: "human_input" }
+      : {}),
     ...(definition.config === undefined
       ? {}
       : {

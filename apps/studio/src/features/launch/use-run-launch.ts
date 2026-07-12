@@ -39,7 +39,12 @@ const EMPTY_RUN_LAUNCH_STATE: RunLaunchState = {
   listedEffectsConfirmed: false,
 }
 
-export function useRunLaunch() {
+type RunPlanner = (
+  input: RunPlanInput,
+  signal?: AbortSignal,
+) => Promise<RunPlan>
+
+export function useRunLaunch(planRun: RunPlanner = studioApi.planRun) {
   const navigate = useNavigate()
   const generation = useRef(0)
   const activePlan = useRef<AbortController | undefined>(undefined)
@@ -71,7 +76,7 @@ export function useRunLaunch() {
 
   const planning = useMutation({
     mutationFn: async (request: PlanRequest) =>
-      await studioApi.planRun(request.input, request.controller.signal),
+      await planRun(request.input, request.controller.signal),
     onSuccess: (plan, request) => {
       if (request.generation !== generation.current) return
       setState({

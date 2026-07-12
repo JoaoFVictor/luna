@@ -109,6 +109,14 @@ describe("useRunEventStream", () => {
       queryKey: studioKeys.timeline("run:one"),
       exact: true,
     })
+    expect(invalidations).toHaveBeenCalledWith({
+      queryKey: studioKeys.runGraph("run:one"),
+      exact: true,
+    })
+    expect(invalidations).toHaveBeenCalledWith({
+      queryKey: studioKeys.artifacts("run:one"),
+      exact: true,
+    })
     expect(invalidations).toHaveBeenCalledWith({ queryKey: studioKeys.runs })
   })
 

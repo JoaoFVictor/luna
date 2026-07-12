@@ -2,6 +2,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NativeWorkflowRunInput } from "../../../src/runtime/composition/target-executor.js";
+import { createInitialRuntimeState } from "../../../src/core/runtime/state.js";
+import { assertCheckpointJsonValue } from "../../../src/core/runtime/json.js";
+import { loadNativeRunContext } from "../../../src/platform/native/native-run-context.js";
 import { nativeLunaPlatformRegistrations } from "../../../src/platform/native/native-platform-registrations.js";
 import { NativeStudioRunDispatchQueue } from "../../../src/studio/adapters/filesystem/run-dispatch-queue.js";
 import { NativeStudioRunRecoveryJournal } from "../../../src/studio/adapters/filesystem/run-recovery-journal.js";
@@ -9,6 +12,7 @@ import { FilesystemRunGraphStore } from "../../../src/studio/adapters/filesystem
 import { NativeStudioRunDispatcher } from "../../../src/studio/adapters/native/run-dispatcher.js";
 import { createSqliteRunStore } from "../../../src/studio/adapters/sqlite/run-store.js";
 import { CheckpointWriteAcceptanceUnknownError } from "../../../src/runtime/workflow/checkpoints.js";
+import { studioRunValueDigest } from "../../../src/studio/application/runs/launch-digests.js";
 import type { RunLedgerPort } from "../../../src/studio/application/runs/ports.js";
 import type { RunGraphSnapshotStorePort } from "../../../src/studio/application/runs/graph-snapshot.js";
 import {
@@ -32,6 +36,130 @@ afterEach(async () => {
 });
 
 describe("native Studio run dispatch", () => {
+  it("passes multiple authorized outputs to the native runtime in canonical node order", async () => {
+    const fixture = await writeFixture();
+    await writeFile(
+      fixture.workflowPath,
+      fixture.workflowSource.replace(
+        "    input:\n      invocation:\n        expression: $.invocation\n",
+        [
+          "    input:",
+          "      invocation:",
+          "        expression: $.invocation",
+          "  - id: summarize",
+          "    type: agent",
+          "    agent: pinned-agent",
+          "    output_schema: output.schema.json",
+          "    input:",
+          "      invocation:",
+          "        expression: $.invocation",
+          ""
+        ].join("\n")
+      )
+    );
+    const output = { verdict: "supplied-by-test" };
+    const summaryOutput = { summary: "also-supplied" };
+    const digest = studioRunValueDigest(output);
+    const summaryDigest = studioRunValueDigest(summaryOutput);
+    const testData = (
+      nodeId: "analyze" | "summarize",
+      fixtureName: string,
+      value: Record<string, string>,
+      valueDigest: string
+    ) => ({
+      kind: "draft_fixture" as const,
+      fixture_name: fixtureName,
+      node_id: nodeId,
+      output: value,
+      output_hash: valueDigest,
+      source: {
+        kind: "run_node_output" as const,
+        run_id: `source-run-${nodeId}`,
+        workflow_id: "pinned-workflow",
+        node_id: nodeId,
+        graph_hash: valueDigest,
+        outcome_hash: valueDigest,
+        workflow_revision: valueDigest,
+        definition_bundle_hash: valueDigest,
+        captured_at: "2026-07-11T11:00:00.000Z",
+        redaction_changed: false,
+        definition_source: { kind: "installed" as const }
+      }
+    });
+    const manualRequest = {
+      ...request,
+      execution_profile: {
+        kind: "manual_test" as const,
+        test_data: [
+          testData("summarize", "saved-summary-output", summaryOutput, summaryDigest),
+          testData("analyze", "saved-analyze-output", output, digest)
+        ]
+      }
+    };
+    const { command } = await captureCommand(fixture, { request: manualRequest });
+    const store = await createSqliteRunStore({ filePath: fixture.databasePath });
+    const scheduled: Array<() => void> = [];
+    let runtimeInput: NativeWorkflowRunInput | undefined;
+    const dispatcher = new NativeStudioRunDispatcher({
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      queueRoot: fixture.queueRoot,
+      ledger: store.ledger,
+      platform: nativeLunaPlatformRegistrations,
+      now: () => BASE_TIME,
+      ownerId: "manual-test-worker",
+      schedule: (task) => scheduled.push(task),
+      runWorkflow: async (input) => {
+        runtimeInput = input;
+        const context = await loadNativeRunContext(input, {
+          platform: nativeLunaPlatformRegistrations
+        });
+        await input.onCompiledWorkflow?.(context.nativeWorkflow.compiled);
+        if (input.run === undefined) throw new Error("preallocated run required");
+        const invocation = input.invocation;
+        const config = input.workflowConfig ?? {};
+        assertCheckpointJsonValue(invocation);
+        assertCheckpointJsonValue(config);
+        const state = {
+          ...createInitialRuntimeState({
+            invocation,
+            config,
+            run: input.run,
+            workflow: { id: "pinned-workflow", mode: "read_only" }
+          }),
+          steps: { analyze: output, summarize: summaryOutput },
+          run_status: "succeeded" as const
+        };
+        await input.onSucceededState?.(state);
+        return { status: "succeeded" as const, output, state };
+      }
+    });
+    try {
+      await dispatcher.initialize();
+      const receipt = await dispatcher.dispatch(command);
+      scheduled.splice(0).forEach((task) => task());
+      await waitForRun(store.ledger, receipt.run_id, "succeeded");
+      expect(runtimeInput?.precompleted_steps).toEqual({
+        analyze: output,
+        summarize: summaryOutput
+      });
+      expect(command.snapshot.execution_profile).toMatchObject({
+        kind: "manual_test",
+        test_data: [
+          { node_id: "analyze", fixture_name: "saved-analyze-output" },
+          { node_id: "summarize", fixture_name: "saved-summary-output" }
+        ]
+      });
+      await expect(store.ledger.get(receipt.run_id)).resolves.toMatchObject({
+        execution_profile: command.snapshot.execution_profile,
+        execution_profile_hash: command.snapshot.execution_profile_hash
+      });
+    } finally {
+      await dispatcher.close();
+      store.close();
+    }
+  });
+
   it("is idempotent and executes only the exact accepted immutable snapshot", async () => {
     const fixture = await writeFixture();
     const { command, confirmationToken } = await captureCommand(fixture);

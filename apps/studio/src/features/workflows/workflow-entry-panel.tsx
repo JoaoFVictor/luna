@@ -39,9 +39,10 @@ export function WorkflowEntryPanel({
 
   return (
     <Sheet>
-      <SheetTrigger render={<Button size="sm" variant="outline" className="max-w-72 justify-start" />}>
+      <SheetTrigger render={<Button size="sm" variant="outline" title={`Como começa: ${title}`} />}>
           <CableIcon aria-hidden="true" />
-          <span className="truncate">Quando: {title}</span>
+          <span>Entrada</span>
+          {entries.length > 0 && <Badge variant="secondary">{entries.length}</Badge>}
       </SheetTrigger>
       <SheetContent className="overflow-y-auto sm:max-w-lg">
         <SheetHeader>

@@ -1,18 +1,19 @@
-import { useEffect, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useEffect, useMemo, useState } from "react"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { ExternalLinkIcon, InfoIcon } from "lucide-react"
 import { Link } from "react-router-dom"
 
-import { runQuery, workflowRunsQuery } from "@/api/queries"
+import { runQuery, runTimelineInfiniteQuery, workflowRunsQuery } from "@/api/queries"
 import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
 import { RunStatusBadge, runStatusLabel } from "@/components/status-badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { buttonVariants } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { RunGraphPanel } from "@/features/runs/run-graph-panel"
+import { flattenRunTimeline } from "@/features/runs/run-timeline"
 import { formatDateTime, shortDigest } from "@/lib/format"
 
 export function WorkflowRunsPanel({
@@ -28,6 +29,14 @@ export function WorkflowRunsPanel({
     ...runQuery(selectedRunId ?? ""),
     enabled: selectedRunId !== undefined,
   })
+  const timeline = useInfiniteQuery({
+    ...runTimelineInfiniteQuery(selectedRunId ?? "", selectedRun.data),
+    enabled: selectedRunId !== undefined,
+  })
+  const timelineEvents = useMemo(
+    () => flattenRunTimeline(timeline.data?.pages),
+    [timeline.data?.pages],
+  )
 
   useEffect(() => {
     const first = runs.data?.items[0]?.run_id
@@ -112,6 +121,17 @@ export function WorkflowRunsPanel({
             </div>
           )}
 
+          {timeline.hasNextPage && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={timeline.isFetchingNextPage}
+              onClick={() => void timeline.fetchNextPage()}
+            >
+              {timeline.isFetchingNextPage ? "Carregando histórico…" : "Carregar tentativas anteriores"}
+            </Button>
+          )}
+
           {compiledRevision === undefined ? (
             <Alert>
               <InfoIcon aria-hidden="true" />
@@ -143,7 +163,12 @@ export function WorkflowRunsPanel({
       ) : selectedRun.isError ? (
         <PageError error={selectedRun.error} retry={() => void selectedRun.refetch()} />
       ) : record !== undefined && selectedRunId !== undefined ? (
-        <RunGraphPanel runId={selectedRunId} record={record} />
+        <RunGraphPanel
+          runId={selectedRunId}
+          record={record}
+          events={timelineEvents}
+          eventHistoryComplete={!timeline.hasNextPage && !timeline.isError}
+        />
       ) : null}
     </div>
   )

@@ -2,15 +2,15 @@ import type { PropsWithChildren } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { studioApi } from "@/api/client"
 import type { RunCatalogPage, RunRecord } from "@/api/types"
 import { WorkflowRunsPanel } from "@/features/workflows/workflow-runs-panel"
 
 vi.mock("@/features/runs/run-graph-panel", () => ({
-  RunGraphPanel: ({ runId }: { runId: string }) => (
-    <div data-testid="run-graph">snapshot:{runId}</div>
+  RunGraphPanel: ({ runId, events, eventHistoryComplete }: { runId: string; events: readonly unknown[]; eventHistoryComplete: boolean }) => (
+    <div data-testid="run-graph">snapshot:{runId}:events:{events.length}:complete:{String(eventHistoryComplete)}</div>
   ),
 }))
 
@@ -89,6 +89,14 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+beforeEach(() => {
+  vi.spyOn(studioApi, "runTimeline").mockResolvedValue({
+    items: [],
+    next_cursor: null,
+    as_of_sequence: 0,
+  })
+})
+
 describe("WorkflowRunsPanel", () => {
   it("filters runs by workflow and shows the exact persisted graph snapshot", async () => {
     const catalog = vi.spyOn(studioApi, "runCatalogPage").mockResolvedValue(page())
@@ -97,6 +105,20 @@ describe("WorkflowRunsPanel", () => {
       status: "succeeded",
       wall_duration_ms: 2_000,
     })
+    vi.mocked(studioApi.runTimeline).mockResolvedValue({
+      items: [{
+        schema_version: 1,
+        run_id: RUN_ID,
+        sequence: 1,
+        event_id: "event-one",
+        event_type: "run.node.started",
+        occurred_at: "2026-07-11T12:00:01.000Z",
+        record_revision: 2,
+        data: {},
+      }],
+      next_cursor: null,
+      as_of_sequence: 1,
+    })
 
     render(
       <WorkflowRunsPanel workflowId="code-review" compiledRevision={DIGEST} />,
@@ -104,7 +126,9 @@ describe("WorkflowRunsPanel", () => {
     )
 
     expect(await screen.findByText("Mesma revisão compilada")).toBeDefined()
-    expect(screen.getByTestId("run-graph").textContent).toBe(`snapshot:${RUN_ID}`)
+    expect(screen.getByTestId("run-graph").textContent).toBe(
+      `snapshot:${RUN_ID}:events:1:complete:true`,
+    )
     expect(catalog).toHaveBeenCalledWith(
       { workflowId: "code-review", limit: 100 },
       expect.any(AbortSignal),

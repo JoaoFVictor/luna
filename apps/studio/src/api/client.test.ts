@@ -214,6 +214,7 @@ describe("StudioApiClient", () => {
     await client.bootstrap()
     const input: RunPlanInput = {
       kind: "adapter",
+      definition_source: { kind: "installed" },
       execution_scope: { kind: "workflow" },
       adapter_id: "task-url",
       input: { kind: "cli" as const, value: "opaque://task/42" },

@@ -2,7 +2,6 @@ import path from "node:path";
 import type { AppConfig } from "../../core/config/schemas.js";
 import { loadNativeLunaPlatform } from "../../platform/native/native-platform-loader.js";
 import { loadStudioAgentCatalog } from "../application/catalog/agent-catalog.js";
-import { createStudioCapabilityCatalog } from "../application/catalog/capability-catalog.js";
 import { withStudioCapabilityConsumers } from "../application/catalog/capability-consumers.js";
 import { loadStudioWorkflowCatalog } from "../application/catalog/workflow-catalog.js";
 import {
@@ -43,6 +42,7 @@ import {
   createNativeStudioRunSubsystem,
   type NativeStudioRunPlatform
 } from "./native-run-subsystem.js";
+import { createNativeStudioCapabilityCatalog } from "../adapters/native/capability-catalog.js";
 
 type NativeStudioPlatform = NativeStudioRunPlatform;
 
@@ -84,9 +84,7 @@ export async function createNativeStudioServices(
     });
   const workflowsRoot = path.join(options.projectRoot, "workflows");
   const agentsRoot = path.join(options.projectRoot, "agents");
-  const capabilityCatalog = createStudioCapabilityCatalog(
-    platform.capabilityRegistry
-  );
+  const capabilityCatalog = createNativeStudioCapabilityCatalog(platform);
   const loadAgents = async () =>
     await loadStudioAgentCatalog({
       agentsRoot,
@@ -136,7 +134,8 @@ export async function createNativeStudioServices(
     platform,
     authoring,
     catalogs,
-    providerHealth
+    providerHealth,
+    providerHealthTracker: providerHealth
   });
   const resourceHistory = createNativeStudioResourceHistorySurface({
     projectRoot: options.projectRoot,
@@ -168,6 +167,7 @@ export async function createNativeStudioServices(
     routingSimulator,
     diagnostics:
       options.runDiagnostics ?? createProcessWarningRunDiagnosticSink(),
+    drafts: draftAuthoring.service,
     ...(options.stateRoot === undefined ? {} : { stateRoot: options.stateRoot }),
     ...(options.historicalRunReconciliation === undefined
       ? {}
@@ -194,26 +194,20 @@ export async function createNativeStudioServices(
       listInputAdapters: () =>
         listStudioInputAdapters(platform.inputAdapterRegistry, previews),
       previewInputAdapter: async (_principal, request, signal) => {
-        const result = await previewStudioInputAdapter(request, {
+        return await previewStudioInputAdapter(request, {
           registry: platform.inputAdapterRegistry,
           previews,
           signal
         });
-        const adapter = platform.inputAdapterRegistry.require(request.adapter_id);
-        providerHealth.markHealthy(adapter.source, adapter.id);
-        return result;
       },
       previewInputRoute: async (_principal, request, signal) => {
-        const result = await previewStudioInputRoute(request, {
+        return await previewStudioInputRoute(request, {
           registry: platform.inputAdapterRegistry,
           previews,
           routing: await loadRouting(),
           routingSimulator,
           signal
         });
-        const adapter = platform.inputAdapterRegistry.require(request.adapter_id);
-        providerHealth.markHealthy(adapter.source, adapter.id);
-        return result;
       },
       routingDefinition: loadRouting,
       routingEditor: async () => await routingEditor.get(),
@@ -231,6 +225,22 @@ export async function createNativeStudioServices(
         await schemaService.validate(request, signal)
     },
     drafts: draftAuthoring.control,
+    runOutputFixtures: {
+      promoteRunOutputFixture: async (
+        _principal,
+        draftId,
+        request,
+        ifMatch
+      ) => await runSubsystem.outputFixtures.promote(
+        draftId,
+        request,
+        ifMatch
+      ),
+      editRunOutputFixture: async (_principal, draftId, request, ifMatch) =>
+        await runSubsystem.outputFixtures.edit(draftId, request, ifMatch),
+      despinRunOutputFixture: async (_principal, draftId, request, ifMatch) =>
+        await runSubsystem.outputFixtures.despin(draftId, request, ifMatch)
+    },
     agentTest,
     configuration: configuration.control,
     resourceHistory: resourceHistory.control,

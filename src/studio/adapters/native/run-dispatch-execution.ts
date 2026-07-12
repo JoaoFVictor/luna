@@ -31,6 +31,7 @@ import {
   nativeStudioCheckpointReplayIsSafe,
   nativeStudioFailedTerminalIsSafe
 } from "./run-recovery-safety.js";
+import { nativePrecompletedSteps } from "./run-execution-profile.js";
 
 type NativeStudioRunWorkflow = (
   input: NativeWorkflowRunInput
@@ -161,6 +162,9 @@ export class NativeStudioRunExecutor {
         target: job.run.route_target,
         invocation: job.request.invocation,
         executionScope: job.request.execution_scope,
+        precompleted_steps: nativePrecompletedSteps(
+          job.request.execution_profile
+        ),
         workflowConfig: job.request.config,
         run: job.run,
         signal,

@@ -1,14 +1,16 @@
 import { useMemo } from "react"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
-import { ArrowLeftIcon, CircleIcon, InfoIcon } from "lucide-react"
-import { useNavigate, useParams } from "react-router-dom"
+import { ArrowLeftIcon, CircleIcon, InfoIcon, RotateCcwIcon } from "lucide-react"
+import { Link, useNavigate, useParams } from "react-router-dom"
 
-import { runQuery, runTimelineInfiniteQuery } from "@/api/queries"
+import { isTerminalRunStatus, runQuery, runTimelineInfiniteQuery } from "@/api/queries"
+import type { RunRecord } from "@/api/types"
 import { PageError, PageLoading } from "@/components/page-state"
 import { RunStatusBadge } from "@/components/status-badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -16,12 +18,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArtifactsPanel } from "@/features/runs/artifacts-panel"
 import { RunGraphPanel } from "@/features/runs/run-graph-panel"
 import { RunLogsPanel } from "@/features/runs/run-logs-panel"
+import { flattenRunTimeline } from "@/features/runs/run-timeline"
+import { runFailurePresentation } from "@/features/runs/run-failure-presentation"
 import { useRunEventStream, type RunEventStreamStatus } from "@/features/runs/use-run-event-stream"
 import { formatDateTime, formatDuration, shortDigest } from "@/lib/format"
 import { humanizeTechnicalId } from "@/lib/presentation"
 
-function isTerminalRun(status: string | undefined): boolean {
-  return status !== undefined && ["rejected", "historical_unknown", "succeeded", "failed", "outcome_unknown", "timed_out", "cancelled"].includes(status)
+export function runWorkflowHref(
+  record: Pick<RunRecord, "workflow_id" | "definition_source">,
+): string {
+  return record.definition_source?.kind === "draft"
+    ? `/drafts/${encodeURIComponent(record.definition_source.draft_id)}`
+    : `/workflows/${encodeURIComponent(record.workflow_id)}`
 }
 
 function streamPresentation(status: RunEventStreamStatus, terminal: boolean) {
@@ -50,18 +58,12 @@ export function RunDetailPage() {
   const { runId = "" } = useParams()
   const navigate = useNavigate()
   const run = useQuery(runQuery(runId))
-  const timeline = useInfiniteQuery(runTimelineInfiniteQuery(runId))
-  const timelineEvents = useMemo(() => {
-    const byId = new Map(
-      (timeline.data?.pages ?? [])
-        .flatMap((page) => page.items)
-        .map((event) => [event.event_id, event] as const),
-    )
-    return [...byId.values()].sort(
-      (left, right) => left.sequence - right.sequence,
-    )
-  }, [timeline.data?.pages])
-  const terminal = isTerminalRun(run.data?.status)
+  const timeline = useInfiniteQuery(runTimelineInfiniteQuery(runId, run.data))
+  const timelineEvents = useMemo(
+    () => flattenRunTimeline(timeline.data?.pages),
+    [timeline.data?.pages],
+  )
+  const terminal = isTerminalRunStatus(run.data?.status)
   const streamStatus = useRunEventStream({
     runId,
     afterSequence:
@@ -80,6 +82,16 @@ export function RunDetailPage() {
     : record.input_provenance?.kind === "invocation"
       ? "invocation JSON direta"
       : "—"
+  const relaunchHref = `/launch?${new URLSearchParams({
+    workflow: record.workflow_id,
+    ...(record.input_provenance?.kind === "adapter"
+      ? { adapter: record.input_provenance.adapter_id }
+      : {}),
+  }).toString()}`
+  const workflowHref = runWorkflowHref(record)
+  const failurePresentation = record.failure === undefined
+    ? undefined
+    : runFailurePresentation(record.failure, record.failed_node_id)
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6">
       <Button variant="ghost" size="sm" className="w-fit" onClick={() => void navigate("/runs")}><ArrowLeftIcon aria-hidden="true" /> Voltar às execuções</Button>
@@ -96,7 +108,24 @@ export function RunDetailPage() {
         <Alert><InfoIcon aria-hidden="true" /><AlertTitle>Alguns detalhes não estão disponíveis</AlertTitle><AlertDescription>Esta execução foi registrada parcialmente. Os dados existentes continuam acessíveis.</AlertDescription></Alert>
       )}
       {record.failure !== undefined && (
-        <Alert variant="destructive"><InfoIcon aria-hidden="true" /><AlertTitle>A execução encontrou um problema</AlertTitle><AlertDescription>{record.failure.message}{record.failed_node_id !== undefined && <p className="mt-1">Passo: <code>{record.failed_node_id}</code></p>}<details className="mt-2"><summary className="cursor-pointer text-xs">Detalhes técnicos</summary><code>{record.failure.code}</code></details></AlertDescription></Alert>
+        <Alert variant="destructive"><InfoIcon aria-hidden="true" /><AlertTitle>{failurePresentation?.title}</AlertTitle><AlertDescription>{failurePresentation?.description}{record.failed_node_id !== undefined && <p className="mt-1">Passo: <code>{humanizeTechnicalId(record.failed_node_id)}</code></p>}<details className="mt-2"><summary className="cursor-pointer text-xs">Detalhes técnicos</summary><p><code>{record.failure.code}</code></p><p className="mt-1">{record.failure.message}</p></details></AlertDescription></Alert>
+      )}
+
+      {record.execution_profile?.kind === "manual_test" && (
+        <Alert>
+          <InfoIcon aria-hidden="true" />
+          <AlertTitle>Execução manual com dados salvos</AlertTitle>
+          <AlertDescription>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {record.execution_profile.test_data.map((entry) => (
+                <li key={entry.node_id}>
+                  <code>{entry.node_id}</code> não executou; sua saída veio de <code>{entry.fixture_name}</code>.
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2">Os demais passos e efeitos foram reais.</p>
+          </AlertDescription>
+        </Alert>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -106,8 +135,19 @@ export function RunDetailPage() {
         <Card size="sm"><CardHeader><CardDescription>Interrupções</CardDescription><CardTitle>{record.interrupt_count ?? "Indisponível"}</CardTitle></CardHeader></Card>
       </div>
 
-      <div className="flex justify-end"><Button variant="outline" size="sm" onClick={() => void navigate(`/workflows/${encodeURIComponent(record.workflow_id)}`)}>Abrir workflow</Button></div>
-      <RunGraphPanel runId={runId} record={record} />
+      <div className="flex flex-wrap justify-end gap-2">
+        <Link className={buttonVariants({ size: "sm" })} to={relaunchHref}>
+          <RotateCcwIcon aria-hidden="true" /> Executar novamente
+        </Link>
+        <Button variant="outline" size="sm" onClick={() => void navigate(workflowHref)}>Abrir workflow</Button>
+      </div>
+      <p className="text-right text-xs text-muted-foreground">Por segurança, a entrada sensível não é persistida; revise ou informe os dados novamente.</p>
+      <RunGraphPanel
+        runId={runId}
+        record={record}
+        events={timelineEvents}
+        eventHistoryComplete={!timeline.hasNextPage && !timeline.isError}
+      />
 
       <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(20rem,1fr)]">
         <Card>
@@ -157,7 +197,7 @@ export function RunDetailPage() {
               <TabsTrigger value="artifacts">Resultados</TabsTrigger>
               <TabsTrigger value="logs">Logs</TabsTrigger>
             </TabsList>
-            <TabsContent value="artifacts" className="pt-4"><ArtifactsPanel runId={runId} /></TabsContent>
+            <TabsContent value="artifacts" className="pt-4"><ArtifactsPanel runId={runId} expectedCount={record.artifact_count} terminalAt={record.finished_at} /></TabsContent>
             <TabsContent value="logs" className="pt-4"><RunLogsPanel runId={runId} /></TabsContent>
           </Tabs>
         </CardContent>

@@ -3,8 +3,11 @@ import { WorkflowIdSchema } from "../../core/router/invocation.js";
 import { StudioDigestSchema } from "./digests.js";
 import { StudioJsonValueSchema } from "./json.js";
 import { StudioRunPlanIdSchema } from "./run-launch-primitives.js";
+import { StudioRunOpaqueIdSchema } from "./run-launch-primitives.js";
 import { StudioRunInputProvenanceSchema } from "./run-provenance.js";
+import { StudioRunDefinitionSourceSchema } from "./run-definition-source.js";
 import { remoteUrlContainsCredentials } from "../../core/security/url-credentials.js";
+import { StudioRunExecutionProfileSummarySchema } from "./manual-test-data.js";
 
 const BoundedStringSchema = z.string().trim().min(1).max(256);
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -19,10 +22,7 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-export const RunOpaqueIdSchema = BoundedStringSchema.regex(
-  /^[A-Za-z0-9][A-Za-z0-9._:@-]*$/,
-  "Identifier contains unsupported characters"
-);
+export const RunOpaqueIdSchema = StudioRunOpaqueIdSchema;
 
 export const RunGraphSnapshotHandleSchema = z
   .string()
@@ -122,9 +122,12 @@ export const RunRecordSchema = z
     run_id: RunOpaqueIdSchema,
     accepted_plan_id: StudioRunPlanIdSchema.optional(),
     input_provenance: StudioRunInputProvenanceSchema.optional(),
+    execution_profile: StudioRunExecutionProfileSummarySchema.optional(),
+    execution_profile_hash: StudioDigestSchema.optional(),
     correlation_id: RunOpaqueIdSchema.optional(),
     job_id: RunOpaqueIdSchema.optional(),
     workflow_id: WorkflowIdSchema,
+    definition_source: StudioRunDefinitionSourceSchema.optional(),
     ...OptionalDefinitionMetadataShape,
     dispatch_status: RunDispatchStatusSchema,
     run_status: RunRuntimeStatusSchema.optional(),
@@ -167,6 +170,16 @@ export const RunRecordSchema = z
         code: z.ZodIssueCode.custom,
         path: ["input_provenance"],
         message: "Accepted plan and input provenance must appear together"
+      });
+    }
+    if (
+      (record.execution_profile === undefined) !==
+      (record.execution_profile_hash === undefined)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["execution_profile_hash"],
+        message: "Execution profile and hash must appear together"
       });
     }
 

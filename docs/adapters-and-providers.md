@@ -42,6 +42,27 @@ Adding another webhook provider should mean adding a provider-owned webhook
 adapter, registering its factory in native platform plugins, and adding config
 for its `secret_ref`. It should not add another HTTP endpoint.
 
+Provider connection probes follow the same ownership rule. The provider-neutral
+contract and registry live under `src/core/providers/`, while each concrete
+probe lives beside its provider and is registered by the native plugin. A probe
+must use a fixed, minimal authenticated operation; it cannot accept a user URL,
+issue, pull request, or other resource locator. The Studio exposes its timeout
+and effect classes before execution and returns only a bounded, redacted status.
+
+The current probes are:
+
+- GitHub: `gh api user --jq .login`; this reads the configured credential,
+  performs a network read, and executes the local `gh` client.
+- Jira: `GET /rest/api/3/myself` for each configured instance with basic API
+  token authentication.
+- Plane: `GET /api/v1/users/me/` for each configured instance with
+  `X-API-Key`; `app.plane.so` is mapped to the public `api.plane.so` API origin,
+  while self-hosted origins are preserved.
+
+Successful evidence is session-local and tied to the exact probe id. A failed
+later probe clears previous healthy evidence. Adapter preview is intentionally
+unrelated: loading an issue or pull request does not mark a provider healthy.
+
 ## Invocation Boundary
 
 Invocation is the provider/data boundary. It has fixed top-level fields such as
@@ -142,6 +163,7 @@ Plane:
 - Supports browse and project issue URLs.
 - Fetches Plane issue data and optional repository hints from labels.
 - Renders task context/final implementation reports for Plane issues.
+- Tests configured credentials with the provider-owned current-user probe.
 
 ## Composition Roots
 

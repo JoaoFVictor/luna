@@ -462,6 +462,12 @@ export type StudioRepositoryConfiguration = z.infer<
   typeof StudioRepositoryConfigurationSchema
 >;
 
+const StudioProviderProbeEffectSchema = z.enum([
+  "credential_read",
+  "network_read",
+  "process_execution"
+]);
+
 export const StudioProviderConfigurationSchema = z
   .object({
     editing: z.literal("read_only"),
@@ -470,20 +476,25 @@ export const StudioProviderConfigurationSchema = z
         .object({
           id: z.string().min(1).max(256),
           adapter_ids: z.array(z.string().min(1).max(256)),
-          credential_status: z.enum(["not_checked", "verified_by_preview"]),
+          credential_status: z.enum(["not_checked", "healthy"]),
+          probe: z.object({
+            id: z.string().min(1).max(256),
+            effects: z.array(StudioProviderProbeEffectSchema).min(1),
+            timeout_ms: z.number().int().safe().positive()
+          }).strict().optional(),
           checked_at: z.string().datetime({ offset: true }).optional(),
-          checked_adapter_id: z.string().min(1).max(256).optional()
+          checked_probe_id: z.string().min(1).max(256).optional()
         })
         .strict()
         .superRefine((provider, context) => {
-          const verified = provider.credential_status === "verified_by_preview";
+          const verified = provider.credential_status === "healthy";
           if (verified !== (
             provider.checked_at !== undefined &&
-            provider.checked_adapter_id !== undefined
+            provider.checked_probe_id !== undefined
           )) {
             context.addIssue({
               code: z.ZodIssueCode.custom,
-              message: "Verified providers require exact preview evidence"
+              message: "Healthy providers require exact probe evidence"
             });
           }
         })
@@ -493,6 +504,36 @@ export const StudioProviderConfigurationSchema = z
 export type StudioProviderConfiguration = z.infer<
   typeof StudioProviderConfigurationSchema
 >;
+
+export const StudioProviderProbeParamsSchema = z.object({
+  providerId: z.string().min(1).max(256)
+}).strict();
+
+export const StudioProviderProbeResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    provider_id: z.string().min(1).max(256),
+    probe_id: z.string().min(1).max(256),
+    status: z.literal("healthy"),
+    checked_at: z.string().datetime({ offset: true }),
+    effects: z.array(StudioProviderProbeEffectSchema).min(1),
+    timeout_ms: z.number().int().safe().positive(),
+    summary: z.string().min(1).max(512)
+  }).strict(),
+  z.object({
+    provider_id: z.string().min(1).max(256),
+    probe_id: z.string().min(1).max(256),
+    status: z.literal("unhealthy"),
+    effects: z.array(StudioProviderProbeEffectSchema).min(1),
+    timeout_ms: z.number().int().safe().positive(),
+    summary: z.string().min(1).max(512)
+  }).strict(),
+  z.object({
+    provider_id: z.string().min(1).max(256),
+    status: z.literal("unsupported"),
+    summary: z.string().min(1).max(512)
+  }).strict()
+]);
+export type StudioProviderProbeResult = z.infer<typeof StudioProviderProbeResultSchema>;
 
 export const StudioRuntimeConfigurationSchema = z
   .object({

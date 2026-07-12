@@ -36,9 +36,14 @@ import type {
 import {
   validateDeclaredCapabilities,
   validateAgentOutputSchemas,
-  validateNodesAgainstCapabilities
+  validateNodesAgainstCapabilities,
+  validateWorkflowCallInputs
 } from "./definition-validation.js";
 import { analyzeWorkflowGraph } from "./graph-analysis.js";
+import {
+  assertWorkflowCompositionRequirements,
+  resolveWorkflowCompositions
+} from "./definition-composition.js";
 
 export {
   LUNA_WORKFLOW_COMPILER_SCHEMA_VERSION,
@@ -60,6 +65,7 @@ export type {
   WorkflowExecution,
   WorkflowGraph,
   WorkflowHumanGateNode,
+  WorkflowCallNode,
   WorkflowMetadata,
   WorkflowNode,
   WorkflowObservabilityConfig,
@@ -76,7 +82,22 @@ export async function loadWorkflowDefinition(
   workflowId: string,
   options: LoadWorkflowDefinitionOptions = {}
 ): Promise<WorkflowDefinition> {
+  return await loadWorkflowDefinitionRecursive(workflowsRoot, workflowId, options, []);
+}
+
+async function loadWorkflowDefinitionRecursive(
+  workflowsRoot: string,
+  workflowId: string,
+  options: LoadWorkflowDefinitionOptions,
+  ancestors: readonly string[]
+): Promise<WorkflowDefinition> {
   assertSafeSegment(workflowId);
+  if (ancestors.includes(workflowId)) {
+    throw new WorkflowDefinitionError(
+      "workflow_composition_cycle",
+      `Workflow composition cycle detected: ${[...ancestors, workflowId].join(" -> ")}.`
+    );
+  }
   const directory = path.join(workflowsRoot, workflowId);
   const defaultAgentsRoot =
     path.basename(path.resolve(workflowsRoot)) === "workflows"
@@ -91,7 +112,24 @@ export async function loadWorkflowDefinition(
     workflowYaml,
     agentsRoot: options.agentsRoot ?? defaultAgentsRoot,
     capabilityRegistry: options.capabilityRegistry,
-    digestResolver: options.digestResolver
+    digestResolver: options.digestResolver,
+    compositionResolver: async (childId) => {
+      try {
+        return await loadWorkflowDefinitionRecursive(
+          workflowsRoot,
+          childId,
+          options,
+          [...ancestors, workflowId]
+        );
+      } catch (cause) {
+        if (cause instanceof WorkflowDefinitionError) throw cause;
+        throw new WorkflowDefinitionError(
+          "workflow_external_definition_missing",
+          `Unable to resolve composed workflow ${childId}.`,
+          { nodeId: childId }
+        );
+      }
+    }
   });
 }
 
@@ -102,7 +140,8 @@ export async function loadWorkflowDefinitionFromMetadata({
   workflowYaml,
   capabilityRegistry,
   digestResolver,
-  agentsRoot
+  agentsRoot,
+  compositionResolver
 }: {
   directory: string;
   metadata: WorkflowMetadata;
@@ -111,6 +150,7 @@ export async function loadWorkflowDefinitionFromMetadata({
   capabilityRegistry?: CapabilityRegistry;
   digestResolver?: DefinitionDigestResolver;
   agentsRoot?: string;
+  compositionResolver?: (workflowId: string) => Promise<WorkflowDefinition>;
 }): Promise<WorkflowDefinition> {
   const raw = assertWorkflowDocument(metadata);
   const id = requireString(raw.id, "$.id");
@@ -138,6 +178,18 @@ export async function loadWorkflowDefinitionFromMetadata({
   validateDeclaredCapabilities(capabilities, capabilityRegistry);
 
   const parsedGraph = readGraph(raw);
+  const compositions = await resolveWorkflowCompositions({
+    graph: parsedGraph,
+    parentId: id,
+    parentMode: normalizeMode(raw.mode),
+    resolver: compositionResolver
+  });
+  const requirements = normalizeRequirements(raw.requires);
+  assertWorkflowCompositionRequirements({
+    parentId: id,
+    requirements,
+    compositions
+  });
   const nodeIds = new Set(parsedGraph.nodes.map((node) => node.id));
   validateNodesAgainstCapabilities(
     parsedGraph.nodes,
@@ -145,6 +197,7 @@ export async function loadWorkflowDefinitionFromMetadata({
     nodeIds,
     capabilityRegistry
   );
+  validateWorkflowCallInputs(parsedGraph.nodes, compositions);
   await validateAgentOutputSchemas(
     parsedGraph.nodes,
     agentsRoot ?? path.resolve(directory, "..", "..", "agents"),
@@ -155,7 +208,8 @@ export async function loadWorkflowDefinitionFromMetadata({
 
   const externalDefinitionDigests = await collectExternalDefinitionDigests(
     parsedGraph.nodes,
-    digestResolver
+    digestResolver,
+    compositions
   );
   const revision = computeWorkflowRevision({
     canonicalWorkflow:
@@ -183,9 +237,10 @@ export async function loadWorkflowDefinitionFromMetadata({
     revision,
     external_definition_digests: externalDefinitionDigests,
     execution: normalizeExecution(raw.execution),
-    requires: normalizeRequirements(raw.requires),
+    requires: requirements,
     observability: normalizeObservability(raw.observability),
-    subagent_policy: normalizeSubagentPolicy(raw.subagent_policy)
+    subagent_policy: normalizeSubagentPolicy(raw.subagent_policy),
+    ...(Object.keys(compositions).length === 0 ? {} : { compositions })
   };
 }
 

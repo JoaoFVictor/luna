@@ -22,6 +22,7 @@ import {
 } from "../../contracts/configuration.js";
 import type { StudioWorkflowCatalog } from "../../contracts/workflow-catalog.js";
 import type { StudioProviderHealthTracker } from "../inputs/provider-health.js";
+import type { ProviderHealthProbeRegistry } from "../../../core/providers/health-probe-registry.js";
 
 const ENV_MODEL = /^\$\{([A-Z0-9_]+)\}$/;
 const ENV_MODEL_WITH_FALLBACK = /^\$\{([A-Z0-9_]+):-([^}\s]+)\}$/;
@@ -38,6 +39,7 @@ type StudioConfigurationPostureOptions = {
   readonly agents: () => Promise<StudioAgentCatalog>;
   readonly workflows: () => Promise<StudioWorkflowCatalog>;
   readonly providerHealth?: Pick<StudioProviderHealthTracker, "get">;
+  readonly providerHealthProbes?: Pick<ProviderHealthProbeRegistry, "get">;
 };
 
 export type StudioConfigurationPostureService = {
@@ -267,13 +269,25 @@ export function createStudioConfigurationPosture(
             id,
             adapter_ids: adapterIds.sort(),
             ...(() => {
+              const probe = options.providerHealthProbes?.get(id);
+              return probe === undefined
+                ? {}
+                : {
+                    probe: {
+                      id: probe.id,
+                      effects: [...probe.effects],
+                      timeout_ms: probe.timeout_ms
+                    }
+                  };
+            })(),
+            ...(() => {
               const observation = options.providerHealth?.get(id);
               return observation === undefined
                 ? { credential_status: "not_checked" as const }
                 : {
-                    credential_status: "verified_by_preview" as const,
+                    credential_status: "healthy" as const,
                     checked_at: observation.checkedAt,
-                    checked_adapter_id: observation.adapterId
+                    checked_probe_id: observation.probeId
                   };
             })()
           }))

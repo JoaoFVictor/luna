@@ -104,13 +104,13 @@ export function ConfigurationPosture() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="repositories" className="scroll-mt-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <FolderGit2Icon aria-hidden="true" /> Repositories
+              <FolderGit2Icon aria-hidden="true" /> Repositórios locais
             </CardTitle>
             <CardDescription>
-              Read-only porque não há allowed-root policy para realpath confinement.
+              Checkouts disponíveis para workflows que leem ou alteram código. Os caminhos são exibidos de forma redigida.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -129,14 +129,14 @@ export function ConfigurationPosture() {
                   <span className="font-medium">{repository.id}</span>
                   <Badge variant="outline">{repository.provider}</Badge>
                   <Badge variant={repository.availability === "available" ? "secondary" : "outline"}>
-                    {repository.availability}
+                    {repository.availability === "available" ? "Disponível" : "Indisponível"}
                   </Badge>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {repository.owner}/{repository.name} · {repository.path_display} · remote {repository.remote.kind === "name" ? repository.remote.name : "[redacted]"}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Remotes esperados: {repository.expected_remote_count} · trusted write: {repository.trusted_write_readiness}
+                  Remotes esperados: {repository.expected_remote_count} · escrita confiável: {repository.trusted_write_readiness}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Exigido por: {repository.required_by.join(", ") || "nenhum workflow"}

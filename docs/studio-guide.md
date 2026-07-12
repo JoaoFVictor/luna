@@ -311,11 +311,18 @@ Configuration separa quatro superfícies:
 4. **Postura operacional:** mostra projeções redigidas de model profiles,
    repositories, providers, plugins e runtimes.
 
+Na área **Connections**, `Testar conexão` chama diretamente o probe dedicado do
+provider; não solicita URL, issue ou pull request e não reaproveita o preview de
+adapter. A tela mostra previamente os efeitos e o timeout do probe. GitHub,
+Jira e Plane possuem probes provider-owned de leitura mínima. Sucesso registra
+evidência apenas nesta sessão; falha posterior remove o estado saudável, e a
+resposta nunca inclui credenciais, identidade da conta ou corpo bruto do erro.
+
 Config de workflow também usa draft, validação, plano com diff classificado e
 confirmação de apply. Secrets, valores brutos de environment, credenciais, URLs
 esperadas, opções privadas de runtime e paths absolutos permanecem no servidor.
-Repositories, providers, model profiles e plugins são somente leitura nesta
-versão.
+Repositories, edição de providers, model profiles e plugins são somente leitura
+nesta versão. O teste explícito de conexão é a única ação de provider exposta.
 
 Comandos externos usados para carregar adapters rodam sem shell implícito, com
 environment reduzido, prazo, limites separados de stdout/stderr e cancelamento do
@@ -358,6 +365,28 @@ O plano real mostra:
 - repository resolvido quando aplicável;
 - efeitos potenciais e efeitos resolvidos no preflight;
 - incertezas, warnings e validade do token.
+
+#### Outputs fixados e testes manuais
+
+No editor de workflow, um output capturado de uma run pode ser fixado como dado
+de teste. Ao ativá-lo, o node de origem é pulado somente naquele teste manual e
+o output salvo é entregue aos passos seguintes. Runs instaladas e produção
+ignoram fixtures e não aceitam esse perfil de execução.
+
+O JSON fixado pode ser editado explicitamente na folha **Dados de teste**. O
+salvamento é uma operação CAS com `If-Match`: o servidor relê a run original,
+recalcula o hash do output de origem e do output editado, registra provenance
+`edited_run_node_output`, aplica os limites/redaction canônicos e valida o
+schema atual do node. A autorização do teste repete essas verificações e falha
+fechado se run, draft, hashes, schema ou redaction mudarem. Credenciais e outros
+valores sensíveis não são convertidos em dados executáveis.
+
+**Desvincular autorização** preserva o JSON para preview e expressions, mas
+remove a provenance que permite pular o node. **Remover** apaga a fixture. Essa
+separação evita que um dado de preview seja confundido com um output executável.
+O JSON e sua provenance seguem a retenção do próprio draft; não há TTL separado.
+Mesmo enquanto a fixture existir, a execução falha fechado se o output original
+da run já não estiver disponível para reautorização.
 
 A categoria de cada efeito vem do manifesto da policy (`provider_read`,
 `local_process`, `repository_write` ou `external_write`), não do nome/id da
@@ -406,6 +435,9 @@ A tela de detalhe mostra:
 - indicação explícita quando graph ou outcome não existe, é legado, parcial,
   inválido ou está indisponível;
 - artifacts relacionados a cada node e o node da falha principal;
+- output privado de um node terminal somente após ação explícita, com limites e
+  redação best-effort; o debugger pode comparar duas runs do mesmo workflow
+  usando os outcomes exatos, sem criar uma segunda cópia ou política de retenção;
 - timeline ordenada pelo ledger, com SSE e polling como fallback;
 - efeitos potenciais/resolvidos e incertezas do preflight persistidos no record;
   essa seção não afirma que um efeito foi realizado;
@@ -418,6 +450,12 @@ O cursor de logs referencia um snapshot imutável, process-local e com cache
 limitado por bytes, entradas e tempo. A origem é lida uma vez por snapshot;
 páginas seguintes não reabrem nem recalculam o arquivo completo. Expiração ou
 evicção invalida o cursor em vez de voltar silenciosamente ao log mutável.
+
+A comparação de outputs é calculada no servidor e exige o mesmo node nas duas
+runs. Ela recusa workflows diferentes, informa quando um dos snapshots não foi
+retido e marca revisões de workflow diferentes. O resumo cobre todas as mudanças;
+o detalhe retornado é limitado. Como não existe um snapshot de comparação novo,
+retenção e remoção seguem exatamente os outcomes originais das duas runs.
 
 Runs externos criados pelo CLI ou pelo webhook worker no mesmo artifact root são
 reconciliados no startup e periodicamente enquanto o Studio está ativo. Essa

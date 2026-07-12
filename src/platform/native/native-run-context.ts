@@ -13,6 +13,7 @@ import {
   type RepositoryConfig
 } from "../../core/config/schemas.js";
 import { createRunIdentity } from "../../core/invocation/run-identity.js";
+import { InvocationSchema } from "../../core/router/invocation.js";
 import {
   assertCheckpointJsonValue,
   type JsonValue
@@ -23,6 +24,9 @@ import { isInsideRoot } from "../../core/security/path.js";
 import { compileWorkflow, type CompiledWorkflow } from "../../core/workflow/compiler.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import { scopeWorkflowDefinition } from "../../core/workflow/execution-scope.js";
+import { planPrecompletedWorkflowExecution } from "../../core/workflow/precompleted-execution.js";
+import { assertWorkflowExecutionRequirements } from "../../core/workflow/execution-policy.js";
+import { workflowExecutionPlanPolicyNode } from "../../core/workflow/execution-plan.js";
 import { resolveRepository } from "../../core/workflow/workspace-resolver.js";
 import type { RuntimeCompositionConfig } from "../../runtime/composition/app-config.js";
 import type {
@@ -32,11 +36,25 @@ import {
   nativeLunaPlatformRegistrations,
   type NativeLunaPlatformRegistrations
 } from "./native-platform-registrations.js";
+import {
+  createNativeProviderBuiltIns,
+  nativeBuiltInMetadata
+} from "./native-built-ins.js";
 
 export type NativeCompiledWorkflow = {
   readonly workflow: WorkflowDefinition;
   readonly compiled: CompiledWorkflow;
 };
+
+export class NativePrecompletedStepNodeError extends Error {
+  readonly nodeId: string;
+
+  constructor(nodeId: string) {
+    super("Precompleted steps reference a node outside the effective workflow scope");
+    this.name = "NativePrecompletedStepNodeError";
+    this.nodeId = nodeId;
+  }
+}
 
 export type NativeRunContext = {
   readonly app: AppConfig;
@@ -52,7 +70,10 @@ export type NativeRunContext = {
 export type NativeRunContextDependencies = {
   readonly platform?: Pick<
     NativeLunaPlatformRegistrations,
-    "capabilityRegistry" | "capabilityManifests"
+    | "capabilityRegistry"
+    | "capabilityManifests"
+    | "workflowBuiltIns"
+    | "taskProviderBuiltIns"
   >;
 };
 
@@ -64,7 +85,8 @@ export async function loadNativeRunContext(
     configRoot,
     definitionRoots,
     run: preallocatedRun,
-    executionScope
+    executionScope,
+    precompleted_steps: precompletedSteps
   }: NativeWorkflowRunInput,
   dependencies: NativeRunContextDependencies = {}
 ): Promise<NativeRunContext> {
@@ -89,18 +111,26 @@ export async function loadNativeRunContext(
   });
   const workflow = scopeWorkflowDefinition(
     installedWorkflow,
-    executionScope ?? { kind: "workflow" }
+    executionScope ?? { kind: "workflow" },
+    new Set(Object.keys(precompletedSteps ?? {}))
   );
+  const scopedNodeIds = new Set(workflow.graph.nodes.map((node) => node.id));
+  for (const nodeId of Object.keys(precompletedSteps ?? {})) {
+    if (!scopedNodeIds.has(nodeId)) {
+      throw new NativePrecompletedStepNodeError(nodeId);
+    }
+  }
   const nativeWorkflow = await compileNativeWorkflow({
     workflow,
     agentsRoot,
-    platform
+    platform,
+    precompletedNodeIds: new Set(Object.keys(precompletedSteps ?? {}))
   });
   const repository = workflow.requires.repository
-    ? resolveRepository(invocation, repositories.repositories)
+    ? resolveRepository(InvocationSchema.parse(invocation), repositories.repositories)
     : undefined;
   const run = preallocatedRun ?? createRunIdentity(
-    { ...invocation, target },
+    { ...InvocationSchema.parse(invocation), target },
     {
       attempt: 1,
       date: new Date(),
@@ -114,7 +144,7 @@ export async function loadNativeRunContext(
     app,
     agentsRoot,
     definitionConfigRoot,
-    workflow,
+    workflow: nativeWorkflow.workflow,
     nativeWorkflow,
     repository,
     run,
@@ -164,19 +194,78 @@ export async function loadNativeWorkflowDefinition({
 export async function compileNativeWorkflow({
   workflow,
   agentsRoot,
-  platform = nativeLunaPlatformRegistrations
+  platform = nativeLunaPlatformRegistrations,
+  precompletedNodeIds = new Set()
 }: {
   readonly workflow: WorkflowDefinition;
   readonly agentsRoot: string;
+  readonly precompletedNodeIds?: ReadonlySet<string>;
   readonly platform?: Pick<
     NativeLunaPlatformRegistrations,
-    "capabilityRegistry" | "capabilityManifests"
+    | "capabilityRegistry"
+    | "capabilityManifests"
+    | "workflowBuiltIns"
+    | "taskProviderBuiltIns"
   >;
 }): Promise<NativeCompiledWorkflow> {
+  const executionPlan = planPrecompletedWorkflowExecution(
+    workflow,
+    precompletedNodeIds
+  );
+  const effectiveWorkflow = executionPlan.workflow;
   const schemaRegistrations: Record<
     string,
     { readonly id: string; readonly schema: JsonSchemaLike }
   > = {};
+  const compiledWorkflow = await materializeNativeAgentSchemas(
+    effectiveWorkflow,
+    agentsRoot,
+    platform.capabilityRegistry,
+    schemaRegistrations
+  );
+  const registry =
+    Object.keys(schemaRegistrations).length === 0
+      ? platform.capabilityRegistry
+      : createCapabilityRegistry([
+          ...platform.capabilityManifests,
+          capabilityManifest({
+            id: "workflow-agent-schemas",
+            kind: "execution",
+            version: effectiveWorkflow.revision,
+            schemas: schemaRegistrations
+          })
+        ]);
+
+  const compiled = compileWorkflow({
+    workflow: compiledWorkflow,
+    registry,
+    reducers: { steps: "object_merge" }
+  });
+  const providerBuiltIns = createNativeProviderBuiltIns({
+    workflowBuiltIns: platform.workflowBuiltIns,
+    taskProviderBuiltIns: platform.taskProviderBuiltIns,
+    capabilityRegistry: platform.capabilityRegistry
+  });
+  assertWorkflowExecutionRequirements({
+    nodes: executableCompiledTree(compiled, executionPlan.executable_node_ids)
+      .map(workflowExecutionPlanPolicyNode),
+    requiresRepository: effectiveWorkflow.requires.repository,
+    builtInMetadata: (node) =>
+      nativeBuiltInMetadata(providerBuiltIns.builtInStepRegistry, node.compiled)
+  });
+
+  return { workflow: compiledWorkflow, compiled };
+}
+
+async function materializeNativeAgentSchemas(
+  workflow: WorkflowDefinition,
+  agentsRoot: string,
+  capabilityRegistry: NativeLunaPlatformRegistrations["capabilityRegistry"],
+  schemaRegistrations: Record<
+    string,
+    { readonly id: string; readonly schema: JsonSchemaLike }
+  >
+): Promise<WorkflowDefinition> {
   const nodes = await Promise.all(
     workflow.graph.nodes.map(async (node) => {
       if (node.type !== "agent") {
@@ -184,7 +273,7 @@ export async function compileNativeWorkflow({
       }
 
       const agent = await loadAgentDefinition(agentsRoot, node.agent, {
-        capabilityRegistry: platform.capabilityRegistry
+        capabilityRegistry
       });
       const schemaId = `workflow-agent-schemas.${workflow.id}.${node.id}`;
       const outputSchema = node.output_schema.endsWith(".json")
@@ -207,34 +296,41 @@ export async function compileNativeWorkflow({
       };
     })
   );
-  const compiledWorkflow = {
+  const compositions = await Promise.all(
+    Object.entries(workflow.compositions ?? {}).map(async ([id, child]) => [
+      id,
+      await materializeNativeAgentSchemas(
+        child,
+        agentsRoot,
+        capabilityRegistry,
+        schemaRegistrations
+      )
+    ] as const)
+  );
+  return {
     ...workflow,
     graph: {
       ...workflow.graph,
       nodes
-    }
+    },
+    ...(compositions.length === 0
+      ? {}
+      : { compositions: Object.fromEntries(compositions) })
   };
-  const registry =
-    Object.keys(schemaRegistrations).length === 0
-      ? platform.capabilityRegistry
-      : createCapabilityRegistry([
-          ...platform.capabilityManifests,
-          capabilityManifest({
-            id: "workflow-agent-schemas",
-            kind: "execution",
-            version: workflow.revision,
-            schemas: schemaRegistrations
-          })
-        ]);
+}
 
-  return {
-    workflow: compiledWorkflow,
-    compiled: compileWorkflow({
-      workflow: compiledWorkflow,
-      registry,
-      reducers: { steps: "object_merge" }
-    })
-  };
+function executableCompiledTree(
+  compiled: CompiledWorkflow,
+  includedRootIds?: ReadonlySet<string>
+): CompiledWorkflow["nodes"] {
+  return compiled.nodes
+    .filter((node) => includedRootIds?.has(node.id) ?? true)
+    .flatMap((node) => [
+    node,
+    ...(node.composition === undefined
+      ? []
+      : executableCompiledTree(node.composition.compiled))
+    ]);
 }
 
 export async function loadWorkflowRuntimeConfig({
@@ -298,5 +394,5 @@ export function runtimeCompositionConfig(
 export function workflowUsesAgents(workflow: WorkflowDefinition): boolean {
   return workflow.graph.nodes.some((node) =>
     node.type === "agent" || node.type === "pattern"
-  );
+  ) || Object.values(workflow.compositions ?? {}).some(workflowUsesAgents);
 }

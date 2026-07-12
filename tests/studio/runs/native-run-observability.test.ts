@@ -98,6 +98,7 @@ describe("native Studio run observability", () => {
       ]));
       await expect(new RunGraphService({
         ledger: store.ledger,
+        events: store.events,
         store: graphStore
       }).get(receipt.run_id)).resolves.toMatchObject({
         availability: "available",
@@ -198,6 +199,7 @@ describe("native Studio run observability", () => {
       });
       await expect(new RunGraphService({
         ledger: store.ledger,
+        events: store.events,
         store: graphStore
       }).get(receipt.run_id)).resolves.toMatchObject({
         availability: "available",

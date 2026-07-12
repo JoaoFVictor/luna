@@ -13,6 +13,7 @@ const ACTOR_B = studioRunSecretDigest("actor-session-b");
 function binding(): StudioRunConfirmationBinding {
   const request = {
     workflow_id: "demo",
+    definition_source: { kind: "installed" as const },
     execution_scope: { kind: "workflow" as const },
     invocation: {
       version: "2026-06" as const,
@@ -20,7 +21,8 @@ function binding(): StudioRunConfirmationBinding {
       event: "run"
     },
     config: {},
-    input_provenance: { kind: "invocation" as const }
+    input_provenance: { kind: "invocation" as const },
+    execution_profile: { kind: "standard" as const }
   };
   return {
     planId: `rp_${"1".repeat(32)}`,

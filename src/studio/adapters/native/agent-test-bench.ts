@@ -17,7 +17,6 @@ import type {
   StudioAgentTestRunnerPort,
   StudioResolvedAgentTest
 } from "../../application/agents/test-bench-ports.js";
-import { createStudioCapabilityCatalog } from "../../application/catalog/capability-catalog.js";
 import type {
   StudioAgentTestPlanRequest,
   StudioAgentTestResolution
@@ -30,6 +29,7 @@ import {
   loadNativeStudioAgentTestTarget,
   type NativeStudioAgentTestDraftPort
 } from "./agent-test-target.js";
+import { createNativeStudioCapabilityCatalog } from "./capability-catalog.js";
 
 export const NATIVE_STUDIO_AGENT_TEST_SCOPE = Object.freeze({
   real_model_call: true as const,
@@ -90,8 +90,8 @@ export class NativeStudioAgentTestResolver
     this.#platform = options.platform;
     this.#drafts = options.drafts;
     this.#temporaryRoot = options.temporaryRoot;
-    this.#catalogFingerprint = createStudioCapabilityCatalog(
-      options.platform.capabilityRegistry
+    this.#catalogFingerprint = createNativeStudioCapabilityCatalog(
+      options.platform
     ).technical_fingerprint;
   }
 

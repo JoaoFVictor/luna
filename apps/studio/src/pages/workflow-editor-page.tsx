@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 
 import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
@@ -19,6 +19,17 @@ import {
 import { WorkflowEditorHeader } from "@/features/workflows/workflow-editor-header"
 import { WorkflowEditorWorkspace } from "@/features/workflows/workflow-editor-workspace"
 import { useWorkflowEditorController } from "@/features/workflows/use-workflow-editor-controller"
+import { useWorkflowTestDataRouteState } from "@/features/workflows/use-workflow-test-data-route-state"
+import { workflowSourceNodes } from "@/features/workflows/workflow-source-model"
+import {
+  workflowNodeTestDataStates,
+  workflowTestDataEntries,
+} from "@/features/workflows/workflow-test-data-model"
+import type { WorkflowTestDataControls } from "@/features/workflows/workflow-test-data-bar"
+import {
+  workflowTestDataNodeIdsForScope,
+  type WorkflowTestScopeKind,
+} from "@/features/workflows/workflow-test-scope"
 import { LaunchPage } from "@/pages/launch-page"
 import type { RunPlanInput } from "@/api/types"
 
@@ -29,6 +40,86 @@ export function WorkflowEditorPage() {
   const [testScope, setTestScope] = useState<RunPlanInput["execution_scope"]>({ kind: "workflow" })
   const editor = useWorkflowEditorController(draftId)
   const { draft } = editor
+  const sourceNodes = useMemo(
+    () => workflowSourceNodes(editor.resources.sourceView.data?.value ?? {}),
+    [editor.resources.sourceView.data?.value],
+  )
+  const nodeIds = useMemo(
+    () => new Set(sourceNodes.map((node) => node.id)),
+    [sourceNodes],
+  )
+  const fixtureNames = useMemo(
+    () => new Set(Object.keys(editor.view.expressionFixtures)),
+    [editor.view.expressionFixtures],
+  )
+  const testDataEntries = useMemo(
+    () => workflowTestDataEntries(
+      editor.view.expressionFixtures,
+      editor.view.expressionFixtureSources,
+      nodeIds,
+    ),
+    [editor.view.expressionFixtureSources, editor.view.expressionFixtures, nodeIds],
+  )
+  const fixtureNodeIds = useMemo(() => new Map(
+    testDataEntries.flatMap((entry) => entry.eligibility.kind === "eligible"
+      ? [[entry.name, entry.eligibility.nodeId] as const]
+      : []),
+  ), [testDataEntries])
+  const testDataRoute = useWorkflowTestDataRouteState({
+    ready: draft.data !== undefined && editor.resources.sourceView.data !== undefined,
+    fixtureNames,
+    fixtureNodeIds,
+    nodeIds,
+    onSelectNode: editor.view.setSelectedNodeId,
+  })
+  const activeFixtureNames = useMemo(
+    () => new Set(testDataRoute.activeFixtureNames),
+    [testDataRoute.activeFixtureNames],
+  )
+  const testDataNodeStates = useMemo(
+    () => workflowNodeTestDataStates(testDataEntries, activeFixtureNames),
+    [activeFixtureNames, testDataEntries],
+  )
+  const activeTestData = useMemo(() => {
+    const entriesByName = new Map(testDataEntries.map((entry) => [entry.name, entry]))
+    return testDataRoute.activeFixtureNames.flatMap((name) => {
+      const active = entriesByName.get(name)
+      return active?.eligibility.kind === "eligible"
+        ? [{ fixtureName: active.name, nodeId: active.eligibility.nodeId }]
+        : []
+    })
+  }, [testDataEntries, testDataRoute.activeFixtureNames])
+  const launchTestData = useMemo(() => {
+    const relevantNodeIds = workflowTestDataNodeIdsForScope(sourceNodes, testScope)
+    return relevantNodeIds === undefined
+      ? activeTestData
+      : activeTestData.filter((entry) => relevantNodeIds.has(entry.nodeId))
+  }, [activeTestData, sourceNodes, testScope])
+  const testData: WorkflowTestDataControls = {
+    entries: testDataEntries,
+    activeFixtureNames,
+    previewFixtureName: testDataRoute.previewFixtureName,
+    nodeStates: testDataNodeStates,
+    panelOpen: testDataRoute.panelOpen,
+    disabled: !editor.permissions.canRunCommands || editor.pending.saveLayout || editor.pending.pinnedOutput,
+    onOpenChange: (open) => open ? testDataRoute.openPanel() : testDataRoute.closePanel(),
+    onToggle: (entry) => {
+      if (entry.eligibility.kind === "eligible") {
+        testDataRoute.toggleTestData(entry.name, entry.eligibility.nodeId)
+      }
+    },
+    onPreview: (entry) => testDataRoute.selectPreviewFixture(entry.name, entry.source?.node_id),
+    onClearAll: testDataRoute.clearAll,
+    onRemove: (name) => {
+      testDataRoute.removeFixture(name)
+      editor.actions.removeExpressionFixture(name)
+    },
+    onEdit: (entry, output) => editor.actions.editPinnedOutput(entry.name, output),
+    onDespin: (entry) => {
+      testDataRoute.removeFixture(entry.name)
+      editor.actions.despinOutput(entry.name)
+    },
+  }
 
   if (draft.isPending) {
     return <div className="p-6"><PageLoading label="Abrindo draft" /></div>
@@ -82,8 +173,13 @@ export function WorkflowEditorPage() {
       <WorkflowEditorWorkspace
         draft={draft.data}
         editor={editor}
+        testData={testData}
         onTestThroughNode={(nodeId) => {
           setTestScope({ kind: "through_node", node_id: nodeId })
+          setTestOpen(true)
+        }}
+        onTestScopedNode={(kind: WorkflowTestScopeKind, nodeId) => {
+          setTestScope({ kind, node_id: nodeId })
           setTestOpen(true)
         }}
       />
@@ -92,17 +188,33 @@ export function WorkflowEditorPage() {
         <SheetContent side="bottom" className="max-h-[88vh] overflow-y-auto">
           <SheetHeader className="border-b">
             <SheetTitle>
-              {testScope.kind === "through_node" ? `Executar até ${testScope.node_id}` : `Testar ${draft.data.primary_resource.id}`}
+              {testScope.kind === "workflow"
+                ? `Testar ${draft.data.primary_resource.id}`
+                : testScope.kind === "through_node"
+                  ? `Executar até ${testScope.node_id}`
+                  : testScope.kind === "isolated_node"
+                    ? `Executar somente ${testScope.node_id}`
+                    : `Executar de ${testScope.node_id} em diante`}
             </SheetTitle>
             <SheetDescription>
-              {testScope.kind === "through_node"
-                ? "Executa o passo selecionado e todas as dependências anteriores, sem percorrer o restante do fluxo."
-                : "Escolha dados reais ou uma invocation avançada sem sair do canvas."}
+              {testScope.kind === "workflow"
+                ? "Escolha dados reais ou uma invocation avançada sem sair do canvas."
+                : testScope.kind === "through_node"
+                  ? "Executa o passo selecionado e todas as dependências anteriores, sem percorrer o restante do fluxo."
+                  : testScope.kind === "isolated_node"
+                    ? "Executa apenas o passo selecionado; todas as entradas anteriores vêm dos dados salvos ativos."
+                    : "Executa o passo selecionado e os próximos; entradas externas vêm dos dados salvos ativos."}
             </SheetDescription>
           </SheetHeader>
           <LaunchPage
             expectedWorkflow={draft.data.primary_resource.id}
+            definitionSource={{
+              kind: "draft",
+              draft_id: draft.data.draft_id,
+              etag: draft.data.etag,
+            }}
             executionScope={testScope}
+            testData={launchTestData}
             embedded
           />
         </SheetContent>

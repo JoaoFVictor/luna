@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { NativeLunaPlatformRegistrations } from "../../../platform/native/native-platform-registrations.js";
 import type { NativeWorkflowRunInput } from "../../../runtime/composition/target-executor.js";
-import { createStudioCapabilityCatalog } from "../../application/catalog/capability-catalog.js";
 import {
   createProcessWarningRunDiagnosticSink,
   reportStudioRunDiagnosticBestEffort,
@@ -40,6 +39,7 @@ import { nativeStudioCheckpointReplayIsSafe } from "./run-recovery-safety.js";
 import { NativeStudioRunDispatchAdoption } from "./run-dispatch-adoption.js";
 import { NativeStudioRunRecoverySupervisor } from "./run-recovery-supervisor.js";
 import { NativeStudioRunTerminalJobCleanup } from "./run-terminal-job-cleanup.js";
+import { createNativeStudioCapabilityCatalog } from "./capability-catalog.js";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const MAX_HEARTBEAT_INTERVAL_MS = 60_000;
@@ -48,7 +48,9 @@ const MAX_ORPHAN_THRESHOLD_MS = 24 * 60 * 60 * 1_000;
 
 type DispatcherPlatform = Pick<
   NativeLunaPlatformRegistrations,
-  "capabilityRegistry"
+  | "capabilityRegistry"
+  | "workflowBuiltIns"
+  | "taskProviderBuiltIns"
 >;
 
 type RunWorkflow = (
@@ -129,8 +131,8 @@ export class NativeStudioRunDispatcher
         ? createProcessWarningRunDiagnosticSink()
         : undefined);
     this.#onBackgroundError = options.onBackgroundError;
-    const catalogFingerprint = createStudioCapabilityCatalog(
-      options.platform.capabilityRegistry
+    const catalogFingerprint = createNativeStudioCapabilityCatalog(
+      options.platform
     ).technical_fingerprint;
     if (
       !Number.isSafeInteger(this.#heartbeatIntervalMs) ||

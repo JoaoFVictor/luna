@@ -1,6 +1,7 @@
 import {
   CircleAlertIcon,
   Clock3Icon,
+  DatabaseIcon,
   ExternalLinkIcon,
   PlayIcon,
   ShieldAlertIcon,
@@ -62,16 +63,43 @@ function PlanIdentity({ plan }: { plan: RunPlan }) {
       <CardContent className="space-y-5">
         <dl className="grid gap-4 sm:grid-cols-2">
           <ExactValue label="Workflow escolhido" value={plan.workflow_id} />
+          <ExactValue
+            label="Definição"
+            value={plan.definition_source.kind === "draft" ? "Draft salvo" : "Workflow instalado"}
+          />
           <ExactValue label="Modo" value={plan.mode} />
           <ExactValue
             label="Escopo"
             value={plan.execution_scope.kind === "workflow"
               ? "Workflow completo"
-              : `Até o passo ${plan.execution_scope.node_id}`}
+              : plan.execution_scope.kind === "through_node"
+                ? `Até o passo ${plan.execution_scope.node_id}`
+                : plan.execution_scope.kind === "isolated_node"
+                  ? `Somente o passo ${plan.execution_scope.node_id}`
+                  : `Do passo ${plan.execution_scope.node_id} em diante`}
           />
         </dl>
 
         <Separator />
+
+        {plan.execution_profile.kind === "manual_test" && (
+          <Alert>
+            <DatabaseIcon aria-hidden="true" />
+            <AlertTitle>
+              {plan.execution_profile.test_data.length} {plan.execution_profile.test_data.length === 1 ? "node será substituído" : "nodes serão substituídos"} por dados salvos
+            </AlertTitle>
+            <AlertDescription>
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                {plan.execution_profile.test_data.map((entry) => (
+                  <li key={entry.node_id}>
+                    <code>{entry.node_id}</code> não executará; usará <code>{entry.fixture_name}</code>.
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2">Nodes restantes e seus efeitos continuam reais.</p>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -118,6 +146,7 @@ function PlanIdentity({ plan }: { plan: RunPlan }) {
             <ExactValue label="Execution snapshot" value={plan.execution_snapshot_hash} />
             <ExactValue label="Invocation hash" value={plan.invocation_hash} />
             <ExactValue label="Config hash" value={plan.config_hash} />
+            <ExactValue label="Execution profile" value={plan.execution_profile_hash} />
             <ExactValue label="Plan ID" value={plan.plan_id} />
           </dl>
         </details>
@@ -252,7 +281,11 @@ function Confirmation(props: ConfirmationProps) {
 
         <Button className="w-full" disabled={!executable} onClick={props.onExecute}>
           <PlayIcon aria-hidden="true" />
-          {props.executing ? "Iniciando…" : "Executar workflow"}
+          {props.executing
+            ? "Iniciando…"
+            : props.plan.execution_profile.kind === "manual_test"
+              ? "Executar teste com dados salvos"
+              : "Executar workflow"}
         </Button>
       </CardContent>
     </Card>
@@ -266,8 +299,17 @@ export function RunLaunchNoticeAlert({ notice }: { notice: RunLaunchNotice }) {
       <AlertTitle>{notice.title}</AlertTitle>
       <AlertDescription>
         <p>{notice.message}</p>
-        {notice.requestId !== undefined && <p>Request ID: <code>{notice.requestId}</code></p>}
         {notice.planId !== undefined && <p>Plan ID: <code>{notice.planId}</code></p>}
+        {(notice.requestId !== undefined || notice.code !== undefined || notice.technicalMessage !== undefined) && (
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs">Detalhes técnicos</summary>
+            <div className="mt-1 space-y-1 font-mono text-xs">
+              {notice.code !== undefined && <p>Código: {notice.code}</p>}
+              {notice.requestId !== undefined && <p>Request ID: {notice.requestId}</p>}
+              {notice.technicalMessage !== undefined && <p>{notice.technicalMessage}</p>}
+            </div>
+          </details>
+        )}
         {notice.kind === "acceptance_unknown" && (
           <Link
             className={buttonVariants({ variant: "outline", size: "sm", className: "mt-3" })}
@@ -276,6 +318,14 @@ export function RunLaunchNoticeAlert({ notice }: { notice: RunLaunchNotice }) {
               : `/runs?plan_id=${encodeURIComponent(notice.planId)}`}
           >
             Consultar Runs <ExternalLinkIcon aria-hidden="true" />
+          </Link>
+        )}
+        {notice.code === "studio_run_repository_not_ready" && (
+          <Link
+            className={buttonVariants({ variant: "outline", size: "sm", className: "mt-3" })}
+            to="/configuration?tab=posture#repositories"
+          >
+            Ver repositórios <ExternalLinkIcon aria-hidden="true" />
           </Link>
         )}
       </AlertDescription>

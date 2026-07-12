@@ -45,6 +45,7 @@ const registration: CapabilityRegistration = {
   input_schema: {},
   output_schema: {},
   required_ports: [],
+  requires_repository: false,
 }
 
 describe("CapabilityCatalogPanel", () => {

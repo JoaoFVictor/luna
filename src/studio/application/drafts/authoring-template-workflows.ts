@@ -27,6 +27,7 @@ const readOnlyPipeline: WorkflowTemplateBuilder = ({ resourceId, selection, temp
     input_schema: "input.schema.json",
     output_schema: "output.schema.json",
     capabilities: template.capabilities,
+    requires: { repository: true },
     nodes: [
       {
         id: "preflight",

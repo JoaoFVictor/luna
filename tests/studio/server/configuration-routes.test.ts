@@ -125,6 +125,15 @@ function controlFixture(): StudioConfigurationControl & {
       editing: "read_only" as const,
       providers: []
     })),
+    testProviderConnection: vi.fn(async () => ({
+      provider_id: "github",
+      probe_id: "github",
+      status: "healthy" as const,
+      checked_at: TIMESTAMP,
+      effects: ["credential_read" as const, "network_read" as const, "process_execution" as const],
+      timeout_ms: 10_000,
+      summary: "GitHub respondeu com uma conta autenticada."
+    })),
     runtime: vi.fn(async () => ({
       editing: "read_only" as const,
       workflow_runtime_id: "langgraph",
@@ -280,6 +289,53 @@ describe("Studio configuration routes", () => {
         ifMatch: ETAG
       }
     );
+    await server.close();
+  });
+
+  it("runs a dedicated provider probe without adapter input", async () => {
+    const control = controlFixture();
+    const server = await serverFor(control);
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/studio/v1/configuration/providers/github/probe",
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      provider_id: "github",
+      probe_id: "github",
+      status: "healthy",
+      effects: ["credential_read", "network_read", "process_execution"]
+    });
+    expect(control.testProviderConnection).toHaveBeenCalledWith(
+      principal,
+      "github",
+      expect.any(AbortSignal)
+    );
+    await server.close();
+  });
+
+  it("reports an unknown provider probe as explicitly unsupported", async () => {
+    const control = controlFixture();
+    control.testProviderConnection.mockResolvedValue({
+      provider_id: "unknown",
+      status: "unsupported",
+      summary: "Este provider não possui um teste de conexão dedicado."
+    });
+    const server = await serverFor(control);
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/studio/v1/configuration/providers/unknown/probe",
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      provider_id: "unknown",
+      status: "unsupported",
+      summary: "Este provider não possui um teste de conexão dedicado."
+    });
     await server.close();
   });
 

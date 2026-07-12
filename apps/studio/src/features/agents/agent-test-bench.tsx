@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FlaskConicalIcon, RefreshCwIcon, ShieldAlertIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { describeStudioError } from "@/api/error-presentation"
+import type { StudioErrorPresentation } from "@/api/error-presentation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -56,10 +58,6 @@ function parseJsonObject(source: string, label: string): ParsedObject {
   return { ok: true, value: value as Record<string, unknown> }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Falha inesperada no Test Bench."
-}
-
 function isAbort(error: unknown, signal: AbortSignal): boolean {
   return signal.aborted ||
     (error instanceof DOMException && error.name === "AbortError")
@@ -90,7 +88,7 @@ export function AgentTestBench({
   const [knownProfiles, setKnownProfiles] = useState<StudioAgentTestModelProfile[]>([])
   const [preview, setPreview] = useState<StudioAgentTestPlan>()
   const [result, setResult] = useState<StudioAgentTestResult>()
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<StudioErrorPresentation>()
   const [planning, setPlanning] = useState(false)
   const [executing, setExecuting] = useState(false)
   const [executionAttempted, setExecutionAttempted] = useState(false)
@@ -141,7 +139,7 @@ export function AgentTestBench({
   const buildRequest = useCallback(():
     | { ok: true; request: StudioAgentTestPlanRequest }
     | { ok: false; error: string } => {
-    const fixture = parseJsonObject(fixtureSource, "Fixture")
+    const fixture = parseJsonObject(fixtureSource, "Entrada de teste")
     if (!fixture.ok) return fixture
     const explicitContext = includeExplicitContext
       ? parseJsonObject(contextSource, "Contexto explícito")
@@ -171,7 +169,7 @@ export function AgentTestBench({
   const generatePreview = useCallback(async () => {
     const built = buildRequest()
     if (!built.ok) {
-      setError(built.error)
+      setError({ title: "Revise os dados do teste", message: built.error })
       return
     }
     invalidatePreview(true)
@@ -187,7 +185,7 @@ export function AgentTestBench({
       setKnownProfiles(response.resolution.available_model_profiles)
       setClock(Date.now())
     } catch (cause) {
-      if (!isAbort(cause, controller.signal)) setError(errorMessage(cause))
+      if (!isAbort(cause, controller.signal)) setError(describeStudioError(cause))
     } finally {
       if (planAbort.current === controller) {
         planAbort.current = undefined
@@ -218,7 +216,7 @@ export function AgentTestBench({
       )
       if (!controller.signal.aborted) setResult(response)
     } catch (cause) {
-      if (!isAbort(cause, controller.signal)) setError(errorMessage(cause))
+      if (!isAbort(cause, controller.signal)) setError(describeStudioError(cause))
     } finally {
       if (executeAbort.current === controller) {
         executeAbort.current = undefined
@@ -243,7 +241,7 @@ export function AgentTestBench({
                 Test Bench do agent
               </CardTitle>
               <CardDescription>
-                Fixture limitada + contexto JSON explicitamente fornecido.
+                Teste isolado com entrada e contexto JSON fornecidos por você.
               </CardDescription>
             </div>
             <Badge variant="outline">{targetLabel(target)}</Badge>
@@ -260,7 +258,7 @@ export function AgentTestBench({
 
           <div className="space-y-2">
             <label htmlFor="agent-test-fixture" className="text-sm font-medium">
-              Fixture JSON
+              Entrada de teste (JSON)
             </label>
             <Textarea
               id="agent-test-fixture"
@@ -315,7 +313,7 @@ export function AgentTestBench({
 
           <div className="space-y-2">
             <label htmlFor="agent-test-model-profile" className="text-sm font-medium">
-              Model profile
+              Modelo
             </label>
             <select
               id="agent-test-model-profile"
@@ -355,8 +353,16 @@ export function AgentTestBench({
       {error !== undefined && (
         <Alert variant="destructive">
           <ShieldAlertIcon aria-hidden="true" />
-          <AlertTitle>Test Bench não concluiu</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertTitle>{error.title}</AlertTitle>
+          <AlertDescription>
+            {error.message}
+            {error.technicalMessage !== undefined && (
+              <details className="mt-2">
+                <summary className="cursor-pointer">Detalhes técnicos</summary>
+                <code className="mt-1 block break-all text-xs">{error.technicalMessage}</code>
+              </details>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 

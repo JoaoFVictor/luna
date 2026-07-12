@@ -1,6 +1,6 @@
 export type WorkflowGraphNode = {
   readonly id: string
-  readonly kind: "built_in" | "agent" | "pattern" | "interrupt"
+  readonly kind: "built_in" | "agent" | "pattern" | "interrupt" | "workflow"
   readonly capability_id: string
   readonly can_create_pending_interrupt: boolean
 }

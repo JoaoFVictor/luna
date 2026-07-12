@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defineInputAdapters } from "../../../src/adapters/registry.js";
 import { createStudioConfigurationPosture } from "../../../src/studio/application/configuration/posture.js";
 import { StudioProviderHealthTracker } from "../../../src/studio/application/inputs/provider-health.js";
+import { defineProviderHealthProbes } from "../../../src/core/providers/health-probe-registry.js";
 
 const temporaryDirectories: string[] = [];
 const SECRET_MODEL = "secret-provider/private-model";
@@ -76,10 +77,18 @@ describe("Studio configuration posture", () => {
         })
       }
     ]);
-    const providerHealth = new StudioProviderHealthTracker({
-      now: () => new Date("2026-07-11T12:00:00.000Z")
-    });
-    providerHealth.markHealthy("github", "github-pr-url");
+    const providerHealth = new StudioProviderHealthTracker();
+    providerHealth.markHealthy(
+      "github",
+      "github",
+      "2026-07-11T12:00:00.000Z"
+    );
+    const providerHealthProbes = defineProviderHealthProbes([{
+      id: "github",
+      timeout_ms: 10_000,
+      effects: ["credential_read", "network_read", "process_execution"],
+      run: async () => ({ summary: "healthy" })
+    }]);
     const posture = createStudioConfigurationPosture({
       projectRoot,
       configRoot,
@@ -98,6 +107,7 @@ describe("Studio configuration posture", () => {
       env: { PRIVATE_MODEL: SECRET_MODEL },
       inputAdapters,
       providerHealth,
+      providerHealthProbes,
       agents: async () => ({
         status: "complete",
         fingerprint: `sha256:${"a".repeat(64)}`,
@@ -133,11 +143,15 @@ describe("Studio configuration posture", () => {
             agents: ["reviewer"],
             input_schema: "workflows/review/input.schema.json",
             output_schema: "workflows/review/output.schema.json",
+            input_schema_content: { type: "object" },
+            output_schema_content: { type: "object" },
+            synchronous_composition: "allowed",
             node_counts: {
               built_in: 0,
               agent: 1,
               pattern: 0,
-              human_gate: 0
+              human_gate: 0,
+              workflow: 0
             },
             requires_repository: true,
             max_concurrency: 1
@@ -185,9 +199,14 @@ describe("Studio configuration posture", () => {
       {
         id: "github",
         adapter_ids: ["github-pr-url"],
-        credential_status: "verified_by_preview",
+        credential_status: "healthy",
+        probe: {
+          id: "github",
+          effects: ["credential_read", "network_read", "process_execution"],
+          timeout_ms: 10_000
+        },
         checked_at: "2026-07-11T12:00:00.000Z",
-        checked_adapter_id: "github-pr-url"
+        checked_probe_id: "github"
       }
     ]);
     expect(runtime).toEqual({

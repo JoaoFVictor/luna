@@ -10,7 +10,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import type { LaunchInputMode } from "@/features/launch/launch-input"
-import { launchAdapterDescription, launchAdapterLabel, launchEffectLabel } from "@/features/launch/launch-presentation"
+import { launchAdapterDescription, launchAdapterLabel, launchAdapterPlaceholder, launchEffectLabel } from "@/features/launch/launch-presentation"
 
 type LaunchInputCardProps = {
   adapters: InputAdapterCatalog["adapters"]
@@ -24,6 +24,7 @@ type LaunchInputCardProps = {
   previewing: boolean
   executing: boolean
   inputError?: string
+  invocationRoutingDescription: string
   onModeChange: (value: string) => void
   onAdapterChange: (value: string) => void
   onOpaqueInputChange: (value: string) => void
@@ -86,7 +87,7 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
                   id="launch-input"
                   value={props.opaqueInput}
                   onChange={(event) => props.onOpaqueInputChange(event.target.value)}
-                  placeholder="https://github.com/org/repo/pull/123"
+                  placeholder={launchAdapterPlaceholder(selectedAdapter?.source ?? "")}
                   autoComplete="off"
                 />
                 <FieldDescription>{selectedDescription}</FieldDescription>
@@ -141,7 +142,7 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
                   onChange={(event) => props.onInvocationJsonChange(event.target.value)}
                   spellCheck={false}
                 />
-                <FieldDescription>Modo técnico para uma invocation já normalizada. As regras instaladas ainda decidem o workflow.</FieldDescription>
+                <FieldDescription>{props.invocationRoutingDescription}</FieldDescription>
               </Field>
             </TabsContent>
           </Tabs>

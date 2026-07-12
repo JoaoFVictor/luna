@@ -1,4 +1,7 @@
 import { runtimeError } from "../../core/runtime/errors.js";
+import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
+import type { JsonSchemaLike } from "../../core/capabilities/json-schema-types.js";
+import { assertCheckpointJsonValue } from "../../core/runtime/json.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
 import { resolveNodeInput } from "../../core/workflow/runner-input.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
@@ -16,6 +19,35 @@ export async function executeWorkflowNode(
   runtimeContext: WorkflowRuntimeContext,
   node: CompiledWorkflowNode
 ): Promise<unknown> {
+  if (node.kind === "workflow") {
+    const nodeInput = await resolveNodeInput(node, state, runtimeContext, input);
+    assertCheckpointJsonValue(nodeInput);
+    const child = node.composition;
+    if (child === undefined) {
+      throw runtimeError("Compiled workflow node is missing its child definition", "runtime_state_invalid", {
+        details: { node_id: node.id }
+      });
+    }
+    if (!matchesJsonSchema(
+      child.workflow.input_schema_content as JsonSchemaLike,
+      nodeInput
+    )) {
+      throw runtimeError("Composed workflow input failed schema validation", "runtime_node_output_schema_invalid", {
+        details: { node_id: node.id, workflow_id: child.workflow.id }
+      });
+    }
+    if (input.compositionExecutor === undefined) {
+      throw runtimeError("No executor registered for composed workflow node", "runtime_state_invalid", {
+        details: { node_id: node.id, workflow_id: child.workflow.id }
+      });
+    }
+    return await input.compositionExecutor({
+      workflowInput: input,
+      node,
+      input: nodeInput,
+      child
+    });
+  }
   if (node.kind === "built_in" || node.kind === "pattern") {
     const nodeInput = await resolveNodeInput(node, state, runtimeContext, input);
     if (node.kind === "pattern") {

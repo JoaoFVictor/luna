@@ -1,21 +1,20 @@
 export type StudioProviderHealthObservation = {
-  readonly adapterId: string;
+  readonly probeId: string;
   readonly checkedAt: string;
 };
 
 export class StudioProviderHealthTracker {
   readonly #observations = new Map<string, StudioProviderHealthObservation>();
-  readonly #now: () => Date;
 
-  constructor(options: { readonly now?: () => Date } = {}) {
-    this.#now = options.now ?? (() => new Date());
+  markHealthy(providerId: string, probeId: string, checkedAt: string): void {
+    this.#observations.set(providerId, {
+      probeId,
+      checkedAt
+    });
   }
 
-  markHealthy(providerId: string, adapterId: string): void {
-    this.#observations.set(providerId, {
-      adapterId,
-      checkedAt: this.#now().toISOString()
-    });
+  clear(providerId: string): void {
+    this.#observations.delete(providerId);
   }
 
   get(providerId: string): StudioProviderHealthObservation | undefined {

@@ -50,6 +50,8 @@ const StudioBuiltInCatalogItemSchema = z
     input_schema: StudioJsonValueSchema,
     output_schema: StudioJsonValueSchema,
     required_ports: StringArraySchema,
+    requires_repository: z.boolean(),
+    deferred_lifecycle: z.literal("final_report").optional(),
     side_effect_policy: NonEmptyStringSchema.optional()
   })
   .strict();

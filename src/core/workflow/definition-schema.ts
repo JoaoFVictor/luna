@@ -31,7 +31,8 @@ const NODE_FIELDS: Record<string, ReadonlySet<string>> = {
   built_in: new Set(["id", "type", "uses", "input", "artifacts", "after", "policies"]),
   agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "runtime_requirements", "policies"]),
   pattern: new Set(["id", "type", "uses", "worker", "input", "gates", "repair", "artifacts", "after", "capabilities", "policies"]),
-  human_gate: new Set(["id", "type", "uses", "decision", "after", "input", "artifacts"])
+  human_gate: new Set(["id", "type", "uses", "decision", "after", "input", "artifacts"]),
+  workflow: new Set(["id", "type", "workflow", "input", "artifacts", "after"])
 };
 
 const GATE_FIELDS = new Set([
@@ -288,6 +289,13 @@ function readNode(
       type: "human_gate",
       uses: requireString(raw.uses, `${yamlPath}.uses`),
       ...(raw.decision === undefined ? {} : { decision: raw.decision })
+    };
+  }
+  if (type === "workflow") {
+    return {
+      ...base,
+      type: "workflow",
+      workflow: requireString(raw.workflow, `${yamlPath}.workflow`)
     };
   }
 

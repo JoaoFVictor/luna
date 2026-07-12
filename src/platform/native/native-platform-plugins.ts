@@ -41,6 +41,10 @@ import { langGraphWorkflowRuntimeFactory } from "../../runtime/langgraph/workflo
 import { collectWorktreeDiff } from "../../capabilities/git/diff/worktree-diff.js";
 import { createQualityGatePatternExecutors } from "../../capabilities/quality-gates/workflow-pattern-executor.js";
 import { runValidationCommands } from "../../capabilities/validation/command-runner.js";
+import type { ProviderHealthProbe } from "../../core/providers/health-probe.js";
+import { githubHealthProbe } from "../../providers/github/health-probe.js";
+import { jiraHealthProbe } from "../../providers/jira/health-probe.js";
+import { planeHealthProbe } from "../../providers/plane/health-probe.js";
 
 export type NativeWorkflowBuiltIns = {
   readonly beforeContext?: readonly BuiltInStep[];
@@ -77,6 +81,7 @@ export type NativePlatformPlugin = {
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
   readonly pullRequestReviewProviderFactories?: readonly PullRequestReviewProviderFactory[];
   readonly webhookAdapterFactories?: readonly WebhookProviderAdapterFactory[];
+  readonly providerHealthProbe?: ProviderHealthProbe;
 };
 
 export type NativePlatformPluginRegistration = Omit<
@@ -106,6 +111,7 @@ export function defineNativePlatformPlugins(
   const patternExecutorIds = new Set<string>();
   const webhookProviderIds = new Set<string>();
   const taskSources = new Set<string>();
+  const healthProbeIds = new Set<string>();
   const registrations: NativePlatformPluginRegistration[] = [];
 
   for (const plugin of plugins) {
@@ -117,6 +123,17 @@ export function defineNativePlatformPlugins(
     }
     ids.add(plugin.id);
     const taskSource = plugin.taskSource ?? plugin.id;
+    if (plugin.providerHealthProbe !== undefined) {
+      if (
+        plugin.providerHealthProbe.id !== plugin.id ||
+        healthProbeIds.has(plugin.providerHealthProbe.id)
+      ) {
+        throw nativePlatformPluginError(
+          `Native provider health probe must uniquely match plugin id ${plugin.id}`
+        );
+      }
+      healthProbeIds.add(plugin.providerHealthProbe.id);
+    }
     if (plugin.taskSource !== undefined && taskSource.trim() === "") {
       throw nativePlatformPluginError(`Native plugin ${plugin.id} has an empty task source`);
     }
@@ -194,6 +211,9 @@ export function defineNativePlatformPlugins(
       ...(plugin.webhookAdapterFactories === undefined
         ? {}
         : { webhookAdapterFactories: plugin.webhookAdapterFactories }),
+      ...(plugin.providerHealthProbe === undefined
+        ? {}
+        : { providerHealthProbe: plugin.providerHealthProbe }),
       ...(inputAdapters.length === 0 ? {} : { inputAdapters })
     }));
   }
@@ -249,6 +269,7 @@ export const nativePlatformPluginDefinitions = [
   },
   {
     id: "github",
+    providerHealthProbe: githubHealthProbe,
     inputAdapters: [githubPrUrlAdapter],
     workflowBuiltIns: {
       beforeContext: [preflightBuiltIn],
@@ -262,6 +283,7 @@ export const nativePlatformPluginDefinitions = [
   },
   {
     id: "jira",
+    providerHealthProbe: jiraHealthProbe,
     inputAdapters: [jiraTaskUrlAdapter],
     taskBuiltIns: {
       collectTaskContext: collectJiraTaskContext,
@@ -270,6 +292,7 @@ export const nativePlatformPluginDefinitions = [
   },
   {
     id: "plane",
+    providerHealthProbe: planeHealthProbe,
     inputAdapters: [planeTaskUrlAdapter],
     taskBuiltIns: {
       collectTaskContext: collectPlaneTaskContext,

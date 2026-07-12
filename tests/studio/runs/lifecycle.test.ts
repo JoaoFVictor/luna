@@ -32,6 +32,20 @@ describe("run lifecycle", () => {
     }).success).toBe(false);
   });
 
+  it("preserves the immutable draft definition source on the run record", () => {
+    const definitionSource = {
+      kind: "draft" as const,
+      draft_id: "00000000-0000-4000-8000-000000000021",
+      etag: "draft-etag"
+    };
+
+    const record = initialRunRecord(preallocation("run-from-draft", {
+      definition_source: definitionSource
+    }));
+
+    expect(record.definition_source).toEqual(definitionSource);
+  });
+
   it("keeps graph snapshots opaque and rejects physical-looking handles", () => {
     const record = initialRunRecord(preallocation("run-1"));
 

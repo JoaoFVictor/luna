@@ -70,7 +70,10 @@ export function buildNativeStudioQueuedRunMaterial(
     run_id: runId,
     accepted_plan_id: command.planId,
     input_provenance: command.request.input_provenance,
+    execution_profile: command.snapshot.execution_profile,
+    execution_profile_hash: command.snapshot.execution_profile_hash,
     workflow_id: command.request.workflow_id,
+    definition_source: command.request.definition_source,
     definition: {
       workflow_revision: command.snapshot.workflow_revision,
       definition_bundle_hash: command.snapshot.definition_bundle_hash,

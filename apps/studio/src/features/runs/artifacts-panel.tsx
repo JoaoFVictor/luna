@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { DownloadIcon, FileTextIcon, ShieldAlertIcon } from "lucide-react"
+import { CopyIcon, DownloadIcon, FileTextIcon, ShieldAlertIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { studioApi } from "@/api/client"
 import { artifactPreviewQuery, artifactsQuery } from "@/api/queries"
@@ -64,6 +65,11 @@ function ArtifactPreviewBody({
   }
 
   const value = preview.data
+  const copyable = value.kind === "json"
+    ? JSON.stringify(redactPhysicalPathsInJson(value.value), null, 2)
+    : value.kind === "text"
+      ? redactPhysicalPaths(value.text)
+      : undefined
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2 text-xs">
@@ -92,15 +98,30 @@ function ArtifactPreviewBody({
           O download não recebe redaction. Trate o arquivo como potencialmente sensível e não confiável.
         </AlertDescription>
       </Alert>
-      <Button
-        variant="outline"
-        nativeButton={false}
-        render={
-          <a href={studioApi.artifactDownloadUrl(runId, handle)} download>
-            <DownloadIcon aria-hidden="true" /> Baixar original
-          </a>
-        }
-      />
+      <div className="flex flex-wrap gap-2">
+        {copyable !== undefined && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              void navigator.clipboard.writeText(copyable).then(
+                () => toast.success("Preview seguro copiado para reutilização"),
+                () => toast.error("O navegador não permitiu copiar o preview"),
+              )
+            }}
+          >
+            <CopyIcon aria-hidden="true" /> Copiar preview seguro
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={
+            <a href={studioApi.artifactDownloadUrl(runId, handle)} download>
+              <DownloadIcon aria-hidden="true" /> Baixar original
+            </a>
+          }
+        />
+      </div>
     </div>
   )
 }
@@ -132,8 +153,16 @@ function defaultArtifactHandle(
   )?.manifest_handle ?? artifacts[0]?.manifest_handle ?? ""
 }
 
-export function ArtifactsPanel({ runId }: { runId: string }) {
-  const artifacts = useQuery(artifactsQuery(runId))
+export function ArtifactsPanel({
+  runId,
+  expectedCount,
+  terminalAt,
+}: {
+  runId: string
+  expectedCount?: number
+  terminalAt?: string
+}) {
+  const artifacts = useQuery(artifactsQuery(runId, { expectedCount, terminalAt }))
   const [selected, setSelected] = useState("")
 
   useEffect(() => {

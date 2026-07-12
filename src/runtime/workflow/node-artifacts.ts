@@ -40,7 +40,8 @@ function nodeHasArtifacts(
     (node.source.type === "built_in" ||
       node.source.type === "agent" ||
       node.source.type === "pattern" ||
-      node.source.type === "human_gate") &&
+      node.source.type === "human_gate" ||
+      node.source.type === "workflow") &&
     (node.source.artifacts?.length ?? 0) > 0
   );
 }

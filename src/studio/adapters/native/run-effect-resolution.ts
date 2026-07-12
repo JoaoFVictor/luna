@@ -4,6 +4,7 @@ import type { CapabilityRegistry } from "../../../core/capabilities/registry.js"
 import type { AnyLunaToolDefinition } from "../../../core/tools/contracts.js";
 import { collectWorkflowAgentReferences } from "../../../core/workflow/definition-references.js";
 import type { WorkflowDefinition } from "../../../core/workflow/definition-types.js";
+import { composedWorkflowNodes } from "../../../core/workflow/composition.js";
 import { studioRunValueDigest } from "../../application/runs/launch-digests.js";
 import type {
   StudioRunEffectCategory,
@@ -91,8 +92,9 @@ function declaredEffects(
 ): StudioRunPotentialEffect[] {
   const indexes = registry.registrations();
   const effects = new Map<string, StudioRunPotentialEffect>();
-  for (const node of workflow.graph.nodes) {
-    if (node.type === "human_gate") {
+  for (const entry of composedWorkflowNodes(workflow)) {
+    const { node, qualifiedNodeId: nodeId } = entry;
+    if (node.type === "human_gate" || node.type === "workflow") {
       continue;
     }
     const registrationId = node.type === "agent" ? node.agent : node.uses;
@@ -109,7 +111,7 @@ function declaredEffects(
       const policy = indexes.policies.get(policyId);
       for (const operationId of policy?.side_effect_operation_ids ?? []) {
         const effect = effectForPolicy({
-          nodeId: node.id,
+          nodeId,
           registrationId,
           policyId,
           operationId,
@@ -153,7 +155,8 @@ async function agentEffects(
   readonly effects: readonly StudioRunPotentialEffect[];
   readonly uncertainties: readonly StudioRunEffectUncertainty[];
 }> {
-  const references = collectWorkflowAgentReferences(workflow.graph.nodes);
+  const entries = composedWorkflowNodes(workflow);
+  const references = collectWorkflowAgentReferences(entries.map(({ node }) => node));
   const agents = new Map(
     await Promise.all(
       [...new Set(references.map(({ agentId }) => agentId))]
@@ -168,7 +171,7 @@ async function agentEffects(
   );
   const effects: StudioRunPotentialEffect[] = [];
   const uncertainties: StudioRunEffectUncertainty[] = [];
-  for (const node of workflow.graph.nodes) {
+  for (const { node, qualifiedNodeId: nodeId } of entries) {
     const agentIds = node.type === "agent"
       ? [node.agent]
       : node.type === "pattern"
@@ -187,28 +190,28 @@ async function agentEffects(
       }
       effects.push({
         effect_id: effectId("effect", {
-          node_id: node.id,
+          node_id: nodeId,
           agent_id: agentId,
           kind: "model"
         }),
         category: "model_call",
-        description: `Node ${node.id} may invoke model agent ${agentId}.`,
+        description: `Node ${nodeId} may invoke model agent ${agentId}.`,
         confirmation_required: false,
         retry_semantics: "retry_forbidden",
         idempotency_scope: "attempt",
         registration_id: agentId,
-        node_id: node.id
+        node_id: nodeId
       });
       uncertainties.push({
         uncertainty_id: effectId("uncertainty", {
-          node_id: node.id,
+          node_id: nodeId,
           agent_id: agentId,
           kind: "dynamic_agent_tools"
         }),
         kind: "dynamic_agent_tools",
         description: `Agent ${agentId} can choose among its declared local and MCP runtime tools dynamically.`,
         may_include_unlisted_write: agentMayIncludeUnlistedWrite(agent),
-        node_id: node.id
+        node_id: nodeId
       });
     }
   }

@@ -9,6 +9,76 @@ import {
 } from "./authoring-native-test-support.js";
 
 describe("native Studio draft dependency authoring", () => {
+  it("adds a composed workflow closure and validates the draft", async () => {
+    const { service, projectRoot, drafts } = await nativeFixture();
+    const childDirectory = path.join(projectRoot, "workflows", "child-flow");
+    await mkdir(childDirectory, { recursive: true });
+    await Promise.all([
+      writeFile(
+        path.join(childDirectory, "workflow.yaml"),
+        [
+          "id: child-flow",
+          "type: workflow",
+          "mode: read_only",
+          "input_schema: input.schema.json",
+          "output_schema: output.schema.json",
+          "capabilities: []",
+          "nodes: []",
+          ""
+        ].join("\n"),
+        "utf8"
+      ),
+      writeFile(path.join(childDirectory, "input.schema.json"), JSON_SCHEMA, "utf8"),
+      writeFile(path.join(childDirectory, "output.schema.json"), JSON_SCHEMA, "utf8")
+    ]);
+    const draft = await service.create({
+      resource: { kind: "workflow", id: "parent-flow" },
+      source: { mode: "blank" }
+    });
+    const definition = draft.files.find((file) =>
+      file.file.path.endsWith("workflow.yaml")
+    );
+    if (definition === undefined) throw new Error("Expected workflow definition");
+
+    const updated = await service.patch(
+      draft.draft_id,
+      {
+        edits: [{
+          action: "write",
+          file: definition.file,
+          content: [
+            "id: parent-flow",
+            "type: workflow",
+            "mode: read_only",
+            "input_schema: input.schema.json",
+            "output_schema: output.schema.json",
+            "capabilities: []",
+            "nodes:",
+            "  - id: child",
+            "    type: workflow",
+            "    workflow: child-flow",
+            "    input: {}",
+            ""
+          ].join("\n")
+        }]
+      },
+      draft.etag
+    );
+
+    expect(
+      (await drafts.get(draft.draft_id))?.dependencies.map(
+        (dependency) => dependency.file.path
+      )
+    ).toEqual([
+      "workflows/child-flow/input.schema.json",
+      "workflows/child-flow/output.schema.json",
+      "workflows/child-flow/workflow.yaml"
+    ]);
+    await expect(service.validate(updated.draft_id, updated.etag)).resolves.toMatchObject({
+      validation: { status: "valid" }
+    });
+  });
+
   it("replaces and removes agent dependency guards with the definition", async () => {
     const { service, projectRoot, drafts } = await nativeFixture();
     await Promise.all([

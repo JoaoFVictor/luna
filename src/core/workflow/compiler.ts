@@ -75,7 +75,8 @@ export type CompiledWorkflowNodeKind =
   | "built_in"
   | "agent"
   | "pattern"
-  | "interrupt";
+  | "interrupt"
+  | "workflow";
 
 export type CompiledWorkflowNode = {
   readonly id: string;
@@ -85,6 +86,10 @@ export type CompiledWorkflowNode = {
   readonly output_schema: unknown;
   readonly can_create_pending_interrupt: boolean;
   readonly execution_policy?: PatternExecutionPolicy;
+  readonly composition?: {
+    readonly workflow: WorkflowDefinition;
+    readonly compiled: CompiledWorkflow;
+  };
   readonly source: WorkflowNode;
 };
 
@@ -120,7 +125,9 @@ export function compileWorkflow(input: CompileWorkflowInput): CompiledWorkflow {
       workflow.graph.nodes[nodeIndex],
       nodeIndex,
       indexes,
-      registry
+      registry,
+      workflow,
+      input.reducers
     );
   });
 
@@ -155,7 +162,8 @@ function assertSupportedNodes(nodes: readonly WorkflowNode[]): void {
       node.type !== "built_in" &&
       node.type !== "agent" &&
       node.type !== "pattern" &&
-      node.type !== "human_gate"
+      node.type !== "human_gate" &&
+      node.type !== "workflow"
     ) {
       throw new WorkflowCompilerError(
         "workflow_node_type_unsupported",
@@ -213,7 +221,9 @@ function compileNode(
   node: WorkflowNode,
   nodeIndex: number,
   indexes: CapabilityRegistrationIndex,
-  registry: CapabilityRegistry
+  registry: CapabilityRegistry,
+  workflow: WorkflowDefinition,
+  reducers: WorkflowCompilerReducers | undefined
 ): CompiledWorkflowNode {
   switch (node.type) {
     case "built_in": {
@@ -294,6 +304,29 @@ function compileNode(
         capability_id: registration.id,
         output_schema: registration.output_schema,
         can_create_pending_interrupt: true,
+        source: node
+      };
+    }
+    case "workflow": {
+      const child = workflow.compositions?.[node.workflow];
+      if (child === undefined) {
+        throw new WorkflowCompilerError(
+          "workflow_capability_unknown",
+          `Composed workflow ${node.workflow} was not resolved.`,
+          { path: `$.nodes[${nodeIndex}].workflow`, capability: `workflow:${node.workflow}` }
+        );
+      }
+      return {
+        id: node.id,
+        kind: "workflow",
+        yaml_path: `$.nodes[${nodeIndex}]`,
+        capability_id: `workflow:${child.id}`,
+        output_schema: child.output_schema_content,
+        can_create_pending_interrupt: false,
+        composition: {
+          workflow: child,
+          compiled: compileWorkflow({ workflow: child, registry, reducers })
+        },
         source: node
       };
     }

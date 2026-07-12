@@ -579,7 +579,9 @@ export function validateCheckpointStateSize(
   assertCheckpointJsonSize(state, options);
 }
 
-export function validateCheckpointState(state: unknown): void {
+export function validateCheckpointState(
+  state: unknown
+): asserts state is LunaRuntimeState {
   assertCheckpointJsonObject(state);
 
   for (const key of requiredStateKeys) {

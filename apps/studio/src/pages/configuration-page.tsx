@@ -27,7 +27,7 @@ import { ConfigurationPosture } from "@/features/configuration/configuration-pos
 import { RoutingEditor } from "@/features/configuration/routing-editor"
 import { routingRuleDescription, routingTargetLabel } from "@/features/configuration/routing-presentation"
 import { WorkflowConfigurationPanel } from "@/features/configuration/workflow-configuration-panel"
-import { launchAdapterDescription, launchAdapterLabel, launchEffectLabel } from "@/features/launch/launch-presentation"
+import { ProviderConnectionCard } from "@/features/configuration/provider-connection-card"
 
 export function ConfigurationPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -200,43 +200,13 @@ export function ConfigurationPage() {
             <PageError error={providers.error} retry={() => void providers.refetch()} />
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              {adapters.data.adapters.map((adapter) => {
-                const provider = providers.data.providers.find((candidate) => candidate.id === adapter.source)
-                const credentialLabel = provider === undefined
-                  ? "Provider não projetado"
-                  : provider.credential_status === "verified_by_preview"
-                    ? "Conexão verificada nesta sessão"
-                    : "Conexão ainda não testada"
-                return (
-                <Card key={adapter.id}>
-                  <CardHeader>
-                    <CardTitle>{launchAdapterLabel(adapter.id, adapter.source)}</CardTitle>
-                    <CardDescription>{launchAdapterDescription(adapter.id, adapter.source, adapter.description)}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3 text-sm">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline">{credentialLabel}</Badge>
-                      <Badge variant="outline">Entrada disponível</Badge>
-                    </div>
-                    <p className="text-muted-foreground">
-                      {adapter.preview.enabled
-                        ? "Pode ser testada antes de executar."
-                        : "A prévia não está disponível para esta entrada."}
-                    </p>
-                    {adapter.preview.enabled && adapter.preview.effects.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {adapter.preview.effects.map((effect) => <Badge key={effect} variant="outline">{launchEffectLabel(effect)}</Badge>)}
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <Link className={buttonVariants({ variant: "outline", size: "sm" })} to={`/launch?adapter=${encodeURIComponent(adapter.id)}`}>
-                        {provider?.credential_status === "verified_by_preview" ? "Testar novamente" : "Testar conexão"}
-                      </Link>
-                    </div>
-                    <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Detalhes técnicos</summary><p className="mt-2">Adapter: <code>{adapter.id}</code> · provider: <code>{adapter.source}</code></p></details>
-                  </CardContent>
-                </Card>
-              )})}
+              {providers.data.providers.map((provider) => (
+                <ProviderConnectionCard
+                  key={provider.id}
+                  provider={provider}
+                  adapters={adapters.data.adapters.filter((adapter) => adapter.source === provider.id)}
+                />
+              ))}
             </div>
           )}
         </TabsContent>

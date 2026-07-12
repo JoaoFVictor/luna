@@ -37,6 +37,10 @@ import {
   taskProviderBuiltInsFromPlugins,
   workflowBuiltInsFromPlugins
 } from "./native-built-ins.js";
+import {
+  defineProviderHealthProbes,
+  type ProviderHealthProbeRegistry
+} from "../../core/providers/health-probe-registry.js";
 
 export type NativeLunaPlatformRegistrations = {
   readonly inputAdapterRegistry: InputAdapterRegistry<RegisteredInputAdapter>;
@@ -51,6 +55,7 @@ export type NativeLunaPlatformRegistrations = {
   readonly changeRequestProviderFactories: readonly ChangeRequestProviderFactory[];
   readonly pullRequestReviewProviderFactories: readonly PullRequestReviewProviderFactory[];
   readonly webhookProviderRegistry: WebhookProviderRegistry<WebhookProviderAdapterFactory>;
+  readonly providerHealthProbeRegistry: ProviderHealthProbeRegistry;
   readonly capabilityRegistry: CapabilityRegistry;
   readonly capabilityManifests: readonly CapabilityManifest[];
 };
@@ -111,6 +116,13 @@ export function createNativeLunaPlatformRegistrations({
     ),
     webhookProviderRegistry: defineWebhookProviderAdapterFactories(
       plugins.flatMap((plugin) => plugin.webhookAdapterFactories ?? [])
+    ),
+    providerHealthProbeRegistry: defineProviderHealthProbes(
+      plugins.flatMap((plugin) =>
+        plugin.providerHealthProbe === undefined
+          ? []
+          : [plugin.providerHealthProbe]
+      )
     ),
     capabilityRegistry:
       baseCapabilityManifests === officialCapabilityManifests &&

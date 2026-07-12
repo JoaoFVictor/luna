@@ -196,6 +196,9 @@ export async function createStudioServer(
     server = Fastify({
       bodyLimit: bodyLimit(options.bodyLimitBytes),
       logger: options.logger ?? DEFAULT_FASTIFY_LOGGER,
+      // RunOpaqueIdSchema permits 256 characters. Fastify otherwise rejects
+      // historical run ids above its 100-character default before routing.
+      routerOptions: { maxParamLength: 256 },
       trustProxy: false
     });
     server.addHook("onClose", async () => {

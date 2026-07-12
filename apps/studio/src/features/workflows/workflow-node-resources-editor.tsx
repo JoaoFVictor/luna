@@ -134,7 +134,7 @@ export function WorkflowNodeResourcesEditor({
 
   return (
     <>
-      {selected.type !== "human_gate" && (
+      {selected.type !== "human_gate" && selected.type !== "workflow" && (
         <>
           <RegistrationQuickAdd
             id="workflow-node-policy-registration"

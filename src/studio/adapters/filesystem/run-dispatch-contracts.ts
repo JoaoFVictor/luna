@@ -11,6 +11,8 @@ import { StudioRunTimestampSchema } from "../../contracts/run-launch-primitives.
 import { StudioDigestSchema } from "../../contracts/digests.js";
 import { RunOpaqueIdSchema } from "../../contracts/runs.js";
 import { NativeStudioRunSnapshotManifestSchema } from "../native/run-snapshot-contracts.js";
+import { sha256Digest } from "../../../core/workflow/definition-digests.js";
+import { STUDIO_STANDARD_EXECUTION_PROFILE_HASH } from "../../contracts/manual-test-data.js";
 
 const NativeStudioQueuedRunHandleSchema = z
   .object({
@@ -90,6 +92,24 @@ function validateQueuedRun(
       code: z.ZodIssueCode.custom,
       path: ["preallocation", "input_provenance"],
       message: "Queued input provenance must match"
+    });
+  }
+  const legacyStandardProfile =
+    job.preallocation.execution_profile === undefined &&
+    job.preallocation.execution_profile_hash === undefined &&
+    job.execution_snapshot.execution_profile.kind === "standard" &&
+    job.execution_snapshot.execution_profile_hash ===
+      STUDIO_STANDARD_EXECUTION_PROFILE_HASH;
+  if (!legacyStandardProfile && (
+    job.preallocation.execution_profile_hash !==
+      job.execution_snapshot.execution_profile_hash ||
+    sha256Digest(job.preallocation.execution_profile) !==
+      sha256Digest(job.execution_snapshot.execution_profile)
+  )) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["preallocation", "execution_profile"],
+      message: "Queued execution profiles must match"
     });
   }
   if (

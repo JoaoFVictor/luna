@@ -269,7 +269,11 @@ export function checkpointResumeContext(input: RunWorkflowInput): JsonObject {
   const context = {
     invocation: input.invocation,
     config: input.config,
-    run: input.run
+    run: input.run,
+    ...(input.precompleted_steps === undefined ||
+    Object.keys(input.precompleted_steps).length === 0
+      ? {}
+      : { precompleted_steps: input.precompleted_steps })
   };
   assertCheckpointJsonValue(context);
 
@@ -280,6 +284,7 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
   readonly invocation: JsonValue;
   readonly config: JsonValue;
   readonly run: RunHandle;
+  readonly precompleted_steps?: RunWorkflowInput["precompleted_steps"];
 } {
   const context = metadata.resume_context;
   if (typeof context !== "object" || context === null || Array.isArray(context)) {
@@ -289,6 +294,13 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
   const invocation = context.invocation;
   const config = context.config;
   const run = context.run;
+  const precompletedSteps = context.precompleted_steps;
+  if (precompletedSteps !== undefined) {
+    assertCheckpointJsonObject(
+      precompletedSteps,
+      "$.resume_context.precompleted_steps"
+    );
+  }
   assertCheckpointJsonObject(run, "$.resume_context.run");
   if (
     typeof run.run_id !== "string" ||
@@ -308,6 +320,9 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
       workflow_id: run.workflow_id,
       attempt: run.attempt,
       started_at: run.started_at
-    }
+    },
+    ...(precompletedSteps === undefined
+      ? {}
+      : { precompleted_steps: precompletedSteps })
   };
 }

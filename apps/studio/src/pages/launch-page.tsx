@@ -6,7 +6,7 @@ import {
   type FormEvent,
 } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { RouteIcon } from "lucide-react"
+import { DatabaseIcon, RouteIcon } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 
 import { studioApi } from "@/api/client"
@@ -39,18 +39,43 @@ type PreviewRequest = {
 
 export function LaunchPage({
   expectedWorkflow: expectedWorkflowOverride,
+  definitionSource = { kind: "installed" },
   executionScope = { kind: "workflow" },
+  testData,
   embedded = false,
 }: {
   expectedWorkflow?: string
+  definitionSource?: RunPlanInput["definition_source"]
   executionScope?: RunPlanInput["execution_scope"]
+  testData?: readonly { readonly fixtureName: string; readonly nodeId: string }[]
   embedded?: boolean
 } = {}) {
   const [params] = useSearchParams()
   const session = useStudioSession()
   const queryClient = useQueryClient()
   const adapters = useQuery(inputAdaptersQuery)
-  const launch = useRunLaunch()
+  const testDataKey = testData?.map((entry) => entry.fixtureName).join("\u0000")
+  const planRun = useCallback(
+    async (input: RunPlanInput, signal?: AbortSignal) =>
+      definitionSource.kind === "draft"
+        ? await studioApi.planDraftTestRun(
+            definitionSource.draft_id,
+            {
+              input,
+              ...(testData === undefined || testData.length === 0
+                ? {}
+                : { test_data: testData.map((entry) => ({ fixture_name: entry.fixtureName })) }),
+            },
+            signal,
+          )
+        : await studioApi.planRun(input, signal),
+    [
+      definitionSource.kind,
+      definitionSource.kind === "draft" ? definitionSource.draft_id : undefined,
+      testData,
+    ],
+  )
+  const launch = useRunLaunch(planRun)
   const invalidateRunLaunch = launch.invalidate
   const [inputMode, setInputMode] = useState<LaunchInputMode>("adapter")
   const [adapterId, setAdapterId] = useState("")
@@ -63,6 +88,14 @@ export function LaunchPage({
   const activePreview = useRef<AbortController | undefined>(undefined)
   const expectedWorkflow = expectedWorkflowOverride ?? params.get("workflow") ?? ""
   const requestedAdapter = params.get("adapter") ?? ""
+  const definitionSourceKey = definitionSource.kind === "installed"
+    ? "installed"
+    : `${definitionSource.draft_id}:${definitionSource.etag}`
+
+  useEffect(() => {
+    setInputError(undefined)
+    invalidateRunLaunch()
+  }, [definitionSourceKey, invalidateRunLaunch, testDataKey])
 
   useEffect(() => {
     if (adapterId !== "") return
@@ -155,6 +188,7 @@ export function LaunchPage({
     event.preventDefault()
     const built = buildRunPlanInput({
       mode: inputMode,
+      definitionSource,
       executionScope,
       adapterId,
       opaqueInput,
@@ -213,6 +247,53 @@ export function LaunchPage({
           </AlertDescription>
         </Alert>
       )}
+      {executionScope.kind === "isolated_node" && (
+        <Alert>
+          <RouteIcon aria-hidden="true" />
+          <AlertTitle>Teste isolado de {executionScope.node_id}</AlertTitle>
+          <AlertDescription>
+            Somente este passo será executado. Suas dependências precisam estar cobertas por dados salvos ativos.
+          </AlertDescription>
+        </Alert>
+      )}
+      {executionScope.kind === "from_node" && (
+        <Alert>
+          <RouteIcon aria-hidden="true" />
+          <AlertTitle>Teste a partir de {executionScope.node_id}</AlertTitle>
+          <AlertDescription>
+            Este passo e seus descendentes serão executados. Entradas externas precisam estar cobertas por dados salvos ativos.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {definitionSource.kind === "draft" && (
+        <Alert>
+          <RouteIcon aria-hidden="true" />
+          <AlertTitle>Testando o draft salvo</AlertTitle>
+          <AlertDescription>
+            Este teste usa exatamente a revisão salva no editor e não depende das regras de routing instaladas.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {testData !== undefined && testData.length > 0 && (
+        <Alert>
+          <DatabaseIcon aria-hidden="true" />
+          <AlertTitle>
+            {testData.length} {testData.length === 1 ? "node será substituído" : "nodes serão substituídos"} neste teste
+          </AlertTitle>
+          <AlertDescription>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {testData.map((entry) => (
+                <li key={entry.nodeId}>
+                  <code>{entry.nodeId}</code> usará <code>{entry.fixtureName}</code> e não executará.
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2">A invocation abaixo continua sendo usada; nodes restantes e seus efeitos são reais. Produção ignora estes dados.</p>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <form onSubmit={createPlan} className="space-y-4">
         <LaunchInputCard
@@ -227,6 +308,9 @@ export function LaunchPage({
           previewing={preview.isPending}
           executing={launch.executing}
           inputError={inputError}
+          invocationRoutingDescription={definitionSource.kind === "draft"
+            ? "Modo técnico para uma invocation já normalizada. Este draft salvo será executado diretamente."
+            : "Modo técnico para uma invocation já normalizada. As regras instaladas decidem o workflow."}
           onModeChange={changeMode}
           onAdapterChange={setAdapterId}
           onOpaqueInputChange={(value) => {
@@ -260,7 +344,11 @@ export function LaunchPage({
               : "Esta entrada foi direcionada para outro workflow"}
           </AlertTitle>
           <AlertDescription>
-            Você abriu <code>{expectedWorkflow}</code>, mas a primeira regra correspondente escolheu <code>{launch.prepared.plan.workflow_id}</code>. Revise as regras de routing antes de continuar.
+            {launch.prepared.plan.workflow_id === expectedWorkflow
+              ? definitionSource.kind === "draft"
+                ? "A revisão salva deste draft foi preparada para execução."
+                : "A primeira regra correspondente direcionou a entrada para este workflow."
+              : <>Você abriu <code>{expectedWorkflow}</code>, mas a primeira regra correspondente escolheu <code>{launch.prepared.plan.workflow_id}</code>. Revise as regras de routing antes de continuar.</>}
           </AlertDescription>
         </Alert>
       )}

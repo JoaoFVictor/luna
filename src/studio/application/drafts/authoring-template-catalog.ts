@@ -52,7 +52,7 @@ export const BUILT_IN_STUDIO_DRAFT_TEMPLATE_CATALOG =
         reused_resources: [],
         capabilities: ["runtime", "artifacts"],
         config: NO_CONFIG,
-        runtime_requirements: [],
+        runtime_requirements: ["repository"],
         provider_requirements: [],
         side_effects: [],
         graph_preview: {

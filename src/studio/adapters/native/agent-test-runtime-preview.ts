@@ -35,7 +35,10 @@ import type {
 
 export type NativeStudioAgentTestPlatform = Pick<
   NativeLunaPlatformRegistrations,
-  "agentRuntimeFactories" | "capabilityRegistry"
+  | "agentRuntimeFactories"
+  | "capabilityRegistry"
+  | "workflowBuiltIns"
+  | "taskProviderBuiltIns"
 >;
 
 type EffectiveResolution = Omit<

@@ -46,6 +46,8 @@ import {
   nativeLunaPlatformRegistrations,
   type NativeLunaPlatformRegistrations
 } from "./native-platform-registrations.js";
+import { selectEffectivePrecompletedSteps } from "../../runtime/workflow/precompleted-steps.js";
+import { createNativeWorkflowCompositionExecutor } from "./native-workflow-composition.js";
 
 export { compileNativeWorkflow } from "./native-run-context.js";
 export type { NativeCompiledWorkflow } from "./native-run-context.js";
@@ -116,13 +118,18 @@ export async function runNativeWorkflowTarget(
     repository,
     run,
     runtimeConfig,
-    signal: input.signal
+    signal: input.signal,
+    definitionRoots: input.definitionRoots
   });
   const workflowConfig = input.workflowConfig ?? await loadWorkflowRuntimeConfig({
     workflow: nativeWorkflow.workflow,
     configRoot: definitionConfigRoot
   });
   assertCheckpointJsonValue(workflowConfig);
+  const effectivePrecompletedSteps = selectEffectivePrecompletedSteps(
+    nativeWorkflow.compiled,
+    input.precompleted_steps
+  );
 
   const workflowRuntimeInput = {
     compiled: nativeWorkflow.compiled,
@@ -133,6 +140,9 @@ export async function runNativeWorkflowTarget(
     ...(input.executionScope === undefined
       ? {}
       : { executionScope: input.executionScope }),
+    ...(effectivePrecompletedSteps === undefined
+      ? {}
+      : { precompleted_steps: effectivePrecompletedSteps }),
     ...execution.input,
     ...nativeWorkflowExecutionControls(input)
   } satisfies RunWorkflowInput;
@@ -254,6 +264,7 @@ async function prepareNativeWorkflowExecution({
   run,
   runtimeConfig,
   signal,
+  definitionRoots,
   composition = createRuntimeCompositionForWorkflow(
     runtimeConfig,
     nativeWorkflow.workflow,
@@ -276,6 +287,7 @@ async function prepareNativeWorkflowExecution({
   readonly run: RunHandle;
   readonly runtimeConfig: RuntimeCompositionConfig;
   readonly signal?: AbortSignal;
+  readonly definitionRoots?: NativeWorkflowRunInput["definitionRoots"];
   readonly composition?: ReturnType<typeof createRuntimeCompositionForWorkflow>;
 }): Promise<{
   readonly composition: ReturnType<typeof createRuntimeCompositionForWorkflow>;
@@ -285,6 +297,7 @@ async function prepareNativeWorkflowExecution({
     | "backends"
     | "builtIns"
     | "patternExecutors"
+    | "compositionExecutor"
     | "builtInMetadata"
     | "lockManager"
     | "agentRuntime"
@@ -326,6 +339,13 @@ async function prepareNativeWorkflowExecution({
       },
       backends: composition.backends,
       ...executors,
+      compositionExecutor: createNativeWorkflowCompositionExecutor({
+        projectRoot,
+        configRoot,
+        definitionRoots,
+        runChild: async (childInput) =>
+          await runNativeWorkflowTarget(childInput, dependencies)
+      }),
       agentRuntime: composition.agentRuntime,
       observability: composition.observabilityForRun({
         run,

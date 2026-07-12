@@ -20,6 +20,8 @@ import {
   runCompiledWorkflowWithScheduler,
   type WorkflowNodeScheduler
 } from "../../../src/runtime/workflow/runner-engine.js";
+import { applyWorkflowGraphUpdate } from "../../../src/runtime/langgraph/workflow-state.js";
+import { ensureWorkflowExecutionIdentity } from "../../../src/runtime/workflow/workflow-execution-identity.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -110,6 +112,110 @@ function runInput({
 }
 
 describe("runtime-neutral workflow runner engine", () => {
+  it("substitutes precompleted nodes using the canonical effective DAG", async () => {
+    const cutpointWorkflow = definition([
+      { id: "shared", type: "built_in", uses: "runtime.noop" },
+      { id: "exclusive", type: "built_in", uses: "runtime.noop" },
+      {
+        id: "supplied",
+        type: "built_in",
+        uses: "runtime.noop",
+        after: ["shared", "exclusive"]
+      },
+      {
+        id: "live",
+        type: "built_in",
+        uses: "runtime.noop",
+        after: ["shared"]
+      }
+    ]);
+    const executed: string[] = [];
+    const scheduled: string[] = [];
+    const input = {
+      ...runInput({ runId: "engine-precompleted-cutpoint" }),
+      workflow: cutpointWorkflow,
+      compiled: compileWorkflow({
+        workflow: cutpointWorkflow,
+        registry,
+        reducers: { steps: "object_merge" }
+      }),
+      precompleted_steps: { supplied: { fixture: true } },
+      builtIns: {
+        "runtime.noop": async ({ node }) => {
+          executed.push(node.id);
+          return { node: node.id };
+        }
+      }
+    } satisfies RunWorkflowInput;
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState,
+      nodes,
+      runNode
+    }) => {
+      scheduled.push(...nodes.map((node) => node.id));
+      let state = initialState;
+      for (const node of nodes) {
+        const result = await runNode(node, state);
+        if (result.kind !== "completed") throw new Error("unexpected wait");
+        state = applyWorkflowGraphUpdate(state, result.update);
+      }
+      return { kind: "completed", state };
+    };
+
+    const result = await runCompiledWorkflowWithScheduler(input, scheduler);
+
+    expect(scheduled).toEqual(["shared", "live"]);
+    expect(executed).toEqual(["shared", "live"]);
+    expect(result).toMatchObject({
+      status: "succeeded",
+      state: { steps: { supplied: { fixture: true } } },
+      output: {
+        supplied: { fixture: true },
+        live: { node: "live" }
+      }
+    });
+  });
+
+  it("rejects unknown and schema-invalid precompleted outputs before scheduling", async () => {
+    const scheduler = vi.fn<WorkflowNodeScheduler<RunWorkflowInput>>();
+    await expect(runCompiledWorkflowWithScheduler({
+      ...runInput({ runId: "engine-precompleted-unknown" }),
+      precompleted_steps: { missing: {} }
+    }, scheduler)).rejects.toMatchObject({ code: "runtime_state_invalid" });
+    await expect(runCompiledWorkflowWithScheduler({
+      ...runInput({ runId: "engine-precompleted-schema" }),
+      precompleted_steps: { noop: "invalid" }
+    }, scheduler)).rejects.toMatchObject({
+      code: "runtime_node_output_schema_invalid"
+    });
+    await expect(runCompiledWorkflowWithScheduler({
+      ...runInput({ runId: "engine-precompleted-json" }),
+      precompleted_steps: {
+        noop: undefined as never
+      }
+    }, scheduler)).rejects.toMatchObject({ code: "runtime_invalid_json" });
+    expect(scheduler).not.toHaveBeenCalled();
+  });
+
+  it("binds precompleted outputs into the durable execution identity", async () => {
+    const stores = backends();
+    const input = runInput({
+      stores,
+      runId: "engine-precompleted-identity"
+    });
+    await ensureWorkflowExecutionIdentity({
+      ...input,
+      precompleted_steps: { noop: { fixture: "first" } }
+    }, input.run.run_id);
+
+    await expect(ensureWorkflowExecutionIdentity({
+      ...input,
+      precompleted_steps: { noop: { fixture: "changed" } }
+    }, input.run.run_id)).rejects.toMatchObject({
+      code: "runtime_checkpoint_schema_mismatch"
+    });
+  });
+
   it("does not apply the full workflow output schema to a bounded through-node run", async () => {
     const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
       initialState,

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { LayersIcon, PlusIcon, Trash2Icon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -28,12 +29,24 @@ export function WorkflowGroupManager({
   disabled: boolean
   onChange: (groups: readonly WorkflowCanvasGroup[]) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<readonly WorkflowCanvasGroup[]>(groups)
+
+  useEffect(() => {
+    if (!open) setEditing(groups)
+  }, [groups, open])
+
   const updateGroup = (id: string, update: (group: WorkflowCanvasGroup) => WorkflowCanvasGroup) => {
-    onChange(groups.map((group) => group.id === id ? update(group) : group))
+    setEditing((current) => current.map((group) => group.id === id ? update(group) : group))
+  }
+
+  const changeOpen = (next: boolean) => {
+    setOpen(next)
+    if (next) setEditing(groups)
   }
 
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={changeOpen}>
       <SheetTrigger render={<Button size="sm" variant="outline" />}>
         <LayersIcon aria-hidden="true" /> Grupos
       </SheetTrigger>
@@ -43,7 +56,7 @@ export function WorkflowGroupManager({
           <SheetDescription>Organizam visualmente etapas relacionadas. Não mudam dependências nem a ordem de execução.</SheetDescription>
         </SheetHeader>
         <div className="space-y-4 px-4 pb-6">
-          {groups.map((group) => (
+          {editing.map((group) => (
             <section key={group.id} className="space-y-3 rounded-xl border p-3">
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1 space-y-1">
@@ -59,7 +72,7 @@ export function WorkflowGroupManager({
                   size="icon"
                   variant="ghost"
                   disabled={disabled}
-                  onClick={() => onChange(groups.filter((candidate) => candidate.id !== group.id))}
+                  onClick={() => setEditing((current) => current.filter((candidate) => candidate.id !== group.id))}
                 >
                   <Trash2Icon aria-hidden="true" /><span className="sr-only">Excluir grupo {group.title}</span>
                 </Button>
@@ -89,14 +102,29 @@ export function WorkflowGroupManager({
               </fieldset>
             </section>
           ))}
-          {groups.length === 0 && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Nenhum grupo visual.</p>}
+          {editing.length === 0 && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Nenhum grupo visual.</p>}
           <Button
             variant="outline"
             disabled={disabled || nodes.length === 0}
-            onClick={() => onChange([...groups, { id: nextGroupId(groups), title: "Novo grupo", nodeIds: [] }])}
+            onClick={() => setEditing((current) => [
+              ...current,
+              { id: nextGroupId(current), title: "Novo grupo", nodeIds: [] },
+            ])}
           >
             <PlusIcon aria-hidden="true" /> Criar grupo
           </Button>
+          <div className="flex justify-end gap-2 border-t pt-4">
+            <Button variant="ghost" onClick={() => changeOpen(false)}>Cancelar</Button>
+            <Button
+              disabled={disabled}
+              onClick={() => {
+                onChange(editing)
+                setOpen(false)
+              }}
+            >
+              Salvar grupos
+            </Button>
+          </div>
         </div>
       </SheetContent>
     </Sheet>

@@ -1,4 +1,5 @@
 import {
+  RunGraphOverlayNodeSchema,
   RunGraphResponseSchema,
   type RunGraphOverlay,
   type RunGraphResponse,
@@ -10,7 +11,8 @@ import {
   RunTerminalStatusSchema,
   type RunRecord
 } from "../../contracts/runs.js";
-import type { RunLedgerPort } from "./ports.js";
+import type { RunEventLedgerPort, RunLedgerPort } from "./ports.js";
+import { projectLiveRunGraph } from "./live-graph-overlay.js";
 import {
   StoredRunGraphOutcomeSchema,
   StoredRunGraphSnapshotSchema,
@@ -116,15 +118,18 @@ async function safeRead<T>(
 
 export type RunGraphServiceOptions = {
   readonly ledger: RunLedgerPort;
+  readonly events: RunEventLedgerPort;
   readonly store: RunGraphSnapshotStorePort;
 };
 
 export class RunGraphService {
   readonly #ledger: RunLedgerPort;
+  readonly #events: RunEventLedgerPort;
   readonly #store: RunGraphSnapshotStorePort;
 
   constructor(options: RunGraphServiceOptions) {
     this.#ledger = options.ledger;
+    this.#events = options.events;
     this.#store = options.store;
   }
 
@@ -264,21 +269,42 @@ export class RunGraphService {
       if (record.lifecycle_projection === "degraded") {
         return unobservable("live_projection_invalid");
       }
-      const graphIds = new Set(graph.graph.nodes.map((node) => node.id));
-      if (record.active_node_ids.some((nodeId) => !graphIds.has(nodeId))) {
+      let events: Awaited<ReturnType<RunEventLedgerPort["list"]>> | undefined;
+      try {
+        events = await this.#events.list({
+          run_id: record.run_id,
+          direction: "desc",
+          event_types: [
+            "run.node.started",
+            "run.node.succeeded",
+            "run.node.failed"
+          ],
+          limit: 200
+        });
+      } catch {
+        // Active node ids are still an exact durable observation even when
+        // the richer event timeline is temporarily unavailable.
+      }
+      const projection = projectLiveRunGraph({
+        record,
+        graph: graph.graph,
+        events: events?.items ?? [],
+        history: events === undefined
+          ? "active_only"
+          : events.next_cursor === null
+            ? "complete"
+            : "recent"
+      });
+      if (projection === undefined) {
         return unobservable("live_projection_invalid");
       }
       return {
         observation: "observed",
         source: "live",
+        history: projection.history,
         record_revision: record.record_revision,
         run_status: record.run_status,
-        nodes: record.active_node_ids.map((nodeId) => ({
-          node_id: nodeId,
-          status: record.run_status === "waiting_for_input"
-            ? "waiting_for_input" as const
-            : "running" as const
-        }))
+        nodes: projection.nodes
       };
     }
 
@@ -307,9 +333,13 @@ export class RunGraphService {
     return {
       observation: "observed",
       source: "persisted",
+      history: "complete",
       record_revision: parsedOutcome.data.record_revision,
       run_status: parsedOutcome.data.run_status,
-      nodes: parsedOutcome.data.nodes
+      nodes: parsedOutcome.data.nodes.map((node) => {
+        const { output_snapshot: _privateOutput, ...overlayNode } = node;
+        return RunGraphOverlayNodeSchema.parse(overlayNode);
+      })
     };
   }
 }

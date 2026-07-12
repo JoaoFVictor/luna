@@ -14,6 +14,16 @@ const DiagnosticCodeSchema = z
   .max(128)
   .regex(/^[a-z0-9][a-z0-9._-]*$/);
 
+const StudioValidationNodeFieldPathSchema = z
+  .array(
+    z.union([
+      z.string().min(1).max(256),
+      z.number().int().safe().nonnegative()
+    ])
+  )
+  .min(1)
+  .max(64);
+
 export const StudioValidationDiagnosticSchema = z
   .object({
     severity: z.enum(["error", "warning"]),
@@ -26,6 +36,7 @@ export const StudioValidationDiagnosticSchema = z
       .min(1)
       .max(STUDIO_VALIDATION_FIELD_PATH_MAX_LENGTH)
       .optional(),
+    node_field_path: StudioValidationNodeFieldPathSchema.optional(),
     capability: z
       .string()
       .min(1)
@@ -37,7 +48,19 @@ export const StudioValidationDiagnosticSchema = z
       to: z.string().min(1).max(256)
     }).strict().optional()
   })
-  .strict();
+  .strict()
+  .superRefine((diagnostic, context) => {
+    if (
+      diagnostic.node_field_path !== undefined &&
+      diagnostic.node_id === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A node field path must identify its owning node",
+        path: ["node_field_path"]
+      });
+    }
+  });
 export type StudioValidationDiagnostic = z.infer<
   typeof StudioValidationDiagnosticSchema
 >;
@@ -45,7 +68,7 @@ export type StudioValidationDiagnostic = z.infer<
 export const StudioCompiledWorkflowNodeSchema = z
   .object({
     id: z.string().min(1).max(256),
-    kind: z.enum(["built_in", "agent", "pattern", "interrupt"]),
+    kind: z.enum(["built_in", "agent", "pattern", "interrupt", "workflow"]),
     yaml_path: z.string().min(1).max(1_024),
     capability_id: z.string().min(1).max(256),
     can_create_pending_interrupt: z.boolean()

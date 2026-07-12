@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { InfoIcon, NetworkIcon, ShieldAlertIcon } from "lucide-react"
 
 import { artifactsQuery, runGraphQuery } from "@/api/queries"
-import type { RunRecord } from "@/api/types"
+import type { RunEvent, RunRecord } from "@/api/types"
 import { PageError, PageLoading } from "@/components/page-state"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +16,8 @@ import {
   workflowGraphModel,
   type WorkflowNodeExecution,
 } from "@/features/workflows/workflow-graph"
+import { workflowRunExecutionProjection } from "@/features/workflows/workflow-run-overlay-model"
+import { RunNodeDebugger } from "@/features/runs/run-node-debugger"
 
 const unavailableCopy: Readonly<Record<string, { title: string; description: string }>> = {
   graph_not_persisted_yet: {
@@ -72,60 +74,40 @@ const overlayCopy: Readonly<Record<string, string>> = {
 export function RunGraphPanel({
   runId,
   record,
+  events = [],
+  eventHistoryComplete = true,
 }: {
   runId: string
   record: RunRecord
+  events?: readonly RunEvent[]
+  eventHistoryComplete?: boolean
 }) {
   const graph = useQuery(runGraphQuery(runId))
-  const artifacts = useQuery(artifactsQuery(runId))
-  const [selectedNodeId, setSelectedNodeId] = useState<string>()
+  const artifacts = useQuery(artifactsQuery(runId, {
+    expectedCount: record.artifact_count,
+    terminalAt: record.finished_at,
+  }))
+  const [selection, setSelection] = useState<{
+    readonly runId: string
+    readonly nodeId: string
+  }>()
+  const selectedNodeId = selection?.runId === runId
+    ? selection.nodeId
+    : record.failed_node_id
+  const selectNode = (nodeId: string | undefined) => {
+    setSelection(nodeId === undefined ? undefined : { runId, nodeId })
+  }
 
   const execution = useMemo(() => {
-    const result = new Map<string, WorkflowNodeExecution>()
-    if (graph.data?.availability !== "available") return result
-
-    const graphIds = new Set(graph.data.graph.nodes.map((node) => node.id))
-    if (graph.data.overlay.observation === "observed") {
-      for (const node of graph.data.overlay.nodes) {
-        result.set(node.node_id, {
-          status: node.status,
-          ...(node.attempt_count === undefined
-            ? {}
-            : { attemptCount: node.attempt_count }),
-        })
-      }
+    if (graph.data?.availability !== "available") {
+      return new Map<string, WorkflowNodeExecution>()
     }
-
-    if (artifacts.data !== undefined) {
-      const counts = new Map<string, number>()
-      for (const artifact of artifacts.data.items) {
-        if (
-          artifact.source_node_id !== undefined &&
-          graphIds.has(artifact.source_node_id)
-        ) {
-          counts.set(
-            artifact.source_node_id,
-            (counts.get(artifact.source_node_id) ?? 0) + 1,
-          )
-        }
-      }
-      for (const [nodeId, artifactCount] of counts) {
-        result.set(nodeId, { ...result.get(nodeId), artifactCount })
-      }
-    }
-
-    if (
-      record.failure !== undefined &&
-      record.failed_node_id !== undefined &&
-      graphIds.has(record.failed_node_id)
-    ) {
-      result.set(record.failed_node_id, {
-        ...result.get(record.failed_node_id),
-        primaryFailure: true,
-      })
-    }
-    return result
-  }, [artifacts.data, graph.data, record.failed_node_id, record.failure])
+    return workflowRunExecutionProjection(
+      graph.data,
+      record,
+      artifacts.data?.items,
+    )
+  }, [artifacts.data?.items, graph.data, record])
 
   if (graph.isPending) {
     return (
@@ -169,9 +151,6 @@ export function RunGraphPanel({
 
   const response = graph.data
   const selected = response.graph.nodes.find((node) => node.id === selectedNodeId)
-  const selectedObservation = response.overlay.observation === "observed"
-    ? response.overlay.nodes.find((node) => node.node_id === selectedNodeId)?.observed_output
-    : undefined
   return (
     <Card>
       <CardHeader>
@@ -190,19 +169,19 @@ export function RunGraphPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <dl className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-xs lg:grid-cols-2">
-          {[
-            ["Workflow revision", response.run.workflow_revision],
-            ["Definition bundle", response.run.definition_bundle_hash],
-            ["Execution snapshot", response.run.execution_snapshot_hash],
-            ["Graph hash", response.graph_hash],
-          ].map(([label, value]) => (
-            <div key={label} className="min-w-0">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="break-all font-mono">{value}</dd>
-            </div>
-          ))}
-        </dl>
+        <details className="rounded-lg border bg-muted/20 p-3 text-xs">
+          <summary className="cursor-pointer font-medium">Identidade técnica do grafo</summary>
+          <dl className="mt-3 grid gap-3 lg:grid-cols-2">
+            {[
+              ["Workflow revision", response.run.workflow_revision],
+              ["Definition bundle", response.run.definition_bundle_hash],
+              ["Execution snapshot", response.run.execution_snapshot_hash],
+              ["Graph hash", response.graph_hash],
+            ].map(([label, value]) => (
+              <div key={label} className="min-w-0"><dt className="text-muted-foreground">{label}</dt><dd className="break-all font-mono">{value}</dd></div>
+            ))}
+          </dl>
+        </details>
 
         {response.overlay.observation === "unobservable" && (
           <Alert>
@@ -215,7 +194,9 @@ export function RunGraphPanel({
         )}
         {response.overlay.observation === "observed" && (
           <p className="text-xs text-muted-foreground" aria-live="polite">
-            Outcome persistido na revisão {response.overlay.record_revision} do record; status terminal {response.overlay.run_status}.
+            {response.overlay.source === "persisted"
+              ? `Resultado final persistido na revisão ${response.overlay.record_revision}; status ${response.overlay.run_status}.`
+              : `Execução ao vivo na revisão ${response.overlay.record_revision}; ${response.overlay.history === "complete" ? "histórico completo" : response.overlay.history === "recent" ? "últimos eventos persistidos" : "somente passos ativos"}.`}
           </p>
         )}
         {artifacts.isError && (
@@ -236,7 +217,7 @@ export function RunGraphPanel({
               graph={workflowGraphModel(response.graph)}
               selectedNodeId={selectedNodeId}
               execution={execution}
-              onSelectNode={(nodeId) => setSelectedNodeId(nodeId || undefined)}
+              onSelectNode={(nodeId) => selectNode(nodeId || undefined)}
             />
           </TabsContent>
           <TabsContent value="outline" className="mt-3 rounded-lg border p-3">
@@ -245,37 +226,16 @@ export function RunGraphPanel({
                 compiled={workflowGraphModel(response.graph)}
                 selectedNodeId={selectedNodeId}
                 execution={execution}
-                onSelectNode={setSelectedNodeId}
+                onSelectNode={selectNode}
               />
             </ScrollArea>
           </TabsContent>
         </Tabs>
 
-        {selected !== undefined && (
-          <div className="space-y-3 rounded-lg border p-3" aria-live="polite">
-            <p className="text-sm font-medium">Node selecionado: {selected.id}</p>
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              {selected.capability_id}
-            </p>
-            {selectedObservation !== undefined && (
-              <div>
-                <p className="text-xs font-medium">Estrutura da saída observada</p>
-                <p className="text-xs text-muted-foreground">
-                  Os valores foram removidos no servidor; somente caminhos e tipos são exibidos.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {selectedObservation.fields
-                    .filter((field) => field.path.length > 0)
-                    .map((field) => (
-                      <Badge key={field.path.join(".")} variant="outline">
-                        {field.path.join(".")} · {field.value_type}
-                      </Badge>
-                    ))}
-                  {selectedObservation.truncated && <Badge variant="secondary">lista truncada</Badge>}
-                </div>
-              </div>
-            )}
-          </div>
+        {selected === undefined ? (
+          <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">Clique em um passo para inspecionar tentativas, duração, saídas e falhas.</p>
+        ) : (
+          <RunNodeDebugger node={selected} overlay={response.overlay} events={events} eventsComplete={eventHistoryComplete} artifacts={artifacts.data?.items ?? []} record={record} />
         )}
       </CardContent>
     </Card>

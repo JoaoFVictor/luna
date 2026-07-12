@@ -1,15 +1,18 @@
-import { AlertCircleIcon, AlertTriangleIcon, CheckCircle2Icon } from "lucide-react"
+import { AlertCircleIcon, AlertTriangleIcon, ArrowRightIcon, CheckCircle2Icon } from "lucide-react"
 
 import type { ValidationDiagnostic } from "@/api/types"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { pathLabel } from "@/lib/format"
 
 export function ProblemsPanel({
   diagnostics,
   validated,
+  onOpenDiagnostic,
 }: {
   diagnostics: ValidationDiagnostic[]
   validated: boolean
+  onOpenDiagnostic?: (diagnostic: ValidationDiagnostic) => void
 }) {
   if (!validated) {
     return <p className="py-10 text-center text-sm text-muted-foreground">Valide ou compile para obter diagnostics autoritativos.</p>
@@ -35,6 +38,18 @@ export function ProblemsPanel({
                 {diagnostic.file !== undefined && ` · ${pathLabel(diagnostic.file)}`}
                 {diagnostic.field_path !== undefined && ` · ${diagnostic.field_path}`}
               </p>
+              {diagnostic.node_id !== undefined && onOpenDiagnostic !== undefined && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  onClick={() => onOpenDiagnostic(diagnostic)}
+                >
+                  {diagnostic.node_field_path === undefined ? "Abrir passo" : "Abrir campo"}
+                  <ArrowRightIcon aria-hidden="true" />
+                </Button>
+              )}
             </div>
           </li>
         )

@@ -20,6 +20,7 @@ export const DEFAULT_INVOCATION_JSON = JSON.stringify(
 
 export function buildRunPlanInput(options: {
   mode: LaunchInputMode
+  definitionSource?: RunPlanInput["definition_source"]
   executionScope?: RunPlanInput["execution_scope"]
   adapterId: string
   opaqueInput: string
@@ -33,6 +34,7 @@ export function buildRunPlanInput(options: {
       adapter_id: options.adapterId,
       input: { kind: "cli", value: options.opaqueInput },
       acknowledged_effects: options.acknowledgedAdapterEffects,
+      definition_source: options.definitionSource ?? { kind: "installed" },
       execution_scope: options.executionScope ?? { kind: "workflow" },
     }
   } else {
@@ -48,6 +50,7 @@ export function buildRunPlanInput(options: {
     candidate = {
       kind: "invocation",
       invocation,
+      definition_source: options.definitionSource ?? { kind: "installed" },
       execution_scope: options.executionScope ?? { kind: "workflow" },
     }
   }

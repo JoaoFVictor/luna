@@ -3,6 +3,33 @@ import { studioRunLaunchError } from "../../../src/studio/application/runs/launc
 import { studioRunLaunchHttpError } from "../../../src/studio/server/run-launch-errors.js";
 
 describe("Studio run launch public errors", () => {
+  it("exposes a safe actionable repository requirement", () => {
+    expect(studioRunLaunchHttpError(studioRunLaunchError(
+      "studio_run_repository_unavailable",
+      "private repository resolution details"
+    ))).toEqual({
+      statusCode: 409,
+      code: "studio_run_repository_unavailable",
+      message: "This workflow requires a configured repository"
+    });
+  });
+
+  it("exposes only the safe repository id when its checkout is not ready", () => {
+    expect(studioRunLaunchHttpError(studioRunLaunchError(
+      "studio_run_repository_not_ready",
+      "private filesystem diagnostic",
+      {
+        repository_id: "example-repo",
+        repository_path: "/private/repositories/example-repo"
+      }
+    ))).toEqual({
+      statusCode: 409,
+      code: "studio_run_repository_not_ready",
+      message: "The configured repository checkout is not ready for execution",
+      details: { repository_id: "example-repo" }
+    });
+  });
+
   it("publishes a bounded interrupt-resume diagnostic without internal details", () => {
     const mapped = studioRunLaunchHttpError(studioRunLaunchError(
       "studio_run_interrupt_resume_unsupported",

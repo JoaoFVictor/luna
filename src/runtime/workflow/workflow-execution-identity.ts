@@ -24,6 +24,7 @@ export async function ensureWorkflowExecutionIdentity(
     readonly invocation: RunWorkflowInput["invocation"];
     readonly config: RunWorkflowInput["config"];
     readonly run: RunWorkflowInput["run"];
+    readonly precompleted_steps?: RunWorkflowInput["precompleted_steps"];
   },
   runId: string,
   options: {
@@ -45,13 +46,18 @@ export async function ensureWorkflowExecutionIdentity(
       { details: { run_id: runId, workflow_id: input.compiled.workflow_id } }
     );
   }
+  const hasPrecompletedSteps =
+    Object.keys(input.precompleted_steps ?? {}).length > 0;
   const identity = {
-    identity_schema_version: 2,
+    identity_schema_version: hasPrecompletedSteps ? 3 : 2,
     workflow_id: input.compiled.workflow_id,
     workflow_revision: input.compiled.workflow_revision,
     invocation_digest: sha256Digest(input.invocation),
     config_digest: sha256Digest(input.config),
-    run_handle_digest: sha256Digest(input.run)
+    run_handle_digest: sha256Digest(input.run),
+    ...(hasPrecompletedSteps
+      ? { precompleted_steps_digest: sha256Digest(input.precompleted_steps) }
+      : {})
   } as const;
   const checkpoint: SaveCheckpointInput = {
     thread_id: runId,

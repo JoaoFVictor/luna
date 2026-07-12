@@ -17,6 +17,7 @@ const plan: RunPlan = {
   created_at: "2026-07-11T12:00:00.000Z",
   expires_at: "2099-07-11T12:05:00.000Z",
   workflow_id: "review",
+  definition_source: { kind: "installed" },
   execution_scope: { kind: "workflow" },
   mode: "read_only",
   workflow_revision: digest("1"),
@@ -31,6 +32,8 @@ const plan: RunPlan = {
     adapter_id: "task-url",
     adapter_input_hash: digest("7"),
   },
+  execution_profile: { kind: "standard" },
+  execution_profile_hash: digest("8"),
   potential_effects: [],
   resolved_effects: [],
   effect_uncertainties: [],
@@ -56,6 +59,8 @@ function wrapper(queryClient: QueryClient, initialEntry: string) {
 function renderLaunch(
   initialEntry = "/launch",
   executionScope?: RunPlanInput["execution_scope"],
+  definitionSource?: RunPlanInput["definition_source"],
+  testData?: readonly { readonly fixtureName: string; readonly nodeId: string }[],
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -65,7 +70,7 @@ function renderLaunch(
   })
   render(
     <Routes>
-      <Route path="/launch" element={<LaunchPage executionScope={executionScope} />} />
+      <Route path="/launch" element={<LaunchPage executionScope={executionScope} definitionSource={definitionSource} testData={testData} />} />
       <Route path="/runs/:runId" element={<p>run-detail-destination</p>} />
     </Routes>,
     { wrapper: wrapper(queryClient, initialEntry) },
@@ -88,6 +93,108 @@ afterEach(() => {
 })
 
 describe("LaunchPage", () => {
+  it("plans the saved draft directly without relying on installed routing", async () => {
+    vi.spyOn(studioApi, "inputAdapters").mockResolvedValue({
+      adapters: [{
+        id: "task-url",
+        description: "Task URL adapter",
+        source: "task",
+        input_contract: { kind: "cli", value_type: "string" },
+        preview: { enabled: true, effects: [], timeout_ms: 60_000 },
+      }],
+    })
+    const definitionSource = {
+      kind: "draft" as const,
+      draft_id: "40e67383-a2ce-4c41-93f5-23fc5354ba28",
+      etag: "saved-draft-etag",
+    }
+    const planRun = vi.spyOn(studioApi, "planDraftTestRun").mockResolvedValue({
+      ...plan,
+      definition_source: definitionSource,
+    })
+    renderLaunch("/launch?workflow=review", undefined, definitionSource)
+
+    expect(await screen.findByText("Testando o draft salvo")).toBeDefined()
+    fireEvent.click(screen.getByRole("tab", { name: "Avançado" }))
+    expect(screen.getByText(
+      "Modo técnico para uma invocation já normalizada. Este draft salvo será executado diretamente.",
+    )).toBeDefined()
+    expect(screen.queryByText(/As regras instaladas/)).toBeNull()
+    fireEvent.click(screen.getByRole("tab", { name: "Entrada comum" }))
+    await prepareAdapterPlan()
+    expect(planRun).toHaveBeenCalledWith(
+      definitionSource.draft_id,
+      { input: expect.objectContaining({ definition_source: definitionSource }) },
+      expect.any(AbortSignal),
+    )
+    expect(screen.getByText("Draft salvo")).toBeDefined()
+  })
+
+  it("sends every selected cutpoint and reviews the exact nodes before execution", async () => {
+    vi.spyOn(studioApi, "inputAdapters").mockResolvedValue({
+      adapters: [{
+        id: "task-url",
+        description: "Task URL adapter",
+        source: "task",
+        input_contract: { kind: "cli", value_type: "string" },
+        preview: { enabled: true, effects: [], timeout_ms: 60_000 },
+      }],
+    })
+    const definitionSource = {
+      kind: "draft" as const,
+      draft_id: "40e67383-a2ce-4c41-93f5-23fc5354ba28",
+      etag: "saved-draft-etag",
+    }
+    const testData = [
+      { fixtureName: "context-output", nodeId: "context" },
+      { fixtureName: "review-output", nodeId: "review" },
+    ] as const
+    const planRun = vi.spyOn(studioApi, "planDraftTestRun").mockResolvedValue({
+      ...plan,
+      definition_source: definitionSource,
+      execution_profile: {
+        kind: "manual_test",
+        test_data: testData.map((entry) => ({
+          kind: "draft_fixture" as const,
+          fixture_name: entry.fixtureName,
+          node_id: entry.nodeId,
+          output_hash: digest(entry.nodeId === "context" ? "c" : "e"),
+          source: {
+            kind: "run_node_output" as const,
+            run_id: `run-${entry.nodeId}`,
+            workflow_id: "review",
+            node_id: entry.nodeId,
+            graph_hash: digest("a"),
+            outcome_hash: digest("b"),
+            workflow_revision: digest("c"),
+            definition_bundle_hash: digest("d"),
+            captured_at: "2026-07-11T12:00:00.000Z",
+            redaction_changed: false,
+            definition_source: { kind: "installed" as const },
+          },
+        })),
+      },
+    })
+    renderLaunch("/launch?workflow=review", undefined, definitionSource, testData)
+
+    expect(await screen.findByText("2 nodes serão substituídos neste teste")).toBeDefined()
+    expect(screen.getByText("context-output")).toBeDefined()
+    expect(screen.getByText("review-output")).toBeDefined()
+    await prepareAdapterPlan()
+    expect(planRun).toHaveBeenCalledWith(
+      definitionSource.draft_id,
+      {
+        input: expect.objectContaining({ definition_source: definitionSource }),
+        test_data: [
+          { fixture_name: "context-output" },
+          { fixture_name: "review-output" },
+        ],
+      },
+      expect.any(AbortSignal),
+    )
+    expect(screen.getByText("2 nodes serão substituídos por dados salvos")).toBeDefined()
+  })
+
   it("sends the selected node as an authoritative partial execution scope", async () => {
     vi.spyOn(studioApi, "inputAdapters").mockResolvedValue({
       adapters: [{
@@ -111,6 +218,34 @@ describe("LaunchPage", () => {
     }), expect.any(AbortSignal))
   })
 
+  it("links an unavailable checkout to the repository diagnostics", async () => {
+    vi.spyOn(studioApi, "inputAdapters").mockResolvedValue({
+      adapters: [{
+        id: "task-url",
+        description: "Task URL adapter",
+        source: "task",
+        input_contract: { kind: "cli", value_type: "string" },
+        preview: { enabled: true, effects: [], timeout_ms: 60_000 },
+      }],
+    })
+    vi.spyOn(studioApi, "planRun").mockRejectedValue(new StudioApiError({
+      status: 409,
+      code: "studio_run_repository_not_ready",
+      message: "The configured repository checkout is not ready for execution",
+      details: { repository_id: "example-repo" },
+    }))
+    renderLaunch()
+
+    const input = await screen.findByLabelText("URL ou identificador")
+    fireEvent.change(input, { target: { value: "opaque://task/42" } })
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }))
+
+    expect(await screen.findByText("Checkout local indisponível")).toBeDefined()
+    expect(
+      screen.getByRole("link", { name: /Ver repositórios/ }).getAttribute("href"),
+    ).toBe("/configuration?tab=posture#repositories")
+  })
+
   it("plans with the safe adapter union and invalidates the plan when input changes", async () => {
     vi.spyOn(studioApi, "inputAdapters").mockResolvedValue({
       adapters: [{
@@ -128,6 +263,7 @@ describe("LaunchPage", () => {
     expect(document.body.textContent).not.toContain(plan.confirmation_token)
     expect(planRun).toHaveBeenCalledWith({
       kind: "adapter",
+      definition_source: { kind: "installed" },
       execution_scope: { kind: "workflow" },
       adapter_id: "task-url",
       input: { kind: "cli", value: "opaque://task/42" },
@@ -262,6 +398,7 @@ describe("LaunchPage", () => {
 
     await waitFor(() => expect(planRun).toHaveBeenCalledWith({
       kind: "adapter",
+      definition_source: { kind: "installed" },
       execution_scope: { kind: "workflow" },
       adapter_id: "task-url",
       input: { kind: "cli", value: "opaque://task/42" },

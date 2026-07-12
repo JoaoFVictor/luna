@@ -11,6 +11,8 @@ export type StudioDraftAuthoringErrorCode =
   | "studio_draft_authoring_duplicate_edit"
   | "studio_draft_authoring_patch_too_large"
   | "studio_draft_authoring_layout_too_large"
+  | "studio_draft_authoring_fixture_too_large"
+  | "studio_draft_authoring_fixture_conflict"
   | "studio_draft_authoring_dirty_file_conflict"
   | "studio_draft_authoring_noop"
   | "studio_draft_authoring_not_found"

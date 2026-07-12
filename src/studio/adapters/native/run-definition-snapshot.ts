@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { assertSafeSegment } from "../../../core/security/path.js";
 import { readWorkflowDefinitionReferences } from "../../../core/workflow/definition-references.js";
+import type { StudioDraftItem } from "../../contracts/draft-authoring.js";
 import { studioRunValueDigest } from "../../application/runs/launch-digests.js";
 import {
   StudioRunLaunchError,
@@ -292,6 +293,62 @@ function snapshotFromFiles(
   };
 }
 
+async function captureAgentOnce(
+  projectRoot: string,
+  agentId: string,
+  budget: CaptureBudget,
+  files: Map<string, NativeStudioRunSnapshotFile>,
+  capturedAgents: Set<string>
+): Promise<void> {
+  if (capturedAgents.has(agentId)) return;
+  assertSafeSegment(agentId);
+  capturedAgents.add(agentId);
+  await captureTree(
+    projectRoot,
+    "project",
+    ["agents", agentId],
+    budget,
+    files
+  );
+}
+
+async function captureInstalledWorkflowClosure(
+  projectRoot: string,
+  workflowId: string,
+  budget: CaptureBudget,
+  files: Map<string, NativeStudioRunSnapshotFile>,
+  capturedWorkflows: Set<string>,
+  capturedAgents: Set<string>
+): Promise<void> {
+  if (capturedWorkflows.has(workflowId)) return;
+  assertSafeSegment(workflowId);
+  capturedWorkflows.add(workflowId);
+  await captureTree(
+    projectRoot,
+    "project",
+    ["workflows", workflowId],
+    budget,
+    files
+  );
+  const references = readWorkflowDefinitionReferences(
+    workflowSource(files, workflowId)
+  );
+  for (const agentId of [...new Set(references.agents.map(({ agentId }) => agentId))]
+    .sort((left, right) => left.localeCompare(right))) {
+    await captureAgentOnce(projectRoot, agentId, budget, files, capturedAgents);
+  }
+  for (const childId of references.workflows) {
+    await captureInstalledWorkflowClosure(
+      projectRoot,
+      childId,
+      budget,
+      files,
+      capturedWorkflows,
+      capturedAgents
+    );
+  }
+}
+
 export async function captureNativeStudioRunSnapshot(options: {
   readonly projectRoot: string;
   readonly configRoot: string;
@@ -300,40 +357,115 @@ export async function captureNativeStudioRunSnapshot(options: {
   assertSafeSegment(options.workflowId);
   const budget: CaptureBudget = { files: 0, directories: 0, bytes: 0 };
   const files = new Map<string, NativeStudioRunSnapshotFile>();
-  await Promise.all([
-    captureTree(
-      path.resolve(options.projectRoot),
-      "project",
-      ["workflows", options.workflowId],
-      budget,
-      files
-    ),
-    captureTree(
-      path.resolve(options.configRoot),
-      "config",
-      [],
-      budget,
-      files
-    )
-  ]);
+  await captureTree(
+    path.resolve(options.configRoot),
+    "config",
+    [],
+    budget,
+    files
+  );
+  await captureInstalledWorkflowClosure(
+    path.resolve(options.projectRoot),
+    options.workflowId,
+    budget,
+    files,
+    new Set(),
+    new Set()
+  );
+
+  return snapshotFromFiles(options.workflowId, [...files.values()], budget.bytes);
+}
+
+function draftSnapshotFile(
+  workflowId: string,
+  item: StudioDraftItem["files"][number],
+  budget: CaptureBudget
+): NativeStudioRunSnapshotFile | undefined {
+  if (item.state === "deleted") {
+    return undefined;
+  }
+  const prefix = `workflows/${workflowId}/`;
+  if (
+    item.file.root !== "project" ||
+    !item.file.path.startsWith(prefix) ||
+    item.content === undefined
+  ) {
+    throw snapshotFailure(
+      "Workflow draft contains a file outside its resource directory"
+    );
+  }
+  for (const segment of item.file.path.split("/")) {
+    assertSafeSegment(segment);
+  }
+  const content = Buffer.from(item.content, "utf8");
+  accountFile(budget, content.byteLength);
+  return {
+    root: "project",
+    path: item.file.path,
+    sha256: digest(content),
+    mode: 0o600,
+    bytes: content.byteLength,
+    content
+  };
+}
+
+/**
+ * Captures a saved workflow draft as an immutable native run snapshot. The
+ * draft may replace an installed workflow or introduce a brand-new one; agent
+ * definitions and runtime configuration remain installed, explicit inputs.
+ */
+export async function captureNativeStudioDraftRunSnapshot(options: {
+  readonly projectRoot: string;
+  readonly configRoot: string;
+  readonly draft: StudioDraftItem;
+}): Promise<NativeStudioRunSnapshot> {
+  if (options.draft.primary_resource.kind !== "workflow") {
+    throw snapshotFailure("Native workflow runs require a workflow draft");
+  }
+  const workflowId = options.draft.primary_resource.id;
+  assertSafeSegment(workflowId);
+  const budget: CaptureBudget = { files: 0, directories: 0, bytes: 0 };
+  const files = new Map<string, NativeStudioRunSnapshotFile>();
+
+  await captureTree(
+    path.resolve(options.configRoot),
+    "config",
+    [],
+    budget,
+    files
+  );
+  for (const item of options.draft.files) {
+    const file = draftSnapshotFile(workflowId, item, budget);
+    if (file === undefined) continue;
+    const key = `${file.root}/${file.path}`;
+    if (files.has(key)) {
+      throw snapshotFailure("Workflow draft contains duplicate file paths");
+    }
+    files.set(key, file);
+  }
 
   const references = readWorkflowDefinitionReferences(
-    workflowSource(files, options.workflowId)
+    workflowSource(files, workflowId)
   );
-  const agentIds = [...new Set(references.agents.map(({ agentId }) => agentId))]
-    .sort((left, right) => left.localeCompare(right));
-  for (const agentId of agentIds) {
-    assertSafeSegment(agentId);
-    await captureTree(
-      path.resolve(options.projectRoot),
-      "project",
-      ["agents", agentId],
+  const projectRoot = path.resolve(options.projectRoot);
+  const capturedAgents = new Set<string>();
+  for (const agentId of [...new Set(references.agents.map(({ agentId }) => agentId))]
+    .sort((left, right) => left.localeCompare(right))) {
+    await captureAgentOnce(projectRoot, agentId, budget, files, capturedAgents);
+  }
+  const capturedWorkflows = new Set([workflowId]);
+  for (const childId of references.workflows) {
+    await captureInstalledWorkflowClosure(
+      projectRoot,
+      childId,
       budget,
-      files
+      files,
+      capturedWorkflows,
+      capturedAgents
     );
   }
 
-  return snapshotFromFiles(options.workflowId, [...files.values()], budget.bytes);
+  return snapshotFromFiles(workflowId, [...files.values()], budget.bytes);
 }
 
 export function nativeStudioRunSnapshotManifest(

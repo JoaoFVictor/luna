@@ -351,4 +351,31 @@ describe("Studio local server launcher", () => {
     expect(response.body).not.toContain("x".repeat(128));
     await server.close();
   });
+
+  it("routes historical run ids longer than Fastify's default limit", async () => {
+    const longRunId = `historical-${"a".repeat(150)}`;
+    const sessions = new StudioLocalSessionManager({
+      allowedHosts: ["127.0.0.1:43110"],
+      allowedOrigins: ["http://127.0.0.1:43110"]
+    });
+    const server = await createStudioServer({
+      sessions,
+      services,
+      logger: false,
+      registerControlApi: async (instance) => {
+        instance.get("/runs/:runId", async (request) => ({
+          run_id: (request.params as { runId: string }).runId
+        }));
+      }
+    });
+
+    const response = await server.inject({
+      method: "GET",
+      url: `/runs/${longRunId}`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ run_id: longRunId });
+    await server.close();
+  });
 });

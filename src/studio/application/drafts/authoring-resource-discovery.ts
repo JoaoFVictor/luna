@@ -21,6 +21,7 @@ export type StudioWorkflowAgentReference = {
 export type StudioWorkflowResourceReferences = {
   readonly editable: readonly string[];
   readonly agents: readonly StudioWorkflowAgentReference[];
+  readonly workflows: readonly StudioEditableResource[];
   readonly configDependency?: StudioPath;
   readonly canonical: boolean;
 };
@@ -43,6 +44,16 @@ function editableAgentResource(agentId: string): StudioEditableResource | undefi
   const parsed = StudioResourceRefSchema.safeParse({
     kind: "agent",
     id: agentId
+  });
+  return parsed.success && isStudioEditableResource(parsed.data)
+    ? parsed.data
+    : undefined;
+}
+
+function editableWorkflowResource(workflowId: string): StudioEditableResource | undefined {
+  const parsed = StudioResourceRefSchema.safeParse({
+    kind: "workflow",
+    id: workflowId
   });
   return parsed.success && isStudioEditableResource(parsed.data)
     ? parsed.data
@@ -82,6 +93,10 @@ export function discoverStudioWorkflowResources(
         ...(references.config === undefined ? [] : [references.config.schema])
       ],
       agents,
+      workflows: references.workflows.flatMap((workflowId) => {
+        const resource = editableWorkflowResource(workflowId);
+        return resource === undefined ? [] : [resource];
+      }),
       ...(dependency === undefined ? {} : { configDependency: dependency }),
       canonical: true
     };
@@ -92,6 +107,7 @@ export function discoverStudioWorkflowResources(
     return {
       editable: DEFAULT_WORKFLOW_EDITABLE,
       agents: [],
+      workflows: [],
       canonical: false
     };
   }

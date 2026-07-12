@@ -64,6 +64,16 @@ export type WorkflowPatternExecutor = (input: {
   readonly observability?: WorkflowObservability;
 }) => Promise<unknown> | unknown;
 
+export type WorkflowCompositionExecutor = (input: {
+  readonly workflowInput: RunWorkflowInput;
+  readonly node: CompiledWorkflowNode;
+  readonly input: JsonValue;
+  readonly child: {
+    readonly workflow: WorkflowDefinition;
+    readonly compiled: CompiledWorkflow;
+  };
+}) => Promise<unknown> | unknown;
+
 export type WorkflowAgentDefaults = {
   readonly agent: unknown;
   readonly model_profile: ModelProfile;
@@ -78,6 +88,12 @@ export type WorkflowAgentDefaults = {
 
 export type WorkflowAgentInputMap = Readonly<Record<string, WorkflowAgentDefaults>>;
 
+/**
+ * Development-only node outputs that are treated as already completed.
+ * Production callers must omit this field.
+ */
+export type WorkflowPrecompletedSteps = Readonly<Record<string, JsonValue>>;
+
 export type RunWorkflowInput = {
   readonly compiled: CompiledWorkflow;
   readonly workflow: WorkflowDefinition;
@@ -86,11 +102,14 @@ export type RunWorkflowInput = {
   readonly run: RunHandle;
   /** A bounded partial run validates the terminal node output, not the full workflow output schema. */
   readonly executionScope?: WorkflowExecutionScope;
+  /** Development-only cut points. Their executors and exclusively-required ancestors do not run. */
+  readonly precompleted_steps?: WorkflowPrecompletedSteps;
   readonly signal?: AbortSignal;
   readonly runtimeContext?: WorkflowRuntimeContext;
   readonly backends: RuntimeBackends;
   readonly builtIns: Record<string, WorkflowBuiltInExecutor>;
   readonly patternExecutors?: Record<string, WorkflowPatternExecutor>;
+  readonly compositionExecutor?: WorkflowCompositionExecutor;
   readonly builtInMetadata?: WorkflowBuiltInMetadataResolver;
   readonly lockManager?: WorkflowLockManager;
   readonly agentRuntime: AgentRuntimePort;
@@ -127,6 +146,7 @@ export type ResumeWorkflowInput = {
   readonly backends: RuntimeBackends;
   readonly builtIns: Record<string, WorkflowBuiltInExecutor>;
   readonly patternExecutors?: Record<string, WorkflowPatternExecutor>;
+  readonly compositionExecutor?: WorkflowCompositionExecutor;
   readonly builtInMetadata?: WorkflowBuiltInMetadataResolver;
   readonly lockManager?: WorkflowLockManager;
   readonly agentRuntime: AgentRuntimePort;

@@ -13,7 +13,8 @@ import { RunLockManager } from "../../core/workflow/lock-manager.js";
 import { createGitRepositoryPorts } from "../../runtime/git/repository-port.js";
 import { createGitHubRepositoryWorkspacePorts } from "../../providers/github/repository-workspace.js";
 import {
-  createNativeProviderBuiltIns
+  createNativeProviderBuiltIns,
+  nativeBuiltInMetadata
 } from "./native-built-ins.js";
 import type { NativeWorkflowBuiltIns } from "./native-platform-plugins.js";
 import { nativeLunaPlatformRegistrations } from "./native-platform-registrations.js";
@@ -82,11 +83,8 @@ export function buildNativeWorkflowExecutors({
   return {
     builtIns,
     patternExecutors,
-    builtInMetadata: (node: { readonly capability_id: string }) => {
-      return providerBuiltIns.builtInStepRegistry.has(node.capability_id)
-        ? providerBuiltIns.builtInStepRegistry.require(node.capability_id).metadata ?? {}
-        : {};
-    },
+    builtInMetadata: (node: { readonly capability_id: string }) =>
+      nativeBuiltInMetadata(providerBuiltIns.builtInStepRegistry, node),
     lockManager
   };
 }

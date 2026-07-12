@@ -60,13 +60,19 @@ function Identity({ plan }: { plan: StudioAgentTestPlan }) {
         <Alert>
           <ShieldCheckIcon aria-hidden="true" />
           <AlertTitle>Escopo deliberadamente limitado</AlertTitle>
-          <AlertDescription>{resolution.scope.statement}</AlertDescription>
+          <AlertDescription>
+            Este teste chama somente o modelo. Ele não executa workflow, ferramentas locais, MCP, subagents nem carrega contextos implícitos.
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs">Ver declaração técnica</summary>
+              <p className="mt-1 font-mono text-xs">{resolution.scope.statement}</p>
+            </details>
+          </AlertDescription>
         </Alert>
         <dl className="grid gap-4 sm:grid-cols-2">
           <AgentTestBenchExactValue label="Agent" value={resolution.target.agent_id} />
           <AgentTestBenchExactValue label="Agent revision" value={resolution.target.agent_revision} />
           <AgentTestBenchExactValue label="Snapshot" value={plan.snapshot_hash} />
-          <AgentTestBenchExactValue label="Fixture" value={plan.fixture_hash} />
+          <AgentTestBenchExactValue label="Entrada de teste" value={plan.fixture_hash} />
           <AgentTestBenchExactValue label="Contexto explícito" value={plan.context_hash} />
           <AgentTestBenchExactValue label="Catálogo técnico" value={resolution.catalog_fingerprint} />
         </dl>

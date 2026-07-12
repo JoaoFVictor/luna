@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 export type RunGhOptions = {
   readonly input?: string;
   readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
 };
 
 export type RunGh = (
@@ -42,6 +43,7 @@ export async function runGh(
       ...process.env,
       GH_PROMPT_DISABLED: "1"
     },
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
     stdio: ["pipe", "pipe", "pipe"]
   });
   const stdout: Buffer[] = [];

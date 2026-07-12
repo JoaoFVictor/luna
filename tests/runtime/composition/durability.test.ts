@@ -129,4 +129,20 @@ describe("runtime composition durability policy", () => {
       "write_side_effect"
     ]);
   });
+
+  it("classifies workflow call nodes without assuming they own policies", () => {
+    expect(classifyRuntimeDurabilityRequirements({
+      workflowDefinition: {
+        id: "composed",
+        mode: "read_only",
+        graph: {
+          nodes: [{
+            id: "child",
+            type: "workflow",
+            workflow: "child-workflow"
+          }]
+        }
+      }
+    })).toEqual([]);
+  });
 });

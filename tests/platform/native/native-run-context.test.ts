@@ -54,6 +54,39 @@ function workflowDefinition(
 }
 
 describe("native workflow runtime config", () => {
+  it("compiles the canonical effective DAG for precompleted cut points", async () => {
+    const workflow = workflowDefinition({
+      capabilities: ["runtime"],
+      requires: { repository: true },
+      graph: {
+        nodes: [
+          { id: "exclusive", type: "built_in", uses: "runtime.preflight" },
+          {
+            id: "supplied",
+            type: "built_in",
+            uses: "runtime.preflight",
+            after: ["exclusive"]
+          },
+          { id: "live", type: "built_in", uses: "runtime.preflight" }
+        ]
+      }
+    });
+
+    const nativeWorkflow = await compileNativeWorkflow({
+      workflow,
+      agentsRoot: "agents",
+      precompletedNodeIds: new Set(["supplied"])
+    });
+
+    expect(nativeWorkflow.compiled.nodes.map((node) => node.id)).toEqual([
+      "supplied",
+      "live"
+    ]);
+    expect(nativeWorkflow.workflow.graph.nodes.find(
+      (node) => node.id === "supplied"
+    )?.after).toEqual([]);
+  });
+
   it("compiles the bundled code-review workflow with specialist reviewers", async () => {
     const workflow = await loadWorkflowDefinition("workflows", "code-review", {
       agentsRoot: "agents",

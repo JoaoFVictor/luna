@@ -15,6 +15,46 @@ function wrapper(queryClient: QueryClient) {
 afterEach(() => vi.restoreAllMocks())
 
 describe("WorkflowExpressionFixtureEditor", () => {
+  it("follows the globally active fixture and promotes dropdown selection", () => {
+    const queryClient = new QueryClient()
+    const onSelect = vi.fn()
+    const view = render(
+      <WorkflowExpressionFixtureEditor
+        fieldName="payload"
+        expression="$.invocation"
+        fixtures={{ first: { invocation: 1 }, second: { invocation: 2 } }}
+        activeFixtureName="second"
+        disabled={false}
+        onSave={vi.fn()}
+        onRemove={vi.fn()}
+        onSelect={onSelect}
+      />,
+      { wrapper: wrapper(queryClient) },
+    )
+
+    expect((screen.getByRole("combobox", { name: "Fixture salva" }) as HTMLSelectElement).value)
+      .toBe("second")
+    fireEvent.change(screen.getByRole("combobox", { name: "Fixture salva" }), {
+      target: { value: "first" },
+    })
+    expect(onSelect).toHaveBeenCalledWith("first")
+
+    view.rerender(
+      <WorkflowExpressionFixtureEditor
+        fieldName="payload"
+        expression="$.invocation"
+        fixtures={{ first: { invocation: 1 }, second: { invocation: 2 } }}
+        activeFixtureName="second"
+        disabled={false}
+        onSave={vi.fn()}
+        onRemove={vi.fn()}
+        onSelect={onSelect}
+      />,
+    )
+    expect((screen.getByRole("combobox", { name: "Fixture salva" }) as HTMLSelectElement).value)
+      .toBe("second")
+  })
+
   it("loads a saved fixture, previews it through the isolated API, and saves a named copy", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { mutations: { retry: false } },

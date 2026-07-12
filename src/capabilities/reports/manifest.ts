@@ -11,6 +11,12 @@ export const manifest = capabilityManifest({
   built_ins: {
     "reports.final_report": {
       id: "reports.final_report",
+      presentation: {
+        title: "Gerar relatório final",
+        summary: "Consolida os resultados anteriores em um artifact final.",
+        category: "Resultados",
+        tags: ["report", "artifact"]
+      },
       input_schema: finalReportInputSchema,
       output_schema: finalReportOutputSchema,
       required_ports: []

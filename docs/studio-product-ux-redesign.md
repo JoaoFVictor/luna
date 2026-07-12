@@ -879,11 +879,14 @@ Esta seção separa o que já existe no produto do que ainda depende de um novo 
 - grafo de autoria derivado do source e visível antes da compilação;
 - criação por paleta, busca, drag-and-drop, quick-add e inserção em conexão;
 - conexão, remoção e reconexão visual com bloqueio local de ciclos;
+- paleta e conexões recusam dependências após resultados finais antes da persistência, usando o estágio de execução projetado dos metadados nativos;
 - seleção controlada de nodes e edges, handles visíveis e alternativa por outline;
 - posições em sidecar, layout ELK vertical/horizontal, nós fixados, minimapa, controles e fit view somente na abertura;
 - cards humanos com estado compilado, diagnóstico e execução;
 - inspector progressivo, dependências avançadas, comentários e detalhes técnicos recolhidos;
-- mapper limitado a dados de passos anteriores, com campos aninhados e tipos de schema clicáveis e arrastáveis, recusando sugestões incompatíveis;
+- mapper limitado a dados de passos anteriores, com busca, painel origem/destino, campos aninhados e tipos de schema clicáveis e arrastáveis; soltar no parâmetro persiste imediatamente a expressão canônica, enquanto clique oferece a mesma ação acessível e tipos incompatíveis são recusados antes da mutação;
+- portas visuais de dados separadas dos handles e arestas de controle `after`: a projeção tracejada nasce exclusivamente de referências exatas `$.steps...` já persistidas pelo mapper, agrupa os campos por origem/destino, mantém descrição acessível e ignora JSONata livre ou ambíguo em vez de inventar dependências no browser;
+- subworkflows instalados disponíveis na paleta, excluindo o workflow em edição; a criação persiste diretamente `type: workflow` e `workflow: <id>` sem capability/registration fictícia, e o card, inspector e mapper usam os schemas de entrada e saída pinados pelo catálogo canônico do filho;
 - autosave, validação e compilação em background, com problemas projetados nos nodes;
 - teste completo do workflow dentro do canvas usando o mesmo plano e confirmação do Executar;
 - “Executar até aqui” autoritativo: o servidor compila o subgrafo com todos os ancestrais do node, recalcula effects e prende o escopo ao snapshot confirmado;
@@ -896,33 +899,39 @@ Esta seção separa o que já existe no produto do que ainda depende de um novo 
 - Conexões separada em workflows, routing, adapters e segurança técnica;
 - routing descrito em linguagem natural mantendo expressão e ordem first-match como autoridade;
 - edição de routing com validação JSONata no servidor, CAS, lock entre processos e substituição atômica durável;
-- conexão/provider marcada como verificada somente depois de preview provider-owned bem-sucedido na sessão, sem devolver credenciais;
+- conexão/provider marcada como saudável somente depois de probe provider-owned dedicado e bem-sucedido na sessão, sem devolver credenciais, identidade ou erro bruto; preview de adapter não produz evidência de saúde;
 - configuração agrupada, pesquisável, salva em lote e revisada antes da aplicação;
 - lista e detalhe de execuções humanizados, com estado sobre o mesmo componente de grafo;
+- execução anterior selecionável sobre o próprio canvas de autoria, aplicada somente quando a revisão compilada é idêntica; revisão divergente fica explícita e não pinta estados, e o output autorizado do node pode ser aberto no inspector sem abandonar o workflow;
 - forma observada de outputs por node (paths e tipos), limitada e redigida sem valores;
+- snapshot privado de output por node terminal, carregado somente sob ação explícita, ligado por hashes à run exata, com redação best-effort e orçamentos individual e global que nunca invalidam a execução;
+- comparação sob demanda entre outputs do mesmo node em duas runs do mesmo workflow, calculada no servidor sobre os snapshots terminais hash-bound já redigidos; o resumo conta todas as diferenças, o detalhe é limitado, divergência de revisão fica explícita e nenhuma cópia com retenção paralela é criada;
+- promoção servidor-servidor desse snapshot para dados nomeados de preview de expressão no sidecar do draft, com `If-Match`, identidade por hashes e proveniência visível da run/revisão; proveniência legada ou malformada perde autorização fail-closed sem bloquear a substituição por uma captura atual válida;
+- múltiplos outputs salvos ativos no mesmo teste manual, com seleção por node, autorização atômica, perfil canônico, ledger e execução por cutpoints reais;
+- escopos autoritativos `isolated_node` e `from_node`: a fronteira externa é calculada no DAG e o plano exige output salvo autorizado para cada dependência antes de pular qualquer passo;
+- detalhe da execução faz catch-up automático do grafo e dos artifacts enquanto a barreira durável ainda está sendo persistida, sem exigir reload manual;
 - grupos visuais persistidos no sidecar do canvas, explicitamente sem semântica de execução;
-- diagnósticos autoritativos de node e edge projetados diretamente no canvas;
+- diagnósticos autoritativos de node, edge e campo projetados diretamente no canvas, com ação “Abrir campo”, foco e erro inline sem inferência por índice no browser;
 - termos técnicos, IDs, JSON, schemas e políticas mantidos em seções avançadas;
+- criação explícita de bifurcação a partir do card, com fan-out e destinos rotulados sem inventar um tipo de router fora do YAML; remoção de passo exige confirmação e limpa dependências no mesmo lote autoritativo;
+- seleção múltipla por Ctrl/Cmd/Shift com barra contextual e exclusão em lote confirmada; a mutação remove dependências e nodes em ordem segura, e seleções que excederiam o limite autoritativo de 64 operações são bloqueadas com orientação antes do request;
+- polling de artifacts pendentes após término usa janela finita com backoff e para após dois minutos, evitando consultas eternas quando um artifact nunca deixa o estado pendente;
 - modo TypeScript estrito no Studio e controladores críticos separados de automação, navegação, layout e apply.
 
-### 21.2 Requer API/BFF/runtime antes da interface
+### 21.2 Contratos que dependem de autoridade de API/BFF/runtime
 
 | Capacidade | Autoridade necessária | Motivo para não simular no frontend |
 | --- | --- | --- |
-| Testar somente um node isolado | plano com fixture explícita para cada dependência e policies próprias | “Executar até aqui” existe, mas um node isolado sem os ancestrais não teria estado válido |
-| Executar a partir daqui | checkpoint/fixture autorizado para o estado anterior ao node | iniciar no meio sem estado histórico pode ignorar dependências, gates e side effects |
-| Pin de valores de input/output | armazenamento autorizado, redigido e com retenção | a forma observada já expõe somente paths e tipos, nunca os valores |
+| Testar somente um node isolado | entregue: plano exige fixture autorizada para cada dependência de fronteira e executa somente o alvo | sem a fronteira completa, a ação fica explicada como indisponível e o servidor recusa o plano |
+| Executar a partir daqui | entregue: alvo e descendentes formam o escopo; entradas externas exigem fixtures autorizadas | iniciar no meio sem estado histórico continua impossível |
+| Pin de output em teste manual de draft | uma fixture capturada de run, não redigida e reautorizada pelo servidor pode substituir um node; o runtime preserva o node como cutpoint, remove ancestrais exclusivamente necessários e executa o restante do DAG real | uma fixture manual, redigida, histórica incompatível ou ligada a node removido continua sendo apenas preview; produção instalada ignora a seleção |
 | Reusar dados de execução | endpoint que autorize e normalize um payload histórico | o catálogo atual expõe metadados, não a invocation privada |
-| Comparar duas saídas | snapshots de resultado com schema e política de retenção | artifacts e eventos não equivalem a um output canônico único |
-| Groups/subflows executáveis | modelo canônico de composição no workflow YAML e compilador | um retângulo apenas visual daria uma semântica falsa |
-| Portas visuais de dados | contrato canônico separado das arestas `after` | o mapper já usa schemas tipados; handles continuam representando dependência de execução |
-| Diagnóstico de campo | diagnóstico servidor com `fieldPath` e ação sugerida | node e edge já são autoritativos; inferir o campo pelo índice continuaria frágil |
+| Comparar duas saídas | entregue: endpoint compara os snapshots privados canônicos já limitados, redigidos e ligados aos outcomes exatos | artifacts e eventos não são usados como substitutos; output ausente, run ativa ou workflow divergente produz indisponibilidade explícita |
+| Groups visuais executáveis | um contrato próprio caso grupos passem a alterar execução | grupos continuam sendo somente organização; composição executável usa nodes canônicos `type: workflow` separados |
+| Diagnóstico de campo | entregue: `node_field_path` servidor, ação contextual e projeção inline | `field_path` absoluto continua disponível para diagnóstico técnico |
 
 ### 21.3 Ordem segura para concluir os contratos restantes
 
-1. expor snapshots autorizados de execução para fixture, pin de valores e comparação;
-2. definir a semântica de node isolado e “a partir daqui” sobre fixtures/checkpoints;
-3. definir groups/subflows executáveis no formato canônico, mantendo grupos visuais como mera organização;
-4. separar portas visuais de dados das arestas de controle `after`;
-5. enriquecer diagnósticos com `fieldPath` e ação sugerida;
-6. evoluir o health check de evidência por preview para probes provider-owned dedicados quando cada provider tiver esse contrato.
+1. definir grupos visuais como mera organização, sem criar uma segunda semântica de execução além dos subworkflows canônicos;
+2. ampliar fixtures autorizadas com edição controlada, mantendo proveniência e hashes fail-closed;
+3. entregue: substituir evidência por preview por probes provider-owned dedicados para GitHub, Jira e Plane, com operação fixa de leitura mínima, efeitos/timeout explícitos, falha redigida e invalidação de sucesso anterior.

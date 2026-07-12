@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { JsonValue } from "@/api/types"
 import {
   WORKFLOW_EXPRESSION_FIXTURE_LIMITS,
+  runNodeOutputExpressionFixture,
   withoutWorkflowExpressionFixture,
   withWorkflowExpressionFixture,
   workflowExpressionFixtures,
@@ -76,5 +77,15 @@ describe("workflow expression fixture sidecar", () => {
     expect(workflowExpressionFixtures(layout)).toEqual({
       valid: { invocation: {} },
     })
+    expect(() => withWorkflowExpressionFixture(layout, "next", {})).toThrow(
+      /sidecar de fixtures/u,
+    )
+    expect(layout.workflow.positions).toEqual({ node: { x: 1, y: 2 } })
+  })
+
+  it("rejects node ids that are unsafe JSON object keys", () => {
+    expect(() => runNodeOutputExpressionFixture("__proto__", {})).toThrow(
+      /safe JSON object key/u,
+    )
   })
 })

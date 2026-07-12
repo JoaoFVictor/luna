@@ -8,6 +8,7 @@ import {
 import { workflowExecutionScopesEqual } from "../../../core/workflow/execution-scope.js";
 import { studioRunValueDigest } from "./launch-digests.js";
 import { studioRunLaunchError } from "./launch-errors.js";
+import { studioRunExecutionProfileSummary } from "../../contracts/manual-test-data.js";
 
 export function freezeStudioRunValue<T>(value: T): T {
   if (typeof value !== "object" || value === null) {
@@ -86,9 +87,13 @@ export function createStudioRunExecutionSnapshot(
   request: StudioRunPlanRequest,
   resolution: StudioRunPlanResolution
 ): StudioRunExecutionSnapshot {
+  const executionProfile = studioRunExecutionProfileSummary(
+    request.execution_profile
+  );
   const material = {
     schema_version: 1,
     workflow_id: resolution.workflow_id,
+    definition_source: request.definition_source,
     execution_scope: resolution.execution_scope,
     mode: resolution.mode,
     workflow_revision: resolution.workflow_revision,
@@ -103,7 +108,9 @@ export function createStudioRunExecutionSnapshot(
     ...(resolution.repository.fingerprint === undefined
       ? {}
       : { repository_fingerprint: resolution.repository.fingerprint }),
-    input_provenance: request.input_provenance
+    input_provenance: request.input_provenance,
+    execution_profile: executionProfile,
+    execution_profile_hash: studioRunValueDigest(request.execution_profile)
   } as const;
 
   return StudioRunExecutionSnapshotSchema.parse({

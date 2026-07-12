@@ -30,6 +30,7 @@ function digest(label: string): string {
 function request(): StudioRunPlanRequest {
   return {
     workflow_id: "code-review",
+    definition_source: { kind: "installed" },
     execution_scope: { kind: "workflow" },
     invocation: {
       version: "2026-06",
@@ -46,6 +47,7 @@ function request(): StudioRunPlanRequest {
       adapter_id: "github-pr-url",
       adapter_input_hash: digest("adapter-input")
     },
+    execution_profile: { kind: "standard" },
     repository_id: "acme-rocket"
   };
 }

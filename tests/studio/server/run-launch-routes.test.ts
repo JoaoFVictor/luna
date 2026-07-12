@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type { StudioRunLaunchContext } from "../../../src/studio/contracts/run-launch.js";
+import { STUDIO_STANDARD_EXECUTION_PROFILE_HASH } from "../../../src/studio/contracts/manual-test-data.js";
 import {
   registerStudioControlApi,
   type StudioControlApiQueries
@@ -65,6 +66,7 @@ async function fixture() {
         created_at: "2026-07-11T12:00:00.000Z",
         expires_at: "2026-07-11T12:05:00.000Z",
         workflow_id: "pinned-workflow",
+        definition_source: { kind: "installed" },
         execution_scope: { kind: "workflow" },
         mode: "read_only",
         workflow_revision: digest("a"),
@@ -81,6 +83,8 @@ async function fixture() {
               adapter_input_hash: digest("9")
             }
           : { kind: "invocation" },
+        execution_profile: { kind: "standard" },
+        execution_profile_hash: STUDIO_STANDARD_EXECUTION_PROFILE_HASH,
         potential_effects: [],
         resolved_effects: [],
         effect_uncertainties: [],

@@ -2,12 +2,106 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
 import { studioApi } from "@/api/client"
 import type {
+  ArtifactList,
   GitRevisionId,
   HistoryResource,
+  RunCatalogItem,
+  RunGraphResponse,
   RunLogLevel,
   RunStatus,
 } from "@/api/types"
 import type { StudioPath } from "@/api/types"
+
+const ACTIVE_RUN_REFETCH_INTERVAL_MS = 5_000
+const PERSISTENCE_CATCH_UP_INTERVAL_MS = 750
+const TERMINAL_RUN_CATCH_UP_INTERVAL_MS = 2_000
+const TERMINAL_RUN_CATCH_UP_WINDOW_MS = 15_000
+const TERMINAL_ARTIFACT_FAST_WINDOW_MS = 10_000
+const TERMINAL_ARTIFACT_BACKOFF_WINDOW_MS = 30_000
+const TERMINAL_ARTIFACT_POLLING_DEADLINE_MS = 120_000
+const TERMINAL_ARTIFACT_BACKOFF_INTERVAL_MS = 2_000
+const TERMINAL_ARTIFACT_FINAL_INTERVAL_MS = 10_000
+
+const TERMINAL_RUN_STATUSES: readonly RunStatus[] = [
+  "rejected",
+  "historical_unknown",
+  "succeeded",
+  "failed",
+  "outcome_unknown",
+  "timed_out",
+  "cancelled",
+]
+
+export function isTerminalRunStatus(status: RunStatus | undefined): boolean {
+  return status !== undefined && TERMINAL_RUN_STATUSES.includes(status)
+}
+
+export function runRefetchInterval(
+  response: RunCatalogItem | undefined,
+  now = Date.now(),
+): number | false {
+  if (response === undefined) return false
+  if (!isTerminalRunStatus(response.status)) {
+    return ACTIVE_RUN_REFETCH_INTERVAL_MS
+  }
+  const terminalAt = response.record.finished_at
+  if (terminalAt === undefined) return false
+  return Math.max(0, now - Date.parse(terminalAt)) < TERMINAL_RUN_CATCH_UP_WINDOW_MS
+    ? TERMINAL_RUN_CATCH_UP_INTERVAL_MS
+    : false
+}
+
+function runGraphRefetchInterval(
+  response: RunGraphResponse | undefined,
+): number | false {
+  if (response?.availability === "pending") {
+    return PERSISTENCE_CATCH_UP_INTERVAL_MS
+  }
+  if (response?.availability !== "available") return false
+  if (
+    response.overlay.observation === "observed" &&
+    response.overlay.source === "live"
+  ) {
+    return ACTIVE_RUN_REFETCH_INTERVAL_MS
+  }
+  if (
+    response.overlay.observation === "unobservable" &&
+    ["run_not_started", "live_observer_unavailable"].includes(
+      response.overlay.reason,
+    )
+  ) {
+    return ACTIVE_RUN_REFETCH_INTERVAL_MS
+  }
+  return false
+}
+
+export function artifactsRefetchInterval(
+  response: ArtifactList | undefined,
+  expectedCount: number | undefined,
+  terminalAt: string | undefined,
+  now = Date.now(),
+): number | false {
+  if (response === undefined) return false
+  const stillWriting = response.items.some(
+    (artifact) => artifact.status === "pending",
+  )
+  const awaitingExpectedArtifacts =
+    expectedCount !== undefined && response.items.length < expectedCount
+  if (!stillWriting && !awaitingExpectedArtifacts) return false
+  if (terminalAt === undefined) return PERSISTENCE_CATCH_UP_INTERVAL_MS
+
+  const terminalAge = Math.max(0, now - Date.parse(terminalAt))
+  if (terminalAge < TERMINAL_ARTIFACT_FAST_WINDOW_MS) {
+    return PERSISTENCE_CATCH_UP_INTERVAL_MS
+  }
+  if (terminalAge < TERMINAL_ARTIFACT_BACKOFF_WINDOW_MS) {
+    return TERMINAL_ARTIFACT_BACKOFF_INTERVAL_MS
+  }
+  if (terminalAge < TERMINAL_ARTIFACT_POLLING_DEADLINE_MS) {
+    return TERMINAL_ARTIFACT_FINAL_INTERVAL_MS
+  }
+  return false
+}
 
 function resourceHistoryKey(resource: HistoryResource) {
   return ["studio", "resource", resource.kind, resource.id, "history"] as const
@@ -25,8 +119,14 @@ export const studioKeys = {
   runs: ["studio", "runs"] as const,
   workflowRuns: (workflowId: string) =>
     ["studio", "runs", "workflow", workflowId] as const,
+  runOutputComparisonCandidates: (workflowId: string) =>
+    ["studio", "runs", "workflow", workflowId, "output-comparison"] as const,
   run: (runId: string) => ["studio", "run", runId] as const,
   runGraph: (runId: string) => ["studio", "run", runId, "graph"] as const,
+  runNodeOutput: (runId: string, nodeId: string) =>
+    ["studio", "run", runId, "node", nodeId, "output"] as const,
+  runNodeOutputComparison: (runId: string, nodeId: string, baselineRunId: string) =>
+    ["studio", "run", runId, "node", nodeId, "output", "compare", baselineRunId] as const,
   timeline: (runId: string) => ["studio", "run", runId, "timeline"] as const,
   artifacts: (runId: string) => ["studio", "run", runId, "artifacts"] as const,
   artifactPreview: (runId: string, handle: string) =>
@@ -97,6 +197,18 @@ export function workflowRunsQuery(workflowId: string) {
     }, signal),
     enabled: workflowId.length > 0,
     refetchInterval: 5_000,
+  })
+}
+
+export function runOutputComparisonCandidatesQuery(workflowId: string) {
+  return queryOptions({
+    queryKey: studioKeys.runOutputComparisonCandidates(workflowId),
+    queryFn: ({ signal }) => studioApi.runCatalogPage({
+      workflowId,
+      limit: 100,
+    }, signal),
+    enabled: workflowId.length > 0,
+    staleTime: 30_000,
   })
 }
 
@@ -223,7 +335,7 @@ export function runQuery(runId: string) {
   return queryOptions({
     queryKey: studioKeys.run(runId),
     queryFn: ({ signal }) => studioApi.run(runId, signal),
-    refetchInterval: 5_000,
+    refetchInterval: (query) => runRefetchInterval(query.state.data),
   })
 }
 
@@ -232,26 +344,64 @@ export function runGraphQuery(runId: string) {
     queryKey: studioKeys.runGraph(runId),
     queryFn: ({ signal }) => studioApi.runGraph(runId, signal),
     enabled: runId.length > 0,
-    refetchInterval: 5_000,
+    refetchInterval: (query) =>
+      runGraphRefetchInterval(query.state.data),
   })
 }
 
-export function runTimelineInfiniteQuery(runId: string) {
+export function runNodeOutputQuery(runId: string, nodeId: string) {
+  return queryOptions({
+    queryKey: studioKeys.runNodeOutput(runId, nodeId),
+    queryFn: ({ signal }) => studioApi.runNodeOutput(runId, nodeId, signal),
+    enabled: runId.length > 0 && nodeId.length > 0,
+    staleTime: 5_000,
+  })
+}
+
+export function runNodeOutputComparisonQuery(
+  runId: string,
+  nodeId: string,
+  baselineRunId: string,
+) {
+  return queryOptions({
+    queryKey: studioKeys.runNodeOutputComparison(runId, nodeId, baselineRunId),
+    queryFn: ({ signal }) =>
+      studioApi.compareRunNodeOutput(runId, nodeId, baselineRunId, signal),
+    enabled: runId.length > 0 && nodeId.length > 0 && baselineRunId.length > 0,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
+}
+
+export function runTimelineInfiniteQuery(
+  runId: string,
+  run: RunCatalogItem | undefined,
+) {
   return infiniteQueryOptions({
     queryKey: studioKeys.timeline(runId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       studioApi.runTimeline(runId, pageParam, signal),
     getNextPageParam: (page) => page.next_cursor ?? undefined,
-    refetchInterval: 5_000,
+    refetchInterval: () => runRefetchInterval(run),
   })
 }
 
-export function artifactsQuery(runId: string) {
+export function artifactsQuery(
+  runId: string,
+  options: {
+    expectedCount?: number
+    terminalAt?: string
+  } = {},
+) {
   return queryOptions({
     queryKey: studioKeys.artifacts(runId),
     queryFn: ({ signal }) => studioApi.artifacts(runId, signal),
-    refetchInterval: 5_000,
+    refetchInterval: (query) =>
+      artifactsRefetchInterval(
+        query.state.data,
+        options.expectedCount,
+        options.terminalAt,
+      ),
   })
 }
 

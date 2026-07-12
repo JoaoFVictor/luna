@@ -198,12 +198,12 @@ describe("AgentTestBench", () => {
         execute={vi.fn()}
       />,
     )
-    fireEvent.change(screen.getByLabelText("Fixture JSON"), {
+    fireEvent.change(screen.getByLabelText("Entrada de teste (JSON)"), {
       target: { value: "[not-an-object]" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Gerar preview efetivo" }))
 
-    expect(await screen.findByText("Fixture precisa ser JSON válido.")).toBeDefined()
+    expect(await screen.findByText("Entrada de teste precisa ser JSON válido.")).toBeDefined()
     expect(requestPlan).not.toHaveBeenCalled()
   })
 
@@ -218,7 +218,7 @@ describe("AgentTestBench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Gerar preview efetivo" }))
     expect(await screen.findByText("Preview efetivo")).toBeDefined()
 
-    fireEvent.change(screen.getByLabelText("Fixture JSON"), {
+    fireEvent.change(screen.getByLabelText("Entrada de teste (JSON)"), {
       target: { value: '{"changed":true}' },
     })
 
@@ -248,7 +248,7 @@ describe("AgentTestBench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Gerar preview efetivo" }))
     expect(await screen.findByText("Preview efetivo")).toBeDefined()
 
-    fireEvent.change(screen.getByLabelText("Model profile"), {
+    fireEvent.change(screen.getByLabelText("Modelo"), {
       target: { value: "alternate" },
     })
     expect(screen.queryByText("Preview efetivo")).toBeNull()

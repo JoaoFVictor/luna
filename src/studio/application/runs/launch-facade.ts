@@ -1,13 +1,10 @@
 import type { AdapterInput } from "../../../adapters/types.js";
-import type { JsonValue } from "../../../core/runtime/json.js";
 import type { Invocation } from "../../../core/router/invocation.js";
 import type { RouterDefinition } from "../../../core/router/router-definition.js";
 import { sameStudioAdapterEffects } from "../inputs/adapter-preview-port.js";
 import type { StudioRoutingSimulationPort } from "../routing/routing-simulator.js";
 import {
-  StudioRoutingSimulationSchema,
-  type StudioAdapterPreviewEffect,
-  type StudioRoutingSimulation
+  type StudioAdapterPreviewEffect
 } from "../../contracts/input-routing.js";
 import {
   StudioRunPlanInputSchema,
@@ -24,14 +21,35 @@ import {
   studioRunDigestsEqual,
   studioRunValueDigest
 } from "./launch-digests.js";
-import { studioRunLaunchError } from "./launch-errors.js";
+import {
+  studioRunLaunchError,
+  type StudioRunLaunchError
+} from "./launch-errors.js";
 import type { StudioRunLaunchService } from "./launch-service.js";
+import {
+  loadInstalledRouting,
+  reloadRunDefinition,
+  resolveRunDefinition
+} from "./launch-definition-selection.js";
+import type {
+  StudioDraftRunDefinitionPort,
+  StudioInstalledRunDefinitionPort
+} from "./launch-definition-ports.js";
+import {
+  StudioDraftTestRunPlanInputSchema,
+  type StudioDraftTestRunPlanInput
+} from "../../contracts/draft-test-run.js";
+import type { StudioRunExecutionProfile } from "../../contracts/manual-test-data.js";
+import {
+  StudioDraftTestDataAuthorizationError,
+  type StudioDraftTestDataAuthorizationPort
+} from "../drafts/manual-test-data-authorization.js";
 
-export type StudioInstalledRunDefinition = {
-  readonly workflowRevision: string;
-  readonly definitionBundleHash: string;
-  readonly config: JsonValue;
-};
+export type {
+  StudioDraftRunDefinitionPort,
+  StudioInstalledRunDefinition,
+  StudioInstalledRunDefinitionPort
+} from "./launch-definition-ports.js";
 
 export interface StudioRunAdapterInputResolverPort {
   loadPolicy(adapterId: string):
@@ -44,10 +62,6 @@ export interface StudioRunAdapterInputResolverPort {
   ): Promise<Invocation | undefined>;
 }
 
-export interface StudioInstalledRunDefinitionPort {
-  load(workflowId: string): Promise<StudioInstalledRunDefinition>;
-}
-
 type CanonicalRunPlanner = Pick<StudioRunLaunchService<unknown>, "plan">;
 
 export type StudioRunLaunchFacadeOptions = {
@@ -56,6 +70,8 @@ export type StudioRunLaunchFacadeOptions = {
   readonly routing: () => Promise<RouterDefinition> | RouterDefinition;
   readonly routingSimulator: StudioRoutingSimulationPort;
   readonly installedDefinitions: StudioInstalledRunDefinitionPort;
+  readonly draftDefinitions?: StudioDraftRunDefinitionPort;
+  readonly draftTestData?: StudioDraftTestDataAuthorizationPort;
 };
 
 async function resolveAdapterInput(
@@ -129,98 +145,14 @@ async function resolveInvocation(
   };
 }
 
-type InstalledRoutingSnapshot = {
-  readonly definition: RouterDefinition;
-  readonly hash: string;
-};
-
-async function installedRouting(
-  loadRouting: StudioRunLaunchFacadeOptions["routing"]
-): Promise<InstalledRoutingSnapshot> {
-  let routing: RouterDefinition;
-  try {
-    routing = await loadRouting();
-  } catch (cause) {
-    throw studioRunLaunchError(
-      "studio_run_routing_failed",
-      "Installed routing configuration could not be loaded",
-      {},
-      { cause }
-    );
-  }
-  return { definition: routing, hash: studioRunValueDigest(routing) };
-}
-
-async function routedWorkflow(
-  invocation: Invocation,
-  routing: InstalledRoutingSnapshot,
-  simulator: StudioRoutingSimulationPort,
-  signal?: AbortSignal
-): Promise<{ readonly workflowId: string; readonly routingHash: string }> {
-  let simulation: StudioRoutingSimulation;
-  try {
-    // Preserve the launch boundary even when tests or alternate compositions
-    // inject a routing port other than the native isolated implementation.
-    simulation = StudioRoutingSimulationSchema.parse(
-      await simulator.simulate(
-        { invocation },
-        routing.definition,
-        signal === undefined ? {} : { signal }
-      )
-    );
-  } catch (cause) {
-    throw studioRunLaunchError(
-      "studio_run_routing_failed",
-      "Installed routing configuration could not be evaluated",
-      {},
-      { cause }
-    );
-  }
-  if (simulation.status !== "matched" || simulation.target === null) {
-    throw studioRunLaunchError(
-      simulation.status === "no_match"
-        ? "studio_run_routing_no_match"
-        : "studio_run_routing_failed",
-      "Invocation did not resolve to an executable workflow"
-    );
-  }
-  if (
-    invocation.target !== undefined &&
-    invocation.target.id !== simulation.target.id
-  ) {
-    throw studioRunLaunchError(
-      "studio_run_target_mismatch",
-      "Invocation target does not match deterministic routing"
-    );
-  }
-  return {
-    workflowId: simulation.target.id,
-    routingHash: routing.hash
-  };
-}
-
-async function installedDefinition(
-  workflowId: string,
-  source: StudioInstalledRunDefinitionPort
-): Promise<StudioInstalledRunDefinition> {
-  try {
-    return await source.load(workflowId);
-  } catch (cause) {
-    throw studioRunLaunchError(
-      "studio_run_plan_resolution_invalid",
-      "Installed workflow configuration could not be loaded",
-      {},
-      { cause }
-    );
-  }
-}
-
 export class StudioRunLaunchFacade {
   readonly #planner: CanonicalRunPlanner;
   readonly #adapters: StudioRunAdapterInputResolverPort;
   readonly #routing: StudioRunLaunchFacadeOptions["routing"];
   readonly #routingSimulator: StudioRoutingSimulationPort;
   readonly #installedDefinitions: StudioInstalledRunDefinitionPort;
+  readonly #draftDefinitions: StudioDraftRunDefinitionPort | undefined;
+  readonly #draftTestData: StudioDraftTestDataAuthorizationPort | undefined;
 
   constructor(options: StudioRunLaunchFacadeOptions) {
     this.#planner = options.planner;
@@ -228,6 +160,8 @@ export class StudioRunLaunchFacade {
     this.#routing = options.routing;
     this.#routingSimulator = options.routingSimulator;
     this.#installedDefinitions = options.installedDefinitions;
+    this.#draftDefinitions = options.draftDefinitions;
+    this.#draftTestData = options.draftTestData;
   }
 
   async plan(
@@ -242,40 +176,121 @@ export class StudioRunLaunchFacade {
         "Public run plan input is invalid"
       );
     }
-    const resolved = await resolveInvocation(parsed.data, this.#adapters, signal);
-    const initialRouting = await installedRouting(this.#routing);
-    const initialRoute = await routedWorkflow(
-      resolved.invocation,
-      initialRouting,
-      this.#routingSimulator,
+    return await this.#plan(
+      parsed.data,
+      { kind: "standard" },
+      context,
       signal
     );
-    const installed = await installedDefinition(
-      initialRoute.workflowId,
-      this.#installedDefinitions
+  }
+
+  async planDraftTest(
+    draftId: string,
+    rawInput: StudioDraftTestRunPlanInput,
+    context: StudioRunLaunchContext,
+    signal?: AbortSignal
+  ): Promise<StudioRunPlan> {
+    const parsed = StudioDraftTestRunPlanInputSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw studioRunLaunchError(
+        "studio_run_plan_invalid",
+        "Draft test plan input is invalid"
+      );
+    }
+    const definitionSource = parsed.data.input.definition_source;
+    if (
+      definitionSource.kind !== "draft" ||
+      definitionSource.draft_id !== draftId
+    ) {
+      throw studioRunLaunchError(
+        "studio_run_plan_invalid",
+        "Draft test route does not match its exact definition source"
+      );
+    }
+    let executionProfile: StudioRunExecutionProfile = { kind: "standard" };
+    if (parsed.data.test_data !== undefined) {
+      if (this.#draftTestData === undefined) {
+        throw studioRunLaunchError(
+          "studio_run_launch_config_invalid",
+          "Draft test data authorization is not configured"
+        );
+      }
+      try {
+        executionProfile = {
+          kind: "manual_test",
+          test_data: await this.#draftTestData.authorize(
+            draftId,
+            parsed.data.test_data,
+            definitionSource.etag
+          )
+        };
+      } catch (cause) {
+        throw this.#testDataError(cause);
+      }
+    }
+    return await this.#plan(
+      parsed.data.input,
+      executionProfile,
+      context,
+      signal
     );
-    const plan = StudioRunPlanSchema.parse(await this.#planner.plan({
-      workflow_id: initialRoute.workflowId,
+  }
+
+  async #plan(
+    input: StudioRunPlanInput,
+    executionProfile: StudioRunExecutionProfile,
+    context: StudioRunLaunchContext,
+    signal?: AbortSignal
+  ): Promise<StudioRunPlan> {
+    const resolved = await resolveInvocation(input, this.#adapters, signal);
+    const definitionSource = input.definition_source;
+    const selected = await resolveRunDefinition({
+      source: definitionSource,
       invocation: resolved.invocation,
-      config: installed.config,
+      routing: this.#routing,
+      routingSimulator: this.#routingSimulator,
+      installedDefinitions: this.#installedDefinitions,
+      ...(this.#draftDefinitions === undefined
+        ? {}
+        : { draftDefinitions: this.#draftDefinitions }),
+      ...(signal === undefined ? {} : { signal })
+    });
+    const plan = StudioRunPlanSchema.parse(await this.#planner.plan({
+      workflow_id: selected.workflowId,
+      definition_source: definitionSource,
+      invocation: resolved.invocation,
+      config: selected.definition.config,
       input_provenance: resolved.provenance,
-      execution_scope: parsed.data.execution_scope
+      execution_profile: executionProfile,
+      execution_scope: input.execution_scope
     }, context, signal));
 
-    const currentRouting = await installedRouting(this.#routing);
+    const current = await reloadRunDefinition({
+      source: definitionSource,
+      workflowId: selected.workflowId,
+      installedDefinitions: this.#installedDefinitions,
+      ...(this.#draftDefinitions === undefined
+        ? {}
+        : { draftDefinitions: this.#draftDefinitions })
+    });
+    const currentRouting = definitionSource.kind === "installed"
+      ? await loadInstalledRouting(this.#routing)
+      : undefined;
     if (
-      !studioRunDigestsEqual(currentRouting.hash, initialRoute.routingHash) ||
+      (selected.routingHash !== undefined &&
+        (currentRouting === undefined ||
+          !studioRunDigestsEqual(currentRouting.hash, selected.routingHash))) ||
       !studioRunDigestsEqual(
         plan.workflow_revision,
-        installed.workflowRevision
+        current.workflowRevision
       ) ||
       !studioRunDigestsEqual(
         plan.definition_bundle_hash,
-        installed.definitionBundleHash
+        current.definitionBundleHash
       ) ||
       !studioRunDigestsEqual(
         plan.config_hash,
-        studioRunValueDigest(installed.config)
+        studioRunValueDigest(current.config)
       )
     ) {
       throw studioRunLaunchError(
@@ -284,5 +299,24 @@ export class StudioRunLaunchFacade {
       );
     }
     return plan;
+  }
+
+  #testDataError(cause: unknown): StudioRunLaunchError {
+    if (!(cause instanceof StudioDraftTestDataAuthorizationError)) {
+      return studioRunLaunchError(
+        "studio_run_test_data_invalid",
+        "Draft test data authorization failed",
+        {},
+        { cause }
+      );
+    }
+    const code = cause.code === "studio_draft_test_data_unavailable"
+      ? "studio_run_test_data_unavailable"
+      : cause.code === "studio_draft_test_data_precondition_failed" ||
+          cause.code === "studio_draft_test_data_stale" ||
+          cause.code === "studio_draft_test_data_definition_mismatch"
+        ? "studio_run_test_data_stale"
+        : "studio_run_test_data_invalid";
+    return studioRunLaunchError(code, cause.message, {}, { cause });
   }
 }

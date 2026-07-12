@@ -50,6 +50,7 @@ import {
   StudioConfigurationValidationResponseSchema,
   StudioModelConfigurationSchema,
   StudioProviderConfigurationSchema,
+  StudioProviderProbeResultSchema,
   StudioRepositoryConfigurationSchema,
   StudioRuntimeConfigurationSchema,
   StudioWorkflowConfigurationSchema,
@@ -60,6 +61,10 @@ import {
   StudioResourceHistoryRestoreResponseSchema,
 } from "../../../../src/studio/contracts/resource-history.js"
 import { RunGraphResponseSchema } from "../../../../src/studio/contracts/run-graph.js"
+import {
+  RunNodeOutputComparisonResponseSchema,
+  RunNodeOutputResponseSchema,
+} from "../../../../src/studio/contracts/run-node-output.js"
 
 export type StudioResponseContract<T> = {
   parse(value: unknown): T
@@ -96,6 +101,8 @@ export const studioResponseContracts = {
   runCatalog: RunCatalogPageSchema,
   run: PublicRunCatalogItemSchema,
   runGraph: RunGraphResponseSchema,
+  runNodeOutput: RunNodeOutputResponseSchema,
+  runNodeOutputComparison: RunNodeOutputComparisonResponseSchema,
   runEvent: RunEventSchema,
   runTimeline: RunEventPageSchema,
   runEventStreamComplete: StudioRunEventStreamCompleteSchema,
@@ -122,6 +129,7 @@ export const studioResponseContracts = {
   modelConfiguration: StudioModelConfigurationSchema,
   repositoryConfiguration: StudioRepositoryConfigurationSchema,
   providerConfiguration: StudioProviderConfigurationSchema,
+  providerProbeResult: StudioProviderProbeResultSchema,
   runtimeConfiguration: StudioRuntimeConfigurationSchema,
   resourceHistory: StudioResourceHistoryResponseSchema,
   resourceHistoryCompare: StudioResourceHistoryCompareResponseSchema,

@@ -23,3 +23,16 @@ export function draftHref(draft: DraftRouteTarget): string {
 
   return `/drafts/${draftId}`
 }
+
+export function workflowDraftTestDataHref(
+  draftId: string,
+  selection: { readonly fixtureName: string; readonly nodeId?: string },
+): string {
+  const query = new URLSearchParams({
+    panel: "test-data",
+    ...(selection.nodeId === undefined ? {} : { test_data: selection.fixtureName }),
+    fixture: selection.fixtureName,
+    ...(selection.nodeId === undefined ? {} : { node: selection.nodeId }),
+  })
+  return `/drafts/${encodeURIComponent(draftId)}?${query.toString()}`
+}

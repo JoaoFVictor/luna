@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import type { CapabilityRegistration, CapabilitySummary } from "@/api/types"
+import type { CapabilityRegistration, CapabilitySummary, WorkflowSummary } from "@/api/types"
 import {
+  workflowRecommendedPaletteItems,
   reconcileWorkflowBuiltInPolicies,
   workflowAgentCapabilityIds,
   workflowNodeCapabilityIds,
+  workflowNodePaletteItems,
 } from "@/features/workflows/workflow-node-catalog"
 
 const noReExports = {
@@ -64,6 +66,7 @@ function builtIn(
     input_schema: {},
     output_schema: {},
     required_ports: [],
+    requires_repository: false,
     ...(sideEffectPolicy === undefined
       ? {}
       : { side_effect_policy: sideEffectPolicy }),
@@ -85,6 +88,58 @@ function policy(id: string, operationId: string): CapabilityRegistration {
 }
 
 describe("workflow node capability projection", () => {
+  it("adds installed child workflows to the palette and excludes the workflow being edited", () => {
+    const workflow = (id: string): WorkflowSummary => ({
+      id,
+      mode: "read_only",
+      revision: `sha256:${"7".repeat(64)}`,
+      capabilities: [],
+      registrations: [],
+      agents: [],
+      input_schema: "input.schema.json",
+      output_schema: "output.schema.json",
+      input_schema_content: { type: "object" },
+      output_schema_content: { type: "object" },
+      synchronous_composition: "allowed",
+      node_counts: { built_in: 0, agent: 0, pattern: 0, human_gate: 0, workflow: 0 },
+      requires_repository: false,
+      max_concurrency: 1,
+    })
+
+    expect(workflowNodePaletteItems([], [], [workflow("parent"), workflow("child")], new Set(["parent"])))
+      .toEqual([expect.objectContaining({
+        id: "child",
+        kind: "workflow",
+        category: "Subworkflows",
+      })])
+  })
+
+  it("ranks common safe building blocks ahead of alphabetical advanced actions", () => {
+    const item = (id: string, kind: "built_in" | "agent", hasExternalEffect = false) => ({
+      id,
+      kind,
+      title: id,
+      summary: id,
+      category: kind === "agent" ? "Agents" : "Ações",
+      tags: [],
+      hasExternalEffect,
+      requiresRepository: false,
+    })
+    const ranked = workflowRecommendedPaletteItems([
+      item("change-request.create", "built_in", true),
+      item("reviewer", "agent"),
+      item("runtime.preflight", "built_in"),
+      item("context.collect_context", "built_in"),
+    ])
+
+    expect(ranked.map((entry) => entry.id)).toEqual([
+      "context.collect_context",
+      "runtime.preflight",
+      "reviewer",
+      "change-request.create",
+    ])
+  })
+
   it("uses a semantic node role without assuming a public capability id", () => {
     const capabilities = [
       capability("unrelated"),

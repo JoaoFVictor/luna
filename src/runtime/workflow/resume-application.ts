@@ -55,6 +55,10 @@ import {
   mergeRuntimeReferences,
   parseRuntimeReference
 } from "./runtime-reference-codec.js";
+import {
+  mergePrecompletedStepsWithRecovery,
+  validatePrecompletedSteps
+} from "./precompleted-steps.js";
 
 const RESUME_COMPLETION_SCHEMA_VERSION = 1;
 const RESUME_COMPLETION_CHANNEL = "resume_completion";
@@ -190,8 +194,11 @@ export async function applyWorkflowResume<TInput extends ResumeWorkflowInput>(
       checkpointInterruptRefs(checkpoint.state.interrupt_refs),
       priorWrites.completedInterruptRefs
     ),
-    steps: Object.fromEntries(
-      priorWrites.stepWrites.map((write) => [write.task_id, write.value])
+    steps: mergePrecompletedStepsWithRecovery(
+      validatePrecompletedSteps(input.compiled, resumeContext.precompleted_steps),
+      Object.fromEntries(
+        priorWrites.stepWrites.map((write) => [write.task_id, write.value])
+      )
     )
   };
 
@@ -392,7 +399,10 @@ function resumedInputFromContext<TInput extends ResumeWorkflowInput>(
     ...input,
     run: resumeContext.run,
     invocation: resumeContext.invocation,
-    config: resumeContext.config
+    config: resumeContext.config,
+    ...(resumeContext.precompleted_steps === undefined
+      ? {}
+      : { precompleted_steps: resumeContext.precompleted_steps })
   };
 }
 

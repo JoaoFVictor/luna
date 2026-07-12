@@ -88,6 +88,7 @@ import type {
   StudioRunLogLevel as ContractRunLogLevel,
 } from "../../../../src/studio/contracts/run-logs.js"
 import type { StudioRunPlanInput as ContractRunPlanInput } from "../../../../src/studio/contracts/run-plan-input.js"
+import type { StudioDraftTestRunPlanInput as ContractDraftTestRunPlanInput } from "../../../../src/studio/contracts/draft-test-run.js"
 import type {
   StudioRunDispatchReceipt as ContractRunDispatchReceipt,
   StudioRunExecuteRequest as ContractRunExecuteRequest,
@@ -102,6 +103,7 @@ import type {
   StudioConfigurationValidationResponse,
   StudioModelConfiguration,
   StudioProviderConfiguration,
+  StudioProviderProbeResult,
   StudioRepositoryConfiguration,
   StudioRuntimeConfiguration,
   StudioWorkflowConfiguration,
@@ -121,6 +123,11 @@ import type {
   RunGraphOverlay as ContractRunGraphOverlay,
   RunGraphResponse as ContractRunGraphResponse,
 } from "../../../../src/studio/contracts/run-graph.js"
+import type {
+  RunNodeOutputComparisonResponse as ContractRunNodeOutputComparisonResponse,
+  RunNodeOutputResponse as ContractRunNodeOutputResponse,
+  RunNodeOutputSnapshot as ContractRunNodeOutputSnapshot,
+} from "../../../../src/studio/contracts/run-node-output.js"
 
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = CoreJsonValue
@@ -192,6 +199,7 @@ export type RunLogLevel = ContractRunLogLevel
 export type RunLogEntry = ContractRunLogEntry
 export type RunLogPage = ContractRunLogPage
 export type RunPlanInput = ContractRunPlanInput
+export type DraftTestRunPlanInput = ContractDraftTestRunPlanInput
 export type RunPlan = ContractRunPlan
 export type RunExecuteRequest = ContractRunExecuteRequest
 export type RunDispatchReceipt = ContractRunDispatchReceipt
@@ -200,6 +208,9 @@ export type RunGraphNode = ContractRunGraphNode
 export type RunGraphNodeStatus = ContractRunGraphNodeStatus
 export type RunGraphOverlay = ContractRunGraphOverlay
 export type RunGraphResponse = ContractRunGraphResponse
+export type RunNodeOutputSnapshot = ContractRunNodeOutputSnapshot
+export type RunNodeOutputResponse = ContractRunNodeOutputResponse
+export type RunNodeOutputComparisonResponse = ContractRunNodeOutputComparisonResponse
 
 export type InputAdapterSummary = StudioInputAdapterSummary
 export type InputAdapterCatalog = StudioInputAdapterCatalog
@@ -223,6 +234,7 @@ export type ConfigurationApplyResult = StudioConfigurationApplyResult
 export type ModelConfiguration = StudioModelConfiguration
 export type RepositoryConfiguration = StudioRepositoryConfiguration
 export type ProviderConfiguration = StudioProviderConfiguration
+export type ProviderProbeResult = StudioProviderProbeResult
 export type RuntimeConfiguration = StudioRuntimeConfiguration
 
 export type HistoryResource = StudioHistoryResource

@@ -10,7 +10,7 @@ import {
 } from "lucide-react"
 import { useState } from "react"
 
-import type { DraftItem } from "@/api/types"
+import type { DraftItem, ValidationDiagnostic } from "@/api/types"
 import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,19 +25,30 @@ import { WorkflowDesignView } from "@/features/workflows/workflow-design-view"
 import { workflowCanvasLayout } from "@/features/workflows/workflow-layout"
 import { WorkflowRunsPanel } from "@/features/workflows/workflow-runs-panel"
 import { WorkflowSchemasEditor } from "@/features/workflows/workflow-schemas-editor"
+import type { WorkflowTestDataControls } from "@/features/workflows/workflow-test-data-bar"
+import type { WorkflowTestScopeKind } from "@/features/workflows/workflow-test-scope"
 import { shortDigest } from "@/lib/format"
 
 function WorkflowDesignWorkspace({
   draft,
   editor,
+  testData,
   onTestThroughNode,
+  onTestScopedNode,
+  focusedDiagnostic,
 }: {
   draft: DraftItem
   editor: WorkflowEditorController
+  testData: WorkflowTestDataControls
   onTestThroughNode: (nodeId: string) => void
+  onTestScopedNode: (kind: WorkflowTestScopeKind, nodeId: string) => void
+  focusedDiagnostic?: {
+    readonly nodeId: string
+    readonly fieldPath?: readonly (string | number)[]
+  }
 }) {
-  const { agents, inputAdapters, library, routing, sourceView } = editor.resources
-  if (library.isPending || agents.isPending || sourceView.isPending) {
+  const { agents, inputAdapters, library, routing, sourceView, workflows } = editor.resources
+  if (library.isPending || agents.isPending || sourceView.isPending || workflows.isPending) {
     return <div className="p-6"><PageLoading label="Carregando autoridade de edição" /></div>
   }
   if (library.isError) {
@@ -49,15 +60,20 @@ function WorkflowDesignWorkspace({
   if (sourceView.isError) {
     return <div className="p-6"><PageError error={sourceView.error} retry={() => void sourceView.refetch()} /></div>
   }
+  if (workflows.isError) {
+    return <div className="p-6"><PageError error={workflows.error} retry={() => void workflows.refetch()} /></div>
+  }
 
   return (
     <WorkflowDesignView
       compiled={editor.view.compiled}
       workflowId={draft.primary_resource.id}
+      draftId={draft.draft_id}
       diagnostics={editor.view.validation?.diagnostics}
       source={sourceView.data.value}
       library={library.data}
       agents={agents.data.agents}
+      workflows={workflows.data.workflows}
       adapters={inputAdapters.data}
       routing={routing.data}
       agentCatalogComplete={agents.data.status === "complete"}
@@ -68,12 +84,14 @@ function WorkflowDesignWorkspace({
       onOperations={editor.actions.editSource}
       onCanvasLayoutChange={editor.actions.saveCanvasLayout}
       expressionFixtures={editor.view.expressionFixtures}
+      testData={testData}
       nodeNotes={editor.view.nodeNotes}
       onSaveExpressionFixture={editor.actions.saveExpressionFixture}
-      onRemoveExpressionFixture={editor.actions.removeExpressionFixture}
       onSaveNodeNote={editor.actions.saveNodeNote}
       onSelectNode={editor.view.setSelectedNodeId}
       onTestThroughNode={onTestThroughNode}
+      onTestScopedNode={onTestScopedNode}
+      focusedDiagnostic={focusedDiagnostic}
     />
   )
 }
@@ -108,13 +126,32 @@ function CompiledWorkflowView({ editor }: { editor: WorkflowEditorController }) 
 export function WorkflowEditorWorkspace({
   draft,
   editor,
+  testData,
   onTestThroughNode,
+  onTestScopedNode,
 }: {
   draft: DraftItem
   editor: WorkflowEditorController
+  testData: WorkflowTestDataControls
   onTestThroughNode: (nodeId: string) => void
+  onTestScopedNode: (kind: WorkflowTestScopeKind, nodeId: string) => void
 }) {
   const [technicalOpen, setTechnicalOpen] = useState(false)
+  const [focusedDiagnostic, setFocusedDiagnostic] = useState<{
+    readonly nodeId: string
+    readonly fieldPath?: readonly (string | number)[]
+  }>()
+  const openDiagnostic = (diagnostic: ValidationDiagnostic) => {
+    if (diagnostic.node_id === undefined) return
+    setFocusedDiagnostic({
+      nodeId: diagnostic.node_id,
+      ...(diagnostic.node_field_path === undefined
+        ? {}
+        : { fieldPath: diagnostic.node_field_path }),
+    })
+    editor.view.setSelectedNodeId(diagnostic.node_id)
+    editor.view.setActive("design")
+  }
   const yamlFiles = editor.files.files.filter(
     (file) => file.file.path.endsWith(".yaml") || file.file.path.endsWith(".yml"),
   )
@@ -157,7 +194,10 @@ export function WorkflowEditorWorkspace({
         <WorkflowDesignWorkspace
           draft={draft}
           editor={editor}
+          testData={testData}
           onTestThroughNode={onTestThroughNode}
+          onTestScopedNode={onTestScopedNode}
+          focusedDiagnostic={focusedDiagnostic}
         />
       </TabsContent>
 
@@ -210,6 +250,7 @@ export function WorkflowEditorWorkspace({
         <ProblemsPanel
           diagnostics={editor.view.validation?.diagnostics ?? []}
           validated={editor.view.validation !== undefined}
+          onOpenDiagnostic={openDiagnostic}
         />
       </TabsContent>
     </Tabs>

@@ -192,6 +192,14 @@ describe("run graph snapshot projection", () => {
             { path: ["private_output"], value_type: "string" },
             { path: ["<redacted>"], value_type: "boolean" }
           ]
+        },
+        output_snapshot: {
+          availability: "available",
+          value: {
+            private_output: "OUTPUT_SECRET",
+            "<redacted-1>": true
+          },
+          redaction: { mode: "best_effort", changed: true }
         }
       }
     ]);
@@ -201,7 +209,6 @@ describe("run graph snapshot projection", () => {
     const serialized = JSON.stringify(outcome);
     expect(serialized).not.toContain("INVOCATION_SECRET");
     expect(serialized).not.toContain("CONFIG_SECRET");
-    expect(serialized).not.toContain("OUTPUT_SECRET");
     expect(serialized).not.toContain("PRIVATE_ERROR_REFERENCE");
     expect(serialized).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz123456");
     expect(StoredRunGraphOutcomeSchema.safeParse(outcome).success).toBe(true);
@@ -258,6 +265,63 @@ describe("run graph snapshot projection", () => {
     const outcome = projectStoredRunGraphOutcome({ graphSnapshot: snapshot, recordRevision: 2, state });
     expect(outcome.nodes[0]?.observed_output?.truncated).toBe(true);
     expect(outcome.nodes[0]?.observed_output?.fields).toHaveLength(256);
+    expect(outcome.nodes[0]?.output_snapshot).toEqual({
+      availability: "unavailable",
+      reason: "value_limit_exceeded"
+    });
+  });
+
+  it("caps retained outputs across the whole run without failing the outcome", () => {
+    const nodes = Array.from({ length: 10 }, (_, index) => ({
+      id: `step_${index}`,
+      kind: "built_in" as const,
+      yaml_path: `$.graph.nodes[${index}]`,
+      capability_id: "runtime.noop",
+      output_schema: {},
+      can_create_pending_interrupt: false,
+      source: {}
+    }));
+    const snapshot = projectStoredRunGraphSnapshot({
+      identity: identity(),
+      compiled: {
+        workflow_id: "code-review",
+        workflow_revision: DIGEST_A,
+        state_schema_version: "2026-06",
+        nodes,
+        edges: [],
+        state: { channels: {} }
+      } as unknown as CompiledWorkflow
+    });
+    let state = createInitialRuntimeState({
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-graph-1",
+        workflow_id: "code-review",
+        attempt: 1,
+        started_at: "2026-07-11T10:00:00.000Z"
+      },
+      workflow: { id: "code-review" }
+    });
+    for (const node of nodes) {
+      state = startNodeAttempt(state, node.id, 1);
+      state = publishNodeOutput(state, node.id, "x".repeat(240 * 1024));
+      state = failNode(state, node.id, "test");
+    }
+    state = { ...state, run_status: "failed" };
+
+    const outcome = projectStoredRunGraphOutcome({
+      graphSnapshot: snapshot,
+      recordRevision: 2,
+      state
+    });
+    expect(outcome.nodes.filter((node) =>
+      node.output_snapshot?.availability === "available"
+    )).toHaveLength(8);
+    expect(outcome.nodes.at(8)?.output_snapshot).toEqual({
+      availability: "unavailable",
+      reason: "snapshot_budget_exhausted"
+    });
   });
 
   it("rejects non-terminal and inconsistent attempt outcomes", () => {

@@ -21,7 +21,20 @@ import {
 import {
   StudioRunInputProvenanceSchema
 } from "./run-provenance.js";
+import {
+  StudioRunDefinitionSourceSchema
+} from "./run-definition-source.js";
 import { RunOpaqueIdSchema } from "./runs.js";
+import {
+  StudioRunExecutionProfileSchema,
+  StudioRunExecutionProfileSummarySchema,
+  STUDIO_STANDARD_EXECUTION_PROFILE_HASH
+} from "./manual-test-data.js";
+
+export {
+  StudioRunDefinitionSourceSchema,
+  type StudioRunDefinitionSource
+} from "./run-definition-source.js";
 
 export {
   StudioRunEffectCategorySchema,
@@ -81,10 +94,16 @@ const StudioRunConfigSchema = boundedStudioJsonValueSchema(
 export const StudioRunPlanRequestSchema = z
   .object({
     workflow_id: WorkflowIdSchema,
+    definition_source: StudioRunDefinitionSourceSchema.default({
+      kind: "installed"
+    }),
     invocation: StudioRunInvocationSchema,
     config: StudioRunConfigSchema,
     input_provenance: StudioRunInputProvenanceSchema.default({
       kind: "invocation"
+    }),
+    execution_profile: StudioRunExecutionProfileSchema.default({
+      kind: "standard"
     }),
     repository_id: StudioRunBoundedIdSchema.optional(),
     execution_scope: WorkflowExecutionScopeSchema.default({ kind: "workflow" })
@@ -167,6 +186,7 @@ export const StudioRunExecutionSnapshotSchema = z
   .object({
     schema_version: z.literal(1),
     workflow_id: WorkflowIdSchema,
+    definition_source: StudioRunDefinitionSourceSchema,
     execution_scope: WorkflowExecutionScopeSchema,
     mode: StudioRunModeSchema,
     workflow_revision: StudioDigestSchema,
@@ -178,10 +198,26 @@ export const StudioRunExecutionSnapshotSchema = z
     repository_id: StudioRunBoundedIdSchema.optional(),
     repository_fingerprint: StudioDigestSchema.optional(),
     input_provenance: StudioRunInputProvenanceSchema,
+    execution_profile: StudioRunExecutionProfileSummarySchema.default({
+      kind: "standard"
+    }),
+    execution_profile_hash: StudioDigestSchema.default(
+      STUDIO_STANDARD_EXECUTION_PROFILE_HASH
+    ),
     execution_snapshot_hash: StudioDigestSchema
   })
   .strict()
   .superRefine((snapshot, context) => {
+    if (
+      snapshot.execution_profile.kind === "standard" &&
+      snapshot.execution_profile_hash !== STUDIO_STANDARD_EXECUTION_PROFILE_HASH
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["execution_profile_hash"],
+        message: "Standard execution profile hash is invalid"
+      });
+    }
     if (
       (snapshot.repository_id === undefined) !==
       (snapshot.repository_fingerprint === undefined)
@@ -209,6 +245,9 @@ export const StudioRunPlanSchema = z
     created_at: StudioRunTimestampSchema,
     expires_at: StudioRunTimestampSchema,
     workflow_id: WorkflowIdSchema,
+    definition_source: StudioRunDefinitionSourceSchema.default({
+      kind: "installed"
+    }),
     execution_scope: WorkflowExecutionScopeSchema,
     mode: StudioRunModeSchema,
     workflow_revision: StudioDigestSchema,
@@ -221,6 +260,12 @@ export const StudioRunPlanSchema = z
     repository_id: StudioRunBoundedIdSchema.optional(),
     repository_fingerprint: StudioDigestSchema.optional(),
     input_provenance: StudioRunInputProvenanceSchema,
+    execution_profile: StudioRunExecutionProfileSummarySchema.default({
+      kind: "standard"
+    }),
+    execution_profile_hash: StudioDigestSchema.default(
+      STUDIO_STANDARD_EXECUTION_PROFILE_HASH
+    ),
     potential_effects: z
       .array(StudioRunPotentialEffectSchema)
       .max(STUDIO_RUN_LAUNCH_LIMITS.maxPotentialEffects),
@@ -238,6 +283,16 @@ export const StudioRunPlanSchema = z
   })
   .strict()
   .superRefine((plan, context) => {
+    if (
+      plan.execution_profile.kind === "standard" &&
+      plan.execution_profile_hash !== STUDIO_STANDARD_EXECUTION_PROFILE_HASH
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["execution_profile_hash"],
+        message: "Standard execution profile hash is invalid"
+      });
+    }
     validateStudioRunEffects(plan, context);
     if (
       (plan.repository_id === undefined) !==

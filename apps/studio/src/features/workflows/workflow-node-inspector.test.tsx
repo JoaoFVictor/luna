@@ -7,8 +7,10 @@ import type {
   CapabilityRegistration,
   CapabilitySummary,
   JsonValue,
+  WorkflowSummary,
 } from "@/api/types"
 import { WorkflowNodeInspector } from "@/features/workflows/workflow-node-inspector"
+import type { WorkflowNodeDiagnostic } from "@/features/workflows/workflow-node-diagnostics"
 import { workflowSourceNodes } from "@/features/workflows/workflow-source-model"
 
 const DIGEST = `sha256:${"1".repeat(64)}`
@@ -30,6 +32,7 @@ function builtIn(
     input_schema: {},
     output_schema: {},
     required_ports: [],
+    requires_repository: false,
     ...(sideEffectPolicy === undefined
       ? {}
       : { side_effect_policy: sideEffectPolicy }),
@@ -91,6 +94,9 @@ function renderInspector(
   source: JsonValue,
   catalog: CapabilityCatalog,
   agents: readonly AgentCatalogItem[] = [],
+  diagnostics: readonly WorkflowNodeDiagnostic[] = [],
+  focusedFieldPath?: readonly (string | number)[],
+  workflows: readonly WorkflowSummary[] = [],
 ) {
   const nodes = workflowSourceNodes(source)
   const selected = nodes[0]
@@ -103,6 +109,7 @@ function renderInspector(
       selected={selected}
       library={catalog}
       agents={agents}
+      workflows={workflows}
       canMutate
       pending={false}
       onOperations={onOperations}
@@ -111,6 +118,8 @@ function renderInspector(
       onRemoveExpressionFixture={vi.fn()}
       note=""
       onSaveNote={vi.fn()}
+      diagnostics={diagnostics}
+      focusedFieldPath={focusedFieldPath}
     />,
   )
   return onOperations
@@ -124,7 +133,77 @@ const writeBPolicy = policy("effects.write-b-policy", "effects.write-b")
 const effectRegistrations = [writeA, writeB, read, writeAPolicy, writeBPolicy]
 const explicitPolicy = { uses: "audit.explicit", config: { level: "strict" } }
 
+function childWorkflow(id: string, requiresRepository = false): WorkflowSummary {
+  return {
+    id,
+    mode: "read_only",
+    revision: `sha256:${"8".repeat(64)}`,
+    capabilities: [],
+    registrations: [],
+    agents: [],
+    input_schema: "input.schema.json",
+    output_schema: "output.schema.json",
+    input_schema_content: {
+      type: "object",
+      properties: { issue: { type: "string" } },
+    },
+    output_schema_content: {
+      type: "object",
+      properties: { report: { type: "string" } },
+    },
+    synchronous_composition: "allowed",
+    node_counts: { built_in: 1, agent: 0, pattern: 0, human_gate: 0, workflow: 0 },
+    requires_repository: requiresRepository,
+    max_concurrency: 1,
+  }
+}
+
 describe("WorkflowNodeInspector registration changes", () => {
+  it("shows child workflow contracts and changes only the canonical workflow field", () => {
+    const source: JsonValue = {
+      mode: "read_only",
+      nodes: [{ id: "child", type: "workflow", workflow: "review-child" }],
+    }
+    const onOperations = renderInspector(
+      source,
+      library([]),
+      [],
+      [],
+      undefined,
+      [childWorkflow("review-child"), childWorkflow("publish-child", true)],
+    )
+
+    expect(screen.getByText("Input contract do workflow filho")).toBeTruthy()
+    expect(screen.getByText("Output contract do workflow filho")).toBeTruthy()
+    expect(screen.getByText("report · string")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Workflow filho"), {
+      target: { value: "publish-child" },
+    })
+    expect(onOperations).toHaveBeenCalledWith([
+      { op: "set", path: ["requires"], value: { repository: true } },
+      { op: "set", path: ["nodes", 0, "workflow"], value: "publish-child" },
+    ])
+  })
+
+  it("renders an authoritative diagnostic beside its corresponding field", () => {
+    const source: JsonValue = {
+      capabilities: ["effects"],
+      nodes: [{ id: "publish", type: "built_in", uses: read.id }],
+    }
+    renderInspector(source, library(effectRegistrations), [], [{
+      severity: "error",
+      code: "workflow_capability_unknown",
+      message: "A ação selecionada não existe.",
+      fieldPath: ["uses"],
+    }], ["uses"])
+
+    const field = screen.getByLabelText("Problemas no campo registration").parentElement
+    expect(field?.getAttribute("data-workflow-inspector-field")).toBe("registration")
+    expect(field?.getAttribute("aria-invalid")).toBe("true")
+    expect(document.activeElement).toBe(field)
+    expect(screen.getByText("A ação selecionada não existe.")).toBeTruthy()
+  })
+
   it("removes only the former implicit policy when changing write to read", () => {
     const source: JsonValue = {
       capabilities: ["effects"],

@@ -83,6 +83,14 @@ export function useRunEventStream({
         queryKey: studioKeys.timeline(runId),
         exact: true,
       })
+      void queryClient.invalidateQueries({
+        queryKey: studioKeys.runGraph(runId),
+        exact: true,
+      })
+      void queryClient.invalidateQueries({
+        queryKey: studioKeys.artifacts(runId),
+        exact: true,
+      })
       void queryClient.invalidateQueries({ queryKey: studioKeys.runs })
     }
     const flushInvalidations = () => {

@@ -54,6 +54,31 @@ Supported node types:
 - `agent`: calls a reusable agent and validates structured JSON output.
 - `pattern`: calls a registered workflow pattern.
 - `human_gate`: creates a resumable interrupt backed by a gate registration.
+- `workflow`: synchronously calls another installed workflow by id.
+
+Workflow composition remains YAML-owned and does not create a capability or a
+per-workflow TypeScript entrypoint:
+
+```yaml
+- id: enrich
+  type: workflow
+  workflow: enrich-context
+  input:
+    subject:
+      expression: "$.invocation.subject"
+  after: [intake]
+```
+
+The child `input_schema` validates the resolved node input and its
+`output_schema` validates the value returned as this node's output. Loading
+pins the child revision into the parent's external-definition digest and
+rejects missing references, composition cycles, read-only parents calling
+trusted-write children, or missing repository authority. Synchronous
+composition deliberately rejects child graphs that can suspend for human
+input; nested HITL requires a future resumable composition protocol rather
+than an implicit or unsafe fallback. Child runtime checkpoints use a
+deterministic identity derived from the parent run and call-node id, while the
+control plane keeps one historical parent run.
 
 Dependencies are declared with `after`. Duplicate node ids, missing
 dependencies, and cycles fail graph analysis.

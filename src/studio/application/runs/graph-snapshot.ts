@@ -1,24 +1,32 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { redactString } from "../../../core/security/redactor.js";
+import { jsonValueBudgetViolation } from "../../../core/json/value.js";
 import type { LunaRuntimeState } from "../../../core/runtime/state.js";
 import { validateCheckpointState } from "../../../core/runtime/state.js";
 import { WorkflowIdSchema } from "../../../core/router/invocation.js";
 import type { CompiledWorkflow } from "../../../core/workflow/compiler.js";
 import { sha256Digest } from "../../../core/workflow/definition-digests.js";
+import { redactString } from "../../../core/security/redactor.js";
 import { StudioDigestSchema } from "../../contracts/digests.js";
 import {
   MAX_RUN_GRAPH_NODES,
   MAX_RUN_GRAPH_OBSERVED_FIELDS,
   RunGraphOverlayNodeSchema,
-  RunGraphSchema,
-  type RunGraphOverlayNode
+  RunGraphSchema
 } from "../../contracts/run-graph.js";
 import {
   RunGraphSnapshotHandleSchema,
   RunOpaqueIdSchema,
   RunTerminalStatusSchema
 } from "../../contracts/runs.js";
+import {
+  AvailableRunNodeOutputSnapshotSchema,
+  MAX_RUN_OUTPUT_SNAPSHOT_BYTES,
+  RunNodeOutputSnapshotSchema,
+  STUDIO_RUN_NODE_OUTPUT_LIMITS,
+  type RunNodeOutputSnapshot
+} from "../../contracts/run-node-output.js";
+import { reusableOutputSafety } from "./reusable-output-safety.js";
 
 export const RunGraphSnapshotIdentitySchema = z
   .object({
@@ -78,6 +86,10 @@ export type StoredRunGraphSnapshot = z.infer<
   typeof StoredRunGraphSnapshotSchema
 >;
 
+export const StoredRunGraphOutcomeNodeSchema = RunGraphOverlayNodeSchema.extend({
+  output_snapshot: RunNodeOutputSnapshotSchema.optional()
+}).strict();
+
 const StoredRunGraphOutcomeMaterialSchema = z
   .object({
     schema_version: z.literal(1),
@@ -85,7 +97,7 @@ const StoredRunGraphOutcomeMaterialSchema = z
     graph_hash: StudioDigestSchema,
     record_revision: z.number().int().safe().positive(),
     run_status: RunTerminalStatusSchema,
-    nodes: z.array(RunGraphOverlayNodeSchema).max(MAX_RUN_GRAPH_NODES)
+    nodes: z.array(StoredRunGraphOutcomeNodeSchema).max(MAX_RUN_GRAPH_NODES)
   })
   .strict();
 
@@ -287,7 +299,7 @@ function assertRuntimeIdentity(
 function projectOutcomeNodes(
   graph: StoredRunGraphSnapshot["graph"],
   state: LunaRuntimeState
-): readonly RunGraphOverlayNode[] {
+): StoredRunGraphOutcome["nodes"] {
   const graphIds = new Set(graph.nodes.map((node) => node.id));
   for (const nodeId of Object.keys(state.node_statuses)) {
     if (!graphIds.has(nodeId)) {
@@ -300,6 +312,7 @@ function projectOutcomeNodes(
     }
   }
 
+  let capturedOutputBytes = 0;
   return graph.nodes.flatMap((graphNode) => {
     const status = state.node_statuses[graphNode.id];
     if (status === undefined) {
@@ -312,17 +325,63 @@ function projectOutcomeNodes(
     ) {
       throw projectionError("Runtime node attempt count is inconsistent");
     }
+    const output = state.steps[graphNode.id] === undefined
+      ? undefined
+      : reusableOutputSnapshot(state.steps[graphNode.id]);
+    const outputSnapshot = output === undefined
+      ? undefined
+      : output.bytes + capturedOutputBytes > MAX_RUN_OUTPUT_SNAPSHOT_BYTES
+        ? {
+            availability: "unavailable" as const,
+            reason: "snapshot_budget_exhausted" as const
+          }
+        : output.snapshot;
+    if (output?.snapshot.availability === "available" &&
+      outputSnapshot?.availability === "available") {
+      capturedOutputBytes += output.bytes;
+    }
     return [
-      RunGraphOverlayNodeSchema.parse({
+      StoredRunGraphOutcomeNodeSchema.parse({
         node_id: graphNode.id,
         status: status.status,
         ...(attempts === undefined ? {} : { attempt_count: attempts.count }),
         ...(state.steps[graphNode.id] === undefined
           ? {}
-          : { observed_output: observedOutputShape(state.steps[graphNode.id]) })
+          : {
+              observed_output: observedOutputShape(state.steps[graphNode.id]),
+              output_snapshot: outputSnapshot
+            })
       })
     ];
   });
+}
+
+function reusableOutputSnapshot(value: unknown): {
+  readonly snapshot: RunNodeOutputSnapshot;
+  readonly bytes: number;
+} {
+  if (
+    jsonValueBudgetViolation(value, STUDIO_RUN_NODE_OUTPUT_LIMITS) !==
+    undefined
+  ) {
+    return {
+      snapshot: { availability: "unavailable", reason: "value_limit_exceeded" },
+      bytes: 0
+    };
+  }
+  const sanitized = reusableOutputSafety(value);
+  const snapshot = AvailableRunNodeOutputSnapshotSchema.parse({
+    availability: "available",
+    value: sanitized.value,
+    redaction: {
+      mode: "best_effort",
+      changed: sanitized.changed
+    }
+  });
+  return {
+    snapshot,
+    bytes: Buffer.byteLength(JSON.stringify(snapshot.value), "utf8")
+  };
 }
 
 function observedValueType(value: unknown):

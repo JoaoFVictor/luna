@@ -82,7 +82,8 @@ describe("fingerprintNativeStudioRepository", () => {
     await expect(fingerprintNativeStudioRepository(repository, {
       maxUntrackedBytes: 9
     })).rejects.toMatchObject({
-      code: "studio_run_plan_resolution_invalid"
+      code: "studio_run_repository_not_ready",
+      details: { repository_id: "test-repository" }
     });
   });
 
@@ -93,7 +94,7 @@ describe("fingerprintNativeStudioRepository", () => {
     await expect(fingerprintNativeStudioRepository(repository, {
       signal: controller.signal
     })).rejects.toMatchObject({
-      code: "studio_run_plan_resolution_invalid"
+      code: "studio_run_repository_not_ready"
     });
   });
 
@@ -101,7 +102,7 @@ describe("fingerprintNativeStudioRepository", () => {
     await expect(fingerprintNativeStudioRepository(repository, {
       timeoutMs: 1
     })).rejects.toMatchObject({
-      code: "studio_run_plan_resolution_invalid"
+      code: "studio_run_repository_not_ready"
     });
   });
 });

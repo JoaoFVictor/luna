@@ -30,7 +30,7 @@ export type RunGraphNodeStatus = z.infer<typeof RunGraphNodeStatusSchema>;
 export const RunGraphNodeSchema = z
   .object({
     id: BoundedIdSchema,
-    kind: z.enum(["built_in", "agent", "pattern", "interrupt"]),
+    kind: z.enum(["built_in", "agent", "pattern", "interrupt", "workflow"]),
     capability_id: BoundedIdSchema,
     can_create_pending_interrupt: z.boolean()
   })
@@ -108,6 +108,7 @@ const ObservedRunGraphOverlaySchema = z
   .object({
     observation: z.literal("observed"),
     source: z.enum(["live", "persisted"]),
+    history: z.enum(["complete", "recent", "active_only"]),
     record_revision: z.number().int().safe().positive(),
     run_status: RunRuntimeStatusSchema,
     nodes: z.array(RunGraphOverlayNodeSchema).max(MAX_RUN_GRAPH_NODES)

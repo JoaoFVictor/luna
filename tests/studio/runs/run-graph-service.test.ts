@@ -3,13 +3,17 @@ import {
   startNodeAttempt,
   succeedNode
 } from "../../../src/core/runtime/lifecycle.js";
-import { createInitialRuntimeState } from "../../../src/core/runtime/state.js";
+import {
+  createInitialRuntimeState,
+  publishNodeOutput
+} from "../../../src/core/runtime/state.js";
 import type { CompiledWorkflow } from "../../../src/core/workflow/compiler.js";
 import { sha256Digest } from "../../../src/core/workflow/definition-digests.js";
 import {
   RunGraphReadError,
   RunGraphService
 } from "../../../src/studio/application/runs/graph-service.js";
+import { RunNodeOutputService } from "../../../src/studio/application/runs/node-output-service.js";
 import {
   projectStoredRunGraphOutcome,
   projectStoredRunGraphSnapshot,
@@ -18,9 +22,13 @@ import {
   type StoredRunGraphOutcome,
   type StoredRunGraphSnapshot
 } from "../../../src/studio/application/runs/graph-snapshot.js";
-import type { RunLedgerPort } from "../../../src/studio/application/runs/ports.js";
+import type {
+  RunEventLedgerPort,
+  RunLedgerPort
+} from "../../../src/studio/application/runs/ports.js";
 import {
   RunRecordSchema,
+  type RunEvent,
   type RunRecord
 } from "../../../src/studio/contracts/runs.js";
 import { DIGEST_A, DIGEST_B, DIGEST_C, DIGEST_D } from "./helpers.js";
@@ -87,6 +95,10 @@ function terminalOutcome(
     workflow: { id: snapshot.identity.workflow_id }
   });
   state = startNodeAttempt(state, "review", 1);
+  state = publishNodeOutput(state, "review", {
+    summary: "Review approved",
+    password: "must-not-leak"
+  });
   state = succeedNode(state, "review");
   state = { ...state, run_status: "succeeded" };
   return projectStoredRunGraphOutcome({
@@ -164,6 +176,53 @@ function ledger(record: RunRecord | undefined): RunLedgerPort {
   };
 }
 
+function eventLedger(
+  items: readonly RunEvent[] = [],
+  nextCursor: string | null = null
+): RunEventLedgerPort {
+  return {
+    append: vi.fn(async () => {
+      throw new Error("not used");
+    }),
+    list: vi.fn(async () => ({
+      items: [...items],
+      next_cursor: nextCursor,
+      as_of_sequence: items.at(-1)?.sequence ?? 0
+    }))
+  };
+}
+
+function lifecycleEvent(input: {
+  sequence: number;
+  type: "node.started" | "node.succeeded" | "node.failed";
+  nodeId: string;
+  attempt?: number;
+  revision?: number;
+}): RunEvent {
+  const occurredAt = `2026-07-11T10:00:0${input.sequence}.000Z`;
+  return {
+    schema_version: 1,
+    run_id: "run-service-1",
+    sequence: input.sequence,
+    event_id: `event-${input.sequence}`,
+    event_type: `run.${input.type}`,
+    occurred_at: occurredAt,
+    record_revision: input.revision ?? 3,
+    data: {
+      transition_id: `transition-${input.sequence}`,
+      kind: "node_lifecycle",
+      node_event: {
+        type: input.type,
+        node_id: input.nodeId,
+        attempt: input.attempt ?? 1,
+        observed_at: occurredAt,
+        artifact_count: 0,
+        interrupt_count: 0
+      }
+    }
+  };
+}
+
 function store(input: {
   graph?: RunGraphSnapshotReadResult<StoredRunGraphSnapshot>;
   outcome?: RunGraphSnapshotReadResult<StoredRunGraphOutcome>;
@@ -186,6 +245,7 @@ describe("run graph read service", () => {
     const snapshot = graph();
     const service = new RunGraphService({
       ledger: ledger(terminalRecord()),
+      events: eventLedger(),
       store: store({
         graph: { kind: "available", value: snapshot },
         outcome: { kind: "available", value: terminalOutcome(snapshot) }
@@ -208,6 +268,67 @@ describe("run graph read service", () => {
       }
     });
     expect(JSON.stringify(response)).not.toContain("graph_snapshot_handle");
+    expect(JSON.stringify(response)).not.toContain("Review approved");
+  });
+
+  it("loads a redacted node output only through the explicit endpoint", async () => {
+    const snapshot = graph();
+    const runLedger = ledger(terminalRecord());
+    const snapshotStore = store({
+      graph: { kind: "available", value: snapshot },
+      outcome: { kind: "available", value: terminalOutcome(snapshot) }
+    });
+    const service = new RunGraphService({
+      ledger: runLedger,
+      events: eventLedger(),
+      store: snapshotStore
+    });
+    const outputs = new RunNodeOutputService({
+      graphs: service,
+      ledger: runLedger,
+      store: snapshotStore
+    });
+
+    await expect(outputs.get("run-service-1", "review")).resolves
+      .toMatchObject({
+        availability: "available",
+        node_id: "review",
+        graph_hash: snapshot.graph_hash,
+        output: {
+          availability: "available",
+          value: {
+            summary: "Review approved",
+            password: "[REDACTED]"
+          },
+          redaction: { mode: "best_effort", changed: true }
+        }
+      });
+    await expect(outputs.get("run-service-1", "missing"))
+      .rejects.toMatchObject({ code: "run_node_output_node_not_found" });
+  });
+
+  it("does not expose mutable output while a run is still active", async () => {
+    const snapshot = graph();
+    const runLedger = ledger(runningRecord());
+    const snapshotStore = store({
+      graph: { kind: "available", value: snapshot }
+    });
+    const graphs = new RunGraphService({
+      ledger: runLedger,
+      events: eventLedger(),
+      store: snapshotStore
+    });
+    const outputs = new RunNodeOutputService({
+      graphs,
+      ledger: runLedger,
+      store: snapshotStore
+    });
+
+    await expect(outputs.get("run-service-1", "review")).resolves.toMatchObject({
+      availability: "unavailable",
+      reason: "run_not_terminal"
+    });
+    expect(snapshotStore.readOutcome).not.toHaveBeenCalled();
   });
 
   it("degrades legacy and pre-execution crash windows explicitly", async () => {
@@ -221,6 +342,7 @@ describe("run graph read service", () => {
     });
     const legacyService = new RunGraphService({
       ledger: ledger(legacy),
+      events: eventLedger(),
       store: store({})
     });
     await expect(legacyService.get(legacy.run_id)).resolves.toMatchObject({
@@ -230,6 +352,7 @@ describe("run graph read service", () => {
 
     const partialService = new RunGraphService({
       ledger: ledger(queuedRecord({ completeness: "partial" })),
+      events: eventLedger(),
       store: store({ graph: { kind: "available", value: graph() } })
     });
     await expect(partialService.get("run-service-1")).resolves.toMatchObject({
@@ -239,6 +362,7 @@ describe("run graph read service", () => {
 
     const pendingService = new RunGraphService({
       ledger: ledger(queuedRecord()),
+      events: eventLedger(),
       store: store({ graph: { kind: "missing" } })
     });
     await expect(pendingService.get("run-service-1")).resolves.toMatchObject({
@@ -250,6 +374,7 @@ describe("run graph read service", () => {
   it("never substitutes the current workflow for a mismatched run snapshot", async () => {
     const service = new RunGraphService({
       ledger: ledger(terminalRecord()),
+      events: eventLedger(),
       store: store({
         graph: { kind: "available", value: graph("another-run") }
       })
@@ -265,6 +390,7 @@ describe("run graph read service", () => {
     const snapshot = graph();
     const corruptGraphService = new RunGraphService({
       ledger: ledger(terminalRecord()),
+      events: eventLedger(),
       store: store({
         graph: {
           kind: "available",
@@ -286,6 +412,7 @@ describe("run graph read service", () => {
     } as unknown as StoredRunGraphOutcome;
     const corruptOutcomeService = new RunGraphService({
       ledger: ledger(terminalRecord()),
+      events: eventLedger(),
       store: store({
         graph: { kind: "available", value: snapshot },
         outcome: { kind: "available", value: corruptOutcome }
@@ -311,6 +438,7 @@ describe("run graph read service", () => {
     };
     const unknownOutcomeService = new RunGraphService({
       ledger: ledger(terminalRecord()),
+      events: eventLedger(),
       store: store({
         graph: { kind: "available", value: snapshot },
         outcome: { kind: "available", value: unknownOutcome }
@@ -326,6 +454,7 @@ describe("run graph read service", () => {
     const snapshot = graph();
     const service = new RunGraphService({
       ledger: ledger(terminalRecord()),
+      events: eventLedger(),
       store: store({
         graph: { kind: "available", value: snapshot },
         outcome: {
@@ -348,6 +477,7 @@ describe("run graph read service", () => {
         run_status: "failed",
         failure: { code: "runtime_node_failed", message: "Runtime failed" }
       })),
+      events: eventLedger(),
       store: store({
         graph: { kind: "available", value: snapshot },
         outcome: { kind: "missing" }
@@ -365,6 +495,7 @@ describe("run graph read service", () => {
     const snapshot = graph();
     const service = new RunGraphService({
       ledger: ledger(runningRecord()),
+      events: eventLedger(),
       store: store({ graph: { kind: "available", value: snapshot } })
     });
     await expect(service.get("run-service-1")).resolves.toMatchObject({
@@ -372,11 +503,42 @@ describe("run graph read service", () => {
       overlay: {
         observation: "observed",
         source: "live",
+        history: "complete",
         record_revision: 3,
         run_status: "running",
         nodes: [{ node_id: "review", status: "running" }]
       }
     });
+  });
+
+  it("keeps recently completed nodes visible in a bounded live projection", async () => {
+    const snapshot = graph();
+    const events = eventLedger([
+      lifecycleEvent({ sequence: 3, type: "node.started", nodeId: "review" }),
+      lifecycleEvent({ sequence: 2, type: "node.succeeded", nodeId: "publish" })
+    ], "more-events");
+    const service = new RunGraphService({
+      ledger: ledger(runningRecord()),
+      events,
+      store: store({ graph: { kind: "available", value: snapshot } })
+    });
+
+    await expect(service.get("run-service-1")).resolves.toMatchObject({
+      availability: "available",
+      overlay: {
+        observation: "observed",
+        source: "live",
+        history: "recent",
+        nodes: [
+          { node_id: "review", status: "running", attempt_count: 1 },
+          { node_id: "publish", status: "succeeded", attempt_count: 1 }
+        ]
+      }
+    });
+    expect(events.list).toHaveBeenCalledWith(expect.objectContaining({
+      direction: "desc",
+      limit: 200
+    }));
   });
 
   it("rejects active ids outside the immutable graph", async () => {
@@ -386,6 +548,7 @@ describe("run graph read service", () => {
         ...runningRecord(),
         active_node_ids: ["intruder"]
       })),
+      events: eventLedger(),
       store: store({ graph: { kind: "available", value: snapshot } })
     });
     await expect(service.get("run-service-1")).resolves.toMatchObject({
@@ -400,6 +563,7 @@ describe("run graph read service", () => {
   it("rejects invalid and unknown run ids before reading snapshots", async () => {
     const service = new RunGraphService({
       ledger: ledger(undefined),
+      events: eventLedger(),
       store: store({})
     });
     await expect(service.get("../private")).rejects.toBeInstanceOf(RunGraphReadError);

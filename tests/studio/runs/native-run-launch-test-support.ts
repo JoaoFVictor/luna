@@ -56,6 +56,7 @@ export type NativeFixture = {
 
 export const request: StudioRunPlanRequest = {
   workflow_id: "pinned-workflow",
+  definition_source: { kind: "installed" },
   execution_scope: { kind: "workflow" },
   invocation: {
     version: "2026-06",
@@ -65,7 +66,8 @@ export const request: StudioRunPlanRequest = {
     payload: { prompt: "Inspect the immutable definition" }
   },
   config: { message: "accepted configuration" },
-  input_provenance: { kind: "invocation" }
+  input_provenance: { kind: "invocation" },
+  execution_profile: { kind: "standard" }
 };
 
 export const launchContext: StudioRunLaunchContext = {
@@ -255,7 +257,10 @@ export function launchService(
 
 export async function captureCommand(
   fixture: NativeFixture,
-  options: { readonly platform?: NativeLunaPlatformRegistrations } = {}
+  options: {
+    readonly platform?: NativeLunaPlatformRegistrations;
+    readonly request?: StudioRunPlanRequest;
+  } = {}
 ): Promise<{
   readonly command: NativeDispatchCommand;
   readonly confirmationToken: string;
@@ -274,7 +279,7 @@ export async function captureCommand(
       };
     }
   }, options);
-  const plan = await service.plan(request, launchContext);
+  const plan = await service.plan(options.request ?? request, launchContext);
   await service.execute(
     plan.plan_id,
     executeRequest(plan.confirmation_token),
@@ -473,7 +478,7 @@ export function replaySafeBuiltInWorkflowSource(): string {
     "  file: pinned-workflow.yaml",
     "  schema: config.schema.json",
     "capabilities:",
-    "  - context",
+    "  - reports",
     "requires:",
     "  repository: false",
     "execution:",
@@ -481,9 +486,9 @@ export function replaySafeBuiltInWorkflowSource(): string {
     "nodes:",
     "  - id: analyze",
     "    type: built_in",
-    "    uses: context.collect_context",
+    "    uses: reports.final_report",
     "    input:",
-    "      agents: []",
+    "      sections: []",
     ""
   ].join("\n");
 }

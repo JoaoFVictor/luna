@@ -26,6 +26,7 @@ export type WorkflowDefinitionReferences = {
   readonly outputSchema: string;
   readonly config?: WorkflowConfigReference;
   readonly agents: readonly WorkflowAgentReference[];
+  readonly workflows: readonly string[];
 };
 
 export function collectWorkflowAgentReferences(
@@ -64,6 +65,9 @@ export function collectWorkflowRegistrationReferences(
 ): readonly string[] {
   const references = new Set<string>();
   for (const node of nodes) {
+    if (node.type === "workflow") {
+      continue;
+    }
     if (node.type !== "agent") {
       references.add(node.uses);
     } else if (
@@ -121,6 +125,9 @@ export function readWorkflowDefinitionReferences(
     inputSchema: requireString(raw.input_schema, "$.input_schema"),
     outputSchema: requireString(raw.output_schema, "$.output_schema"),
     ...(config === undefined ? {} : { config }),
-    agents: collectWorkflowAgentReferences(graph.nodes)
+    agents: collectWorkflowAgentReferences(graph.nodes),
+    workflows: [...new Set(
+      graph.nodes.flatMap((node) => node.type === "workflow" ? [node.workflow] : [])
+    )].sort((left, right) => left.localeCompare(right))
   };
 }

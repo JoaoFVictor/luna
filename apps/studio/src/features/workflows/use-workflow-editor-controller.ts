@@ -12,6 +12,7 @@ import {
   libraryQuery,
   routingQuery,
   studioKeys,
+  workflowsQuery,
 } from "@/api/queries"
 import type {
   CompiledWorkflow,
@@ -28,7 +29,7 @@ import {
 } from "@/features/drafts/draft-file-session"
 import { useDraftFileSession } from "@/features/drafts/use-draft-file-session"
 import { useDraftNavigationGuard } from "@/features/drafts/use-draft-navigation-guard"
-import { workflowExpressionFixtures } from "@/features/workflows/workflow-expression-fixtures"
+import { workflowExpressionFixtureSources, workflowExpressionFixtures } from "@/features/workflows/workflow-expression-fixtures"
 import {
   workflowNodeNotes,
 } from "@/features/workflows/workflow-layout"
@@ -65,6 +66,7 @@ export function useWorkflowEditorController(draftId: string) {
   const agents = useQuery(agentsQuery)
   const inputAdapters = useQuery(inputAdaptersQuery)
   const routing = useQuery(routingQuery)
+  const workflows = useQuery(workflowsQuery)
   const workflowFile = useMemo<StudioPath>(() => ({
     root: "project",
     path: `workflows/${draft.data?.primary_resource.id ?? "pending"}/workflow.yaml`,
@@ -90,6 +92,10 @@ export function useWorkflowEditorController(draftId: string) {
   const compiled = findCompiledWorkflow(validation)
   const expressionFixtures = useMemo(
     () => workflowExpressionFixtures(draft.data?.layout),
+    [draft.data?.layout],
+  )
+  const expressionFixtureSources = useMemo(
+    () => workflowExpressionFixtureSources(draft.data?.layout),
     [draft.data?.layout],
   )
   const nodeNotes = useMemo(
@@ -303,6 +309,43 @@ export function useWorkflowEditorController(draftId: string) {
     ),
   })
 
+  const editPinnedOutput = useMutation({
+    mutationFn: ({ snapshot, fixtureName, output }: {
+      snapshot: DraftFileSessionSnapshot
+      fixtureName: string
+      output: JsonValue
+    }) => studioApi.editRunNodeOutputFixture(
+      snapshot.draftId,
+      snapshot.serverEtag,
+      { fixture_name: fixtureName, output },
+    ),
+    onSuccess: (updated, { snapshot }) => {
+      publishServerDraft(updated, snapshot)
+      toast.success("Output editado e autorizado somente para testes manuais")
+    },
+    onError: (error) => toast.error(
+      error instanceof Error ? error.message : "Falha ao editar output fixado",
+    ),
+  })
+
+  const despinOutput = useMutation({
+    mutationFn: ({ snapshot, fixtureName }: {
+      snapshot: DraftFileSessionSnapshot
+      fixtureName: string
+    }) => studioApi.despinRunNodeOutputFixture(
+      snapshot.draftId,
+      snapshot.serverEtag,
+      { fixture_name: fixtureName },
+    ),
+    onSuccess: (updated, { snapshot }) => {
+      publishServerDraft(updated, snapshot)
+      toast.success("Output desvinculado; o JSON continua disponível somente para preview")
+    },
+    onError: (error) => toast.error(
+      error instanceof Error ? error.message : "Falha ao desvincular output",
+    ),
+  })
+
   const deleteDraft = useMutation({
     mutationFn: async () => {
       if (draft.data === undefined) throw new Error("Draft indisponível")
@@ -392,7 +435,7 @@ export function useWorkflowEditorController(draftId: string) {
 
   return {
     draft,
-    resources: { library, agents, inputAdapters, routing, sourceView },
+    resources: { library, agents, inputAdapters, routing, sourceView, workflows },
     files: fileSession,
     view: {
       active: activeView,
@@ -402,6 +445,7 @@ export function useWorkflowEditorController(draftId: string) {
       selectedNodeId,
       setSelectedNodeId,
       expressionFixtures,
+      expressionFixtureSources,
       nodeNotes,
       canUndo: undoStack.length > 0,
       canRedo: redoStack.length > 0,
@@ -424,6 +468,7 @@ export function useWorkflowEditorController(draftId: string) {
       compile: compileDraft.isPending,
       structuredEdit: structuredEdit.isPending,
       saveLayout: saveLayout.isPending,
+      pinnedOutput: editPinnedOutput.isPending || despinOutput.isPending,
       plan: workflowApply.planning,
       apply: workflowApply.applying,
       delete: deleteDraft.isPending,
@@ -437,6 +482,18 @@ export function useWorkflowEditorController(draftId: string) {
       redo,
       editContent,
       ...layoutActions,
+      editPinnedOutput: async (fixtureName: string, output: JsonValue) => {
+        const snapshot = captureSnapshot()
+        if (snapshot === undefined) {
+          const error = new Error("A sessão de arquivos do draft ainda não está pronta")
+          toast.error(error.message)
+          throw error
+        }
+        await editPinnedOutput.mutateAsync({ snapshot, fixtureName, output })
+      },
+      despinOutput: (fixtureName: string) => {
+        beginFileOperation((snapshot) => despinOutput.mutate({ snapshot, fixtureName }))
+      },
       planApply: workflowApply.planApply,
       apply: workflowApply.apply,
       deleteDraft: () => deleteDraft.mutate(),

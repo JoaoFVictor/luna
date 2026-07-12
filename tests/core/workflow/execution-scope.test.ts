@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { WorkflowDefinition } from "../../../src/core/workflow/definition-types.js";
-import { scopeWorkflowDefinition, WorkflowExecutionScopeError } from "../../../src/core/workflow/execution-scope.js";
+import {
+  scopeWorkflowDefinition,
+  workflowExecutionScopeBoundaryNodeIds,
+  WorkflowExecutionScopeError,
+  WorkflowExecutionScopeFixtureError
+} from "../../../src/core/workflow/execution-scope.js";
 
 const workflow = {
   graph: { nodes: [
@@ -24,5 +29,54 @@ describe("workflow execution scope", () => {
   it("rejects an unknown target", () => {
     expect(() => scopeWorkflowDefinition(workflow, { kind: "through_node", node_id: "missing" }))
       .toThrow(WorkflowExecutionScopeError);
+  });
+
+  it("runs one node only when every incoming dependency has saved output", () => {
+    const scope = { kind: "isolated_node", node_id: "later" } as const;
+    expect(workflowExecutionScopeBoundaryNodeIds(workflow, scope)).toEqual([
+      "target",
+      "parallel"
+    ]);
+
+    const scoped = scopeWorkflowDefinition(
+      workflow,
+      scope,
+      new Set(["target", "parallel"])
+    );
+
+    expect(scoped.graph.nodes.map((node) => node.id)).toEqual([
+      "parallel",
+      "target",
+      "later"
+    ]);
+  });
+
+  it("runs from one node through all descendants with explicit boundary outputs", () => {
+    const scope = { kind: "from_node", node_id: "target" } as const;
+    expect(workflowExecutionScopeBoundaryNodeIds(workflow, scope)).toEqual([
+      "start",
+      "parallel"
+    ]);
+
+    const scoped = scopeWorkflowDefinition(
+      workflow,
+      scope,
+      new Set(["start", "parallel"])
+    );
+
+    expect(scoped.graph.nodes.map((node) => node.id)).toEqual([
+      "start",
+      "parallel",
+      "target",
+      "later"
+    ]);
+  });
+
+  it("rejects scoped execution when a boundary output is missing", () => {
+    expect(() => scopeWorkflowDefinition(
+      workflow,
+      { kind: "from_node", node_id: "target" },
+      new Set(["start"])
+    )).toThrow(WorkflowExecutionScopeFixtureError);
   });
 });

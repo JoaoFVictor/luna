@@ -26,6 +26,7 @@ describe("buildRunPlanInput", () => {
       success: true,
       input: {
         kind: "adapter",
+        definition_source: { kind: "installed" },
         execution_scope: { kind: "workflow" },
         adapter_id: "task-url",
         input: { kind: "cli", value: "opaque://task/42" },
@@ -36,6 +37,7 @@ describe("buildRunPlanInput", () => {
       success: true,
       input: {
         kind: "invocation",
+        definition_source: { kind: "installed" },
         execution_scope: { kind: "workflow" },
         invocation: { version: "2026-06", source: "studio", event: "manual" },
       },

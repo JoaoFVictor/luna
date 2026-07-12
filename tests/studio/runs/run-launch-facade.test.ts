@@ -47,6 +47,7 @@ function planFor(
     created_at: "2026-07-11T12:00:00.000Z",
     expires_at: "2026-07-11T12:05:00.000Z",
     workflow_id: request.workflow_id,
+    definition_source: request.definition_source,
     mode: "read_only",
     workflow_revision: definition.workflowRevision,
     definition_bundle_hash: definition.definitionBundleHash,
@@ -56,6 +57,19 @@ function planFor(
     config_hash: studioRunValueDigest(request.config),
     repository_required: false,
     input_provenance: request.input_provenance,
+    execution_profile: request.execution_profile.kind === "standard"
+      ? { kind: "standard" }
+      : {
+          kind: "manual_test",
+          test_data: request.execution_profile.test_data.map((testData) => ({
+            kind: "draft_fixture",
+            fixture_name: testData.fixture_name,
+            node_id: testData.node_id,
+            output_hash: testData.output_hash,
+            source: testData.source
+          }))
+        },
+    execution_profile_hash: studioRunValueDigest(request.execution_profile),
     potential_effects: [],
     resolved_effects: [],
     effect_uncertainties: [],
@@ -119,6 +133,7 @@ describe("StudioRunLaunchFacade", () => {
     expect(canonicalRequests).toHaveLength(1);
     expect(canonicalRequests[0]).toEqual({
       workflow_id: "first-workflow",
+      definition_source: { kind: "installed" },
       invocation: {
         version: "2026-06",
         source: "private",
@@ -132,12 +147,70 @@ describe("StudioRunLaunchFacade", () => {
         kind: "adapter",
         adapter_id: "private-task",
         adapter_input_hash: studioRunValueDigest(adapterInput)
-      }
+      },
+      execution_profile: { kind: "standard" }
     });
     expect(plan).not.toHaveProperty("invocation");
     expect(plan).not.toHaveProperty("config");
     expect(JSON.stringify(plan)).not.toContain("provider-secret");
     expect(JSON.stringify(plan)).not.toContain("provider-reference");
+  });
+
+  it("plans a saved workflow draft without consulting installed routing", async () => {
+    const draftSource = {
+      kind: "draft" as const,
+      draft_id: "40e67383-a2ce-4c41-93f5-23fc5354ba28",
+      etag: "draft-etag-2"
+    };
+    const draftDefinition = {
+      ...installed,
+      workflowId: "new-draft-workflow",
+      workflowRevision: studioRunValueDigest("draft-revision"),
+      definitionBundleHash: studioRunValueDigest("draft-bundle")
+    };
+    const loadRouting = vi.fn(() => routing("installed-workflow"));
+    const simulate = vi.fn<StudioRoutingSimulationPort["simulate"]>();
+    const loadDraft = vi.fn(async () => draftDefinition);
+    let canonical: StudioRunPlanRequest | undefined;
+    const facade = new StudioRunLaunchFacade({
+      adapters: {
+        loadPolicy: () => undefined,
+        resolve: async () => undefined
+      },
+      routing: loadRouting,
+      routingSimulator: { simulate },
+      installedDefinitions: {
+        load: async () => {
+          throw new Error("installed definitions must not be loaded");
+        }
+      },
+      draftDefinitions: { loadDraft },
+      planner: {
+        plan: async (rawRequest) => {
+          canonical = StudioRunPlanRequestSchema.parse(rawRequest);
+          return planFor(canonical, draftDefinition);
+        }
+      }
+    });
+
+    const result = await facade.plan({
+      kind: "invocation",
+      definition_source: draftSource,
+      invocation: {
+        version: "2026-06",
+        source: "studio",
+        event: "manual",
+        target: { type: "workflow", id: "new-draft-workflow" },
+        payload: {}
+      }
+    }, context);
+
+    expect(result.definition_source).toEqual(draftSource);
+    expect(result.workflow_id).toBe("new-draft-workflow");
+    expect(canonical?.definition_source).toEqual(draftSource);
+    expect(loadDraft).toHaveBeenCalledTimes(2);
+    expect(loadRouting).not.toHaveBeenCalled();
+    expect(simulate).not.toHaveBeenCalled();
   });
 
   it("accepts a normalized invocation without invoking an adapter", async () => {

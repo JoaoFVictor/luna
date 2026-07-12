@@ -94,7 +94,12 @@ export function WorkflowEditorHeader({
               <Redo2Icon aria-hidden="true" /><span className="sr-only">Refazer</span>
             </Button>
           </div>
-          <Button variant="outline" onClick={onTest}>
+          <Button
+            variant="outline"
+            disabled={hasLocalChanges || saving}
+            title={hasLocalChanges ? "Aguarde o salvamento automático antes de testar" : undefined}
+            onClick={onTest}
+          >
             <PlayIcon aria-hidden="true" /> Testar
           </Button>
           <ToolbarButton pending={planning} pendingLabel="Preparando…" disabled={!canRunCommands || draft.status !== "valid"} onClick={onPlanApply}>

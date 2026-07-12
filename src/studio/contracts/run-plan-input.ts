@@ -3,7 +3,10 @@ import {
   StudioAdapterInputSchema,
   StudioAdapterPreviewEffectsSchema
 } from "./input-routing.js";
-import { StudioRunInvocationSchema } from "./run-launch.js";
+import {
+  StudioRunDefinitionSourceSchema,
+  StudioRunInvocationSchema
+} from "./run-launch.js";
 import { StudioRunBoundedIdSchema } from "./run-launch-primitives.js";
 import { WorkflowExecutionScopeSchema } from "../../core/workflow/execution-scope.js";
 
@@ -11,6 +14,9 @@ const StudioInvocationRunPlanInputSchema = z
   .object({
     kind: z.literal("invocation"),
     invocation: StudioRunInvocationSchema,
+    definition_source: StudioRunDefinitionSourceSchema.default({
+      kind: "installed"
+    }),
     execution_scope: WorkflowExecutionScopeSchema.default({ kind: "workflow" })
   })
   .strict();
@@ -21,6 +27,9 @@ const StudioAdapterRunPlanInputSchema = z
     adapter_id: StudioRunBoundedIdSchema,
     input: StudioAdapterInputSchema,
     acknowledged_effects: StudioAdapterPreviewEffectsSchema,
+    definition_source: StudioRunDefinitionSourceSchema.default({
+      kind: "installed"
+    }),
     execution_scope: WorkflowExecutionScopeSchema.default({ kind: "workflow" })
   })
   .strict();

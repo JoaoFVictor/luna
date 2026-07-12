@@ -7,11 +7,20 @@ import { RuntimeError } from "../../../core/runtime/errors.js";
 import { WorkflowCompilerError } from "../../../core/workflow/compiler.js";
 import { WorkflowDefinitionError } from "../../../core/workflow/definition.js";
 import { sha256Digest } from "../../../core/workflow/definition-digests.js";
+import { workflowExecutionPlanPolicyNode } from "../../../core/workflow/execution-plan.js";
+import {
+  splitDeferredFinalReportNodesByPolicy,
+  WorkflowExecutionPolicyError
+} from "../../../core/workflow/execution-policy.js";
 import {
   assertNativeWorkflowAgentModelProfiles,
   loadNativeModelProfiles,
   requireNativeAgentModelProfile
 } from "../../../platform/native/native-agent-model-profiles.js";
+import {
+  createNativeProviderBuiltIns,
+  nativeBuiltInMetadata
+} from "../../../platform/native/native-built-ins.js";
 import {
   compileNativeWorkflow,
   loadWorkflowRuntimeConfig
@@ -32,7 +41,10 @@ import { findStudioWorkflowAgentContextIssue } from "./workflow-agent-context.js
 
 type StudioNativeValidationPlatform = Pick<
   NativeLunaPlatformRegistrations,
-  "capabilityRegistry" | "capabilityManifests"
+  | "capabilityRegistry"
+  | "capabilityManifests"
+  | "workflowBuiltIns"
+  | "taskProviderBuiltIns"
 >;
 
 export type NativeStudioDefinitionValidationOptions = {
@@ -67,7 +79,8 @@ function isExpectedDefinitionError(cause: unknown): boolean {
     cause instanceof ConfigError ||
     (cause instanceof RuntimeError && cause.code === "runtime_invalid_json") ||
     cause instanceof WorkflowDefinitionError ||
-    cause instanceof WorkflowCompilerError
+    cause instanceof WorkflowCompilerError ||
+    cause instanceof WorkflowExecutionPolicyError
   ) {
     return true;
   }
@@ -108,6 +121,11 @@ function definitionFailure(
           ...(cause.nodeId === undefined ? {} : { nodeId: cause.nodeId }),
           ...(cause.edge === undefined ? {} : { edge: cause.edge })
         }
+      : cause instanceof WorkflowExecutionPolicyError
+        ? {
+            ...(cause.nodeId === undefined ? {} : { nodeId: cause.nodeId }),
+            ...(cause.edge === undefined ? {} : { edge: cause.edge })
+          }
       : cause instanceof ConfigError ||
           (cause instanceof RuntimeError && cause.code === "runtime_invalid_json")
         ? { fieldPath: "$" }
@@ -211,7 +229,10 @@ export class NativeStudioDefinitionValidation
       throw new StudioCanonicalDefinitionError(
         "workflow_agent_context_missing",
         `Agent ${contextIssue.agentId} requires explicit collected context at node ${contextIssue.nodeId}.`,
-        { fieldPath: contextIssue.fieldPath }
+        {
+          fieldPath: contextIssue.fieldPath,
+          nodeId: contextIssue.nodeId
+        }
       );
     }
     if (!shouldCompile) {
@@ -221,6 +242,16 @@ export class NativeStudioDefinitionValidation
       workflow,
       agentsRoot,
       platform: this.platform
+    });
+    const providerBuiltIns = createNativeProviderBuiltIns({
+      workflowBuiltIns: this.platform.workflowBuiltIns,
+      taskProviderBuiltIns: this.platform.taskProviderBuiltIns,
+      capabilityRegistry: this.platform.capabilityRegistry
+    });
+    splitDeferredFinalReportNodesByPolicy({
+      nodes: native.compiled.nodes.map(workflowExecutionPlanPolicyNode),
+      builtInMetadata: (node) =>
+        nativeBuiltInMetadata(providerBuiltIns.builtInStepRegistry, node.compiled)
     });
     return {
       revision: workflow.revision,

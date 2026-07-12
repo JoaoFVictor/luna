@@ -7,6 +7,11 @@ import type {
   StudioPath,
   YamlSourceOperation,
 } from "@/api/types"
+import type {
+  DespinRunNodeOutputFixtureRequest,
+  EditRunNodeOutputFixtureRequest,
+  PromoteRunNodeOutputFixtureRequest,
+} from "../../../../src/studio/contracts/workflow-expression-fixtures.js"
 import { studioResponseContracts } from "@/api/response-contracts"
 import type { StudioRequest } from "@/api/client-core"
 
@@ -156,6 +161,50 @@ export class StudioAuthoringClient {
       studioResponseContracts.draft,
     )
   }
+
+  readonly promoteRunNodeOutputFixture = (
+    draftId: string,
+    etag: string,
+    request: PromoteRunNodeOutputFixtureRequest,
+  ) => {
+    return this.#request(
+      `/drafts/${encodeURIComponent(draftId)}/expression-fixtures/from-run-output`,
+      {
+        method: "POST",
+        headers: { "If-Match": etag },
+        body: request,
+      },
+      studioResponseContracts.draft,
+    )
+  }
+
+  readonly editRunNodeOutputFixture = (
+    draftId: string,
+    etag: string,
+    request: EditRunNodeOutputFixtureRequest,
+  ) => this.#request(
+    `/drafts/${encodeURIComponent(draftId)}/expression-fixtures/edit-run-output`,
+    {
+      method: "POST",
+      headers: { "If-Match": etag },
+      body: request,
+    },
+    studioResponseContracts.draft,
+  )
+
+  readonly despinRunNodeOutputFixture = (
+    draftId: string,
+    etag: string,
+    request: DespinRunNodeOutputFixtureRequest,
+  ) => this.#request(
+    `/drafts/${encodeURIComponent(draftId)}/expression-fixtures/despin-run-output`,
+    {
+      method: "POST",
+      headers: { "If-Match": etag },
+      body: request,
+    },
+    studioResponseContracts.draft,
+  )
 
   readonly deleteDraft = (draftId: string, etag: string) => {
     return this.#request(

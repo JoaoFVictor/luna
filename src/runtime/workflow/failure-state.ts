@@ -110,7 +110,7 @@ export function runtimeStateFromCheckpoint(
 ): LunaRuntimeState | undefined {
   try {
     validateCheckpointState(value);
-    return value as LunaRuntimeState;
+    return value;
   } catch {
     return undefined;
   }

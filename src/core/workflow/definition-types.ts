@@ -140,11 +140,22 @@ export type ParsedHumanGateNode = {
   policies?: ParsedWorkflowPolicy[];
 };
 
+/** A synchronous call to another installed workflow definition. */
+export type ParsedWorkflowCallNode = {
+  id: string;
+  type: "workflow";
+  workflow: string;
+  input?: Record<string, unknown>;
+  artifacts?: ParsedArtifactWritePlan[];
+  after?: string[];
+};
+
 export type ParsedWorkflowNode =
   | ParsedBuiltInNode
   | ParsedAgentNode
   | ParsedPatternNode
-  | ParsedHumanGateNode;
+  | ParsedHumanGateNode
+  | ParsedWorkflowCallNode;
 
 export type ParsedWorkflowGraph = {
   nodes: ParsedWorkflowNode[];
@@ -152,6 +163,7 @@ export type ParsedWorkflowGraph = {
 
 export type WorkflowPatternNode = ParsedPatternNode;
 export type WorkflowHumanGateNode = ParsedHumanGateNode;
+export type WorkflowCallNode = ParsedWorkflowCallNode;
 export type WorkflowNode = ParsedWorkflowNode;
 
 export type WorkflowGraph = ParsedWorkflowGraph;
@@ -174,6 +186,8 @@ export type WorkflowDefinition = {
   requires: WorkflowRequirements;
   observability: WorkflowObservabilityConfig;
   subagent_policy: WorkflowSubagentPolicy;
+  /** Resolved direct children, keyed by installed workflow id. */
+  compositions?: Readonly<Record<string, WorkflowDefinition>>;
 };
 
 export type LoadWorkflowDefinitionOptions = {

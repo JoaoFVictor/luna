@@ -234,6 +234,58 @@ describe("native Studio draft authoring templates and validation", () => {
         }
       ]
     });
+
+    expect(
+      JSON.parse(
+        draft.files.find((candidate) =>
+          candidate.file.path.endsWith("output.schema.json")
+        )?.content ?? "null"
+      )
+    ).toMatchObject({
+      type: "object",
+      additionalProperties: true
+    });
+  });
+
+  it("rejects a repository-backed built-in without workflow repository authority", async () => {
+    const { service } = await nativeFixture();
+    const draft = await service.create({
+      resource: { kind: "workflow", id: "missing-repository-authority" },
+      source: { mode: "blank" }
+    });
+    const file = draft.files.find((candidate) =>
+      candidate.file.path.endsWith("workflow.yaml")
+    )?.file;
+    if (file === undefined) throw new Error("Expected workflow definition");
+
+    const edited = await service.editSource(
+      draft.draft_id,
+      {
+        file,
+        operations: [
+          { op: "sequence_insert", path: ["capabilities"], value: "runtime" },
+          {
+            op: "sequence_insert",
+            path: ["nodes"],
+            value: {
+              id: "preflight",
+              type: "built_in",
+              uses: "runtime.preflight"
+            }
+          }
+        ]
+      },
+      draft.etag
+    );
+    const result = await service.compile(edited.draft_id, edited.etag);
+
+    expect(result.validation).toMatchObject({ status: "invalid", compiled: true });
+    expect(result.validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "workflow_repository_requirement_missing",
+        node_id: "preflight"
+      })
+    );
   });
 
   it("blocks a context-dependent agent without explicit collection and passage", async () => {
@@ -274,7 +326,9 @@ describe("native Studio draft authoring templates and validation", () => {
     expect(result.validation.diagnostics).toContainEqual(
       expect.objectContaining({
         code: "workflow_agent_context_missing",
-        field_path: "$.nodes[0].input.context"
+        field_path: "$.nodes[0].input.context",
+        node_id: "execute",
+        node_field_path: ["input", "context"]
       })
     );
   });
@@ -288,6 +342,7 @@ describe("native Studio draft authoring templates and validation", () => {
       label: "cyclic DAG",
       expectedCode: "workflow_cycle_detected",
       operations: [
+        { op: "set", path: ["requires"], value: { repository: true } },
         { op: "sequence_insert", path: ["capabilities"], value: "runtime" },
         {
           op: "sequence_insert",

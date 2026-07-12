@@ -186,8 +186,42 @@ describe("Studio draft canonical validation", () => {
     expect(result.diagnostics[0]).toMatchObject({
       node_id: "publish",
       field_path: "$.nodes[1].after[0]",
+      node_field_path: ["after", 0],
       edge: { from: "missing", to: "publish" }
     });
+  });
+
+  it("does not project a node field path without authoritative node ownership", async () => {
+    const resource = { kind: "workflow", id: "minimum" } as const;
+    const draft = changeSet({ resources: [resource], baseFiles: [] });
+    const service = new StudioDraftValidationService({
+      snapshots: {
+        async create() {
+          return {
+            projectRoot: "/unused-project",
+            configRoot: "/unused-config",
+            verifiedFiles: [],
+            async dispose() {}
+          };
+        }
+      },
+      definitions: {
+        async validate() {
+          throw new StudioCanonicalDefinitionError(
+            "workflow_schema_invalid",
+            "Workflow node input is invalid.",
+            { fieldPath: "$.nodes[4].input.prompt" }
+          );
+        }
+      }
+    });
+
+    const result = await service.validate(draft);
+    expect(result.diagnostics[0]).toMatchObject({
+      field_path: "$.nodes[4].input.prompt"
+    });
+    expect(result.diagnostics[0]).not.toHaveProperty("node_field_path");
+    expect(result.diagnostics[0]).not.toHaveProperty("node_id");
   });
 
   it("drops oversized semantic locations instead of failing DTO projection", async () => {
@@ -290,6 +324,54 @@ describe("Studio draft canonical validation", () => {
       ).toBe(false);
     }
     await expect(readdir(temporaryRoot)).resolves.toEqual([]);
+  });
+
+  it("rejects a draft dependency that the runtime would reject after compilation", async () => {
+    const project = await minimumWorkflowProject();
+    const configRoot = await temporaryDirectory("luna-studio-config-");
+    const temporaryRoot = await temporaryDirectory("luna-studio-snapshots-");
+    const workflowFile = project.baseFiles.find((entry) =>
+      entry.file.path.endsWith("workflow.yaml")
+    )!;
+    const original = project.contents.get(workflowFile.content_ref!)!;
+    const invalid = original
+      .replace(
+        "  - id: context\n    type: built_in",
+        "  - id: context\n    after: [final_report]\n    type: built_in"
+      )
+      .replace("    after: [context]\n    input:", "    input:");
+    const blobs = new Map(project.contents);
+    blobs.set(digest(invalid), invalid);
+    const draft = changeSet({
+      resources: [{ kind: "workflow", id: "minimum" }],
+      baseFiles: project.baseFiles,
+      changes: [{
+        action: "write",
+        file: workflowFile.file,
+        base_sha256: workflowFile.sha256,
+        content_sha256: digest(invalid),
+        content_ref: digest(invalid)
+      }]
+    });
+    const service = validationService({
+      projectRoot: project.projectRoot,
+      configRoot,
+      temporaryRoot,
+      blobs
+    });
+
+    const result = await service.validate(draft, { compile: true });
+
+    expect(result).toMatchObject({
+      status: "invalid",
+      diagnostics: [{
+        severity: "error",
+        code: "workflow_deferred_dependency_invalid",
+        resource: { kind: "workflow", id: "minimum" },
+        node_id: "context",
+        edge: { from: "final_report", to: "context" }
+      }]
+    });
   });
 
   it("returns a safe domain diagnostic for an invalid workflow overlay", async () => {

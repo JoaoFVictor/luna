@@ -127,6 +127,14 @@ export class StudioConfigurationClient {
     )
   }
 
+  readonly testProviderConnection = (providerId: string) => {
+    return this.#request(
+      `/configuration/providers/${encodeURIComponent(providerId)}/probe`,
+      { method: "POST", body: {} },
+      studioResponseContracts.providerProbeResult,
+    )
+  }
+
   readonly runtimeConfiguration = (signal?: AbortSignal) => {
     return this.#request(
       "/configuration/runtime",

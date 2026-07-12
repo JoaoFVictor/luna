@@ -298,7 +298,7 @@ export async function fingerprintNativeStudioRepository(
   } catch (cause) {
     controller.abort();
     throw studioRunLaunchError(
-      "studio_run_plan_resolution_invalid",
+      "studio_run_repository_not_ready",
       "Configured repository could not be fingerprinted safely",
       { repository_id: repository.id },
       { cause }

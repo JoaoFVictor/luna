@@ -12,7 +12,8 @@ export const LUNA_WORKFLOW_RUNTIME_SCHEMA_VERSION = "2026-06-25.task-3";
 
 export async function collectExternalDefinitionDigests(
   nodes: readonly ParsedWorkflowNode[],
-  resolver: DefinitionDigestResolver | undefined
+  resolver: DefinitionDigestResolver | undefined,
+  compositions: Readonly<Record<string, { readonly revision: string }>> = {}
 ): Promise<Record<string, string>> {
   const references = new Set(
     collectWorkflowAgentReferences(nodes).map(
@@ -32,6 +33,9 @@ export async function collectExternalDefinitionDigests(
         `Unable to resolve external definition digest for ${reference}.`
       );
     }
+  }
+  for (const [workflowId, definition] of Object.entries(compositions).sort(([left], [right]) => left.localeCompare(right))) {
+    result[`workflows/${workflowId}/workflow.yaml`] = definition.revision;
   }
   return result;
 }

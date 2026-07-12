@@ -20,16 +20,24 @@ export type StudioTemplateResourceSource = {
   readonly content: string;
 };
 
-function blankJsonSchema(): string {
+function objectJsonSchema(additionalProperties: boolean): string {
   return `${JSON.stringify(
     {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
-      additionalProperties: false
+      additionalProperties
     },
     null,
     2
   )}\n`;
+}
+
+function emptyObjectJsonSchema(): string {
+  return objectJsonSchema(false);
+}
+
+function editableWorkflowOutputJsonSchema(): string {
+  return objectJsonSchema(true);
 }
 
 function templateResourceFile(
@@ -47,7 +55,6 @@ export function blankStudioResourceSources(
   resource: StudioEditableResource,
   modelProfile?: string
 ): readonly StudioTemplateResourceSource[] {
-  const jsonSchema = blankJsonSchema();
   if (resource.kind === "workflow") {
     return [
       {
@@ -64,11 +71,11 @@ export function blankStudioResourceSources(
       },
       {
         file: templateResourceFile(resource, "input.schema.json"),
-        content: jsonSchema
+        content: emptyObjectJsonSchema()
       },
       {
         file: templateResourceFile(resource, "output.schema.json"),
-        content: jsonSchema
+        content: editableWorkflowOutputJsonSchema()
       }
     ];
   }
@@ -96,7 +103,7 @@ export function blankStudioResourceSources(
     },
     {
       file: templateResourceFile(resource, "output.schema.json"),
-      content: jsonSchema
+      content: emptyObjectJsonSchema()
     }
   ];
 }
@@ -111,7 +118,6 @@ function workflowSources(
       "The selected Studio template only creates workflow resources"
     );
   }
-  const schema = blankJsonSchema();
   return [
     {
       file: studioEditableDefinitionFile(resource),
@@ -119,11 +125,11 @@ function workflowSources(
     },
     {
       file: templateResourceFile(resource, "input.schema.json"),
-      content: schema
+      content: emptyObjectJsonSchema()
     },
     {
       file: templateResourceFile(resource, "output.schema.json"),
-      content: schema
+      content: editableWorkflowOutputJsonSchema()
     }
   ];
 }

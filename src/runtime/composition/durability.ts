@@ -89,9 +89,11 @@ function addNodeRequirements(
     requirements.add("human_gate");
   }
 
-  for (const policy of node.policies ?? []) {
-    if (isWritePolicy(policy.uses, registry)) {
-      requirements.add("write_side_effect");
+  if (node.type !== "workflow") {
+    for (const policy of node.policies ?? []) {
+      if (isWritePolicy(policy.uses, registry)) {
+        requirements.add("write_side_effect");
+      }
     }
   }
 

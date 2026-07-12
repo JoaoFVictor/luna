@@ -8,12 +8,29 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
-import { Textarea } from "@/components/ui/textarea"
 import { WorkflowExpressionFixtureEditor } from "@/features/workflows/workflow-expression-fixture-editor"
 import type { WorkflowExpressionFixtures } from "@/features/workflows/workflow-expression-fixtures"
-import { workflowAvailableInputNodes } from "@/features/workflows/workflow-data-mapping"
-import { workflowSchemaTypesCompatible, type WorkflowSchemaField } from "@/features/workflows/workflow-data-mapping"
+import { WorkflowLiteralInput } from "@/features/workflows/workflow-literal-input"
+import {
+  WORKFLOW_FIELD_DRAG_MIME,
+  parseWorkflowFieldDragPayload,
+} from "@/features/workflows/workflow-field-drag"
+import {
+  workflowAvailableInputNodes,
+  workflowFieldPathLabel,
+  workflowInputPathExists,
+  workflowInputPathValue,
+  workflowRemoveInputPath,
+  workflowSchemaFieldDefault,
+  workflowSchemaTypesCompatible,
+  workflowSetInputPath,
+  workflowStepFieldExpression,
+  type WorkflowSchemaField,
+} from "@/features/workflows/workflow-data-mapping"
+import { WorkflowSourceFieldPicker } from "@/features/workflows/workflow-source-field-picker"
 import type { WorkflowSourceNode } from "@/features/workflows/workflow-source-model"
+import { humanizeTechnicalId } from "@/lib/presentation"
+import { cn } from "@/lib/utils"
 
 type InputMode = "literal" | "expression"
 const EMPTY_SOURCE_FIELDS: ReadonlyMap<string, readonly WorkflowSchemaField[]> = new Map()
@@ -40,33 +57,39 @@ function referencedUnknownNode(
 }
 
 function WorkflowInputField({
-  name,
+  path,
   value,
   nodeIds,
   fixtures,
+  activeFixtureName,
   disabled,
   onChange,
   onRemove,
   onSaveFixture,
   onRemoveFixture,
+  onSelectFixture,
   availableSources,
   availableSourceFields,
   expectedValueType,
 }: {
-  name: string
+  path: readonly string[]
   value: JsonValue
   nodeIds: ReadonlySet<string>
   fixtures: WorkflowExpressionFixtures
+  activeFixtureName?: string
   disabled: boolean
   onChange: (value: JsonValue) => void
   onRemove: () => void
   onSaveFixture: (name: string, value: JsonValue) => void
   onRemoveFixture: (name: string) => void
+  onSelectFixture?: (name: string) => void
   availableSources: readonly WorkflowSourceNode[]
   availableSourceFields: ReadonlyMap<string, readonly WorkflowSchemaField[]>
   expectedValueType?: string
 }) {
   const fieldId = useId()
+  const name = workflowFieldPathLabel(path)
+  const displayName = humanizeTechnicalId(path.at(-1) ?? name, true)
   const sourceExpression = expressionValue(value)
   const [mode, setMode] = useState<InputMode>(
     sourceExpression === undefined ? "literal" : "expression",
@@ -76,6 +99,7 @@ function WorkflowInputField({
   )
   const [expression, setExpression] = useState(sourceExpression ?? "$.invocation")
   const [error, setError] = useState<string>()
+  const [dragActive, setDragActive] = useState(false)
 
   useEffect(() => {
     const nextExpression = expressionValue(value)
@@ -94,21 +118,37 @@ function WorkflowInputField({
     { value: "$.config", label: "Configuração", valueType: "unknown" },
     { value: "$.workspace", label: "Workspace", valueType: "unknown" },
     ...availableSources.flatMap((node) => {
-      const root = `$.steps.${node.id}`
+      const root = workflowStepFieldExpression(node.id)
       const fields = availableSourceFields.get(node.id) ?? []
       return [
         { value: root, label: `Passo: ${node.id}`, valueType: "unknown" },
         ...fields.map((field) => ({
-          value: `${root}.${field.path}`,
-          label: `${node.id} › ${field.path}`,
+          value: workflowStepFieldExpression(node.id, field.path),
+          label: `${node.id} › ${workflowFieldPathLabel(field.path)}`,
           valueType: field.valueType,
         })),
       ]
     }),
-  ]
+  ].map((suggestion) => ({
+    ...suggestion,
+    compatible: workflowSchemaTypesCompatible(expectedValueType, suggestion.valueType),
+  }))
   const selectedSuggestion = suggestions.find((suggestion) => suggestion.value === expression)
   const incompatibleType = selectedSuggestion !== undefined &&
     !workflowSchemaTypesCompatible(expectedValueType, selectedSuggestion.valueType)
+
+  const applyMapping = (nextExpression: string) => {
+    if (disabled) return
+    const suggestion = suggestions.find((candidate) => candidate.value === nextExpression)
+    if (suggestion === undefined || !suggestion.compatible) {
+      setError("Este dado não é compatível com o parâmetro de destino.")
+      return
+    }
+    setMode("expression")
+    setExpression(nextExpression)
+    setError(undefined)
+    onChange({ expression: nextExpression })
+  }
 
   const save = () => {
     try {
@@ -123,11 +163,51 @@ function WorkflowInputField({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border p-3">
+    <div
+      className={cn(
+        "space-y-3 rounded-lg border p-3 transition-colors",
+        dragActive && "border-primary bg-primary/5 ring-2 ring-primary/20",
+      )}
+      role="group"
+      aria-label={`Parâmetro ${displayName}`}
+      data-mapping-target={name}
+      onDragEnter={(event) => {
+        if (disabled) return
+        if (!event.dataTransfer.types.includes(WORKFLOW_FIELD_DRAG_MIME)) return
+        event.preventDefault()
+        setDragActive(true)
+      }}
+      onDragOver={(event) => {
+        if (disabled) return
+        if (!event.dataTransfer.types.includes(WORKFLOW_FIELD_DRAG_MIME)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = "copy"
+      }}
+      onDragLeave={(event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          event.currentTarget.contains(event.relatedTarget)
+        ) return
+        setDragActive(false)
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes(WORKFLOW_FIELD_DRAG_MIME)) return
+        event.preventDefault()
+        setDragActive(false)
+        if (disabled) return
+        const dropped = parseWorkflowFieldDragPayload(
+          event.dataTransfer.getData(WORKFLOW_FIELD_DRAG_MIME),
+        )
+        if (dropped !== undefined) applyMapping(dropped)
+      }}
+    >
       <div className="flex flex-wrap items-center gap-2">
-        <code className="min-w-0 flex-1 text-xs font-medium">{name}</code>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{displayName}</p>
+          <code className="text-[11px] text-muted-foreground">{name}</code>
+        </div>
         <Badge variant={mode === "expression" ? "secondary" : "outline"}>
-          {mode === "expression" ? "expression" : "literal"}
+          {mode === "expression" ? "dados de outro passo" : "valor fixo"}
         </Badge>
         <Button size="icon-xs" variant="ghost" disabled={disabled} onClick={onRemove} aria-label={`Remover input ${name}`}>
           <Trash2Icon aria-hidden="true" />
@@ -144,60 +224,40 @@ function WorkflowInputField({
             setMode(next)
           }}
         >
-          <NativeSelectOption value="literal">Literal JSON</NativeSelectOption>
-          <NativeSelectOption value="expression">Expression / JSONata</NativeSelectOption>
+          <NativeSelectOption value="literal">Valor fixo</NativeSelectOption>
+          <NativeSelectOption value="expression">Dados de outro passo</NativeSelectOption>
         </NativeSelect>
       </Field>
 
       {mode === "literal" ? (
-        <Textarea
-          value={literal}
-          onChange={(event) => setLiteral(event.target.value)}
-          disabled={disabled}
-          className="min-h-20 font-mono text-xs"
-          aria-label={`Valor literal de ${name}`}
-        />
+        <WorkflowLiteralInput id={`${fieldId}-literal`} name={path.at(-1) ?? name} value={literal} valueType={expectedValueType} disabled={disabled} onChange={setLiteral} />
       ) : (
         <>
           <Field data-invalid={unknownNode !== undefined || incompatibleType}>
             <FieldLabel htmlFor={`${fieldId}-expression`}>Usar dados de</FieldLabel>
-            <div className="mb-2 flex flex-wrap gap-1">
-              {suggestions.map((suggestion) => (
-                <Button
-                  key={suggestion.value}
-                  type="button"
-                  size="xs"
-                  variant={workflowSchemaTypesCompatible(expectedValueType, suggestion.valueType) ? "outline" : "destructive"}
-                  draggable
-                  title="Clique ou arraste para o campo"
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("text/plain", suggestion.value)
-                    event.dataTransfer.effectAllowed = "copy"
-                  }}
-                  onClick={() => setExpression(suggestion.value)}
-                >
-                  {suggestion.label} · {suggestion.valueType}
-                </Button>
-              ))}
+            <div className="grid gap-3">
+              <WorkflowSourceFieldPicker
+                suggestions={suggestions}
+                selectedValue={expression}
+                disabled={disabled}
+                onSelect={applyMapping}
+              />
+              <div className="rounded-lg border bg-muted/20 p-3 lg:min-h-52">
+                <p className="mb-2 text-xs font-medium">Campo de destino</p>
+                <Input
+                  id={`${fieldId}-expression`}
+                  list={`${fieldId}-roots`}
+                  value={expression}
+                  onChange={(event) => setExpression(event.target.value)}
+                  disabled={disabled}
+                  className="font-mono text-xs"
+                  aria-invalid={unknownNode !== undefined || incompatibleType}
+                />
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Solte um dado neste parâmetro ou edite o caminho quando precisar de JSONata avançado.
+                </p>
+              </div>
             </div>
-            <Input
-              id={`${fieldId}-expression`}
-              list={`${fieldId}-roots`}
-              value={expression}
-              onChange={(event) => setExpression(event.target.value)}
-              onDragOver={(event) => {
-                event.preventDefault()
-                event.dataTransfer.dropEffect = "copy"
-              }}
-              onDrop={(event) => {
-                event.preventDefault()
-                const dropped = event.dataTransfer.getData("text/plain")
-                if (dropped.startsWith("$.")) setExpression(dropped)
-              }}
-              disabled={disabled}
-              className="font-mono text-xs"
-              aria-invalid={unknownNode !== undefined}
-            />
             <datalist id={`${fieldId}-roots`}>
               {suggestions.map((suggestion) => <option key={suggestion.value} value={suggestion.value} />)}
             </datalist>
@@ -217,16 +277,18 @@ function WorkflowInputField({
             fieldName={name}
             expression={expression}
             fixtures={fixtures}
+            activeFixtureName={activeFixtureName}
             disabled={disabled}
             onSave={onSaveFixture}
             onRemove={onRemoveFixture}
+            onSelect={onSelectFixture}
           />
         </>
       )}
 
       <div className="flex justify-end">
         <Button size="sm" variant="outline" disabled={disabled || unknownNode !== undefined || incompatibleType} onClick={save}>
-          Salvar input
+          Salvar campo
         </Button>
       </div>
       {error !== undefined && <FieldError>{error}</FieldError>}
@@ -241,8 +303,10 @@ export function WorkflowExpressionBuilder({
   pending,
   onOperations,
   fixtures,
+  activeFixtureName,
   onSaveFixture,
   onRemoveFixture,
+  onSelectFixture,
   suggestedFields = [],
   availableSourceFields = EMPTY_SOURCE_FIELDS,
 }: {
@@ -252,8 +316,10 @@ export function WorkflowExpressionBuilder({
   pending: boolean
   onOperations: (operations: readonly YamlSourceOperation[]) => void
   fixtures: WorkflowExpressionFixtures
+  activeFixtureName?: string
   onSaveFixture: (name: string, value: JsonValue) => void
   onRemoveFixture: (name: string) => void
+  onSelectFixture?: (name: string) => void
   suggestedFields?: readonly WorkflowSchemaField[]
   availableSourceFields?: ReadonlyMap<string, readonly WorkflowSchemaField[]>
 }) {
@@ -275,6 +341,24 @@ export function WorkflowExpressionBuilder({
     ])
   }
 
+  const editableSuggestedFields = suggestedFields.filter((field) =>
+    !suggestedFields.some((candidate) =>
+      candidate.path.length > field.path.length &&
+      field.path.every((segment, index) => candidate.path[index] === segment),
+    ),
+  )
+  const suggestedEntries = editableSuggestedFields.flatMap((field) => {
+    const value = workflowInputPathValue(inputs, field.path)
+    return value === undefined ? [] : [{ field, value }]
+  })
+  const suggestedRoots = new Set(editableSuggestedFields.map((field) => field.path[0]))
+  const customEntries = Object.entries(inputs).flatMap(([name, value]) =>
+    suggestedRoots.has(name)
+      ? []
+      : [{ field: { path: [name], valueType: "unknown" }, value }],
+  )
+  const inputEntries = [...suggestedEntries, ...customEntries]
+
   return (
     <Field>
       <FieldLabel>Dados de entrada</FieldLabel>
@@ -282,25 +366,25 @@ export function WorkflowExpressionBuilder({
         Defina valores fixos ou use dados produzidos pelos passos anteriores.
       </FieldDescription>
       <div className="space-y-3">
-        {Object.entries(inputs).map(([name, value]) => (
+        {inputEntries.map(({ field, value }) => (
           <WorkflowInputField
-            key={`${node.id}:${name}`}
-            name={name}
+            key={`${node.id}:${JSON.stringify(field.path)}`}
+            path={field.path}
             value={value}
             nodeIds={nodeIds}
             fixtures={fixtures}
+            activeFixtureName={activeFixtureName}
             disabled={disabled}
-            onChange={(nextValue) => replaceInputs({ ...inputs, [name]: nextValue })}
-            onRemove={() => {
-              const next = { ...inputs }
-              Reflect.deleteProperty(next, name)
-              replaceInputs(next)
-            }}
+            onChange={(nextValue) => replaceInputs(
+              workflowSetInputPath(inputs, field.path, nextValue),
+            )}
+            onRemove={() => replaceInputs(workflowRemoveInputPath(inputs, field.path))}
             onSaveFixture={onSaveFixture}
             onRemoveFixture={onRemoveFixture}
+            onSelectFixture={onSelectFixture}
             availableSources={availableSources}
             availableSourceFields={availableSourceFields}
-            expectedValueType={suggestedFields.find((field) => field.path === name)?.valueType}
+            expectedValueType={field.valueType}
           />
         ))}
         <div className="flex gap-2">
@@ -318,18 +402,18 @@ export function WorkflowExpressionBuilder({
             onClick={() => {
               const name = newField.trim()
               if (name.length === 0 || Object.hasOwn(inputs, name)) return
-              replaceInputs({ ...inputs, [name]: null })
+              replaceInputs(workflowSetInputPath(inputs, [name], null))
               setNewField("")
             }}
           >
             <PlusIcon aria-hidden="true" /> Campo
           </Button>
         </div>
-        {suggestedFields.some((field) => !Object.hasOwn(inputs, field.path)) && (
+        {editableSuggestedFields.some((field) => !workflowInputPathExists(inputs, field.path)) && (
           <div className="flex flex-wrap gap-1">
-            {suggestedFields.filter((field) => !Object.hasOwn(inputs, field.path)).map((field) => (
-              <Button key={field.path} type="button" size="xs" variant="ghost" disabled={disabled} onClick={() => replaceInputs({ ...inputs, [field.path]: null })}>
-                <PlusIcon aria-hidden="true" /> {field.path} · {field.valueType}
+            {editableSuggestedFields.filter((field) => !workflowInputPathExists(inputs, field.path)).map((field) => (
+              <Button key={JSON.stringify(field.path)} type="button" size="xs" variant="ghost" disabled={disabled} onClick={() => replaceInputs(workflowSetInputPath(inputs, field.path, workflowSchemaFieldDefault(field)))}>
+                <PlusIcon aria-hidden="true" /> {workflowFieldPathLabel(field.path)} · {field.valueType}
               </Button>
             ))}
           </div>

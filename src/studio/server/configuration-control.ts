@@ -6,6 +6,7 @@ import type {
   StudioRuntimeConfiguration
 } from "../contracts/configuration.js";
 import type { StudioConfigurationControl } from "./routes/configuration.js";
+import type { StudioProviderHealthProbeService } from "../application/inputs/provider-health-probes.js";
 
 export type StudioConfigurationPosture = {
   readonly models: () => Promise<StudioModelConfiguration>;
@@ -20,7 +21,8 @@ export type StudioConfigurationPosture = {
  */
 export function createLocalStudioConfigurationControl(
   service: StudioConfigurationService,
-  posture: StudioConfigurationPosture
+  posture: StudioConfigurationPosture,
+  providerProbes: Pick<StudioProviderHealthProbeService, "run">
 ): StudioConfigurationControl {
   return {
     getWorkflowConfiguration: async (_principal, workflowId) =>
@@ -59,6 +61,8 @@ export function createLocalStudioConfigurationControl(
     models: async () => await posture.models(),
     repositories: async () => await posture.repositories(),
     providers: async () => await posture.providers(),
+    testProviderConnection: async (_principal, providerId, signal) =>
+      await providerProbes.run(providerId, signal),
     runtime: async () => await posture.runtime()
   };
 }

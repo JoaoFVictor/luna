@@ -218,6 +218,7 @@ export class StudioRunLaunchService<DispatchPayload> {
         created_at: isoTimestamp(createdAt),
         expires_at: isoTimestamp(issued.expiresAt),
         workflow_id: snapshot.workflow_id,
+        definition_source: snapshot.definition_source,
         execution_scope: snapshot.execution_scope,
         mode: snapshot.mode,
         workflow_revision: snapshot.workflow_revision,
@@ -234,6 +235,8 @@ export class StudioRunLaunchService<DispatchPayload> {
           ? {}
           : { repository_fingerprint: snapshot.repository_fingerprint }),
         input_provenance: snapshot.input_provenance,
+        execution_profile: snapshot.execution_profile,
+        execution_profile_hash: snapshot.execution_profile_hash,
         potential_effects: resolved.resolution.potential_effects,
         resolved_effects: resolved.resolution.resolved_effects,
         effect_uncertainties: resolved.resolution.effect_uncertainties,

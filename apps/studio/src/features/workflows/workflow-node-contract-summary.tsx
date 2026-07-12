@@ -2,6 +2,7 @@ import type {
   AgentCatalogItem,
   CapabilityCatalog,
   JsonValue,
+  WorkflowSummary,
 } from "@/api/types"
 import { Badge } from "@/components/ui/badge"
 import type { WorkflowSourceNode } from "@/features/workflows/workflow-source-model"
@@ -19,10 +20,12 @@ export function WorkflowNodeContractSummary({
   node,
   library,
   agents,
+  workflows = [],
 }: {
   node: WorkflowSourceNode
   library: CapabilityCatalog
   agents: readonly AgentCatalogItem[]
+  workflows?: readonly WorkflowSummary[]
 }) {
   if (node.type === "agent") {
     const agent = agents.find((candidate) => candidate.id === node.registrationId)
@@ -34,6 +37,23 @@ export function WorkflowNodeContractSummary({
           {agent.runtime_requirements.map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}
         </div>
         <SchemaDetails label="Output contract do agent" schema={agent.output_schema} />
+      </div>
+    )
+  }
+  if (node.type === "workflow") {
+    const workflow = workflows.find((candidate) => candidate.id === node.registrationId)
+    if (workflow === undefined) {
+      return <p className="text-xs text-destructive">Workflow filho ausente no catálogo canônico.</p>
+    }
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-1">
+          <Badge variant="secondary">Subworkflow</Badge>
+          <Badge variant="outline">mode: {workflow.mode}</Badge>
+          <Badge variant="outline">revision: {workflow.revision.slice(0, 15)}</Badge>
+        </div>
+        <SchemaDetails label="Input contract do workflow filho" schema={workflow.input_schema_content} />
+        <SchemaDetails label="Output contract do workflow filho" schema={workflow.output_schema_content} />
       </div>
     )
   }

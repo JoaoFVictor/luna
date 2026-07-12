@@ -4,13 +4,23 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defineInputAdapters } from "../../../src/adapters/registry.js";
 import type { RegisteredInputAdapter } from "../../../src/adapters/types.js";
 import { nativeLunaPlatformRegistrations } from "../../../src/platform/native/native-platform-registrations.js";
+import { validatePrecompletedSteps } from "../../../src/runtime/workflow/precompleted-steps.js";
+import { StudioRunOutputFixtureService } from "../../../src/studio/application/drafts/run-output-fixture-service.js";
+import { StudioDraftTestDataService } from "../../../src/studio/application/drafts/manual-test-data-service.js";
+import { nativePrecompletedSteps } from "../../../src/studio/adapters/native/run-execution-profile.js";
+import { sha256Digest } from "../../../src/core/workflow/definition-digests.js";
+import { RunRecordSchema } from "../../../src/studio/contracts/runs.js";
+import type { JsonValue } from "../../../src/core/json/value.js";
+import type { StudioRunExecutionProfile } from "../../../src/studio/contracts/manual-test-data.js";
 import { MemoryStudioRunConfirmations } from "../../../src/studio/adapters/memory/run-confirmations.js";
 import { NativeStudioRunLaunchInput } from "../../../src/studio/adapters/native/run-launch-input.js";
+import { NativeStudioRunDefinitionSource } from "../../../src/studio/adapters/native/run-definition-source.js";
 import { NativeStudioRunPlanResolver } from "../../../src/studio/adapters/native/run-plan-resolver.js";
 import { StudioRunLaunchService } from "../../../src/studio/application/runs/launch-service.js";
 import { StudioRunLaunchFacade } from "../../../src/studio/application/runs/launch-facade.js";
 import { isolatedStudioRoutingSimulationPort } from "../../../src/studio/application/routing/routing-simulator.js";
 import { studioRunValueDigest } from "../../../src/studio/application/runs/launch-digests.js";
+import type { StudioDraftItem } from "../../../src/studio/contracts/draft-authoring.js";
 import {
   BASE_TIME,
   cleanupNativeLaunchFixtures,
@@ -28,7 +38,403 @@ afterEach(async () => {
   await cleanupNativeLaunchFixtures();
 });
 
+function manualTestData(nodeId: string) {
+  const output = { supplied: nodeId };
+  const outputHash = studioRunValueDigest(output);
+  return {
+    kind: "draft_fixture" as const,
+    fixture_name: `fixture-${nodeId}`,
+    node_id: nodeId,
+    output,
+    output_hash: outputHash,
+    source: {
+      kind: "run_node_output" as const,
+      run_id: `source-${nodeId}`,
+      workflow_id: request.workflow_id,
+      node_id: nodeId,
+      graph_hash: outputHash,
+      outcome_hash: outputHash,
+      workflow_revision: outputHash,
+      definition_bundle_hash: outputHash,
+      captured_at: "2026-07-11T11:00:00.000Z",
+      redaction_changed: false,
+      definition_source: { kind: "installed" as const }
+    }
+  };
+}
+
 describe("native Studio run planning", () => {
+  it("edits, authorizes, plans, dispatches, and validates an edited draft cutpoint", async () => {
+    const fixture = await writeFixture();
+    const draftId = "40e67383-a2ce-4c41-93f5-23fc5354ba29";
+    let etag = "draft-edit-source";
+    const workflowDirectory = path.dirname(fixture.workflowPath);
+    const file = async (name: string, media_type: "application/json" | "application/yaml") => ({
+      file: { root: "project" as const, path: `workflows/pinned-workflow/${name}` },
+      media_type,
+      state: "present" as const,
+      content: name === "workflow.yaml"
+        ? fixture.workflowSource
+        : await readFile(path.join(workflowDirectory, name), "utf8")
+    });
+    let current: StudioDraftItem = {
+      draft_id: draftId,
+      record_revision: 1,
+      content_revision: 1,
+      layout_revision: 0,
+      primary_resource: { kind: "workflow", id: "pinned-workflow" },
+      status: "valid",
+      draft_hash: studioRunValueDigest(fixture.workflowSource),
+      etag,
+      files: await Promise.all([
+        file("workflow.yaml", "application/yaml"),
+        file("input.schema.json", "application/json"),
+        file("output.schema.json", "application/json"),
+        file("config.schema.json", "application/json")
+      ]),
+      layout: {},
+      created_at: "2026-07-11T12:00:00.000Z",
+      updated_at: "2026-07-11T12:00:00.000Z"
+    };
+    const drafts = {
+      get: async () => current,
+      patch: async (_id: string, input: { readonly layout?: unknown }) => {
+        etag = `draft-edit-${current.record_revision + 1}`;
+        current = {
+          ...current,
+          record_revision: current.record_revision + 1,
+          layout_revision: current.layout_revision + 1,
+          etag,
+          ...(input.layout === undefined ? {} : { layout: input.layout as JsonValue })
+        };
+        return current;
+      }
+    };
+    const platform = {
+      ...nativeLunaPlatformRegistrations,
+      inputAdapterRegistry: defineInputAdapters([])
+    };
+    const definitions = new NativeStudioRunDefinitionSource({
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      platform,
+      drafts
+    });
+    const definition = await definitions.loadDraft({
+      kind: "draft",
+      draft_id: draftId,
+      etag
+    });
+    const original = { supplied: "original" };
+    const edited = { supplied: "edited" };
+    const graphHash = sha256Digest({ graph: 1 });
+    const outcomeHash = sha256Digest({ outcome: 1 });
+    const capturedAt = "2026-07-11T12:00:01.000Z";
+    const sourceRecord = RunRecordSchema.parse({
+      schema_version: 1,
+      record_revision: 1,
+      run_id: "source-edited-cutpoint",
+      workflow_id: "pinned-workflow",
+      definition_source: { kind: "draft", draft_id: draftId, etag },
+      workflow_revision: definition.workflowRevision,
+      definition_bundle_hash: definition.definitionBundleHash,
+      catalog_fingerprint: sha256Digest("catalog"),
+      execution_snapshot_hash: sha256Digest("execution"),
+      dispatch_status: "started",
+      run_status: "succeeded",
+      created_at: capturedAt,
+      updated_at: capturedAt,
+      started_at: capturedAt,
+      finished_at: capturedAt,
+      owner_id: "source-worker",
+      owner_claimed_at: capturedAt,
+      heartbeat_at: capturedAt,
+      active_node_ids: [],
+      artifact_count: 0,
+      interrupt_count: 0,
+      side_effects: [],
+      completeness: "complete"
+    });
+    const outputs = {
+      getWithRecord: async () => ({
+        response: {
+          schema_version: 1 as const,
+          availability: "available" as const,
+          run: {
+            run_id: sourceRecord.run_id,
+            workflow_id: sourceRecord.workflow_id,
+            workflow_revision: definition.workflowRevision,
+            definition_bundle_hash: definition.definitionBundleHash,
+            execution_snapshot_hash: sourceRecord.execution_snapshot_hash,
+            status: "succeeded" as const,
+            completeness: "complete" as const
+          },
+          node_id: "analyze",
+          graph_hash: graphHash,
+          outcome_hash: outcomeHash,
+          output: {
+            availability: "available" as const,
+            value: original,
+            redaction: { mode: "best_effort" as const, changed: false }
+          }
+        },
+        record: sourceRecord
+      })
+    };
+    const fixtures = new StudioRunOutputFixtureService({
+      drafts,
+      outputs,
+      validator: definitions
+    });
+    await fixtures.promote(draftId, {
+      fixture_name: "edited-cutpoint",
+      run_id: sourceRecord.run_id,
+      node_id: "analyze",
+      graph_hash: graphHash,
+      outcome_hash: outcomeHash
+    }, etag);
+    await fixtures.edit(draftId, {
+      fixture_name: "edited-cutpoint",
+      output: edited
+    }, etag);
+
+    let dispatchedPlanId: string | undefined;
+    let commandExecutionProfile: StudioRunExecutionProfile | undefined;
+    const canonical = new StudioRunLaunchService({
+      resolver: new NativeStudioRunPlanResolver({
+        projectRoot: fixture.projectRoot,
+        configRoot: fixture.configRoot,
+        platform,
+        definitions
+      }),
+      confirmations: new MemoryStudioRunConfirmations({ now: () => BASE_TIME }),
+      dispatcher: {
+        dispatch: async (command) => {
+          dispatchedPlanId = command.planId;
+          commandExecutionProfile = command.request.execution_profile;
+          return {
+            accepted: true as const,
+            dispatch_status: "queued" as const,
+            run_id: "edited-cutpoint-run",
+            plan_id: command.planId,
+            execution_snapshot_hash: command.snapshot.execution_snapshot_hash,
+            accepted_at: command.requestedAt
+          };
+        }
+      },
+      now: () => BASE_TIME,
+      createPlanId: () => `rp_${"e".repeat(32)}`
+    });
+    const facade = new StudioRunLaunchFacade({
+      planner: canonical,
+      adapters: new NativeStudioRunLaunchInput({
+        projectRoot: fixture.projectRoot,
+        configRoot: fixture.configRoot,
+        platform
+      }),
+      routing: () => { throw new Error("draft test bypasses routing"); },
+      routingSimulator: isolatedStudioRoutingSimulationPort,
+      installedDefinitions: definitions,
+      draftDefinitions: definitions,
+      draftTestData: new StudioDraftTestDataService({ drafts, definitions, outputs })
+    });
+    const plan = await facade.planDraftTest(draftId, {
+      input: {
+        kind: "invocation",
+        definition_source: { kind: "draft", draft_id: draftId, etag },
+        execution_scope: { kind: "workflow" },
+        invocation: {
+          version: "2026-06",
+          source: "studio",
+          event: "manual",
+          target: { type: "workflow", id: "pinned-workflow" },
+          payload: {}
+        }
+      },
+      test_data: [{ fixture_name: "edited-cutpoint" }]
+    }, launchContext);
+    await canonical.execute(
+      plan.plan_id,
+      executeRequest(plan.confirmation_token),
+      launchContext
+    );
+
+    expect(dispatchedPlanId).toBe(plan.plan_id);
+    if (commandExecutionProfile === undefined) {
+      throw new Error("dispatch must retain the authorized execution profile");
+    }
+    const precompleted = nativePrecompletedSteps(commandExecutionProfile);
+    expect(precompleted).toEqual({ analyze: edited });
+    expect(validatePrecompletedSteps({
+      workflow_id: "pinned-workflow",
+      workflow_revision: definition.workflowRevision,
+      state_schema_version: "1",
+      nodes: [{
+        id: "analyze",
+        kind: "agent",
+        yaml_path: "$.nodes[0]",
+        capability_id: "pinned-agent",
+        output_schema: { type: "object" },
+        can_create_pending_interrupt: false,
+        source: { id: "analyze", type: "agent", agent: "pinned-agent", output_schema: "output.schema.json" }
+      }],
+      edges: [],
+      state: { channels: {} }
+    }, precompleted)).toEqual({ analyze: edited });
+  });
+
+  it("accepts overlapping selected fixtures but activates only the downstream cutpoint", async () => {
+    const fixture = await writeFixture();
+    await writeFile(
+      fixture.workflowPath,
+      fixture.workflowSource.replace(
+        "    input:\n      invocation:\n        expression: $.invocation\n",
+        [
+          "    input:",
+          "      invocation:",
+          "        expression: $.invocation",
+          "  - id: summarize",
+          "    type: agent",
+          "    agent: pinned-agent",
+          "    output_schema: output.schema.json",
+          "    after: [analyze]",
+          "    input:",
+          "      analysis:",
+          "        expression: $.steps.analyze",
+          ""
+        ].join("\n")
+      )
+    );
+    const service = launchService(fixture, {
+      dispatch: async () => { throw new Error("must not dispatch"); }
+    });
+
+    const plan = await service.plan({
+      ...request,
+      execution_profile: {
+        kind: "manual_test",
+        test_data: [manualTestData("analyze"), manualTestData("summarize")]
+      }
+    }, launchContext);
+
+    expect(plan.execution_profile).toMatchObject({
+      kind: "manual_test",
+      test_data: [
+        { node_id: "analyze" },
+        { node_id: "summarize" }
+      ]
+    });
+  });
+
+  it("rejects a manual-test node outside the source workflow", async () => {
+    const fixture = await writeFixture();
+    const service = launchService(fixture, {
+      dispatch: async () => { throw new Error("must not dispatch"); }
+    });
+
+    await expect(service.plan({
+      ...request,
+      execution_profile: {
+        kind: "manual_test",
+        test_data: [manualTestData("missing")]
+      }
+    }, launchContext)).rejects.toMatchObject({
+      code: "studio_run_test_data_stale",
+      details: { node_id: "missing" }
+    });
+  });
+
+  it("plans a brand-new saved workflow draft before it is installed", async () => {
+    const fixture = await writeFixture();
+    const workflowId = "new-draft-workflow";
+    const workflowSource = fixture.workflowSource.replace(
+      "id: pinned-workflow",
+      `id: ${workflowId}`
+    );
+    const workflowDirectory = path.dirname(fixture.workflowPath);
+    const draftId = "40e67383-a2ce-4c41-93f5-23fc5354ba28";
+    const etag = "saved-new-workflow-etag";
+    const file = async (name: string, media_type: "application/json" | "application/yaml") => ({
+      file: { root: "project" as const, path: `workflows/${workflowId}/${name}` },
+      media_type,
+      state: "present" as const,
+      content: name === "workflow.yaml"
+        ? workflowSource
+        : await readFile(path.join(workflowDirectory, name), "utf8")
+    });
+    const draft: StudioDraftItem = {
+      draft_id: draftId,
+      record_revision: 1,
+      content_revision: 1,
+      layout_revision: 0,
+      primary_resource: { kind: "workflow", id: workflowId },
+      status: "valid",
+      draft_hash: studioRunValueDigest(workflowSource),
+      etag,
+      files: await Promise.all([
+        file("workflow.yaml", "application/yaml"),
+        file("input.schema.json", "application/json"),
+        file("output.schema.json", "application/json"),
+        file("config.schema.json", "application/json")
+      ]),
+      created_at: "2026-07-11T12:00:00.000Z",
+      updated_at: "2026-07-11T12:00:00.000Z"
+    };
+    const platform = {
+      ...nativeLunaPlatformRegistrations,
+      inputAdapterRegistry: defineInputAdapters([])
+    };
+    const definitions = new NativeStudioRunDefinitionSource({
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      platform,
+      drafts: { get: async (requestedId) => {
+        expect(requestedId).toBe(draftId);
+        return draft;
+      } }
+    });
+    const canonical = new StudioRunLaunchService({
+      resolver: new NativeStudioRunPlanResolver({
+        projectRoot: fixture.projectRoot,
+        configRoot: fixture.configRoot,
+        platform,
+        definitions
+      }),
+      confirmations: new MemoryStudioRunConfirmations({ now: () => BASE_TIME }),
+      dispatcher: { dispatch: async () => { throw new Error("must not dispatch"); } },
+      now: () => BASE_TIME,
+      createPlanId: () => `rp_${"d".repeat(32)}`
+    });
+    const facade = new StudioRunLaunchFacade({
+      planner: canonical,
+      adapters: new NativeStudioRunLaunchInput({
+        projectRoot: fixture.projectRoot,
+        configRoot: fixture.configRoot,
+        platform
+      }),
+      routing: () => { throw new Error("draft execution must bypass routing"); },
+      routingSimulator: isolatedStudioRoutingSimulationPort,
+      installedDefinitions: definitions,
+      draftDefinitions: definitions
+    });
+
+    const plan = await facade.plan({
+      kind: "invocation",
+      definition_source: { kind: "draft", draft_id: draftId, etag },
+      invocation: {
+        version: "2026-06",
+        source: "studio",
+        event: "manual",
+        target: { type: "workflow", id: workflowId },
+        payload: {}
+      }
+    }, launchContext);
+
+    expect(plan.workflow_id).toBe(workflowId);
+    expect(plan.definition_source).toEqual({ kind: "draft", draft_id: draftId, etag });
+    expect(plan.definition_bundle_hash).not.toBe("");
+  });
+
   it("rejects an unknown agent model profile during planning before dispatch", async () => {
     const fixture = await writeFixture();
     await appendFile(
@@ -305,6 +711,12 @@ describe("native Studio run planning", () => {
       configRoot: fixture.configRoot,
       platform
     });
+    const definitions = new NativeStudioRunDefinitionSource({
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      platform,
+      drafts: { get: async () => { throw new Error("drafts are not used"); } }
+    });
     const facade = new StudioRunLaunchFacade({
       planner: canonical,
       adapters: nativeInput,
@@ -318,7 +730,7 @@ describe("native Studio run planning", () => {
         }]
       }),
       routingSimulator: isolatedStudioRoutingSimulationPort,
-      installedDefinitions: nativeInput
+      installedDefinitions: definitions
     });
     const adapterInput = {
       kind: "cli" as const,
@@ -378,6 +790,12 @@ describe("native Studio run planning", () => {
       configRoot: fixture.configRoot,
       platform
     });
+    const definitions = new NativeStudioRunDefinitionSource({
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      platform,
+      drafts: { get: async () => { throw new Error("drafts are not used"); } }
+    });
     const facade = new StudioRunLaunchFacade({
       planner: {
         plan: async (input, context) => {
@@ -399,7 +817,7 @@ describe("native Studio run planning", () => {
         }]
       }),
       routingSimulator: isolatedStudioRoutingSimulationPort,
-      installedDefinitions: nativeInput
+      installedDefinitions: definitions
     });
 
     await expect(facade.plan({

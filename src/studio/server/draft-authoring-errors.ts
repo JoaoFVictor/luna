@@ -58,6 +58,7 @@ function authoringError(
     case "studio_draft_authoring_source_too_large":
     case "studio_draft_authoring_patch_too_large":
     case "studio_draft_authoring_layout_too_large":
+    case "studio_draft_authoring_fixture_too_large":
       return {
         statusCode: 413,
         code: error.code,
@@ -66,6 +67,7 @@ function authoringError(
     case "studio_draft_authoring_noop":
     case "studio_draft_authoring_model_profile_unavailable":
     case "studio_draft_authoring_resource_invalid":
+    case "studio_draft_authoring_fixture_conflict":
       return {
         statusCode: 409,
         code: error.code,

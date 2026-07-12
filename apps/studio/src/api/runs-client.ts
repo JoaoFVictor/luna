@@ -1,5 +1,6 @@
 import type {
   RunExecuteRequest,
+  DraftTestRunPlanInput,
   RunLogLevel,
   RunPlanInput,
   RunStatus,
@@ -11,6 +12,7 @@ import {
 } from "@/api/client-core"
 import { StudioRunPlanInputSchema } from "../../../../src/studio/contracts/run-plan-input.js"
 import { StudioRunExecuteRequestSchema } from "../../../../src/studio/contracts/run-launch.js"
+import { StudioDraftTestRunPlanInputSchema } from "../../../../src/studio/contracts/draft-test-run.js"
 
 export type StudioRunCatalogQuery = {
   cursor?: string
@@ -43,6 +45,23 @@ export class StudioRunsClient {
     const body = StudioRunPlanInputSchema.parse(input)
     return this.#request(
       "/run-plans",
+      {
+        method: "POST",
+        body,
+        ...(signal === undefined ? {} : { signal }),
+      },
+      studioResponseContracts.runPlan,
+    )
+  }
+
+  readonly planDraftTestRun = (
+    draftId: string,
+    input: DraftTestRunPlanInput,
+    signal?: AbortSignal,
+  ) => {
+    const body = StudioDraftTestRunPlanInputSchema.parse(input)
+    return this.#request(
+      `/drafts/${encodeURIComponent(draftId)}/run-plans`,
       {
         method: "POST",
         body,
@@ -102,6 +121,32 @@ export class StudioRunsClient {
       `/runs/${encodeURIComponent(runId)}/graph`,
       { signal },
       studioResponseContracts.runGraph,
+    )
+  }
+
+  readonly runNodeOutput = (
+    runId: string,
+    nodeId: string,
+    signal?: AbortSignal,
+  ) => {
+    return this.#request(
+      `/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/output`,
+      { signal },
+      studioResponseContracts.runNodeOutput,
+    )
+  }
+
+  readonly compareRunNodeOutput = (
+    runId: string,
+    nodeId: string,
+    baselineRunId: string,
+    signal?: AbortSignal,
+  ) => {
+    const query = new URLSearchParams({ baseline_run_id: baselineRunId })
+    return this.#request(
+      `/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/output/compare?${query.toString()}`,
+      { signal },
+      studioResponseContracts.runNodeOutputComparison,
     )
   }
 

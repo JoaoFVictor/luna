@@ -40,7 +40,7 @@ describe("native Studio exact node recovery", () => {
       "  file: pinned-workflow.yaml",
       "  schema: config.schema.json",
       "capabilities:",
-      "  - runtime",
+      "  - findings",
       "requires:",
       "  repository: false",
       "execution:",
@@ -48,8 +48,13 @@ describe("native Studio exact node recovery", () => {
       "nodes:",
       "  - id: analyze",
       "    type: built_in",
-      "    uses: runtime.preflight",
-      "    input: {}",
+      "    uses: findings.merge",
+      "    input:",
+      "      sources:",
+      "        - id: fixture",
+      "          result:",
+      "            findings: []",
+      "            reviewed_ranges: []",
       ""
     ].join("\n"));
     const { command } = await captureCommand(fixture);
@@ -80,7 +85,11 @@ describe("native Studio exact node recovery", () => {
       checkpoints,
       runtimeLogs: createMemoryRuntimeLogStore()
     };
-    const executeBuiltIn = vi.fn(async () => ({ reviewed: true }));
+    const executeBuiltIn = vi.fn(async () => ({
+      summary: "",
+      findings: [],
+      reviewed_ranges: []
+    }));
     const firstBarrierFailure = new RuntimeDurabilityRecoveryRequiredError(
       "simulated control-plane barrier recovery"
     );
@@ -104,7 +113,7 @@ describe("native Studio exact node recovery", () => {
         run: input.run,
         signal: input.signal,
         backends,
-        builtIns: { "runtime.preflight": executeBuiltIn },
+        builtIns: { "findings.merge": executeBuiltIn },
         agentRuntime: {} as AgentRuntimePort,
         onSucceededState: runtimeCalls === 1
           ? async () => {

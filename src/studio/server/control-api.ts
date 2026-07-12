@@ -49,6 +49,10 @@ import {
   type StudioRunControl
 } from "./routes/runs.js";
 import {
+  registerStudioRunOutputFixtureRoutes,
+  type StudioRunOutputFixtureControl
+} from "./routes/run-output-fixtures.js";
+import {
   registerStudioSchemaRoutes,
   type StudioSchemaControl
 } from "./routes/schemas.js";
@@ -67,6 +71,7 @@ export type StudioControlApiOptions = {
   readonly artifacts?: StudioArtifactControl;
   readonly runLogs?: StudioRunLogControl;
   readonly drafts?: StudioDraftAuthoringControl;
+  readonly runOutputFixtures?: StudioRunOutputFixtureControl;
   readonly configuration?: StudioConfigurationControl;
   readonly resourceHistory?: StudioResourceHistoryControl;
   readonly agentTest?: StudioAgentTestBenchControl;
@@ -109,6 +114,14 @@ export async function registerStudioControlApi(
     await registerStudioDraftAuthoringRoutes(server, {
       apiPrefix: STUDIO_API_PREFIX,
       control: options.drafts,
+      principalFor: requests.principalFor,
+      parseRequest: parseStudioRequest
+    });
+  }
+  if (options.runOutputFixtures !== undefined) {
+    await registerStudioRunOutputFixtureRoutes(server, {
+      apiPrefix: STUDIO_API_PREFIX,
+      control: options.runOutputFixtures,
       principalFor: requests.principalFor,
       parseRequest: parseStudioRequest
     });

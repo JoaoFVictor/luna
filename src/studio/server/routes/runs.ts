@@ -25,7 +25,15 @@ import {
   RunGraphReadError,
   type RunGraphService
 } from "../../application/runs/graph-service.js";
+import {
+  RunNodeOutputReadError,
+  type RunNodeOutputService
+} from "../../application/runs/node-output-service.js";
 import { RunGraphResponseSchema } from "../../contracts/run-graph.js";
+import {
+  RunNodeOutputComparisonResponseSchema,
+  RunNodeOutputResponseSchema
+} from "../../contracts/run-node-output.js";
 
 const StatusFilterSchema = z
   .array(RunDisplayStatusSchema)
@@ -62,6 +70,13 @@ const RunEventStreamQuerySchema = z
       .optional()
   })
   .strict();
+const RunNodeOutputParamsSchema = z.object({
+  runId: z.string().trim().min(1).max(256),
+  nodeId: z.string().trim().min(1).max(256)
+}).strict();
+const RunNodeOutputComparisonQuerySchema = z.object({
+  baseline_run_id: z.string().trim().min(1).max(256)
+}).strict();
 const MAX_ACTIVE_EVENT_STREAMS = 16;
 const STREAM_PAGE_SIZE = 200;
 const STREAM_POLL_INTERVAL_MS = 1_000;
@@ -115,6 +130,7 @@ export type StudioRunControl = {
   readonly catalog: Pick<RunCatalogPort, "get" | "list">;
   readonly events: Pick<RunEventLedgerPort, "list">;
   readonly graph: Pick<RunGraphService, "get">;
+  readonly outputs: Pick<RunNodeOutputService, "get" | "compare">;
 };
 
 export type StudioRunRouteOptions = {
@@ -242,6 +258,60 @@ export async function registerStudioRunRoutes(
         throw runStoreError(
           "run_not_found",
           "The requested run does not exist"
+        );
+      }
+      throw cause;
+    }
+  });
+
+  server.get(`${base}/:runId/nodes/:nodeId/output`, async (request) => {
+    options.principalFor(request);
+    const { runId, nodeId } = options.parseRequest(
+      RunNodeOutputParamsSchema,
+      request.params
+    );
+    try {
+      return RunNodeOutputResponseSchema.parse(
+        await options.control.outputs.get(runId, nodeId)
+      );
+    } catch (cause) {
+      if (
+        (cause instanceof RunGraphReadError &&
+          cause.code === "run_graph_run_not_found") ||
+        cause instanceof RunNodeOutputReadError
+      ) {
+        throw runStoreError(
+          "run_not_found",
+          "The requested run node does not exist"
+        );
+      }
+      throw cause;
+    }
+  });
+
+  server.get(`${base}/:runId/nodes/:nodeId/output/compare`, async (request) => {
+    options.principalFor(request);
+    const { runId, nodeId } = options.parseRequest(
+      RunNodeOutputParamsSchema,
+      request.params
+    );
+    const { baseline_run_id: baselineRunId } = options.parseRequest(
+      RunNodeOutputComparisonQuerySchema,
+      request.query
+    );
+    try {
+      return RunNodeOutputComparisonResponseSchema.parse(
+        await options.control.outputs.compare(runId, nodeId, baselineRunId)
+      );
+    } catch (cause) {
+      if (
+        (cause instanceof RunGraphReadError &&
+          cause.code === "run_graph_run_not_found") ||
+        cause instanceof RunNodeOutputReadError
+      ) {
+        throw runStoreError(
+          "run_not_found",
+          "A requested run node does not exist"
         );
       }
       throw cause;

@@ -481,6 +481,12 @@ encoded key names, and credential-bearing fragments are rejected at the contract
 boundary. The shared redactor applies the same classification to diagnostic text,
 so a signed URL cannot become searchable provenance or leak through an error.
 
+Terminal node outputs have a separate explicit-read projection. The persisted
+outcome owns the bounded, best-effort-redacted snapshot and its graph/outcome
+hashes. Output comparison reuses two such immutable projections and computes a
+bounded structural diff on demand; it never persists a comparison copy, reads a
+live runtime state, or extends the retention lifetime of either source run.
+
 Runs created outside Studio, such as CLI and webhook executions, are reconciled
 from the shared artifact root by a bounded background importer. The importer is
 not on the request path, advances a bounded in-process cursor across batches,

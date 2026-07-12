@@ -323,7 +323,14 @@ export function AgentsPage() {
               {models.isError && <FieldError>Não foi possível carregar os model profiles. Tente novamente antes de criar o agent.</FieldError>}
               {!models.isPending && !models.isError && !modelProfilesAvailable && <FieldError>Nenhum model profile válido está disponível em config/models.yaml.</FieldError>}
               {(models.data?.diagnostics.length ?? 0) > 0 && (
-                <FieldError>{models.data?.diagnostics.map((diagnostic) => diagnostic.message).join(" · ")}</FieldError>
+                <details className="text-xs text-destructive">
+                  <summary className="cursor-pointer">Alguns modelos não puderam ser carregados</summary>
+                  <ul className="mt-1 space-y-1 font-mono">
+                    {models.data?.diagnostics.map((diagnostic) => (
+                      <li key={diagnostic.code}>{diagnostic.code}: {diagnostic.message}</li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </Field>
             <DialogFooter><Button type="button" variant="outline" onClick={() => setNewOpen(false)}>Cancelar</Button><Button type="submit" disabled={!session.canMutate || openDraft.isPending || !RESOURCE_ID.test(newId) || newId.length > 128 || !modelProfileSelected}>{openDraft.isPending ? "Criando…" : "Continuar"}</Button></DialogFooter>

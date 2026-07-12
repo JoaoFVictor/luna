@@ -6,7 +6,7 @@ import type {
 export type WorkflowSourceNode = {
   index: number
   id: string
-  type: "built_in" | "agent" | "pattern" | "human_gate"
+  type: "built_in" | "agent" | "pattern" | "human_gate" | "workflow"
   registrationId: string
   value: Record<string, JsonValue>
 }
@@ -25,7 +25,7 @@ export type WorkflowSourceOutlineEntry = {
 export type WorkflowSourceGraph = {
   readonly nodes: readonly {
     readonly id: string
-    readonly kind: "built_in" | "agent" | "pattern" | "interrupt"
+    readonly kind: "built_in" | "agent" | "pattern" | "interrupt" | "workflow"
     readonly capability_id: string
     readonly can_create_pending_interrupt: boolean
   }[]
@@ -35,12 +35,15 @@ export type WorkflowSourceGraph = {
   }[]
 }
 
+// Mirrors StudioYamlSourceOperationsRequestSchema. Keep batches within the API contract.
+export const STUDIO_YAML_SOURCE_OPERATION_LIMIT = 64
+
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
 function nodeType(value: JsonValue | undefined): WorkflowSourceNode["type"] | undefined {
-  return value === "built_in" || value === "agent" || value === "pattern" || value === "human_gate"
+  return value === "built_in" || value === "agent" || value === "pattern" || value === "human_gate" || value === "workflow"
     ? value
     : undefined
 }
@@ -50,7 +53,11 @@ export function workflowSourceNodes(source: JsonValue): WorkflowSourceNode[] {
   return source.nodes.flatMap((value, index) => {
     if (!isRecord(value) || typeof value.id !== "string") return []
     const type = nodeType(value.type)
-    const registrationId = type === "agent" ? value.agent : value.uses
+    const registrationId = type === "agent"
+      ? value.agent
+      : type === "workflow"
+        ? value.workflow
+        : value.uses
     return type === undefined || typeof registrationId !== "string"
       ? []
       : [{ index, id: value.id, type, registrationId, value }]
@@ -79,16 +86,22 @@ export function workflowSourceOutlineEntries(
     const rawType = typeof value?.type === "string" ? value.type : undefined
     const registration = type === "agent"
       ? value?.agent
-      : type === undefined
-        ? value?.agent ?? value?.uses
-        : value?.uses
+      : type === "workflow"
+        ? value?.workflow
+        : type === undefined
+          ? value?.agent ?? value?.workflow ?? value?.uses
+          : value?.uses
     const node = nodesByIndex.get(index)
     const problems: string[] = []
     if (value === undefined) problems.push("O node deve ser um mapping YAML.")
     if (id === undefined) problems.push("O node precisa de um id não vazio.")
     if (type === undefined) problems.push("O node precisa de um type reconhecido.")
     if (typeof registration !== "string" || registration.length === 0) {
-      problems.push(type === "agent" ? "O node precisa de agent." : "O node precisa de uses.")
+      problems.push(type === "agent"
+        ? "O node precisa de agent."
+        : type === "workflow"
+          ? "O node precisa de workflow."
+          : "O node precisa de uses.")
     }
     const duplicateId = id !== undefined && (idCounts.get(id) ?? 0) > 1
     if (duplicateId) problems.push(`O id ${id} está duplicado.`)
@@ -123,7 +136,7 @@ export function workflowSourceGraph(
     nodes: nodes.map((node) => ({
       id: node.id,
       kind: node.type === "human_gate" ? "interrupt" : node.type,
-      capability_id: node.registrationId,
+      capability_id: node.type === "workflow" ? `workflow:${node.registrationId}` : node.registrationId,
       can_create_pending_interrupt: node.type === "human_gate",
     })),
     edges: nodes.flatMap((node) => {
@@ -185,6 +198,48 @@ export function disconnectWorkflowNodesOperations(
     : { op: "set", path: ["nodes", target.index, "after"], value: next }]
 }
 
+export function removeWorkflowNodeOperations(
+  nodes: readonly WorkflowSourceNode[],
+  nodeId: string,
+): YamlSourceOperation[] {
+  return removeWorkflowNodesOperations(nodes, [nodeId])
+}
+
+export function removeWorkflowNodesOperations(
+  nodes: readonly WorkflowSourceNode[],
+  nodeIds: readonly string[],
+): YamlSourceOperation[] {
+  const knownIds = new Set(nodes.map((node) => node.id))
+  const removedIds = new Set(nodeIds.filter((nodeId) => knownIds.has(nodeId)))
+  if (removedIds.size === 0) return []
+
+  const dependencyUpdates = nodes.flatMap<YamlSourceOperation>((node) => {
+    if (removedIds.has(node.id)) return []
+    const after = workflowNodeField(node, "after")
+    if (!Array.isArray(after) || !after.some((dependency) =>
+      typeof dependency === "string" && removedIds.has(dependency)
+    )) return []
+    const remaining = after.filter((dependency) =>
+      typeof dependency !== "string" || !removedIds.has(dependency)
+    )
+    return [remaining.length === 0
+      ? { op: "delete", path: ["nodes", node.index, "after"] }
+      : { op: "set", path: ["nodes", node.index, "after"], value: remaining }]
+  })
+  const removals = nodes
+    .filter((node) => removedIds.has(node.id))
+    .sort((left, right) => right.index - left.index)
+    .map<YamlSourceOperation>((node) => ({
+      op: "sequence_remove",
+      path: ["nodes"],
+      index: node.index,
+    }))
+  return [
+    ...dependencyUpdates,
+    ...removals,
+  ]
+}
+
 function nodesWithoutDependency(
   nodes: readonly WorkflowSourceNode[],
   sourceId: string,
@@ -231,6 +286,18 @@ export function addWorkflowCapabilityOperations(
   return operations
 }
 
+export function ensureWorkflowRepositoryRequirementOperations(
+  source: JsonValue,
+  required: boolean,
+): YamlSourceOperation[] {
+  if (!required || !isRecord(source)) return []
+  const requires = source.requires
+  if (isRecord(requires) && requires.repository === true) return []
+  return [isRecord(requires)
+    ? { op: "set", path: ["requires", "repository"], value: true }
+    : { op: "set", path: ["requires"], value: { repository: true } }]
+}
+
 export function workflowNodeField(
   node: WorkflowSourceNode,
   field: string,
@@ -262,6 +329,6 @@ export function workflowDependencyWouldCycle(
   return false
 }
 
-export function nodeRegistrationField(type: WorkflowSourceNode["type"]): "agent" | "uses" {
-  return type === "agent" ? "agent" : "uses"
+export function nodeRegistrationField(type: WorkflowSourceNode["type"]): "agent" | "workflow" | "uses" {
+  return type === "agent" ? "agent" : type === "workflow" ? "workflow" : "uses"
 }

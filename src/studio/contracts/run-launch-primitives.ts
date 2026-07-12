@@ -20,3 +20,13 @@ export const StudioRunBoundedDescriptionSchema = z
   .trim()
   .min(1)
   .max(2_000);
+
+export const StudioRunOpaqueIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(256)
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9._:@-]*$/,
+    "Identifier contains unsupported characters"
+  );

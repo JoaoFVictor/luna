@@ -21,6 +21,12 @@ export const manifest = capabilityManifest({
   built_ins: {
     "validation.run_commands": {
       id: "validation.run_commands",
+      presentation: {
+        title: "Executar validações",
+        summary: "Roda comandos locais declarados, como testes e verificações.",
+        category: "Validação",
+        tags: ["test", "command"]
+      },
       input_schema: {
         type: "object",
         additionalProperties: false,

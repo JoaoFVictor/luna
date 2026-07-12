@@ -13,6 +13,8 @@ import {
   type StudioRunLaunchContext
 } from "../../contracts/run-launch.js";
 import { withStudioRequestAbort } from "../request-abort.js";
+import { StudioDraftParamsSchema } from "../../contracts/draft-authoring.js";
+import { StudioDraftTestRunPlanInputSchema } from "../../contracts/draft-test-run.js";
 
 const StudioRunPlanParamsSchema = z
   .object({ planId: StudioRunPlanIdSchema })
@@ -24,6 +26,12 @@ export type StudioRunLaunchControl = Pick<
 > & {
   readonly plan: (
     input: StudioRunPlanInput,
+    context: StudioRunLaunchContext,
+    signal?: AbortSignal
+  ) => ReturnType<StudioRunLaunchService<unknown>["plan"]>;
+  readonly planDraftTest?: (
+    draftId: string,
+    input: z.output<typeof StudioDraftTestRunPlanInputSchema>,
     context: StudioRunLaunchContext,
     signal?: AbortSignal
   ) => ReturnType<StudioRunLaunchService<unknown>["plan"]>;
@@ -56,6 +64,34 @@ export async function registerStudioRunLaunchRoutes(
       )
     );
   });
+
+  const planDraftTest = options.control.planDraftTest;
+  if (planDraftTest !== undefined) {
+    server.post(`${options.apiPrefix}/drafts/:draftId/run-plans`, async (
+      request,
+      reply
+    ) => {
+      const context = options.launchContextFor(request);
+      const { draftId } = options.parseRequest(
+        StudioDraftParamsSchema,
+        request.params
+      );
+      const body = options.parseRequest(
+        StudioDraftTestRunPlanInputSchema,
+        request.body
+      );
+      return await withStudioRequestAbort(request, reply, async (signal) =>
+        StudioRunPlanSchema.parse(
+          await planDraftTest(
+            draftId,
+            body,
+            context,
+            signal
+          )
+        )
+      );
+    });
+  }
 
   server.post(`${base}/:planId/execute`, async (request, reply) => {
     const context = options.launchContextFor(request);

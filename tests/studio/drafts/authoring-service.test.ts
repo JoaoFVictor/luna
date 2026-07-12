@@ -210,7 +210,16 @@ describe("StudioDraftAuthoringService", () => {
       true
     );
     expect(drafts.draft?.changes).toHaveLength(3);
-    expect(drafts.blobs.size).toBe(2);
+    expect(drafts.blobs.size).toBe(3);
+
+    expect(
+      item.files.find((file) => file.file.path.endsWith("input.schema.json"))
+        ?.content
+    ).toContain('"additionalProperties": false');
+    expect(
+      item.files.find((file) => file.file.path.endsWith("output.schema.json"))
+        ?.content
+    ).toContain('"additionalProperties": true');
 
     await expect(service.get(item.draft_id)).resolves.toEqual(item);
     await expect(service.list()).resolves.toMatchObject({

@@ -35,7 +35,8 @@ import type {
   ParsedWorkflowGate,
   ParsedWorkflowNode,
   ParsedAgentNode,
-  ParsedPatternNode
+  ParsedPatternNode,
+  WorkflowDefinition
 } from "./definition-types.js";
 import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "./repair-attempts.js";
 import { isReservedWorkflowNodeId } from "./node-id.js";
@@ -122,7 +123,7 @@ export function validateNodesAgainstCapabilities(
       );
     } else if (node.type === "pattern") {
       validatePatternNode(node, index, declaredCapabilities, nodeIds, registry);
-    } else {
+    } else if (node.type === "human_gate") {
       const gate = requireRegistration(
         node.uses,
         "gates",
@@ -136,7 +137,39 @@ export function validateNodesAgainstCapabilities(
           capability: gate.id
         });
       }
+    } else {
+      validateExpressionBearingValue(
+        node.input ?? {},
+        `$.nodes[${index}].input`,
+        `workflow:${node.workflow}`,
+        nodeIds
+      );
     }
+  });
+}
+
+export function validateWorkflowCallInputs(
+  nodes: readonly ParsedWorkflowNode[],
+  compositions: Readonly<Record<string, WorkflowDefinition>>
+): void {
+  nodes.forEach((node, index) => {
+    if (node.type !== "workflow") return;
+    const child = compositions[node.workflow];
+    if (child === undefined) {
+      throw new WorkflowDefinitionError(
+        "workflow_external_definition_missing",
+        `Composed workflow ${node.workflow} was not resolved.`,
+        { path: `$.nodes[${index}].workflow`, nodeId: node.id }
+      );
+    }
+    validateJsonSchema(
+      child.input_schema_content as JsonSchemaLike,
+      node.input ?? {},
+      {
+        path: `$.nodes[${index}].input`,
+        capability: `workflow:${child.id}`
+      }
+    );
   });
 }
 
@@ -224,6 +257,9 @@ function validatePolicies(
   nodeIds: ReadonlySet<string>,
   registry: CapabilityRegistry | undefined
 ): void {
+  if (node.type === "workflow") {
+    return;
+  }
   (node.policies ?? []).forEach((policy, policyIndex) => {
     const policyPath = `$.nodes[${nodeIndex}].policies[${policyIndex}]`;
     const registration = requireRegistration(

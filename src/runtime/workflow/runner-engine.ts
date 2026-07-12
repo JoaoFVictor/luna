@@ -22,6 +22,7 @@ import {
   type WorkflowExecutionPlanPolicyNode
 } from "../../core/workflow/execution-plan.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
+import { planPrecompletedWorkflowExecution } from "../../core/workflow/precompleted-execution.js";
 import { finalWorkflowOutput } from "../../core/workflow/runner-output.js";
 import { writeTraceSummaryBestEffort } from "../../core/observability/summary.js";
 import type { BuiltInStepMetadata } from "../../core/built-ins/types.js";
@@ -70,6 +71,10 @@ import {
   runtimeStateFromCheckpoint
 } from "./failure-state.js";
 import { loadPersistedWorkflowNodeRecovery } from "./persisted-node-recovery.js";
+import {
+  mergePrecompletedStepsWithRecovery,
+  validatePrecompletedSteps
+} from "./precompleted-steps.js";
 
 export type { WorkflowNodeAttemptOutcome } from "./node-runner.js";
 
@@ -108,12 +113,26 @@ export async function runCompiledWorkflowWithScheduler<TInput extends RunWorkflo
 ): Promise<WorkflowRunResult> {
   assertCompiledWorkflowMatchesDefinition(input);
   assertSupportedExecutionSubset(input);
-  assertSupportedRuntimeRequirements(input, 0);
+  const precompletedSteps = validatePrecompletedSteps(
+    input.compiled,
+    input.precompleted_steps
+  );
+  const effectivePlan = planPrecompletedWorkflowExecution(
+    input.workflow,
+    new Set(Object.keys(precompletedSteps))
+  );
+  const effectiveNodes = input.compiled.nodes.filter((node) =>
+    effectivePlan.executable_node_ids.has(node.id)
+  );
+  assertSupportedRuntimeRequirements(input, effectiveNodes);
   return await input.backends.interrupts.withResumeLease(
     input.run.run_id,
     async () => {
       await assertWorkflowRunIsOpen(input, input.run.run_id);
-      await ensureWorkflowExecutionIdentity(input, input.run.run_id);
+      await ensureWorkflowExecutionIdentity(
+        { ...input, precompleted_steps: precompletedSteps },
+        input.run.run_id
+      );
       let state = createInitialRuntimeState({
         invocation: input.invocation,
         config: input.config,
@@ -128,15 +147,18 @@ export async function runCompiledWorkflowWithScheduler<TInput extends RunWorkflo
         ...state,
         artifact_refs: recovered.completedArtifactRefs,
         interrupt_refs: recovered.completedInterruptRefs,
-        steps: Object.fromEntries(
-          recovered.stepWrites.map((write) => [write.task_id, write.value])
+        steps: mergePrecompletedStepsWithRecovery(
+          precompletedSteps,
+          Object.fromEntries(
+            recovered.stepWrites.map((write) => [write.task_id, write.value])
+          )
         )
       };
       return await runWithWorkflowSpan(input, async () =>
         await runFromNodeIndex(input, scheduler, state, 0, {
           completedNodeIds: recovered.completedNodeIds,
           outputPendingByNode: recovered.outputPendingByNode
-        })
+        }, effectiveNodes)
       );
     }
   );
@@ -158,10 +180,26 @@ export async function resumeCompiledWorkflowWithScheduler<TInput extends ResumeW
         compiled: input.compiled,
         invocation: preflight.resumeContext.invocation,
         config: preflight.resumeContext.config,
-        run: preflight.resumeContext.run
+        run: preflight.resumeContext.run,
+        ...(preflight.resumeContext.precompleted_steps === undefined
+          ? {}
+          : { precompleted_steps: preflight.resumeContext.precompleted_steps })
       }, input.thread_id, { validatedLegacyResume: true });
       const resume = await applyWorkflowResume(input, preflight);
-      assertSupportedRuntimeRequirements(input, resume.startIndex);
+      const precompletedSteps = validatePrecompletedSteps(
+        input.compiled,
+        resume.resumedInput.precompleted_steps
+      );
+      const resumeNodes = input.compiled.nodes.slice(resume.startIndex);
+      const effectivePlan = planPrecompletedWorkflowExecution(
+        input.workflow,
+        new Set(Object.keys(precompletedSteps)),
+        new Set(resumeNodes.map((node) => node.id))
+      );
+      const effectiveNodes = resumeNodes.filter((node) =>
+        effectivePlan.executable_node_ids.has(node.id)
+      );
+      assertSupportedRuntimeRequirements(input, effectiveNodes);
 
       return await runWithWorkflowSpan(resume.resumedInput, async () =>
         await runFromNodeIndex(
@@ -169,7 +207,8 @@ export async function resumeCompiledWorkflowWithScheduler<TInput extends ResumeW
           scheduler,
           resume.state,
           resume.startIndex,
-          resume.nodeRecovery
+          resume.nodeRecovery,
+          effectiveNodes
         )
       );
     }
@@ -358,12 +397,15 @@ function assertSupportedRuntimeRequirements(input: {
   readonly compiled: CompiledWorkflow;
   readonly agentRuntime: AgentRuntimePort;
   readonly agentInputs?: WorkflowAgentInputMap;
-}, startIndex: number): void {
-  const agentNodes = input.compiled.nodes.slice(startIndex).filter(
+}, nodes: readonly CompiledWorkflowNode[]): void {
+  const agentNodes = nodes.filter(
     (node) => node.kind === "agent" && node.source.type === "agent"
   );
+  const executableNodeIds = new Set(nodes.map((node) => node.id));
   const patternAgentInputs = Object.entries(input.agentInputs ?? {}).filter(
-    ([key]) => key.includes(":worker") || key.includes(":gate:")
+    ([key]) =>
+      executableNodeIds.has(key.split(":", 1)[0] ?? "") &&
+      (key.includes(":worker") || key.includes(":gate:"))
   );
   if (agentNodes.length === 0 && patternAgentInputs.length === 0) {
     return;
@@ -403,29 +445,31 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
   scheduler: WorkflowNodeScheduler<TInput>,
   initialState: LunaRuntimeState,
   startIndex: number,
-  nodeRecovery?: WorkflowResumeNodeRecovery
+  nodeRecovery?: WorkflowResumeNodeRecovery,
+  selectedNodes?: readonly CompiledWorkflowNode[]
 ): Promise<WorkflowRunResult> {
   const runtimeContext = { ...(input.runtimeContext ?? {}) };
+  const precompletedNodeIds = new Set(Object.keys(input.precompleted_steps ?? {}));
   rehydrateRuntimeContextFromSteps({
     nodes: input.compiled.nodes,
-    steps: initialState.steps,
+    steps: Object.fromEntries(
+      Object.entries(initialState.steps).filter(
+        ([nodeId]) => !precompletedNodeIds.has(nodeId)
+      )
+    ),
     runtimeContext,
     decisionForNode: (node) => executionPolicyDecisionForCompiledNode(input, node)
   });
-  const nodes = input.compiled.nodes.slice(startIndex);
+  const nodes = selectedNodes ?? input.compiled.nodes.slice(startIndex);
   const deferredFinalReportIds = deferredFinalReportNodeIds(input, nodes);
   let state = initialState;
   let exactStateAvailable = false;
   let terminalizationPhase: SuccessTerminalizationPhase = "open";
   try {
-    const result = await scheduler({
-      input,
-      initialState,
-      nodes,
-      startIndex,
-      deferredFinalReportIds,
-      runtimeContext,
-      runNode: async (node, currentState) => {
+    const runNode = async (
+      node: CompiledWorkflowNode,
+      currentState: LunaRuntimeState
+    ): Promise<WorkflowNodeAttemptOutcome> => {
         const decision = executionPolicyDecisionForCompiledNode(input, node);
         if (nodeRecovery?.completedNodeIds.has(node.id) === true) {
           return skipPersistedCompletedWorkflowNode({
@@ -451,8 +495,18 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
           node,
           decision
         });
-      }
-    });
+      };
+    const result: WorkflowNodeSchedulerResult = nodes.length === 0
+      ? { kind: "completed", state: initialState }
+      : await scheduler({
+          input,
+          initialState,
+          nodes,
+          startIndex,
+          deferredFinalReportIds,
+          runtimeContext,
+          runNode
+        });
     if (result.kind === "waiting_for_input") {
       return {
         status: "waiting_for_input",
@@ -541,7 +595,7 @@ function assertFinalWorkflowOutput(
 ): JsonValue {
   const output = finalWorkflowOutput(input.compiled, state, deferredFinalReportIds);
   if (
-    input.executionScope?.kind !== "through_node" &&
+    (input.executionScope === undefined || input.executionScope.kind === "workflow") &&
     !matchesJsonSchema(input.workflow.output_schema_content as JsonSchemaLike, output)
   ) {
     throw runtimeError("Final workflow output failed schema validation", "runtime_node_output_schema_invalid", {

@@ -18,6 +18,7 @@ import {
   type StudioValidationSnapshot,
   type StudioValidationSnapshotPort
 } from "./snapshot.js";
+import { projectStudioNodeFieldPath } from "./node-field-path.js";
 
 export type ValidateStudioDraftOptions = {
   readonly compile?: boolean;
@@ -52,12 +53,14 @@ function canonicalErrorDiagnostic(
     error.capability,
     STUDIO_VALIDATION_CAPABILITY_MAX_LENGTH
   );
+  const nodeFieldPath = projectStudioNodeFieldPath(fieldPath, error.nodeId);
   return StudioValidationDiagnosticSchema.parse({
     severity: "error",
     code: error.code,
     message: error.message,
     resource,
     ...(fieldPath === undefined ? {} : { field_path: fieldPath }),
+    ...(nodeFieldPath === undefined ? {} : { node_field_path: nodeFieldPath }),
     ...(capability === undefined ? {} : { capability }),
     ...(error.nodeId === undefined ? {} : { node_id: error.nodeId }),
     ...(error.edge === undefined ? {} : { edge: error.edge })

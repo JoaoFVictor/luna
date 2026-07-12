@@ -56,10 +56,33 @@ export type SplitDeferredWorkflowNodesByPolicyOptions<
   builtInMetadata: (node: TNode) => BuiltInStepMetadata;
 };
 
-function policyError(message: string, code: string): Error & { code: string } {
-  const error = new Error(message) as Error & { code: string };
-  error.code = code;
-  return error;
+export type AssertWorkflowExecutionRequirementsOptions<
+  TNode extends WorkflowExecutionNode = WorkflowExecutionNode
+> = {
+  nodes: readonly TNode[];
+  requiresRepository: boolean;
+  builtInMetadata: (node: TNode) => BuiltInStepMetadata;
+};
+
+export class WorkflowExecutionPolicyError extends Error {
+  readonly code: string;
+  readonly nodeId?: string;
+  readonly edge?: { readonly from: string; readonly to: string };
+
+  constructor(
+    message: string,
+    code: string,
+    location: {
+      readonly nodeId?: string;
+      readonly edge?: { readonly from: string; readonly to: string };
+    } = {}
+  ) {
+    super(message);
+    this.name = "WorkflowExecutionPolicyError";
+    this.code = code;
+    this.nodeId = location.nodeId;
+    this.edge = location.edge;
+  }
 }
 
 function isAgentLike(node: WorkflowExecutionNode): boolean {
@@ -103,6 +126,29 @@ export function executionPolicyDecisionForNode<
       metadata.deferredLifecycle === "final_report",
     artifactPaths: artifactPaths(node)
   };
+}
+
+export function assertWorkflowExecutionRequirements<
+  TNode extends WorkflowExecutionNode
+>({
+  nodes,
+  requiresRepository,
+  builtInMetadata
+}: AssertWorkflowExecutionRequirementsOptions<TNode>): void {
+  if (requiresRepository) {
+    return;
+  }
+  const repositoryNode = nodes.find(
+    (node) => builtInMetadata(node).requiresRepository === true
+  );
+  if (repositoryNode === undefined) {
+    return;
+  }
+  throw new WorkflowExecutionPolicyError(
+    `Workflow node ${repositoryNode.id} requires repository authority`,
+    "workflow_repository_requirement_missing",
+    { nodeId: repositoryNode.id }
+  );
 }
 
 export function selectReadyBatchWithPolicy<
@@ -181,9 +227,13 @@ export function splitDeferredFinalReportNodesByPolicy<
 
     for (const dependency of node.after ?? []) {
       if (deferredIds.has(dependency)) {
-        throw policyError(
+        throw new WorkflowExecutionPolicyError(
           "Non-deferred node depends on deferred workflow node",
-          "workflow_deferred_dependency_invalid"
+          "workflow_deferred_dependency_invalid",
+          {
+            nodeId: node.id,
+            edge: { from: dependency, to: node.id }
+          }
         );
       }
     }

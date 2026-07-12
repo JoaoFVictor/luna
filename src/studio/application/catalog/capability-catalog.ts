@@ -11,6 +11,7 @@ import type {
 import type { PatternRegistration } from "../../../core/capabilities/pattern-registration.js";
 import type { CapabilityRegistry } from "../../../core/capabilities/registry.js";
 import type { StudioPresentation } from "../../../core/capabilities/studio-presentation.js";
+import type { BuiltInStepMetadata } from "../../../core/built-ins/types.js";
 import { assertJsonValue, type JsonValue } from "../../../core/json/value.js";
 import { sha256Digest } from "../../../core/workflow/definition-digests.js";
 import {
@@ -48,7 +49,8 @@ function owner(manifest: CapabilityManifest): RegistrationOwner {
 
 function builtInItem(
   manifest: CapabilityManifest,
-  registration: BuiltInRegistration
+  registration: BuiltInRegistration,
+  metadata: BuiltInStepMetadata
 ): StudioCapabilityRegistration {
   return StudioCapabilityRegistrationSchema.parse({
     registration_kind: "built_in",
@@ -64,6 +66,10 @@ function builtInItem(
       `${registration.id}.output_schema`
     ),
     required_ports: registration.required_ports ?? [],
+    requires_repository: metadata.requiresRepository === true,
+    ...(metadata.deferredLifecycle === undefined
+      ? {}
+      : { deferred_lifecycle: metadata.deferredLifecycle }),
     ...(registration.side_effect_policy === undefined
       ? {}
       : { side_effect_policy: registration.side_effect_policy })
@@ -256,11 +262,12 @@ function schemaItem(
 }
 
 function registrationsFor(
-  manifest: CapabilityManifest
+  manifest: CapabilityManifest,
+  builtInMetadata: (id: string) => BuiltInStepMetadata
 ): StudioCapabilityRegistration[] {
   return [
     ...Object.values(manifest.built_ins ?? {}).map((registration) =>
-      builtInItem(manifest, registration)
+      builtInItem(manifest, registration, builtInMetadata(registration.id))
     ),
     ...Object.values(manifest.patterns ?? {}).map((registration) =>
       patternItem(manifest, registration)
@@ -319,13 +326,19 @@ function technicalRegistration(
 }
 
 export function createStudioCapabilityCatalog(
-  registry: Pick<CapabilityRegistry, "orderedManifests">
+  registry: Pick<CapabilityRegistry, "orderedManifests">,
+  options: {
+    readonly builtInMetadata?: (id: string) => BuiltInStepMetadata;
+  } = {}
 ): StudioCapabilityCatalog {
+  const builtInMetadata = options.builtInMetadata ?? (() => ({}));
   const manifests = registry
     .orderedManifests()
     .sort((left, right) => left.id.localeCompare(right.id));
   const capabilities = manifests.map(capabilitySummary);
-  const registrations = manifests.flatMap(registrationsFor);
+  const registrations = manifests.flatMap((manifest) =>
+    registrationsFor(manifest, builtInMetadata)
+  );
   const technicalCapabilities = manifests.map((manifest) => ({
     id: manifest.id,
     version: manifest.version,

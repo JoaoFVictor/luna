@@ -47,10 +47,35 @@ const RUN_LAUNCH_ERRORS: Readonly<
     code: "studio_run_interrupt_resume_unsupported",
     message: "This workflow can pause for input, but local resume is not available in Studio yet"
   },
+  studio_run_test_data_invalid: {
+    statusCode: 409,
+    code: "studio_run_test_data_invalid",
+    message: "The selected test data cannot substitute this workflow node"
+  },
+  studio_run_test_data_unavailable: {
+    statusCode: 409,
+    code: "studio_run_test_data_unavailable",
+    message: "The source output for the selected test data is unavailable"
+  },
+  studio_run_test_data_stale: {
+    statusCode: 409,
+    code: "studio_run_test_data_stale",
+    message: "The selected test data no longer matches this workflow revision"
+  },
   studio_run_plan_invalid: {
     statusCode: 400,
     code: "studio_run_plan_invalid",
     message: "The run plan request is invalid"
+  },
+  studio_run_repository_unavailable: {
+    statusCode: 409,
+    code: "studio_run_repository_unavailable",
+    message: "This workflow requires a configured repository"
+  },
+  studio_run_repository_not_ready: {
+    statusCode: 409,
+    code: "studio_run_repository_not_ready",
+    message: "The configured repository checkout is not ready for execution"
   },
   studio_run_plan_resolution_invalid: {
     statusCode: 409,
@@ -96,23 +121,31 @@ function publicRunLaunchDetails(
       ...(typeof planId === "string" ? { plan_id: planId } : {})
     };
   }
-  if (error.code !== "studio_run_interrupt_resume_unsupported") {
-    return undefined;
+  switch (error.code) {
+    case "studio_run_repository_not_ready": {
+      const repositoryId = error.details.repository_id;
+      return typeof repositoryId === "string"
+        ? { repository_id: repositoryId }
+        : undefined;
+    }
+    case "studio_run_interrupt_resume_unsupported":
+      return {
+        resume_available: false,
+        can_create_pending_interrupt: true,
+        ...(typeof error.details.workflow_id === "string"
+          ? { workflow_id: error.details.workflow_id }
+          : {}),
+        ...(error.details.mode === "read_only" ||
+        error.details.mode === "trusted_local_write"
+          ? { mode: error.details.mode }
+          : {}),
+        ...(typeof error.details.interruptible_node_count === "number"
+          ? { interruptible_node_count: error.details.interruptible_node_count }
+          : {})
+      };
+    default:
+      return undefined;
   }
-  return {
-    resume_available: false,
-    can_create_pending_interrupt: true,
-    ...(typeof error.details.workflow_id === "string"
-      ? { workflow_id: error.details.workflow_id }
-      : {}),
-    ...(error.details.mode === "read_only" ||
-    error.details.mode === "trusted_local_write"
-      ? { mode: error.details.mode }
-      : {}),
-    ...(typeof error.details.interruptible_node_count === "number"
-      ? { interruptible_node_count: error.details.interruptible_node_count }
-      : {})
-  };
 }
 
 export function studioRunLaunchHttpError(

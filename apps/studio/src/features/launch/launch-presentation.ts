@@ -32,3 +32,10 @@ export function launchAdapterDescription(id: string, source: string, fallback: s
   if (source === "plane") return "Carrega uma tarefa do Plane a partir da URL."
   return fallback || `Prepara uma entrada usando ${id}.`
 }
+
+export function launchAdapterPlaceholder(source: string): string {
+  if (source === "github") return "https://github.com/org/repo/pull/123"
+  if (source === "jira") return "https://example.atlassian.net/browse/PROJ-123"
+  if (source === "plane") return "https://app.plane.so/acme/projects/projeto/issues/ISSUE-123"
+  return "Cole uma URL ou identificador"
+}

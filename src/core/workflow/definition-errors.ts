@@ -19,6 +19,10 @@ export type WorkflowDefinitionErrorCode =
   | "workflow_expression_context_shadow"
   | "workflow_agent_output_schema_missing"
   | "workflow_external_definition_missing"
+  | "workflow_composition_cycle"
+  | "workflow_composition_mode_invalid"
+  | "workflow_composition_requirement_missing"
+  | "workflow_composition_interrupt_unsupported"
   | "workflow_path_escape";
 
 export class WorkflowDefinitionError extends Error {

@@ -18,7 +18,9 @@ import { StudioDigestSchema } from "../../contracts/digests.js";
 import { StudioJsonValueSchema } from "../../contracts/json.js";
 import { StudioRunPlanIdSchema } from "../../contracts/run-launch-primitives.js";
 import { StudioRunInputProvenanceSchema } from "../../contracts/run-provenance.js";
+import { StudioRunDefinitionSourceSchema } from "../../contracts/run-definition-source.js";
 import { RunGraphOutcomeProofSchema } from "./graph-snapshot.js";
+import { StudioRunExecutionProfileSummarySchema } from "../../contracts/manual-test-data.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const PageLimitSchema = z.number().int().safe().min(1).max(200);
@@ -39,9 +41,12 @@ export const PreallocateRunInputSchema = z
     run_id: RunOpaqueIdSchema,
     accepted_plan_id: StudioRunPlanIdSchema.optional(),
     input_provenance: StudioRunInputProvenanceSchema.optional(),
+    execution_profile: StudioRunExecutionProfileSummarySchema.optional(),
+    execution_profile_hash: StudioDigestSchema.optional(),
     correlation_id: RunOpaqueIdSchema.optional(),
     job_id: RunOpaqueIdSchema.optional(),
     workflow_id: WorkflowIdSchema,
+    definition_source: StudioRunDefinitionSourceSchema.optional(),
     definition: InitialDefinitionMetadataSchema,
     created_at: TimestampSchema,
     source: z.string().trim().min(1).max(256).optional(),
@@ -60,6 +65,16 @@ export const PreallocateRunInputSchema = z
         code: z.ZodIssueCode.custom,
         path: ["input_provenance"],
         message: "Accepted plan and input provenance must appear together"
+      });
+    }
+    if (
+      (input.execution_profile === undefined) !==
+      (input.execution_profile_hash === undefined)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["execution_profile_hash"],
+        message: "Execution profile and hash must appear together"
       });
     }
   });
@@ -121,15 +136,18 @@ const NodeLifecycleEventIdentitySchema = z
   })
   .strict();
 
+export const NodeLifecycleObservedEventSchema =
+  NodeLifecycleEventIdentitySchema.extend({
+    observed_at: TimestampSchema,
+    artifact_count: z.number().int().safe().nonnegative(),
+    interrupt_count: z.number().int().safe().nonnegative()
+  }).strict();
+
 const NodeLifecycleTransitionSchema = z
   .object({
     kind: z.literal("node_lifecycle"),
     owner_id: RunOpaqueIdSchema,
-    event: NodeLifecycleEventIdentitySchema.extend({
-      observed_at: TimestampSchema,
-      artifact_count: z.number().int().safe().nonnegative(),
-      interrupt_count: z.number().int().safe().nonnegative()
-    }).strict()
+    event: NodeLifecycleObservedEventSchema
   })
   .strict();
 

@@ -10,6 +10,7 @@ import { StudioInputRoutingClient } from "@/api/input-routing-client"
 import { StudioRunsClient } from "@/api/runs-client"
 
 export { StudioApiError }
+export { describeStudioError } from "@/api/error-presentation"
 
 type PublicSurface<T> = { [Key in keyof T]: T[Key] }
 
@@ -60,6 +61,9 @@ export class StudioApiClient implements StudioApiSurface {
   declare readonly editDraftSource: StudioAuthoringClient["editDraftSource"]
   declare readonly draftSourceView: StudioAuthoringClient["draftSourceView"]
   declare readonly patchDraftLayout: StudioAuthoringClient["patchDraftLayout"]
+  declare readonly promoteRunNodeOutputFixture: StudioAuthoringClient["promoteRunNodeOutputFixture"]
+  declare readonly editRunNodeOutputFixture: StudioAuthoringClient["editRunNodeOutputFixture"]
+  declare readonly despinRunNodeOutputFixture: StudioAuthoringClient["despinRunNodeOutputFixture"]
   declare readonly deleteDraft: StudioAuthoringClient["deleteDraft"]
   declare readonly validateDraft: StudioAuthoringClient["validateDraft"]
   declare readonly compileDraft: StudioAuthoringClient["compileDraft"]
@@ -68,10 +72,13 @@ export class StudioApiClient implements StudioApiSurface {
 
   declare readonly runs: StudioRunsClient["runs"]
   declare readonly planRun: StudioRunsClient["planRun"]
+  declare readonly planDraftTestRun: StudioRunsClient["planDraftTestRun"]
   declare readonly executeRun: StudioRunsClient["executeRun"]
   declare readonly runCatalogPage: StudioRunsClient["runCatalogPage"]
   declare readonly run: StudioRunsClient["run"]
   declare readonly runGraph: StudioRunsClient["runGraph"]
+  declare readonly runNodeOutput: StudioRunsClient["runNodeOutput"]
+  declare readonly compareRunNodeOutput: StudioRunsClient["compareRunNodeOutput"]
   declare readonly runTimeline: StudioRunsClient["runTimeline"]
   declare readonly runEventStreamUrl: StudioRunsClient["runEventStreamUrl"]
   declare readonly artifacts: StudioRunsClient["artifacts"]
@@ -98,6 +105,7 @@ export class StudioApiClient implements StudioApiSurface {
   declare readonly modelConfiguration: StudioConfigurationClient["modelConfiguration"]
   declare readonly repositoryConfiguration: StudioConfigurationClient["repositoryConfiguration"]
   declare readonly providerConfiguration: StudioConfigurationClient["providerConfiguration"]
+  declare readonly testProviderConnection: StudioConfigurationClient["testProviderConnection"]
   declare readonly runtimeConfiguration: StudioConfigurationClient["runtimeConfiguration"]
 
   declare readonly resourceHistory: StudioHistoryClient["resourceHistory"]
@@ -110,36 +118,3 @@ export class StudioApiClient implements StudioApiSurface {
 }
 
 export const studioApi = new StudioApiClient()
-
-export function describeStudioError(error: unknown): {
-  title: string
-  message: string
-  technicalMessage?: string
-  code?: string
-  requestId?: string
-} {
-  if (error instanceof StudioApiError) {
-    if (error.status === 404) {
-      return {
-        title: "Recurso não encontrado",
-        message: "Ele pode ter sido removido ou não estar disponível nesta sessão. Volte à lista e escolha outro item.",
-        technicalMessage: error.message,
-        code: error.code,
-        ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
-      }
-    }
-    return {
-      title:
-        error.code === "studio_server_unreachable"
-          ? "Servidor local indisponível"
-          : "Não foi possível concluir a operação",
-      message: error.message,
-      code: error.code,
-      ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
-    }
-  }
-  return {
-    title: "Erro inesperado",
-    message: "O Studio encontrou um erro que não conseguiu classificar.",
-  }
-}

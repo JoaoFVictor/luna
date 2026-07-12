@@ -38,6 +38,7 @@ describe("Studio authoring resource discovery", () => {
       { resource: { kind: "agent", id: "implementer" } },
       { resource: { kind: "agent", id: "change-reviewer" } }
     ]);
+    expect(discovered.workflows).toEqual([]);
   });
 
   it("falls back to a conservative closure for invalid definitions", () => {
@@ -46,6 +47,7 @@ describe("Studio authoring resource discovery", () => {
     ).toEqual({
       editable: ["input.schema.json", "output.schema.json"],
       agents: [],
+      workflows: [],
       canonical: false
     });
     expect(discoverStudioAgentResources("id: incomplete\n")).toEqual({

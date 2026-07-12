@@ -13,7 +13,10 @@ import type {
 } from "../../core/runtime/state.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
-import type { ResumeWorkflowInput } from "../../core/workflow/execution-contracts.js";
+import type {
+  ResumeWorkflowInput,
+  WorkflowPrecompletedSteps
+} from "../../core/workflow/execution-contracts.js";
 import { listCheckpointWritesForRecovery } from "./checkpoint-io.js";
 import {
   interruptId as waitingInterruptId,
@@ -31,6 +34,7 @@ type ResumeContext = {
   readonly invocation: JsonValue;
   readonly config: JsonValue;
   readonly run: RunHandle;
+  readonly precompleted_steps?: WorkflowPrecompletedSteps;
 };
 
 export async function validateResumeWaitIntent({
@@ -82,7 +86,10 @@ export async function validateResumeWaitIntent({
   const expectedContext: JsonObject = {
     invocation: resumeContext.invocation,
     config: resumeContext.config,
-    run: resumeContext.run
+    run: resumeContext.run,
+    ...(resumeContext.precompleted_steps === undefined
+      ? {}
+      : { precompleted_steps: resumeContext.precompleted_steps })
   };
   const checkpointArtifactReferences = parseArtifactReferences(
     checkpoint.state.artifact_refs,
@@ -121,7 +128,7 @@ export async function validateResumeWaitIntent({
       checkpointInterruptReferences
     ) ||
     Object.keys(intent.resume_context).sort().join("\u0000") !==
-      ["config", "invocation", "run"].sort().join("\u0000") ||
+      Object.keys(expectedContext).sort().join("\u0000") ||
     stableJson(intent.resume_context) !== stableJson(metadataContext) ||
     stableJson(intent.resume_context) !== stableJson(expectedContext) ||
     (payload !== undefined &&

@@ -147,6 +147,75 @@ async function routeFixture(options: { terminal?: boolean } = {}) {
       }
     };
   });
+  const getNodeOutput = vi.fn(async (runId: string, nodeId: string) => ({
+    schema_version: 1 as const,
+    availability: "available" as const,
+    run: {
+      run_id: runId,
+      workflow_id: "code-review",
+      workflow_revision: DIGEST,
+      definition_bundle_hash: DIGEST,
+      execution_snapshot_hash: DIGEST,
+      status: "succeeded" as const,
+      completeness: "complete" as const
+    },
+    node_id: nodeId,
+    graph_hash: DIGEST,
+    outcome_hash: DIGEST,
+    output: {
+      availability: "available" as const,
+      value: { summary: "safe output", password: "[REDACTED]" },
+      redaction: { mode: "best_effort" as const, changed: true }
+    }
+  }));
+  const compareNodeOutput = vi.fn(async (
+    runId: string,
+    nodeId: string,
+    baselineRunId: string
+  ) => ({
+    schema_version: 1 as const,
+    availability: "comparable" as const,
+    workflow_id: "code-review",
+    node_id: nodeId,
+    baseline: {
+      run: {
+        run_id: baselineRunId,
+        workflow_id: "code-review",
+        workflow_revision: DIGEST,
+        definition_bundle_hash: DIGEST,
+        execution_snapshot_hash: DIGEST,
+        status: "succeeded" as const,
+        completeness: "complete" as const
+      },
+      graph_hash: DIGEST,
+      outcome_hash: DIGEST,
+      redaction_changed: true
+    },
+    current: {
+      run: {
+        run_id: runId,
+        workflow_id: "code-review",
+        workflow_revision: DIGEST,
+        definition_bundle_hash: DIGEST,
+        execution_snapshot_hash: DIGEST,
+        status: "succeeded" as const,
+        completeness: "complete" as const
+      },
+      graph_hash: DIGEST,
+      outcome_hash: DIGEST,
+      redaction_changed: false
+    },
+    same_workflow_revision: true,
+    summary: { added: 0, removed: 0, changed: 1, total: 1 },
+    changes: [{
+      kind: "changed" as const,
+      path: ["summary"],
+      before: "old",
+      after: "new"
+    }],
+    truncated: false,
+    redaction: "best_effort" as const
+  }));
   const principalFor = vi.fn(() => ({
     id: "local-user" as const,
     authentication: "local-session" as const
@@ -162,12 +231,22 @@ async function routeFixture(options: { terminal?: boolean } = {}) {
     control: {
       catalog: { list, get },
       events: { list: events },
-      graph: { get: graph }
+      graph: { get: graph },
+      outputs: { get: getNodeOutput, compare: compareNodeOutput }
     },
     principalFor,
     parseRequest: (schema, value) => schema.parse(value)
   });
-  return { server, list, get, events, graph, principalFor };
+  return {
+    server,
+    list,
+    get,
+    events,
+    graph,
+    getNodeOutput,
+    compareNodeOutput,
+    principalFor
+  };
 }
 
 afterEach(async () => {
@@ -254,6 +333,50 @@ describe("Studio run routes", () => {
     expect(response.body).not.toContain("yaml_path");
     expect(response.body).not.toContain("config");
     expect(response.body).not.toContain("output");
+  });
+
+  it("loads a private redacted output only from the node endpoint", async () => {
+    const { server, getNodeOutput, principalFor } = await routeFixture();
+    const response = await server.inject({
+      method: "GET",
+      url: "/api/studio/v1/runs/run-1/nodes/context/output"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(getNodeOutput).toHaveBeenCalledWith("run-1", "context");
+    expect(principalFor).toHaveBeenCalledOnce();
+    expect(response.json()).toMatchObject({
+      availability: "available",
+      node_id: "context",
+      output: {
+        value: { summary: "safe output", password: "[REDACTED]" },
+        redaction: { changed: true }
+      }
+    });
+    expect(response.body).not.toContain("graph_snapshot_handle");
+  });
+
+  it("compares two retained outputs only through the explicit endpoint", async () => {
+    const { server, compareNodeOutput, principalFor } = await routeFixture();
+    const response = await server.inject({
+      method: "GET",
+      url: "/api/studio/v1/runs/run-1/nodes/context/output/compare" +
+        "?baseline_run_id=run-before"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(compareNodeOutput).toHaveBeenCalledWith(
+      "run-1",
+      "context",
+      "run-before"
+    );
+    expect(principalFor).toHaveBeenCalledOnce();
+    expect(response.json()).toMatchObject({
+      availability: "comparable",
+      summary: { changed: 1, total: 1 },
+      changes: [{ path: ["summary"], before: "old", after: "new" }]
+    });
+    expect(response.body).not.toContain("graph_snapshot_handle");
   });
 
   it("rejects duplicate filters and maps missing runs without querying internals", async () => {
