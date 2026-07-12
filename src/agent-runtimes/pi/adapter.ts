@@ -6,7 +6,7 @@ import {
   type Context,
   type Model,
   type Tool
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/pi-ai/compat";
 import {
   AgentRuntimeError,
   normalizeAgentRuntimeError,

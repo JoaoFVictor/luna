@@ -28,7 +28,7 @@
     "typecheck:unused-src": "tsc -p tsconfig.unused-src.json"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.79.9",
+    "@earendil-works/pi-ai": "^0.80.6",
     "@fastify/static": "^9.3.0",
     "@langchain/langgraph": "^1.4.7",
     "@langchain/langgraph-checkpoint": "^1.1.3",

@@ -2,20 +2,20 @@ model_profiles:
   # Add named profiles here and reference them from agents/<id>/agent.yaml.
   default:
     # Model id, optionally sourced from an environment variable.
-    model: ${DEFAULT_MODEL:-openai-codex/gpt-5.4-mini}
+    model: ${DEFAULT_MODEL:-openai-codex/gpt-5.6-terra}
     # low, medium, or high.
     reasoning_effort: medium
     # Optional transport: auto, sse, or websocket.
     transport: sse
   deep:
-    model: ${DEEP_MODEL:-openai-codex/gpt-5.4}
+    model: ${DEEP_MODEL:-openai-codex/gpt-5.6-sol}
     reasoning_effort: high
     transport: sse
   fast:
-    model: ${FAST_MODEL:-openai-codex/gpt-5.3-codex-spark}
+    model: ${FAST_MODEL:-openai-codex/gpt-5.6-luna}
     reasoning_effort: low
     transport: sse
   balanced:
-    model: ${BALANCED_MODEL:-openai-codex/gpt-5.4-mini}
+    model: ${BALANCED_MODEL:-openai-codex/gpt-5.6-terra}
     reasoning_effort: medium
     transport: sse
