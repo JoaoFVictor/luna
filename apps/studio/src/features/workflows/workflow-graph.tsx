@@ -326,7 +326,7 @@ export function WorkflowGraph({
   useEffect(() => {
     if (fitViewRequest === previousFitRequest.current) return
     previousFitRequest.current = fitViewRequest
-    void instance.current?.fitView({ padding: 0.2, minZoom: 0.45, maxZoom: 1 })
+    void instance.current?.fitView({ padding: 0.12, minZoom: 0.5, maxZoom: 1.25 })
   }, [fitViewRequest])
 
   const finishConnection = (
@@ -436,8 +436,8 @@ export function WorkflowGraph({
           onSelectNode?.("")
         }}
         fitView
-        fitViewOptions={{ padding: 0.2, minZoom: 0.45, maxZoom: 1 }}
-        minZoom={0.4}
+        fitViewOptions={{ padding: 0.12, minZoom: 0.5, maxZoom: 1.25 }}
+        minZoom={0.45}
         maxZoom={1.6}
         nodesDraggable={canMove}
         nodesConnectable={canConnect}

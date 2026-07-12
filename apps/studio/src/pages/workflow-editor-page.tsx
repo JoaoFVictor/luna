@@ -148,7 +148,7 @@ export function WorkflowEditorPage() {
   }
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <WorkflowEditorHeader
         draft={draft.data}
         validation={editor.view.validation}

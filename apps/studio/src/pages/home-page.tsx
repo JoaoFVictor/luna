@@ -11,7 +11,6 @@ import {
 import { Link } from "react-router-dom"
 
 import { draftsQuery, runsQuery, workflowsQuery } from "@/api/queries"
-import heroImage from "@/assets/hero.png"
 import { useStudioSession } from "@/app/studio-context"
 import { PageError, PageLoading } from "@/components/page-state"
 import { DraftStatusBadge, RunStatusBadge } from "@/components/status-badge"
@@ -97,12 +96,7 @@ export function HomePage() {
             </Link>
           </div>
         </div>
-        <img
-          src={heroImage}
-          alt=""
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 right-2 hidden w-64 -translate-y-1/2 opacity-65 lg:block xl:right-10 xl:w-72"
-        />
+        <div className="luna-moon pointer-events-none absolute top-1/2 right-12 hidden size-48 -translate-y-1/2 opacity-90 lg:block xl:right-20 xl:size-56" aria-hidden="true" />
       </section>
 
       {workflows.isError ? (

@@ -62,7 +62,7 @@ export function RunsPage() {
         title="Execuções"
         description="Acompanhe o que está rodando, encontre falhas e abra os resultados de cada workflow."
       />
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="sticky top-0 z-20 -mx-4 flex flex-col gap-2 border-b bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:flex-row sm:px-6">
         <div className="relative w-full max-w-md">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-8" placeholder="Buscar por workflow, assunto ou origem" aria-label="Buscar execuções" />

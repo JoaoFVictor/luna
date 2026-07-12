@@ -1,16 +1,18 @@
 import { useQuery } from "@tanstack/react-query"
-import { Fragment, useEffect, useRef } from "react"
+import { Fragment, useEffect, useRef, useState } from "react"
 import {
   BotIcon,
   BoxesIcon,
   CircleIcon,
   HouseIcon,
+  MoonIcon,
   NetworkIcon,
   RocketIcon,
   PlayIcon,
   SearchIcon,
   Settings2Icon,
   ShieldAlertIcon,
+  SunIcon,
 } from "lucide-react"
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom"
 
@@ -120,13 +122,23 @@ export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useCommandPaletteShortcut()
   const draftCount = drafts.data?.items.length ?? 0
   const mainRef = useRef<HTMLElement | null>(null)
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    document.documentElement.classList.contains("dark") ? "dark" : "light",
+  )
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark"
+    document.documentElement.classList.toggle("dark", next === "dark")
+    window.localStorage.setItem("luna-theme", next)
+    setTheme(next)
+  }
 
   useEffect(() => {
     mainRef.current?.focus({ preventScroll: true })
   }, [location.pathname])
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-dvh min-h-0">
       <a
         href="#studio-main"
         className="fixed top-2 left-2 z-50 -translate-y-20 rounded-md bg-background px-3 py-2 text-sm font-medium shadow focus:translate-y-0"
@@ -195,8 +207,8 @@ export function AppShell() {
         <SidebarRail />
       </Sidebar>
 
-      <SidebarInset className="min-h-svh overflow-hidden">
-        <div className="flex min-h-11 items-center gap-3 border-b px-3 sm:px-4">
+      <SidebarInset className="h-dvh min-h-0 overflow-hidden">
+        <div className="sticky top-0 z-40 flex min-h-12 shrink-0 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-4">
           <SidebarTrigger />
           <div className="min-w-0 flex-1"><AppBreadcrumbs /></div>
           {editorState.hasLocalChanges && (
@@ -212,9 +224,18 @@ export function AppShell() {
             <span className="hidden sm:inline">Buscar</span>
             <Kbd className="ml-1 hidden lg:inline-flex">Ctrl K</Kbd>
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}
+            title={theme === "dark" ? "Usar tema claro" : "Usar tema escuro"}
+          >
+            {theme === "dark" ? <SunIcon aria-hidden="true" /> : <MoonIcon aria-hidden="true" />}
+          </Button>
         </div>
 
-        <div className="flex min-h-10 items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+        <div className="flex min-h-8 shrink-0 items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-1.5 text-[11px] text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
           <ShieldAlertIcon className="size-4 shrink-0" aria-hidden="true" />
           <strong>Modo local para um usuário — sem login ou RBAC.</strong>
           <span className="hidden text-amber-800 sm:inline dark:text-amber-200">
@@ -232,7 +253,7 @@ export function AppShell() {
           id="studio-main"
           ref={mainRef}
           tabIndex={-1}
-          className="min-h-0 flex-1 overflow-auto outline-none"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none"
         >
           <span className="sr-only" role="status" aria-live="polite">
             Página atual: {currentSection(location.pathname)}

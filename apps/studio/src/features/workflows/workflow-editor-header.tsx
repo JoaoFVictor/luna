@@ -60,7 +60,7 @@ export function WorkflowEditorHeader({
     validation?.status === "valid" &&
     validation.compiled
   return (
-    <header className="border-b bg-background px-4 py-3">
+    <header className="sticky top-0 z-40 shrink-0 border-b bg-background/95 px-4 py-3 backdrop-blur">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

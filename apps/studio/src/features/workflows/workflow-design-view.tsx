@@ -257,8 +257,8 @@ export function WorkflowDesignView({
   }, [canMutate, copiedNode, duplicateNode, pending, selected])
 
   return (
-    <div className="flex min-h-[calc(100vh-15rem)] flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="sticky top-0 z-30 flex max-h-24 flex-wrap items-center justify-between gap-2 overflow-y-auto border-b bg-background/95 px-3 py-2 backdrop-blur">
         <div>
           <p className="text-sm font-medium">Fluxo</p>
           <p className="text-xs text-muted-foreground">Clique ou arraste os pontos para conectar etapas; solte no vazio para adicionar outra.</p>
@@ -362,20 +362,20 @@ export function WorkflowDesignView({
         <WorkflowRunOverlayBar state={runOverlay} onClose={() => setRunOverlayOpen(false)} />
       )}
       <div className={cn(
-        "grid min-h-0 flex-1 grid-cols-1",
+        "grid min-h-0 flex-1 grid-cols-1 overflow-hidden",
         outlineOpen && selected !== undefined && "xl:grid-cols-[17rem_minmax(30rem,1fr)_22rem]",
         outlineOpen && selected === undefined && "xl:grid-cols-[17rem_minmax(30rem,1fr)]",
         !outlineOpen && selected !== undefined && "xl:grid-cols-[minmax(30rem,1fr)_22rem]",
       )}>
-        {outlineOpen && <aside className="border-b p-3 xl:border-r xl:border-b-0" aria-label="Outline do workflow">
+        {outlineOpen && <aside className="min-h-0 border-b p-3 xl:border-r xl:border-b-0" aria-label="Outline do workflow">
           <h2 className="mb-1 text-sm font-medium">Outline</h2>
           <p className="mb-3 text-xs text-muted-foreground">Navegue pelos passos também por teclado.</p>
-          <ScrollArea className="max-h-80 xl:max-h-[calc(100vh-20rem)]">
+          <ScrollArea className="max-h-80 min-h-0 xl:h-full xl:max-h-none">
             <WorkflowSourceOutline entries={sourceOutlineEntries} selectedEntryId={selectedNodeId} onSelectEntry={onSelectNode} />
             {sourceOutlineEntries.length === 0 && <p className="p-2 text-xs text-muted-foreground">Nenhum node. Use “Adicionar node”.</p>}
           </ScrollArea>
         </aside>}
-        <section className="relative min-h-96 border-b bg-muted/20 xl:border-r xl:border-b-0">
+        <section className="relative min-h-96 min-w-0 border-b bg-muted/20 xl:border-r xl:border-b-0">
           <div className="absolute top-3 left-3 z-10 rounded-lg border bg-background/95 px-2 py-1 text-xs text-muted-foreground shadow-sm">
             {compiled === undefined ? "Rascunho visual · conecte os passos arrastando os pontos" : "Workflow compilado · conexões editam as dependências"}
           </div>
@@ -446,7 +446,7 @@ export function WorkflowDesignView({
             }}
           />
         </section>
-        {(selected !== undefined || selectedSourceEntry !== undefined) && <aside className="relative max-h-[calc(100vh-15rem)] overflow-y-auto border-l p-4" aria-label="Inspector do node">
+        {(selected !== undefined || selectedSourceEntry !== undefined) && <aside className="relative min-h-0 max-h-none overflow-y-auto border-l p-4" aria-label="Inspector do node">
           <Button variant="ghost" size="icon-sm" className="absolute top-2 right-2" onClick={() => onSelectNode(undefined)}>
             <XIcon aria-hidden="true" /><span className="sr-only">Fechar inspector</span>
           </Button>

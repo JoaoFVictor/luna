@@ -166,9 +166,9 @@ export function WorkflowEditorWorkspace({
     <Tabs
       value={editor.view.active}
       onValueChange={editor.view.setActive}
-      className="min-h-0 flex-1 gap-0"
+      className="h-full min-h-0 flex-1 gap-0"
     >
-      <div className="flex items-center justify-between gap-3 overflow-x-auto border-b px-4">
+      <div className="sticky top-0 z-30 flex items-center justify-between gap-3 overflow-x-auto border-b bg-background/95 px-4 backdrop-blur">
         <TabsList variant="line" className="h-10">
           <TabsTrigger value="design"><GitBranchIcon aria-hidden="true" /> Design</TabsTrigger>
           <TabsTrigger value="runs"><ActivityIcon aria-hidden="true" /> Execuções</TabsTrigger>
@@ -190,7 +190,7 @@ export function WorkflowEditorWorkspace({
         </Button>
       </div>
 
-      <TabsContent value="design" className="min-h-0">
+      <TabsContent value="design" className="flex h-full min-h-0 flex-col">
         <WorkflowDesignWorkspace
           draft={draft}
           editor={editor}
