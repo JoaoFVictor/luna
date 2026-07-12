@@ -147,6 +147,7 @@ export const manifest = capabilityManifest({
       id: "change-request.create_side_effect",
       config_schema: createPolicySchema,
       side_effect_semantics: "write",
+      side_effect_category: "external_write",
       side_effect_operation_ids: ["change-request.create"],
       idempotency_scope: "attempt",
       retry_semantics: "retry_requires_adoption",

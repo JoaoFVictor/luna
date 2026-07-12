@@ -1,0 +1,24 @@
+id: e2e-deterministic
+type: workflow
+mode: read_only
+input_schema: input.schema.json
+output_schema: output.schema.json
+capabilities:
+  - hitl
+  - artifacts
+execution:
+  max_concurrency: 1
+nodes:
+  - id: approval
+    type: built_in
+    uses: hitl.require_approval
+    input:
+      decision:
+        approved: true
+        comment: deterministic Studio E2E
+    artifacts:
+      - path: e2e-result.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.approval"
+        format: json

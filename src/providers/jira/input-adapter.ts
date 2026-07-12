@@ -266,6 +266,8 @@ async function loadJiraIssueUrlInvocation(
 export const jiraTaskUrlAdapter: InputAdapter = {
   id: "jira-task-url",
   description: "Load a Jira issue from a configured Jira browse URL.",
+  loadEffects: ["configuration_read", "credential_read", "network_read"],
+  loadTimeoutMs: 60_000,
   async load(input, context) {
     return await loadJiraIssueUrlInvocation(input, context);
   }

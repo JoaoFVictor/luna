@@ -148,6 +148,18 @@ describe("workflow runner trace streaming", () => {
       "node.failed",
       "run.failed"
     ]);
+    expect(
+      observability.records().find(
+        (record) =>
+          record.type === "span.ended" && record.span.name === "node.first"
+      )
+    ).toMatchObject({
+      type: "span.ended",
+      span: {
+        status: "error",
+        error: { type: "Error", message: "first failed" }
+      }
+    });
     await expect(backends.checkpoints.load("run-failed-events")).resolves.toMatchObject({
       state: { state_schema_version: "2026-06", run_status: "failed" }
     });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { WorkflowSubagentPolicy } from "../agents/subagent-policy.js";
+import type { ArtifactSemanticType } from "../artifacts/semantic-type.js";
 import type { JsonSchemaLike } from "../capabilities/json-schema-types.js";
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import type { WorkflowExpression } from "./expression.js";
@@ -60,6 +61,7 @@ export type ArtifactWritePlan = {
   format: "json" | "markdown";
   required: boolean;
   publisher: string;
+  semantic_type?: ArtifactSemanticType;
   config?: Record<string, unknown>;
 };
 
@@ -98,7 +100,6 @@ export type ParsedCapabilityGate = {
   id: string;
   type: `${string}.${string}`;
   input?: Record<string, unknown>;
-  agent?: string;
   decision?: unknown;
   block_when?: WorkflowExpression;
   feedback?: WorkflowExpression;
@@ -139,11 +140,22 @@ export type ParsedHumanGateNode = {
   policies?: ParsedWorkflowPolicy[];
 };
 
+/** A synchronous call to another installed workflow definition. */
+export type ParsedWorkflowCallNode = {
+  id: string;
+  type: "workflow";
+  workflow: string;
+  input?: Record<string, unknown>;
+  artifacts?: ParsedArtifactWritePlan[];
+  after?: string[];
+};
+
 export type ParsedWorkflowNode =
   | ParsedBuiltInNode
   | ParsedAgentNode
   | ParsedPatternNode
-  | ParsedHumanGateNode;
+  | ParsedHumanGateNode
+  | ParsedWorkflowCallNode;
 
 export type ParsedWorkflowGraph = {
   nodes: ParsedWorkflowNode[];
@@ -151,6 +163,7 @@ export type ParsedWorkflowGraph = {
 
 export type WorkflowPatternNode = ParsedPatternNode;
 export type WorkflowHumanGateNode = ParsedHumanGateNode;
+export type WorkflowCallNode = ParsedWorkflowCallNode;
 export type WorkflowNode = ParsedWorkflowNode;
 
 export type WorkflowGraph = ParsedWorkflowGraph;
@@ -173,6 +186,8 @@ export type WorkflowDefinition = {
   requires: WorkflowRequirements;
   observability: WorkflowObservabilityConfig;
   subagent_policy: WorkflowSubagentPolicy;
+  /** Resolved direct children, keyed by installed workflow id. */
+  compositions?: Readonly<Record<string, WorkflowDefinition>>;
 };
 
 export type LoadWorkflowDefinitionOptions = {

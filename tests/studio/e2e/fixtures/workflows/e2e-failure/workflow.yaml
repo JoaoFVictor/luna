@@ -1,0 +1,17 @@
+id: e2e-failure
+type: workflow
+mode: read_only
+input_schema: input.schema.json
+output_schema: output.schema.json
+capabilities:
+  - hitl
+execution:
+  max_concurrency: 1
+nodes:
+  - id: rejected_approval
+    type: built_in
+    uses: hitl.require_approval
+    input:
+      decision:
+        approved: false
+        comment: deterministic failure for Studio E2E

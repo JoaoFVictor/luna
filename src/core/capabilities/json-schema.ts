@@ -4,104 +4,64 @@ export type JsonSchemaMatcherOptions = {
   readonly isExpressionObject?: (value: unknown) => boolean;
 };
 
-export function matchesJsonSchema(
-  schema: JsonSchemaLike,
-  value: unknown,
-  options: JsonSchemaMatcherOptions = {}
-): boolean {
-  if (options.isExpressionObject?.(value)) {
-    return true;
-  }
-  if (schema.const !== undefined && schema.const !== value) {
-    return false;
-  }
-  if (schema.enum !== undefined) {
-    return schema.enum.some((item) => item === value);
-  }
-  if (
-    schema.allOf !== undefined &&
-    !schema.allOf.every((option) => matchesJsonSchema(option, value, options))
-  ) {
-    return false;
-  }
-  if (
-    schema.anyOf !== undefined &&
-    !schema.anyOf.some((option) => matchesJsonSchema(option, value, options))
-  ) {
-    return false;
-  }
-  if (schema.oneOf !== undefined) {
-    const matchingOptions = schema.oneOf.filter((option) =>
-      matchesJsonSchema(option, value, options)
-    );
-    if (matchingOptions.length !== 1) {
-      return false;
-    }
-  }
-  if (schema.not !== undefined && matchesJsonSchema(schema.not, value, options)) {
-    return false;
-  }
-  if (schema.type === undefined) {
-    return hasObjectKeywords(schema) ? matchesObjectSchema(schema, value, options) : true;
-  }
-  if (Array.isArray(schema.type)) {
-    return schema.type.some((type) =>
-      matchesJsonSchema({ ...schema, type }, value, options)
-    );
-  }
-  if (schema.type === "string") {
-    return matchesStringSchema(schema, value);
-  }
-  if (schema.type === "number" || schema.type === "integer") {
-    return typeof value === "number" &&
-      Number.isFinite(value) &&
-      (schema.type !== "integer" || Number.isInteger(value)) &&
-      (schema.minimum === undefined || value >= schema.minimum) &&
-      (schema.maximum === undefined || value <= schema.maximum);
-  }
-  if (schema.type === "boolean") {
-    return typeof value === "boolean";
-  }
-  if (schema.type === "array") {
-    if (!Array.isArray(value)) {
-      return false;
-    }
-    if (schema.minItems !== undefined && value.length < schema.minItems) {
-      return false;
-    }
-    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
-      return false;
-    }
-    return schema.items === undefined ||
-      value.every((item) =>
-        matchesJsonSchema(schema.items as JsonSchemaLike, item, options)
-      );
-  }
-  if (schema.type !== "object") {
-    return true;
-  }
+export type JsonSchemaPathSegment = string | number;
 
-  return matchesObjectSchema(schema, value, options);
+export type JsonSchemaMismatch = {
+  readonly keyword: string;
+  readonly instancePath: readonly JsonSchemaPathSegment[];
+  readonly schemaPath: readonly JsonSchemaPathSegment[];
+};
+
+type MismatchReporter = (mismatch: JsonSchemaMismatch) => void;
+
+function reportMismatch(
+  reporter: MismatchReporter | undefined,
+  keyword: string,
+  instancePath: readonly JsonSchemaPathSegment[],
+  schemaPath: readonly JsonSchemaPathSegment[]
+): void {
+  reporter?.({
+    keyword,
+    instancePath,
+    schemaPath: [...schemaPath, keyword]
+  });
 }
 
-function matchesStringSchema(schema: JsonSchemaLike, value: unknown): boolean {
+function validateStringSchema(
+  schema: JsonSchemaLike,
+  value: unknown,
+  instancePath: readonly JsonSchemaPathSegment[],
+  schemaPath: readonly JsonSchemaPathSegment[],
+  reporter: MismatchReporter | undefined
+): boolean {
   if (typeof value !== "string") {
+    reportMismatch(reporter, "type", instancePath, schemaPath);
     return false;
   }
 
+  let matches = true;
   if (schema.minLength !== undefined && value.length < schema.minLength) {
-    return false;
+    reportMismatch(reporter, "minLength", instancePath, schemaPath);
+    if (reporter === undefined) {
+      return false;
+    }
+    matches = false;
   }
-
   if (schema.maxLength !== undefined && value.length > schema.maxLength) {
-    return false;
+    reportMismatch(reporter, "maxLength", instancePath, schemaPath);
+    if (reporter === undefined) {
+      return false;
+    }
+    matches = false;
   }
-
   if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) {
-    return false;
+    reportMismatch(reporter, "pattern", instancePath, schemaPath);
+    if (reporter === undefined) {
+      return false;
+    }
+    matches = false;
   }
-
-  return true;
+  return matches;
 }
 
 function hasObjectKeywords(schema: JsonSchemaLike): boolean {
@@ -112,29 +72,312 @@ function hasObjectKeywords(schema: JsonSchemaLike): boolean {
   );
 }
 
-function matchesObjectSchema(
+function validateObjectSchema(
   schema: JsonSchemaLike,
   value: unknown,
-  options: JsonSchemaMatcherOptions
+  options: JsonSchemaMatcherOptions,
+  instancePath: readonly JsonSchemaPathSegment[],
+  schemaPath: readonly JsonSchemaPathSegment[],
+  reporter: MismatchReporter | undefined
 ): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    reportMismatch(reporter, "type", instancePath, schemaPath);
     return false;
   }
   const record = value as Record<string, unknown>;
+  const properties = schema.properties ?? {};
+  let matches = true;
+
   for (const required of schema.required ?? []) {
-    if (!(required in record)) {
-      return false;
+    if (!Object.hasOwn(record, required)) {
+      reportMismatch(
+        reporter,
+        "required",
+        [...instancePath, required],
+        schemaPath
+      );
+      if (reporter === undefined) {
+        return false;
+      }
+      matches = false;
     }
   }
-  const properties = schema.properties ?? {};
   if (schema.additionalProperties === false) {
     for (const key of Object.keys(record)) {
-      if (!(key in properties)) {
-        return false;
+      if (!Object.hasOwn(properties, key)) {
+        reportMismatch(
+          reporter,
+          "additionalProperties",
+          [...instancePath, key],
+          schemaPath
+        );
+        if (reporter === undefined) {
+          return false;
+        }
+        matches = false;
       }
     }
   }
-  return Object.entries(properties).every(([key, nested]) =>
-    !(key in record) || matchesJsonSchema(nested, record[key], options)
-  );
+  for (const [key, nested] of Object.entries(properties)) {
+    if (
+      Object.hasOwn(record, key) &&
+      !validateSchema(
+        nested,
+        record[key],
+        options,
+        [...instancePath, key],
+        [...schemaPath, "properties", key],
+        reporter
+      )
+    ) {
+      if (reporter === undefined) {
+        return false;
+      }
+      matches = false;
+    }
+  }
+  return matches;
+}
+
+function validateArraySchema(
+  schema: JsonSchemaLike,
+  value: unknown,
+  options: JsonSchemaMatcherOptions,
+  instancePath: readonly JsonSchemaPathSegment[],
+  schemaPath: readonly JsonSchemaPathSegment[],
+  reporter: MismatchReporter | undefined
+): boolean {
+  if (!Array.isArray(value)) {
+    reportMismatch(reporter, "type", instancePath, schemaPath);
+    return false;
+  }
+  let matches = true;
+  if (schema.minItems !== undefined && value.length < schema.minItems) {
+    reportMismatch(reporter, "minItems", instancePath, schemaPath);
+    if (reporter === undefined) {
+      return false;
+    }
+    matches = false;
+  }
+  if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+    reportMismatch(reporter, "maxItems", instancePath, schemaPath);
+    if (reporter === undefined) {
+      return false;
+    }
+    matches = false;
+  }
+  const items = schema.items;
+  if (items !== undefined) {
+    for (const [index, item] of value.entries()) {
+      if (
+        !validateSchema(
+          items,
+          item,
+          options,
+          [...instancePath, index],
+          [...schemaPath, "items"],
+          reporter
+        )
+      ) {
+        if (reporter === undefined) {
+          return false;
+        }
+        matches = false;
+      }
+    }
+  }
+  return matches;
+}
+
+function validateNumberSchema(
+  schema: JsonSchemaLike,
+  value: unknown,
+  instancePath: readonly JsonSchemaPathSegment[],
+  schemaPath: readonly JsonSchemaPathSegment[],
+  reporter: MismatchReporter | undefined
+): boolean {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    (schema.type === "integer" && !Number.isInteger(value))
+  ) {
+    reportMismatch(reporter, "type", instancePath, schemaPath);
+    return false;
+  }
+  let matches = true;
+  if (schema.minimum !== undefined && value < schema.minimum) {
+    reportMismatch(reporter, "minimum", instancePath, schemaPath);
+    if (reporter === undefined) {
+      return false;
+    }
+    matches = false;
+  }
+  if (schema.maximum !== undefined && value > schema.maximum) {
+    reportMismatch(reporter, "maximum", instancePath, schemaPath);
+    if (reporter === undefined) {
+      return false;
+    }
+    matches = false;
+  }
+  return matches;
+}
+
+function validateSchema(
+  schema: JsonSchemaLike,
+  value: unknown,
+  options: JsonSchemaMatcherOptions,
+  instancePath: readonly JsonSchemaPathSegment[],
+  schemaPath: readonly JsonSchemaPathSegment[],
+  reporter: MismatchReporter | undefined
+): boolean {
+  if (options.isExpressionObject?.(value)) {
+    return true;
+  }
+  if (schema.const !== undefined && schema.const !== value) {
+    reportMismatch(reporter, "const", instancePath, schemaPath);
+    return false;
+  }
+  if (schema.enum !== undefined) {
+    const matches = schema.enum.some((item) => item === value);
+    if (!matches) {
+      reportMismatch(reporter, "enum", instancePath, schemaPath);
+    }
+    return matches;
+  }
+  if (
+    schema.allOf !== undefined &&
+    !schema.allOf.every((option) =>
+      validateSchema(option, value, options, instancePath, schemaPath, undefined)
+    )
+  ) {
+    reportMismatch(reporter, "allOf", instancePath, schemaPath);
+    return false;
+  }
+  if (
+    schema.anyOf !== undefined &&
+    !schema.anyOf.some((option) =>
+      validateSchema(option, value, options, instancePath, schemaPath, undefined)
+    )
+  ) {
+    reportMismatch(reporter, "anyOf", instancePath, schemaPath);
+    return false;
+  }
+  if (schema.oneOf !== undefined) {
+    const matchingOptions = schema.oneOf.filter((option) =>
+      validateSchema(option, value, options, instancePath, schemaPath, undefined)
+    );
+    if (matchingOptions.length !== 1) {
+      reportMismatch(reporter, "oneOf", instancePath, schemaPath);
+      return false;
+    }
+  }
+  if (
+    schema.not !== undefined &&
+    validateSchema(
+      schema.not,
+      value,
+      options,
+      instancePath,
+      schemaPath,
+      undefined
+    )
+  ) {
+    reportMismatch(reporter, "not", instancePath, schemaPath);
+    return false;
+  }
+  if (schema.type === undefined) {
+    return hasObjectKeywords(schema)
+      ? validateObjectSchema(
+          schema,
+          value,
+          options,
+          instancePath,
+          schemaPath,
+          reporter
+        )
+      : true;
+  }
+  if (Array.isArray(schema.type)) {
+    const matches = schema.type.some((type) =>
+      validateSchema(
+        { ...schema, type },
+        value,
+        options,
+        instancePath,
+        schemaPath,
+        undefined
+      )
+    );
+    if (!matches) {
+      reportMismatch(reporter, "type", instancePath, schemaPath);
+    }
+    return matches;
+  }
+  if (schema.type === "string") {
+    return validateStringSchema(
+      schema,
+      value,
+      instancePath,
+      schemaPath,
+      reporter
+    );
+  }
+  if (schema.type === "number" || schema.type === "integer") {
+    return validateNumberSchema(
+      schema,
+      value,
+      instancePath,
+      schemaPath,
+      reporter
+    );
+  }
+  if (schema.type === "boolean") {
+    const matches = typeof value === "boolean";
+    if (!matches) {
+      reportMismatch(reporter, "type", instancePath, schemaPath);
+    }
+    return matches;
+  }
+  if (schema.type === "array") {
+    return validateArraySchema(
+      schema,
+      value,
+      options,
+      instancePath,
+      schemaPath,
+      reporter
+    );
+  }
+  if (schema.type === "object") {
+    return validateObjectSchema(
+      schema,
+      value,
+      options,
+      instancePath,
+      schemaPath,
+      reporter
+    );
+  }
+
+  return true;
+}
+
+export function matchesJsonSchema(
+  schema: JsonSchemaLike,
+  value: unknown,
+  options: JsonSchemaMatcherOptions = {}
+): boolean {
+  return validateSchema(schema, value, options, [], [], undefined);
+}
+
+export function jsonSchemaMismatches(
+  schema: JsonSchemaLike,
+  value: unknown,
+  options: JsonSchemaMatcherOptions = {}
+): readonly JsonSchemaMismatch[] {
+  const mismatches: JsonSchemaMismatch[] = [];
+  validateSchema(schema, value, options, [], [], (mismatch) => {
+    mismatches.push(mismatch);
+  });
+  return mismatches;
 }

@@ -1,10 +1,14 @@
-name: luna-webhooks
+name: "luna-${LUNA_STUDIO_CHECKOUT_ID:?Set LUNA_STUDIO_CHECKOUT_ID to a stable checkout-specific id}"
 
-x-luna-app: &luna-app
+x-luna-image: &luna-image
   build:
     context: .
   image: luna-webhooks:local
   init: true
+  user: "${HOST_UID:?Set HOST_UID to id -u}:${HOST_GID:?Set HOST_GID to id -g}"
+
+x-luna-app: &luna-app
+  <<: *luna-image
   environment:
     LUNA_CONFIG_ROOT: /app/config
     LUNA_AUTH_ROOT: /app/.luna/auth
@@ -18,7 +22,11 @@ x-luna-app: &luna-app
     # Run `npm run build` before restarting app services after TypeScript edits.
     - ./dist:/app/dist:ro
     - ./config:/app/config:ro
-    - ./.runs:/app/.runs
+    - type: bind
+      source: ./.runs
+      target: /app/.runs
+      bind:
+        create_host_path: false
     - type: bind
       source: ${LUNA_AUTH_ROOT:-./.luna/auth}
       target: /app/.luna/auth
@@ -27,21 +35,54 @@ x-luna-app: &luna-app
     - type: bind
       source: ${LUNA_REPOSITORIES_ROOT:-./repositories}
       target: /repositories
+      bind:
+        create_host_path: false
   depends_on:
-    runtime-permissions:
-      condition: service_completed_successfully
     redis:
       condition: service_healthy
 
 services:
-  runtime-permissions:
-    build:
-      context: .
-    image: luna-webhooks:local
-    command: ["sh", "-c", "mkdir -p /app/.runs && chmod 0777 /app/.runs"]
+  studio-state-permissions:
+    <<: *luna-image
+    environment:
+      HOST_UID: "${HOST_UID:?Set HOST_UID to id -u}"
+      HOST_GID: "${HOST_GID:?Set HOST_GID to id -g}"
+    command:
+      - sh
+      - -c
+      - >-
+        case "$$HOST_UID" in
+          ''|*[!0-9]*|0) echo "HOST_UID must be a positive numeric id" >&2; exit 64 ;;
+        esac &&
+        case "$$HOST_GID" in
+          ''|*[!0-9]*|0) echo "HOST_GID must be a positive numeric id" >&2; exit 64 ;;
+        esac &&
+        if test "$$(stat -c %u /preflight/.runs)" != "$$HOST_UID" ||
+          test "$$(stat -c %a /preflight/.runs)" != 700; then
+          echo ".runs must be owned by HOST_UID with mode 0700; Compose will not mutate this bind mount" >&2; exit 64;
+        fi &&
+        if test "$$(stat -c %u /preflight/.luna-studio)" != "$$HOST_UID" ||
+          test "$$(stat -c %a /preflight/.luna-studio)" != 700; then
+          echo ".luna/studio must be owned by HOST_UID with mode 0700; Compose will not mutate this bind mount" >&2; exit 64;
+        fi &&
+        test -d /var/lib/luna-studio &&
+        chown "$$HOST_UID:$$HOST_GID" /var/lib/luna-studio &&
+        chmod 0700 /var/lib/luna-studio
     user: "0:0"
     volumes:
-      - ./.runs:/app/.runs
+      - type: bind
+        source: ./.runs
+        target: /preflight/.runs
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./.luna/studio
+        target: /preflight/.luna-studio
+        read_only: true
+        bind:
+          create_host_path: false
+      - luna-studio-state:/var/lib/luna-studio
 
   redis:
     image: redis:7-alpine
@@ -60,3 +101,96 @@ services:
   webhook-worker:
     <<: *luna-app
     command: ["node", "dist/src/cli.js", "webhook-worker"]
+
+  studio:
+    <<: *luna-image
+    stop_grace_period: 2m
+    command:
+      - node
+      - dist/src/cli.js
+      - studio
+      - --host
+      - 0.0.0.0
+      - --port
+      - "43110"
+      - --allow-non-loopback-bind
+      - --public-host
+      - 127.0.0.1
+      - --public-port
+      - "43110"
+    environment:
+      HOME: /home/node
+      LUNA_CONFIG_ROOT: /app/config
+      LUNA_AUTH_ROOT: /app/.luna/auth
+      LUNA_STUDIO_CHECKOUT_ID: "${LUNA_STUDIO_CHECKOUT_ID:?Set LUNA_STUDIO_CHECKOUT_ID to a stable checkout-specific id}"
+      LUNA_STUDIO_CONTAINER_MODE: "1"
+      LUNA_STUDIO_STATE_ROOT: /var/lib/luna-studio
+      GH_CONFIG_DIR: /app/.luna/auth/gh
+      GH_PROMPT_DISABLED: "1"
+      GIT_CONFIG_GLOBAL: /app/.luna/auth/git/config
+    volumes:
+      # Only Studio receives write access to Luna's authoring sources.
+      # Git object data is available for history/compare only. Keeping the
+      # repository metadata read-only prevents Studio from committing or
+      # updating refs even though authoring source directories are writable.
+      - type: bind
+        source: ./.git
+        target: /app/.git
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./workflows
+        target: /app/workflows
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./agents
+        target: /app/agents
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config
+        target: /app/config
+        bind:
+          create_host_path: false
+      # A confirmed real launch uses the same model/provider credentials and
+      # configured repository paths as CLI/webhook execution.
+      - type: bind
+        source: ${LUNA_AUTH_ROOT:-./.luna/auth}
+        target: /app/.luna/auth
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LUNA_REPOSITORIES_ROOT:-./repositories}
+        target: /repositories
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./.runs
+        target: /app/.runs
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./.luna/studio
+        target: /app/.luna/studio
+        bind:
+          create_host_path: false
+      - luna-studio-state:/var/lib/luna-studio
+    depends_on:
+      studio-state-permissions:
+        condition: service_completed_successfully
+    ports:
+      # Never publish the unauthenticated local Studio on a non-loopback IP.
+      - "127.0.0.1:43110:43110"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:43110/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  luna-studio-state:

@@ -49,6 +49,19 @@ describe("model config", () => {
     ).toBe("openai/gpt-5");
   });
 
+  it("accepts xhigh reasoning for the Luna high-depth profiles", () => {
+    const modelsConfig: ModelsConfig = {
+      model_profiles: {
+        default: {
+          model: "openai-codex/gpt-5.6-luna",
+          reasoning_effort: "xhigh"
+        }
+      }
+    };
+
+    expect(resolveModelProfiles(modelsConfig).default.reasoning_effort).toBe("xhigh");
+  });
+
   it("resolves model fallback placeholders to the configured default", () => {
     const modelsConfig: ModelsConfig = {
       model_profiles: {

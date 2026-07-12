@@ -24,7 +24,8 @@ export async function resolveNodeInput(
   const sourceInput =
     node.source.type === "agent" ||
     node.source.type === "built_in" ||
-    node.source.type === "pattern"
+    node.source.type === "pattern" ||
+    node.source.type === "workflow"
       ? node.source.input ?? {}
       : {};
 

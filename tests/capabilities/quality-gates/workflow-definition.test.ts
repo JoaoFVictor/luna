@@ -143,4 +143,37 @@ describe("quality-gates workflow definition", () => {
       capability: "quality-gates.gated_agent_loop"
     });
   });
+
+  it("rejects a dynamic review_agent because runtime agent projection is static", async () => {
+    const root = await copyMinimumWorkflow();
+    await writeGatedLoopWorkflow(root, [
+      "  - id: implementation",
+      "    type: pattern",
+      "    uses: quality-gates.gated_agent_loop",
+      "    worker: writer",
+      "    after: [context]",
+      "    gates:",
+      "      - id: review",
+      "        type: quality-gates.agent_review",
+      "        input:",
+      "          review_agent:",
+      "            expression: \"$.invocation.reviewer\"",
+      "          subject:",
+      "            expression: \"$.gate\"",
+      "        block_when:",
+      "          expression: \"$.gate.decision = 'fail'\"",
+      "    repair:",
+      "      attempts: 0",
+      ""
+    ].join("\n"));
+
+    await expect(loadWorkflowDefinition(root, "minimum", {
+      capabilityRegistry: registry(),
+      digestResolver: digestResolver()
+    })).rejects.toMatchObject({
+      code: "workflow_schema_invalid",
+      path: "$.nodes[1].gates[0].input.review_agent",
+      capability: "quality-gates.agent_review"
+    });
+  });
 });

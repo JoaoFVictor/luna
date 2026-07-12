@@ -26,6 +26,12 @@ CLI / input adapter
 - [Runtime and observability](runtime-and-observability.md)
 - [Configuration reference](configuration-reference.md)
 
+## Luna Studio
+
+The Studio is the implemented local control plane for workflow and agent
+authoring, isolated agent smoke tests, classified workflow configuration,
+deterministic launch, run inspection, and Git-backed restore-as-draft:
+
 Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 
 ## Layer Map
@@ -45,6 +51,8 @@ Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 | Providers | `src/providers/**` | source-system adapters, auth/config, payload parsing, reports, PR review and change-request publishing |
 | Agents | `agents/<id>/` and `src/capabilities/agents/**` | reusable model roles and agent-node execution contracts |
 | Agent runtimes | `src/agent-runtimes/<runtime>/` | runtime-specific model/tool/materialization logic |
+| Studio server | `src/studio/**` | DTO-only local Control API, drafts, validation, apply recovery, configuration, launch, run ledger, history, logs, graphs, and artifacts |
+| Studio browser | `apps/studio/src/**` | React authoring and operating surfaces over the Control API |
 
 ## Extension Decision Guide
 

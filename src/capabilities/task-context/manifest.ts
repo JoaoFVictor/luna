@@ -17,6 +17,12 @@ export const manifest = capabilityManifest({
   built_ins: {
     "task-context.collect": {
       id: "task-context.collect",
+      presentation: {
+        title: "Coletar dados da tarefa",
+        summary: "Carrega o contexto normalizado da tarefa recebida pelo launcher.",
+        category: "Contexto",
+        tags: ["task", "launcher"]
+      },
       input_schema: emptyInputSchema,
       output_schema: objectOutputSchema,
       required_ports: []

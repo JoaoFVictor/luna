@@ -131,6 +131,8 @@ nodes:
         type: quality-gates.agent_review
         input:
           review_agent: change-reviewer
+          context:
+            expression: "$.steps.context"
           subject:
             expression: "$.gate"
         block_when:
@@ -142,6 +144,8 @@ nodes:
         type: quality-gates.agent_review
         input:
           review_agent: change-acceptance-reviewer
+          context:
+            expression: "$.steps.context"
           subject:
             expression: "$.gate"
         block_when:

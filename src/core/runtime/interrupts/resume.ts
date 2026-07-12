@@ -1,9 +1,13 @@
 import type { RuntimeEventStore } from "../events/contracts.js";
-import { runtimeError } from "../errors.js";
+import {
+  RuntimeDurabilityRecoveryRequiredError,
+  runtimeError
+} from "../errors.js";
 import { stableJson } from "../json.js";
 import type {
   InterruptPayload,
   InterruptRecord,
+  InterruptResumeClaim,
   InterruptResumeRecord,
   InterruptResumeResult,
   InterruptStore,
@@ -102,6 +106,63 @@ function assertResolvedDuplicate(input: ResumeInput, interrupt: InterruptRecord)
   };
 }
 
+function persistedResumeClaim(
+  input: ResumeInput,
+  interrupt: InterruptRecord
+): InterruptResumeClaim | undefined {
+  if (interrupt.status !== "resuming") {
+    return undefined;
+  }
+  if (
+    interrupt.resume_attempt === undefined ||
+    interrupt.resume_input === undefined
+  ) {
+    throw runtimeError(
+      "Interrupt has an incomplete durable resume claim",
+      "runtime_interrupt_resume_in_progress",
+      { details: { interrupt_id: input.interrupt_id } }
+    );
+  }
+  if (!resumeInputsEqual(input, interrupt.resume_input)) {
+    throw runtimeError(
+      "Interrupt has already been resumed with different input",
+      "interrupt_conflict",
+      { details: { interrupt_id: input.interrupt_id } }
+    );
+  }
+  return {
+    interrupt_id: input.interrupt_id,
+    resume_attempt: interrupt.resume_attempt,
+    status: "claimed"
+  };
+}
+
+async function readInterruptAfterTransitionFailure(
+  options: ResumeInterruptOptions,
+  interruptId: string,
+  transition: "begin_resume" | "complete_resume",
+  cause: unknown
+): Promise<InterruptRecord | undefined> {
+  try {
+    return await options.interruptStore.get(interruptId);
+  } catch (verificationCause) {
+    throw new RuntimeDurabilityRecoveryRequiredError(
+      "Interrupt resume transition may be committed, but exact readback was unavailable",
+      {
+        cause,
+        details: {
+          interrupt_id: interruptId,
+          transition,
+          verification_cause:
+            verificationCause instanceof Error
+              ? verificationCause.name
+              : typeof verificationCause
+        }
+      }
+    );
+  }
+}
+
 async function assertNotExpired(
   input: ResumeInput,
   interrupt: InterruptRecord,
@@ -165,8 +226,7 @@ export async function createInterrupt(
   options: CreateInterruptOptions
 ): Promise<InterruptPayload> {
   const interrupt = clonePayload(payload);
-
-  await options.interruptStore.create({
+  const record: InterruptRecord = {
     id: interrupt.interrupt_id,
     run_id: interrupt.run.run_id,
     thread_id: options.threadId,
@@ -176,20 +236,52 @@ export async function createInterrupt(
     created_at: interrupt.created_at,
     updated_at: interrupt.created_at,
     payload: interrupt
-  });
+  };
 
-  await options.eventStore.append({
-    id: `${interrupt.interrupt_id}:created`,
-    run_id: interrupt.run.run_id,
-    type: "luna.interrupt.created",
-    timestamp: interrupt.created_at,
-    node_id: interrupt.node_id,
-    interrupt_id: interrupt.interrupt_id,
-    data: {
-      checkpoint_id: interrupt.checkpoint_id,
-      kind: interrupt.kind
+  try {
+    await options.interruptStore.create(record);
+  } catch (cause) {
+    let accepted: InterruptRecord | undefined;
+    try {
+      accepted = await options.interruptStore.get(interrupt.interrupt_id);
+    } catch (verificationCause) {
+      throw new RuntimeDurabilityRecoveryRequiredError(
+        "Interrupt creation may be committed, but exact readback was unavailable",
+        {
+          cause,
+          details: {
+            interrupt_id: interrupt.interrupt_id,
+            verification_cause:
+              verificationCause instanceof Error
+                ? verificationCause.name
+                : typeof verificationCause
+          }
+        }
+      );
     }
-  });
+    if (accepted === undefined || stableJson(accepted) !== stableJson(record)) {
+      throw cause;
+    }
+    // Resolve an acceptance-unknown create that committed before throwing.
+  }
+
+  try {
+    await options.eventStore.append({
+      id: `${interrupt.interrupt_id}:created`,
+      run_id: interrupt.run.run_id,
+      type: "luna.interrupt.created",
+      timestamp: interrupt.created_at,
+      node_id: interrupt.node_id,
+      interrupt_id: interrupt.interrupt_id,
+      data: {
+        checkpoint_id: interrupt.checkpoint_id,
+        kind: interrupt.kind
+      }
+    });
+  } catch {
+    // The pending interrupt is authoritative and resumable. Its event
+    // projection is idempotent diagnostics, never a reason to contradict it.
+  }
 
   return interrupt;
 }
@@ -213,25 +305,52 @@ export async function resumeInterrupt(
     return duplicate;
   }
 
-  await assertNotExpired(input, interrupt, options);
-  await assertNoConcurrentMerge(input, interrupt, options.interruptStore);
-  await assertInterruptResumeAuthorized(
-    input,
-    interrupt,
-    options.authorization ?? allowInterruptResume()
-  );
+  let claim = persistedResumeClaim(normalizedInput, interrupt);
+  if (claim === undefined) {
+    await assertNotExpired(input, interrupt, options);
+    await assertNoConcurrentMerge(input, interrupt, options.interruptStore);
+    await assertInterruptResumeAuthorized(
+      input,
+      interrupt,
+      options.authorization ?? allowInterruptResume()
+    );
 
-  const requested_resume_id = options.resumeId?.() ?? defaultResumeId(input);
-  const claim = await options.interruptStore.beginResume(
-    input.interrupt_id,
-    requested_resume_id,
-    normalizedInput
-  );
-  if (claim.status === "duplicate") {
-    return {
-      ...claim.resume,
-      already_resumed: true
-    };
+    const requested_resume_id = options.resumeId?.() ?? defaultResumeId(input);
+    let beginning;
+    try {
+      beginning = await options.interruptStore.beginResume(
+        input.interrupt_id,
+        requested_resume_id,
+        normalizedInput
+      );
+    } catch (cause) {
+      const accepted = await readInterruptAfterTransitionFailure(
+        options,
+        input.interrupt_id,
+        "begin_resume",
+        cause
+      );
+      if (accepted !== undefined) {
+        const resolved = assertResolvedDuplicate(normalizedInput, accepted);
+        if (resolved !== undefined) {
+          return resolved;
+        }
+        const acceptedClaim = persistedResumeClaim(normalizedInput, accepted);
+        if (acceptedClaim?.resume_attempt === requested_resume_id) {
+          beginning = acceptedClaim;
+        }
+      }
+      if (beginning === undefined) {
+        throw cause;
+      }
+    }
+    if (beginning.status === "duplicate") {
+      return {
+        ...beginning.resume,
+        already_resumed: true
+      };
+    }
+    claim = beginning;
   }
 
   const created_at = options.now?.() ?? defaultNow();
@@ -246,27 +365,48 @@ export async function resumeInterrupt(
     created_at
   };
 
-  await options.interruptStore.completeResume(
-    input.interrupt_id,
-    claim,
-    "resolved",
-    resume
-  );
-  await options.eventStore.append({
-    id: `${input.interrupt_id}:${resume_id}:resumed`,
-    run_id: interrupt.run_id,
-    type: "luna.interrupt.resumed",
-    timestamp: created_at,
-    node_id: interrupt.node_id,
-    interrupt_id: input.interrupt_id,
-    resume_id,
-    data: {
-      checkpoint_id: input.checkpoint_id,
-      decision: input.decision,
-      ...(input.payload === undefined ? {} : { payload: input.payload }),
-      ...(input.actor === undefined ? {} : { actor: input.actor })
+  try {
+    await options.interruptStore.completeResume(
+      input.interrupt_id,
+      claim,
+      "resolved",
+      resume
+    );
+  } catch (cause) {
+    const accepted = await readInterruptAfterTransitionFailure(
+      options,
+      input.interrupt_id,
+      "complete_resume",
+      cause
+    );
+    if (
+      accepted?.status !== "resolved" ||
+      accepted.resume === undefined ||
+      stableJson(accepted.resume) !== stableJson(resume)
+    ) {
+      throw cause;
     }
-  });
+    // Resolve an acceptance-unknown transition that committed before throwing.
+  }
+  try {
+    await options.eventStore.append({
+      id: `${input.interrupt_id}:${resume_id}:resumed`,
+      run_id: interrupt.run_id,
+      type: "luna.interrupt.resumed",
+      timestamp: created_at,
+      node_id: interrupt.node_id,
+      interrupt_id: input.interrupt_id,
+      resume_id,
+      data: {
+        checkpoint_id: input.checkpoint_id,
+        decision: input.decision,
+        ...(input.payload === undefined ? {} : { payload: input.payload }),
+        ...(input.actor === undefined ? {} : { actor: input.actor })
+      }
+    });
+  } catch {
+    // Resolution is authoritative. Event projection is idempotent diagnostics.
+  }
 
   return {
     ...resume,

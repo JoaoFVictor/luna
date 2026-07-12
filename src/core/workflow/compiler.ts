@@ -15,9 +15,11 @@ import {
   LUNA_RUNTIME_STATE_CHANNELS,
   LUNA_RUNTIME_STATE_SCHEMA_VERSION
 } from "../runtime/state.js";
+import { isReservedWorkflowNodeId } from "./node-id.js";
 
 export type WorkflowCompilerErrorCode =
   | "workflow_capability_unknown"
+  | "workflow_node_id_reserved"
   | "workflow_node_type_unsupported"
   | "workflow_parallel_merge_without_reducer"
   | "workflow_parallel_hitl_unsupported"
@@ -27,17 +29,26 @@ export class WorkflowCompilerError extends Error {
   readonly code: WorkflowCompilerErrorCode;
   readonly path?: string;
   readonly capability?: string;
+  readonly nodeId?: string;
+  readonly edge?: { readonly from: string; readonly to: string };
 
   constructor(
     code: WorkflowCompilerErrorCode,
     message: string,
-    options: { path?: string; capability?: string } = {}
+    options: {
+      path?: string;
+      capability?: string;
+      nodeId?: string;
+      edge?: { readonly from: string; readonly to: string };
+    } = {}
   ) {
     super(message);
     this.name = "WorkflowCompilerError";
     this.code = code;
     this.path = options.path;
     this.capability = options.capability;
+    this.nodeId = options.nodeId;
+    this.edge = options.edge;
   }
 }
 
@@ -64,7 +75,8 @@ export type CompiledWorkflowNodeKind =
   | "built_in"
   | "agent"
   | "pattern"
-  | "interrupt";
+  | "interrupt"
+  | "workflow";
 
 export type CompiledWorkflowNode = {
   readonly id: string;
@@ -74,6 +86,10 @@ export type CompiledWorkflowNode = {
   readonly output_schema: unknown;
   readonly can_create_pending_interrupt: boolean;
   readonly execution_policy?: PatternExecutionPolicy;
+  readonly composition?: {
+    readonly workflow: WorkflowDefinition;
+    readonly compiled: CompiledWorkflow;
+  };
   readonly source: WorkflowNode;
 };
 
@@ -105,11 +121,21 @@ export function compileWorkflow(input: CompileWorkflowInput): CompiledWorkflow {
 
   const compiledNodes = analysis.topological_node_ids.map((nodeId) => {
     const nodeIndex = workflow.graph.nodes.findIndex((node) => node.id === nodeId);
-    return compileNode(workflow.graph.nodes[nodeIndex], nodeIndex, indexes);
+    return compileNode(
+      workflow.graph.nodes[nodeIndex],
+      nodeIndex,
+      indexes,
+      registry,
+      workflow,
+      input.reducers
+    );
   });
 
-  assertNoParallelPendingInterrupts(workflow.graph.nodes, compiledNodes);
   assertProtectedOperationsAfterApproval(workflow.graph.nodes, compiledNodes, indexes);
+  assertPendingInterruptsAreDependencyOrdered(
+    workflow.graph.nodes,
+    compiledNodes
+  );
 
   return {
     workflow_id: workflow.id,
@@ -125,11 +151,19 @@ export function compileWorkflow(input: CompileWorkflowInput): CompiledWorkflow {
 
 function assertSupportedNodes(nodes: readonly WorkflowNode[]): void {
   nodes.forEach((node, index) => {
+    if (isReservedWorkflowNodeId(node.id)) {
+      throw new WorkflowCompilerError(
+        "workflow_node_id_reserved",
+        `Workflow node id ${node.id} uses Luna's reserved internal namespace.`,
+        { path: `$.nodes[${index}].id` }
+      );
+    }
     if (
       node.type !== "built_in" &&
       node.type !== "agent" &&
       node.type !== "pattern" &&
-      node.type !== "human_gate"
+      node.type !== "human_gate" &&
+      node.type !== "workflow"
     ) {
       throw new WorkflowCompilerError(
         "workflow_node_type_unsupported",
@@ -186,7 +220,10 @@ function hasParallelDependencies(
 function compileNode(
   node: WorkflowNode,
   nodeIndex: number,
-  indexes: CapabilityRegistrationIndex
+  indexes: CapabilityRegistrationIndex,
+  registry: CapabilityRegistry,
+  workflow: WorkflowDefinition,
+  reducers: WorkflowCompilerReducers | undefined
 ): CompiledWorkflowNode {
   switch (node.type) {
     case "built_in": {
@@ -208,6 +245,14 @@ function compileNode(
       };
     }
     case "agent": {
+      const capability = registry.workflowNodeCapability("agent");
+      if (capability === undefined) {
+        throw new WorkflowCompilerError(
+          "workflow_capability_unknown",
+          "No capability supplies workflow node type agent.",
+          { path: `$.nodes[${nodeIndex}].type`, capability: "agent" }
+        );
+      }
       const schema = requireRegistration(
         indexes.schemas,
         node.output_schema,
@@ -218,7 +263,7 @@ function compileNode(
         id: node.id,
         kind: "agent",
         yaml_path: `$.nodes[${nodeIndex}]`,
-        capability_id: "agents",
+        capability_id: capability.id,
         output_schema: schema.schema,
         can_create_pending_interrupt: false,
         source: node
@@ -259,6 +304,29 @@ function compileNode(
         capability_id: registration.id,
         output_schema: registration.output_schema,
         can_create_pending_interrupt: true,
+        source: node
+      };
+    }
+    case "workflow": {
+      const child = workflow.compositions?.[node.workflow];
+      if (child === undefined) {
+        throw new WorkflowCompilerError(
+          "workflow_capability_unknown",
+          `Composed workflow ${node.workflow} was not resolved.`,
+          { path: `$.nodes[${nodeIndex}].workflow`, capability: `workflow:${node.workflow}` }
+        );
+      }
+      return {
+        id: node.id,
+        kind: "workflow",
+        yaml_path: `$.nodes[${nodeIndex}]`,
+        capability_id: `workflow:${child.id}`,
+        output_schema: child.output_schema_content,
+        can_create_pending_interrupt: false,
+        composition: {
+          workflow: child,
+          compiled: compileWorkflow({ workflow: child, registry, reducers })
+        },
         source: node
       };
     }
@@ -346,28 +414,32 @@ function compileEdges(nodes: readonly WorkflowNode[]): CompiledWorkflowEdge[] {
   return edges;
 }
 
-function assertNoParallelPendingInterrupts(
+function assertPendingInterruptsAreDependencyOrdered(
   nodes: readonly WorkflowNode[],
   compiledNodes: readonly CompiledWorkflowNode[]
 ): void {
   const interruptNodes = compiledNodes.filter(canCreatePendingInterrupt);
   const byId = new Map(nodes.map((node) => [node.id, node]));
 
-  for (let leftIndex = 0; leftIndex < interruptNodes.length; leftIndex += 1) {
-    for (
-      let rightIndex = leftIndex + 1;
-      rightIndex < interruptNodes.length;
-      rightIndex += 1
-    ) {
-      const left = interruptNodes[leftIndex];
-      const right = interruptNodes[rightIndex];
-      const leftAfterRight = transitiveDependencies(left.source, byId).has(right.id);
-      const rightAfterLeft = transitiveDependencies(right.source, byId).has(left.id);
-      if (!leftAfterRight && !rightAfterLeft) {
+  for (const interruptNode of interruptNodes) {
+    const interruptDependencies = transitiveDependencies(
+      interruptNode.source,
+      byId
+    );
+    for (const candidate of compiledNodes) {
+      if (candidate.id === interruptNode.id) {
+        continue;
+      }
+      const candidateAfterInterrupt = transitiveDependencies(
+        candidate.source,
+        byId
+      ).has(interruptNode.id);
+      const interruptAfterCandidate = interruptDependencies.has(candidate.id);
+      if (!candidateAfterInterrupt && !interruptAfterCandidate) {
         throw new WorkflowCompilerError(
           "workflow_parallel_hitl_unsupported",
-          "Parallel branches that can create multiple pending interrupts are not supported yet.",
-          { path: `${left.yaml_path},${right.yaml_path}` }
+          "A node that can create a pending interrupt must be dependency-ordered with every other workflow node.",
+          { path: `${interruptNode.yaml_path},${candidate.yaml_path}` }
         );
       }
     }

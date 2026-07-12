@@ -11,13 +11,21 @@ Current defaults:
 
 - workspace strategy: `git_worktree`.
 - workspace root: `.runs/workspaces`.
-- preserve failed run worktrees: true.
-- preserve successful run worktrees: false.
+- retain failed run worktrees: `preserve_on_failure` is required and must be
+  `true`.
+- retain successful run worktrees: `preserve_on_success` is required and must
+  be `true`.
 - artifact root: `.runs`.
 - workflow runtime: `langgraph`.
 - agent runtime: `pi`.
 
 `agent_runtime.options.request_timeout_ms` is passed to the Pi runtime factory.
+
+The two workspace retention fields are safety assertions, not cleanup toggles.
+Setting either one to `false` is invalid. Luna does not delete worktrees during
+success or failure terminalization. Cleanup will require a future, separately
+confirmed operation with a durable journal and reconciliation of indeterminate
+outcomes.
 
 Optional lock config can set lock root and timeout duration.
 

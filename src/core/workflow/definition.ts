@@ -11,13 +11,13 @@ import { WorkflowDefinitionError } from "./definition-errors.js";
 import type { WorkflowDefinitionErrorCode } from "./definition-errors.js";
 import {
   assertWorkflowDocument,
-  assertObject,
   normalizeExecution,
   parseWorkflowYaml,
   readCapabilities,
   readGraph,
   requireString
 } from "./definition-schema.js";
+import { readWorkflowConfigReference } from "./definition-references.js";
 import { defaultWorkflowObservabilityConfig } from "./definition-types.js";
 import {
   collectExternalDefinitionDigests,
@@ -36,9 +36,14 @@ import type {
 import {
   validateDeclaredCapabilities,
   validateAgentOutputSchemas,
-  validateNodesAgainstCapabilities
+  validateNodesAgainstCapabilities,
+  validateWorkflowCallInputs
 } from "./definition-validation.js";
 import { analyzeWorkflowGraph } from "./graph-analysis.js";
+import {
+  assertWorkflowCompositionRequirements,
+  resolveWorkflowCompositions
+} from "./definition-composition.js";
 
 export {
   LUNA_WORKFLOW_COMPILER_SCHEMA_VERSION,
@@ -60,6 +65,7 @@ export type {
   WorkflowExecution,
   WorkflowGraph,
   WorkflowHumanGateNode,
+  WorkflowCallNode,
   WorkflowMetadata,
   WorkflowNode,
   WorkflowObservabilityConfig,
@@ -76,7 +82,33 @@ export async function loadWorkflowDefinition(
   workflowId: string,
   options: LoadWorkflowDefinitionOptions = {}
 ): Promise<WorkflowDefinition> {
+  return await loadWorkflowDefinitionRecursive(
+    workflowsRoot,
+    workflowId,
+    options,
+    [],
+    new Map()
+  );
+}
+
+async function loadWorkflowDefinitionRecursive(
+  workflowsRoot: string,
+  workflowId: string,
+  options: LoadWorkflowDefinitionOptions,
+  ancestors: readonly string[],
+  resolved: Map<string, WorkflowDefinition>
+): Promise<WorkflowDefinition> {
   assertSafeSegment(workflowId);
+  if (ancestors.includes(workflowId)) {
+    throw new WorkflowDefinitionError(
+      "workflow_composition_cycle",
+      `Workflow composition cycle detected: ${[...ancestors, workflowId].join(" -> ")}.`
+    );
+  }
+  const cached = resolved.get(workflowId);
+  if (cached !== undefined) {
+    return cached;
+  }
   const directory = path.join(workflowsRoot, workflowId);
   const defaultAgentsRoot =
     path.basename(path.resolve(workflowsRoot)) === "workflows"
@@ -84,15 +116,35 @@ export async function loadWorkflowDefinition(
       : path.resolve(workflowsRoot, "agents");
   const workflowYaml = await readFile(path.join(directory, "workflow.yaml"), "utf8");
 
-  return await loadWorkflowDefinitionFromMetadata({
+  const definition = await loadWorkflowDefinitionFromMetadata({
     directory,
     metadata: parseWorkflowYaml(workflowYaml) as WorkflowMetadata,
     workflowId,
     workflowYaml,
     agentsRoot: options.agentsRoot ?? defaultAgentsRoot,
     capabilityRegistry: options.capabilityRegistry,
-    digestResolver: options.digestResolver
+    digestResolver: options.digestResolver,
+    compositionResolver: async (childId) => {
+      try {
+        return await loadWorkflowDefinitionRecursive(
+          workflowsRoot,
+          childId,
+          options,
+          [...ancestors, workflowId],
+          resolved
+        );
+      } catch (cause) {
+        if (cause instanceof WorkflowDefinitionError) throw cause;
+        throw new WorkflowDefinitionError(
+          "workflow_external_definition_missing",
+          `Unable to resolve composed workflow ${childId}.`,
+          { nodeId: childId }
+        );
+      }
+    }
   });
+  resolved.set(workflowId, definition);
+  return definition;
 }
 
 export async function loadWorkflowDefinitionFromMetadata({
@@ -102,7 +154,8 @@ export async function loadWorkflowDefinitionFromMetadata({
   workflowYaml,
   capabilityRegistry,
   digestResolver,
-  agentsRoot
+  agentsRoot,
+  compositionResolver
 }: {
   directory: string;
   metadata: WorkflowMetadata;
@@ -111,6 +164,7 @@ export async function loadWorkflowDefinitionFromMetadata({
   capabilityRegistry?: CapabilityRegistry;
   digestResolver?: DefinitionDigestResolver;
   agentsRoot?: string;
+  compositionResolver?: (workflowId: string) => Promise<WorkflowDefinition>;
 }): Promise<WorkflowDefinition> {
   const raw = assertWorkflowDocument(metadata);
   const id = requireString(raw.id, "$.id");
@@ -138,6 +192,18 @@ export async function loadWorkflowDefinitionFromMetadata({
   validateDeclaredCapabilities(capabilities, capabilityRegistry);
 
   const parsedGraph = readGraph(raw);
+  const compositions = await resolveWorkflowCompositions({
+    graph: parsedGraph,
+    parentId: id,
+    parentMode: normalizeMode(raw.mode),
+    resolver: compositionResolver
+  });
+  const requirements = normalizeRequirements(raw.requires);
+  assertWorkflowCompositionRequirements({
+    parentId: id,
+    requirements,
+    compositions
+  });
   const nodeIds = new Set(parsedGraph.nodes.map((node) => node.id));
   validateNodesAgainstCapabilities(
     parsedGraph.nodes,
@@ -145,6 +211,7 @@ export async function loadWorkflowDefinitionFromMetadata({
     nodeIds,
     capabilityRegistry
   );
+  validateWorkflowCallInputs(parsedGraph.nodes, compositions);
   await validateAgentOutputSchemas(
     parsedGraph.nodes,
     agentsRoot ?? path.resolve(directory, "..", "..", "agents"),
@@ -155,7 +222,8 @@ export async function loadWorkflowDefinitionFromMetadata({
 
   const externalDefinitionDigests = await collectExternalDefinitionDigests(
     parsedGraph.nodes,
-    digestResolver
+    digestResolver,
+    compositions
   );
   const revision = computeWorkflowRevision({
     canonicalWorkflow:
@@ -183,9 +251,10 @@ export async function loadWorkflowDefinitionFromMetadata({
     revision,
     external_definition_digests: externalDefinitionDigests,
     execution: normalizeExecution(raw.execution),
-    requires: normalizeRequirements(raw.requires),
+    requires: requirements,
     observability: normalizeObservability(raw.observability),
-    subagent_policy: normalizeSubagentPolicy(raw.subagent_policy)
+    subagent_policy: normalizeSubagentPolicy(raw.subagent_policy),
+    ...(Object.keys(compositions).length === 0 ? {} : { compositions })
   };
 }
 
@@ -193,42 +262,14 @@ async function readRuntimeConfig(
   directory: string,
   value: unknown
 ): Promise<WorkflowDefinition["config"] | undefined> {
-  if (value === undefined) {
+  const reference = readWorkflowConfigReference(value);
+  if (reference === undefined) {
     return undefined;
   }
-  const raw = assertObject(value, "$.config");
-  for (const key of Object.keys(raw)) {
-    if (key !== "file" && key !== "schema") {
-      throw new WorkflowDefinitionError(
-        "workflow_unknown_field",
-        `Unknown workflow field ${key} at $.config.`,
-        { path: "$.config" }
-      );
-    }
-  }
-  const file = requireString(raw.file, "$.config.file");
-  const schema = requireString(raw.schema, "$.config.schema");
-  assertSafeConfigFilePath(file);
-
   return {
-    file,
-    schema,
-    schema_content: await readJsonSchema(directory, schema)
+    ...reference,
+    schema_content: await readJsonSchema(directory, reference.schema)
   };
-}
-
-function assertSafeConfigFilePath(relativePath: string): void {
-  if (
-    relativePath.trim() === "" ||
-    path.isAbsolute(relativePath) ||
-    relativePath.split(/[\\/]/).includes("..")
-  ) {
-    throw new WorkflowDefinitionError(
-      "workflow_path_escape",
-      `Workflow config file path escapes config directory: ${relativePath}`,
-      { path: "$.config.file" }
-    );
-  }
 }
 
 async function readJsonSchema(
@@ -295,7 +336,13 @@ function analyzeParsedGraph(graph: ParsedWorkflowGraph): void {
       throw new WorkflowDefinitionError(
         (cause as { code: WorkflowDefinitionErrorCode }).code,
         cause.message,
-        { path: (cause as { path?: string }).path }
+        {
+          path: (cause as { path?: string }).path,
+          nodeId: (cause as { nodeId?: string }).nodeId,
+          edge: (cause as {
+            edge?: { readonly from: string; readonly to: string };
+          }).edge
+        }
       );
     }
     throw cause;

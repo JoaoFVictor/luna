@@ -35,7 +35,7 @@ function workflowState(steps: Record<string, unknown> = {}): WorkflowRuntimeStat
 
 function builtInArtifactNode(
   id: string,
-  plans: ReturnType<typeof artifactPlan>[],
+  plans: Array<ReturnType<typeof artifactPlan> & { semantic_type?: string }>,
   uses = "preflight"
 ) {
   return {
@@ -47,6 +47,9 @@ function builtInArtifactNode(
       source: plan.source.expression,
       format: plan.format,
       required: plan.required ?? true,
+      ...(plan.semantic_type === undefined
+        ? {}
+        : { semantic_type: plan.semantic_type }),
       ...(plan.config === undefined ? {} : { config: plan.config })
     }))
   };
@@ -114,6 +117,24 @@ describe("artifacts capability publisher", () => {
       })
     ).rejects.toMatchObject({ code: "workflow_artifact_path_duplicate" });
 
+  });
+
+  it("validates every declaration before publishing the first artifact", async () => {
+    const publisher = publisherMock();
+
+    await expect(
+      publishDeclaredArtifacts({
+        publisher,
+        node: builtInArtifactNode("report", [
+          artifactPlan("report.json", "$.steps.report"),
+          artifactPlan("../escape.json", "$.steps.report")
+        ]),
+        output: { ok: true },
+        state: workflowState()
+      })
+    ).rejects.toBeDefined();
+
+    expect(publisher.publish).not.toHaveBeenCalled();
   });
 
   it("errors for required missing artifact sources", async () => {
@@ -184,6 +205,32 @@ describe("artifacts capability publisher", () => {
       path: "preflight.json",
       format: "json",
       value: { ok: true },
+      overwrite_policy: "forbid"
+    });
+  });
+
+  it("passes declared semantic metadata to the publisher without adding it to payload", async () => {
+    const publisher = publisherMock();
+    const node = builtInArtifactNode("preflight", [
+      {
+        ...artifactPlan("preflight.json", "$.steps.preflight"),
+        semantic_type: "luna.review.findings.v1"
+      }
+    ]);
+
+    await publishDeclaredArtifacts({
+      publisher,
+      node,
+      output: { ok: true },
+      state: workflowState()
+    });
+
+    expect(publisher.publish).toHaveBeenCalledWith({
+      node_id: "preflight",
+      path: "preflight.json",
+      format: "json",
+      value: { ok: true },
+      semantic_type: "luna.review.findings.v1",
       overwrite_policy: "forbid"
     });
   });

@@ -43,6 +43,7 @@ import {
   validateFindingEvidenceBuiltIn
 } from "../../capabilities/findings/built-ins.js";
 import { createBuiltInStepCatalog } from "../../core/built-ins/catalog.js";
+import type { BuiltInStepMetadata } from "../../core/built-ins/types.js";
 import { collectRepoContextBuiltIn } from "../../capabilities/repository-diff/built-ins.js";
 import { relatedContextBuiltIn } from "../../capabilities/repository-context/built-ins.js";
 import { finalReportBuiltIn } from "../../capabilities/reports/final-report.js";
@@ -179,6 +180,18 @@ export function createNativeProviderBuiltIns({
       finalImplementationReport
     ]
   });
+}
+
+export function nativeBuiltInMetadata(
+  registry: {
+    has(name: string): boolean;
+    require(name: string): { readonly metadata?: BuiltInStepMetadata };
+  },
+  node: { readonly capability_id: string }
+): BuiltInStepMetadata {
+  return registry.has(node.capability_id)
+    ? registry.require(node.capability_id).metadata ?? {}
+    : {};
 }
 
 export const nativeProviderBuiltIns = createNativeProviderBuiltIns();

@@ -8,8 +8,9 @@ build/
 
 # Local runtime artifacts
 .runs/
-repositories/
-docs/*/
+repositories/*
+!repositories/.gitkeep
+docs/superpowers/
 *.log
 
 # Environment and secrets
@@ -20,6 +21,8 @@ docker-compose.override.yml
 
 # Coverage and caches
 coverage/
+playwright-report/
+test-results/
 .nyc_output/
 .cache/
 .turbo/

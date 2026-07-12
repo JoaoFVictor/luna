@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
 import {
-  complete as defaultComplete,
-  getModel as defaultGetModel,
   type AssistantMessage,
   type Context,
-  type Model,
+  type Models,
   type Tool
 } from "@earendil-works/pi-ai";
 import {
@@ -19,19 +17,12 @@ import type { LunaUsage } from "../../core/observability/tracing.js";
 import { validateAgentRuntimeInput } from "../../core/agent-runtime/validation.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
 import type { ModelProfile } from "../../core/config/schemas.js";
-import { registeredPiProviderApiKey } from "./auth.js";
+import { createPiModels } from "./auth.js";
 
-type CompleteFn = (
-  model: Model<string>,
-  context: Context,
-  options?: Record<string, unknown>
-) => Promise<AssistantMessage>;
-
-type GetModelFn = (provider: string, model: string) => Model<string>;
+export type PiModels = Pick<Models, "getModel" | "complete">;
 
 export type PiAgentRuntimeOptions = {
-  readonly complete?: CompleteFn;
-  readonly getModel?: GetModelFn;
+  readonly models?: PiModels;
   readonly maxToolIterations?: number;
   readonly requestTimeoutMs?: number;
 };
@@ -121,17 +112,13 @@ function modelSelection(profile: ModelProfile): {
 
 function runOptions(
   input: RunAgentInput,
-  provider: string,
   signal: AbortSignal | undefined
 ): Record<string, unknown> {
-  const apiKey = registeredPiProviderApiKey(provider);
-
   return {
     signal,
     reasoning: input.model_profile.reasoning_effort,
     transport: input.model_profile.transport,
-    sessionId: piSessionId(input),
-    ...(apiKey === undefined ? {} : { apiKey })
+    sessionId: piSessionId(input)
   };
 }
 
@@ -394,8 +381,7 @@ function normalizePiError(cause: unknown): AgentRuntimeError {
 export function createPiAgentRuntimeAdapter(
   options: PiAgentRuntimeOptions = {}
 ): AgentRuntimePort {
-  const complete = options.complete ?? (defaultComplete as CompleteFn);
-  const getModel = options.getModel ?? (defaultGetModel as GetModelFn);
+  const models = options.models ?? createPiModels();
   const maxToolIterations = options.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   if (!Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs < 1) {
@@ -413,14 +399,28 @@ export function createPiAgentRuntimeAdapter(
     async validate(input: RunAgentInput): Promise<void> {
       await validateAgentRuntimeInput(input, PI_DESCRIPTOR);
       piTools(input);
-      modelSelection(input.model_profile);
+      const selected = modelSelection(input.model_profile);
+      if (models.getModel(selected.provider, selected.model) === undefined) {
+        throw piRuntimeError(
+          "runtime_unsupported_feature",
+          `Pi model ${selected.provider}/${selected.model} is not available`,
+          { provider: selected.provider, model: selected.model }
+        );
+      }
     },
     async runAgent(input: RunAgentInput): Promise<RunAgentOutput> {
       await validateAgentRuntimeInput(input, PI_DESCRIPTOR);
 
       try {
         const selected = modelSelection(input.model_profile);
-        const model = getModel(selected.provider, selected.model);
+        const model = models.getModel(selected.provider, selected.model);
+        if (model === undefined) {
+          throw piRuntimeError(
+            "runtime_unsupported_feature",
+            `Pi model ${selected.provider}/${selected.model} is not available`,
+            { provider: selected.provider, model: selected.model }
+          );
+        }
         const materialized = piTools(input);
         const context: Context = {
           systemPrompt: systemPrompt(input),
@@ -438,7 +438,7 @@ export function createPiAgentRuntimeAdapter(
           const completeOnce = async () =>
             await withTimeout(
               async (signal) =>
-                await complete(model, context, runOptions(input, selected.provider, signal)),
+                await models.complete(model, context, runOptions(input, signal)),
               input.signal,
               requestTimeoutMs
             );

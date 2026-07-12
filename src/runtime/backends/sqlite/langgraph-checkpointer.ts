@@ -21,10 +21,38 @@ import {
   type JsonValue
 } from "../../../core/runtime/json.js";
 import { assertRefOnlyCheckpointState } from "../../../core/runtime/backends/contracts.js";
+import {
+  isRuntimeDurabilityRecoveryRequired,
+  RuntimeDurabilityRecoveryRequiredError
+} from "../../../core/runtime/errors.js";
 
 type RunnableConfig = CheckpointTuple["config"];
 type ChannelVersion = string | number;
 type VersionsSeen = Record<string, Record<string, ChannelVersion>>;
+
+async function runJournalOperation<T>(
+  operation: string,
+  threadId: string,
+  run: () => Promise<T>
+): Promise<T> {
+  try {
+    return await run();
+  } catch (cause) {
+    if (isRuntimeDurabilityRecoveryRequired(cause)) {
+      throw cause;
+    }
+    throw new RuntimeDurabilityRecoveryRequiredError(
+      "LangGraph checkpoint journal requires durable reconciliation",
+      {
+        cause,
+        details: {
+          operation,
+          thread_id: threadId
+        }
+      }
+    );
+  }
+}
 
 function threadIdFromConfig(config: RunnableConfig): string {
   const threadId = config.configurable?.thread_id;
@@ -170,18 +198,22 @@ export class LunaLangGraphCheckpointer extends BaseCheckpointSaver {
 
   async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
     const threadId = threadIdFromConfig(config);
-    const record = await this.store.load(threadId, {
-      checkpointId: checkpointIdFromConfig(config),
-      checkpointNs: checkpointNsFromConfig(config)
-    });
+    const record = await runJournalOperation("load", threadId, async () =>
+      await this.store.load(threadId, {
+        checkpointId: checkpointIdFromConfig(config),
+        checkpointNs: checkpointNsFromConfig(config)
+      })
+    );
     if (record === undefined) {
       return undefined;
     }
 
-    const writes = await this.store.listWrites(
-      threadId,
-      record.checkpoint_ns,
-      record.checkpoint_id
+    const writes = await runJournalOperation("list_writes", threadId, async () =>
+      await this.store.listWrites(
+        threadId,
+        record.checkpoint_ns,
+        record.checkpoint_id
+      )
     );
     return tupleFromRecord(record, writes.map(pendingWriteFromRecord));
   }
@@ -194,23 +226,27 @@ export class LunaLangGraphCheckpointer extends BaseCheckpointSaver {
     const checkpointNs = checkpointNsFromConfig(config);
     const beforeConfig = options?.before ?? {};
     const beforeCheckpointId = checkpointIdFromConfig(beforeConfig);
-    const records = await this.store.list(threadId, {
-      checkpointNs,
-      checkpointId: checkpointIdFromConfig(config),
-      beforeCheckpointId,
-      beforeCheckpointNs:
-        beforeCheckpointId === undefined
-          ? undefined
-          : checkpointNsFromConfig(beforeConfig),
-      metadataFilter: options?.filter,
-      limit: options?.limit
-    });
+    const records = await runJournalOperation("list", threadId, async () =>
+      await this.store.list(threadId, {
+        checkpointNs,
+        checkpointId: checkpointIdFromConfig(config),
+        beforeCheckpointId,
+        beforeCheckpointNs:
+          beforeCheckpointId === undefined
+            ? undefined
+            : checkpointNsFromConfig(beforeConfig),
+        metadataFilter: options?.filter,
+        limit: options?.limit
+      })
+    );
 
     for (const record of records) {
-      const writes = await this.store.listWrites(
-        threadId,
-        record.checkpoint_ns,
-        record.checkpoint_id
+      const writes = await runJournalOperation("list_writes", threadId, async () =>
+        await this.store.listWrites(
+          threadId,
+          record.checkpoint_ns,
+          record.checkpoint_id
+        )
       );
       yield tupleFromRecord(record, writes.map(pendingWriteFromRecord));
     }
@@ -233,24 +269,26 @@ export class LunaLangGraphCheckpointer extends BaseCheckpointSaver {
     assertCheckpointJsonObject(metadata, "$.metadata");
     const parentConfig = parentConfigJson(config);
 
-    await this.store.save({
-      thread_id: threadId,
-      checkpoint_id: checkpointId,
-      checkpoint_ns: checkpointNs,
-      state_schema_version: stateSchemaVersion,
-      state,
-      checkpoint: {
-        v: checkpoint.v,
-        ts: checkpoint.ts,
-        channel_versions: checkpoint.channel_versions,
-        versions_seen: checkpoint.versions_seen
-      },
-      metadata,
-      ...(parentConfig === undefined
-        ? {}
-        : { parent_config: parentConfig }),
-      created_at: checkpoint.ts
-    });
+    await runJournalOperation("save", threadId, async () =>
+      await this.store.save({
+        thread_id: threadId,
+        checkpoint_id: checkpointId,
+        checkpoint_ns: checkpointNs,
+        state_schema_version: stateSchemaVersion,
+        state,
+        checkpoint: {
+          v: checkpoint.v,
+          ts: checkpoint.ts,
+          channel_versions: checkpoint.channel_versions,
+          versions_seen: checkpoint.versions_seen
+        },
+        metadata,
+        ...(parentConfig === undefined
+          ? {}
+          : { parent_config: parentConfig }),
+        created_at: checkpoint.ts
+      })
+    );
 
     return {
       ...config,
@@ -279,11 +317,16 @@ export class LunaLangGraphCheckpointer extends BaseCheckpointSaver {
       throw new Error("LangGraph putWrites requires configurable.checkpoint_id");
     }
 
-    await this.store.saveWrites(
-      writes.map(([channel, value], index) => {
+    const records = new Map<number, CheckpointWriteRecord>();
+    for (const [index, [channel, value]] of writes.entries()) {
         assertCheckpointJsonValue(value, "$.write.value");
         const writeIndex = WRITES_IDX_MAP[channel] ?? index;
-        return {
+        // LangGraph assigns fixed negative indices to special channels. If a
+        // single putWrites batch contains more than one value for such a
+        // channel, its established contract is last-value-wins. Collapse the
+        // in-memory batch before crossing the immutable durable-write boundary;
+        // a later call still cannot replace the accepted identity.
+        records.set(writeIndex, {
           thread_id: threadId,
           checkpoint_ns: checkpointNsFromConfig(config),
           checkpoint_id: checkpointId,
@@ -291,13 +334,17 @@ export class LunaLangGraphCheckpointer extends BaseCheckpointSaver {
           index: writeIndex,
           channel,
           value
-        };
-      })
+        });
+    }
+    await runJournalOperation("save_writes", threadId, async () =>
+      await this.store.saveWrites([...records.values()])
     );
   }
 
   async deleteThread(threadId: string): Promise<void> {
-    await this.store.deleteThread(threadId);
+    await runJournalOperation("delete_thread", threadId, async () =>
+      await this.store.deleteThread(threadId)
+    );
   }
 }
 

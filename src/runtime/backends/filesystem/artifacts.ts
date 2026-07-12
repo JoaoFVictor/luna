@@ -1,15 +1,28 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+  mkdir,
+  open,
+  opendir,
+  readFile,
+  rename,
+  writeFile
+} from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "../../../core/artifacts/atomic-write.js";
 import type {
   ArtifactManifest,
+  ArtifactManifestListLimits,
   ArtifactManifestStore
 } from "../../../core/runtime/artifacts/contracts.js";
 import {
+  ArtifactManifestSchema,
+  artifactManifestListLimitError,
   artifactManifestKeyFromManifest,
-  artifactManifestKeyHash
+  artifactManifestKeyHash,
+  resolveArtifactManifestListLimits
 } from "../../../core/runtime/artifacts/contracts.js";
+import { isReservedFilesystemArtifactPath } from "../../../core/runtime/artifacts/filesystem-paths.js";
 import type {
   ArtifactContentCommitInput,
   ArtifactContentStore,
@@ -35,22 +48,56 @@ export type FilesystemArtifactManifestStoreOptions = {
   root: string;
 };
 
-const ArtifactManifestSchema = z
-  .object({
-    id: z.string().min(1),
-    run_id: z.string().min(1),
-    uri: z.string().min(1),
-    backend_id: z.string().min(1).optional(),
-    backend_root: z.string().min(1).optional(),
-    source_node_id: z.string().min(1).optional(),
-    media_type: z.string().min(1).optional(),
-    content_hash: z.string().min(1).optional(),
-    artifact_path: z.string().min(1).optional(),
-    status: z.enum(["pending", "committed", "failed"]).optional(),
-    attempt: z.number().int().positive().optional(),
-    created_at: z.string().min(1)
-  })
-  .strict();
+const MANIFEST_FILENAME_PATTERN = /^[a-f0-9]{64}\.json$/;
+
+async function readBoundedManifestFile(
+  filePath: string,
+  limits: ArtifactManifestListLimits,
+  consumedBytes: number
+): Promise<{ readonly manifest: ArtifactManifest; readonly bytes: number }> {
+  const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.size < 0n ||
+      before.size > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error("Artifact manifest is not a supported regular file");
+    }
+    const bytes = Number(before.size);
+    if (bytes > limits.max_entry_bytes) {
+      throw artifactManifestListLimitError("entry_bytes", limits.max_entry_bytes);
+    }
+    if (bytes > limits.max_total_bytes - consumedBytes) {
+      throw artifactManifestListLimitError("total_bytes", limits.max_total_bytes);
+    }
+
+    const content = Buffer.alloc(bytes);
+    let offset = 0;
+    while (offset < bytes) {
+      const read = await handle.read(content, offset, bytes - offset, offset);
+      if (read.bytesRead === 0) {
+        throw new Error("Artifact manifest changed while it was being read");
+      }
+      offset += read.bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (
+      after.dev !== before.dev ||
+      after.ino !== before.ino ||
+      after.size !== before.size ||
+      after.mtimeNs !== before.mtimeNs
+    ) {
+      throw new Error("Artifact manifest changed while it was being read");
+    }
+
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(content);
+    return {
+      manifest: ArtifactManifestSchema.parse(JSON.parse(text)) as ArtifactManifest,
+      bytes
+    };
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
 
 export function createFilesystemArtifactManifestStore({
   root
@@ -65,11 +112,12 @@ export function createFilesystemArtifactManifestStore({
 
   return {
     async put(manifest) {
-      const filePath = await scopedManifestPath(manifest);
+      const parsed = ArtifactManifestSchema.parse(manifest);
+      const filePath = await scopedManifestPath(parsed);
       await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
       await atomicWriteFile(
         filePath,
-        `${JSON.stringify(manifest, null, 2)}\n`,
+        `${JSON.stringify(parsed, null, 2)}\n`,
         0o600
       );
     },
@@ -96,26 +144,53 @@ export function createFilesystemArtifactManifestStore({
         throw cause;
       }
     },
-    async list(runId) {
+    async list(runId, requestedLimits) {
+      const limits = resolveArtifactManifestListLimits(requestedLimits);
       const manifestRoot = await safeJoin(root, [runId, ".manifests"]);
-      const files = await readdir(manifestRoot).catch((cause) => {
+      const directory = await opendir(manifestRoot).catch((cause) => {
         if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
-          return [];
+          return undefined;
         }
 
         throw cause;
       });
+      if (directory === undefined) {
+        return [];
+      }
 
-      return await Promise.all(
-        files
-          .filter((file) => /^[a-f0-9]{64}\.json$/.test(file))
-          .map(async (file) => {
-            const filePath = await safeJoin(root, [runId, ".manifests", file]);
-            return ArtifactManifestSchema.parse(
-              JSON.parse(await readFile(filePath, "utf8"))
-            ) as ArtifactManifest;
-          })
-      );
+      const manifests: ArtifactManifest[] = [];
+      let scannedEntries = 0;
+      let totalBytes = 0;
+      try {
+        // Deliberately sequential: both open descriptors and aggregate memory
+        // remain inside the caller's budgets throughout the directory scan.
+        for await (const entry of directory) {
+          scannedEntries += 1;
+          if (scannedEntries > limits.max_scanned_entries) {
+            throw artifactManifestListLimitError(
+              "scanned_entries",
+              limits.max_scanned_entries
+            );
+          }
+          if (!MANIFEST_FILENAME_PATTERN.test(entry.name)) {
+            continue;
+          }
+          if (!entry.isFile()) {
+            throw new Error("Artifact manifest entry is not a regular file");
+          }
+          if (manifests.length >= limits.max_entries) {
+            throw artifactManifestListLimitError("entries", limits.max_entries);
+          }
+
+          const filePath = await safeJoin(root, [runId, ".manifests", entry.name]);
+          const loaded = await readBoundedManifestFile(filePath, limits, totalBytes);
+          totalBytes += loaded.bytes;
+          manifests.push(loaded.manifest);
+        }
+      } finally {
+        await directory.close().catch(() => undefined);
+      }
+      return manifests;
     }
   };
 }
@@ -284,8 +359,7 @@ function pendingUri(transactionId: string): string {
 }
 
 function assertNonReservedArtifactPath(artifactPath: string): void {
-  const [firstSegment] = artifactPath.split("/");
-  if (firstSegment === ".manifests" || firstSegment === ".pending") {
+  if (isReservedFilesystemArtifactPath(artifactPath)) {
     const error = new Error(
       `Artifact path ${artifactPath} uses a reserved filesystem artifact directory.`
     ) as Error & {

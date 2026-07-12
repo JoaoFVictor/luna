@@ -11,9 +11,9 @@ import {
   routeInvocation
 } from "./core/router/router.js";
 import {
-  RouterDefinitionSchema,
   type RouterDefinition
 } from "./core/router/router-definition.js";
+import { loadRouterDefinition } from "./core/router/router-definition-loader.js";
 import {
   createLunaTargetExecutor,
   resolveRuntimeConfigRoot,
@@ -35,6 +35,12 @@ import {
   startWebhookWorker,
   type StartWebhookWorkerDeps
 } from "./webhooks/worker.js";
+import {
+  startNativeStudioServer,
+  type StartNativeStudioServerOptions
+} from "./studio/server/native-studio-server.js";
+import type { StudioServerHandle } from "./studio/server/studio-server.js";
+import { waitForStudioShutdown } from "./studio/server/graceful-shutdown.js";
 import {
   InvocationSchema,
   type Invocation,
@@ -65,6 +71,13 @@ export type CliArgs = {
 } | {
   command: "webhook-worker";
   concurrency?: number;
+} | {
+  command: "studio";
+  host?: string;
+  port?: number;
+  allowNonLoopbackBind?: true;
+  publicHost?: string;
+  publicPort?: number;
 };
 
 export type ResolvedWebhookServerDeps = StartWebhookServerDeps & {
@@ -82,6 +95,12 @@ export type ResolvedWebhookWorkerDeps = StartWebhookWorkerDeps & {
   targetExecutor: TargetExecutor;
 };
 
+export type ResolvedStudioServerDeps = StartNativeStudioServerOptions & {
+  readonly projectRoot: string;
+  readonly configRoot: string;
+  readonly app: AppConfig;
+};
+
 export type MainDependencies = {
   targetExecutor?: TargetExecutor;
   routeInvocation?: typeof routeInvocation;
@@ -94,6 +113,13 @@ export type MainDependencies = {
   webhookProviderRegistry?: LunaPlatform["webhookProviderRegistry"];
   startWebhookServer?: (deps: ResolvedWebhookServerDeps) => Promise<void>;
   startWebhookWorker?: (deps: ResolvedWebhookWorkerDeps) => Promise<void>;
+  startStudioServer?: (
+    deps: ResolvedStudioServerDeps
+  ) => Promise<StudioServerHandle | void>;
+  studioOutput?: { readonly write: (message: string) => void };
+  waitForStudioShutdown?: (
+    handle: Pick<StudioServerHandle, "close">
+  ) => Promise<void>;
   projectRoot?: string;
   env?: { LUNA_CONFIG_ROOT?: string };
 };
@@ -144,15 +170,25 @@ export async function findProjectRoot(startPath = process.cwd()): Promise<string
 export function parseCliArgs(args: string[]): CliArgs {
   const [command, ...rest] = args;
 
-  if (command === "webhook-server") {
-    const allowedFlags = new Set(["--host", "--port"]);
+  if (command === "webhook-server" || command === "studio") {
+    const allowedFlags = new Set(
+      command === "studio"
+        ? [
+            "--host",
+            "--port",
+            "--allow-non-loopback-bind",
+            "--public-host",
+            "--public-port"
+          ]
+        : ["--host", "--port"]
+    );
     const unsupportedFlag = rest.find(
       (argument) => argument.startsWith("--") && !allowedFlags.has(argument)
     );
     if (unsupportedFlag !== undefined) {
       throw cliError(
         "unsupported_flag",
-        `Unsupported webhook-server flag: ${unsupportedFlag}`
+        `Unsupported ${command} flag: ${unsupportedFlag}`
       );
     }
 
@@ -167,6 +203,40 @@ export function parseCliArgs(args: string[]): CliArgs {
           "--port"
         )
       : undefined;
+
+    if (command === "studio") {
+      const publicHostFlagIndex = rest.indexOf("--public-host");
+      const publicHost = publicHostFlagIndex >= 0
+        ? requiredFlag(
+            rest,
+            "--public-host",
+            "Missing required --public-host <host>"
+          )
+        : undefined;
+      const publicPortFlagIndex = rest.indexOf("--public-port");
+      const publicPort = publicPortFlagIndex >= 0
+        ? parsePositiveIntegerFlag(
+            requiredFlag(
+              rest,
+              "--public-port",
+              "Missing required --public-port <port>"
+            ),
+            "--public-port"
+          )
+        : undefined;
+      const allowNonLoopbackBind = rest.includes(
+        "--allow-non-loopback-bind"
+      );
+
+      return {
+        command,
+        ...(host === undefined ? {} : { host }),
+        ...(port === undefined ? {} : { port }),
+        ...(allowNonLoopbackBind ? { allowNonLoopbackBind: true as const } : {}),
+        ...(publicHost === undefined ? {} : { publicHost }),
+        ...(publicPort === undefined ? {} : { publicPort })
+      };
+    }
 
     return {
       command,
@@ -285,7 +355,7 @@ export function parseCliArgs(args: string[]): CliArgs {
 
   throw cliError(
     "unknown_command",
-    "Expected command: run, resume, webhook-server, or webhook-worker"
+    "Expected command: run, resume, studio, webhook-server, or webhook-worker"
   );
 }
 
@@ -355,15 +425,10 @@ export async function loadRoutingDefinition(
   app?: AppConfig
 ): Promise<RouterDefinition> {
   const configRoot = resolveCliConfigRoot(projectRoot, env);
-  const loadedApp = app ?? await loadYamlFile(
-    path.join(configRoot, "app.yaml"),
-    AppConfigSchema
-  );
-
-  return await loadYamlFile(
-    path.join(configRoot, loadedApp.routing?.path ?? "routing.yaml"),
-    RouterDefinitionSchema
-  );
+  return await loadRouterDefinition({
+    configRoot,
+    ...(app === undefined ? {} : { app })
+  });
 }
 
 export async function main(
@@ -404,6 +469,31 @@ export async function main(
     return loadedWebhookProviderRegistry;
   };
   let invocation: Invocation;
+
+  if (parsedArgs.command === "studio") {
+    const starter = deps.startStudioServer ?? startNativeStudioServer;
+    const handle = await starter({
+      projectRoot,
+      configRoot,
+      app: await loadApp(),
+      ...(parsedArgs.host === undefined ? {} : { host: parsedArgs.host }),
+      ...(parsedArgs.port === undefined ? {} : { port: parsedArgs.port }),
+      ...(parsedArgs.allowNonLoopbackBind === undefined
+        ? {}
+        : { allowNonLoopbackBind: parsedArgs.allowNonLoopbackBind }),
+      ...(parsedArgs.publicHost === undefined
+        ? {}
+        : { publicHost: parsedArgs.publicHost }),
+      ...(parsedArgs.publicPort === undefined
+        ? {}
+        : { publicPort: parsedArgs.publicPort }),
+      output: deps.studioOutput ?? process.stdout
+    });
+    if (handle !== undefined) {
+      await (deps.waitForStudioShutdown ?? waitForStudioShutdown)(handle);
+    }
+    return 0;
+  }
 
   if (parsedArgs.command === "webhook-server") {
     const loadedConfig = await loadWebhookConfig(configRoot);

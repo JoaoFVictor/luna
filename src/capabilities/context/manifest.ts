@@ -130,6 +130,12 @@ export const manifest = capabilityManifest({
   built_ins: {
     "context.collect_context": {
       id: "context.collect_context",
+      presentation: {
+        title: "Coletar contexto do repositório",
+        summary: "Reúne arquivos e contexto permitidos para os próximos passos.",
+        category: "Contexto",
+        tags: ["repository", "context"]
+      },
       input_schema: contextInputSchema,
       output_schema: contextOutputSchema,
       required_ports: []

@@ -108,7 +108,8 @@ export function workflowExecutionPlanPolicyNode(
     artifacts: node.source.type === "built_in" ||
       node.source.type === "agent" ||
       node.source.type === "pattern" ||
-      node.source.type === "human_gate"
+      node.source.type === "human_gate" ||
+      node.source.type === "workflow"
       ? node.source.artifacts
       : undefined,
     ...(node.source.type === "built_in" ? { uses: node.source.uses } : {}),
@@ -226,7 +227,8 @@ function afterFromCompiledNode(node: CompiledWorkflowNode): string[] | undefined
   return node.source.type === "built_in" ||
     node.source.type === "agent" ||
     node.source.type === "pattern" ||
-    node.source.type === "human_gate"
+    node.source.type === "human_gate" ||
+    node.source.type === "workflow"
     ? [...(node.source.after ?? [])]
     : undefined;
 }

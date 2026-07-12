@@ -1,7 +1,11 @@
 import { z } from "zod";
+import { remoteUrlContainsCredentials } from "../security/url-credentials.js";
 
 const NonEmptyStringSchema = z.string().min(1);
-const AbsoluteUrlSchema = z.string().url();
+const AbsoluteUrlSchema = z.string().url().refine(
+  (value) => !remoteUrlContainsCredentials(value),
+  "URL must not contain credentials"
+);
 export const WORKFLOW_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9_-]*$";
 export const WorkflowIdSchema = z.string().regex(new RegExp(WORKFLOW_ID_PATTERN));
 

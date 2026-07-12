@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertWorkflowExecutionRequirements,
   selectReadyBatchWithPolicy,
   splitDeferredFinalReportNodesByPolicy
 } from "../../src/core/workflow/execution-policy.js";
@@ -172,8 +173,33 @@ describe("workflow execution policy", () => {
             : {}
       })
     ).toThrow(expect.objectContaining({
-      code: "workflow_deferred_dependency_invalid"
+      code: "workflow_deferred_dependency_invalid",
+      nodeId: "after_final",
+      edge: { from: "final", to: "after_final" }
     }));
+  });
+
+  it("rejects a repository-backed node when the workflow omits repository authority", () => {
+    expect(() =>
+      assertWorkflowExecutionRequirements({
+        nodes: [builtInNode("preflight")],
+        requiresRepository: false,
+        builtInMetadata: () => ({ requiresRepository: true })
+      })
+    ).toThrow(expect.objectContaining({
+      code: "workflow_repository_requirement_missing",
+      nodeId: "preflight"
+    }));
+  });
+
+  it("accepts repository-backed nodes when the workflow declares repository authority", () => {
+    expect(() =>
+      assertWorkflowExecutionRequirements({
+        nodes: [builtInNode("preflight")],
+        requiresRepository: true,
+        builtInMetadata: () => ({ requiresRepository: true })
+      })
+    ).not.toThrow();
   });
 
 });

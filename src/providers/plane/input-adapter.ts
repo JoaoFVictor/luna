@@ -372,6 +372,8 @@ function payloadLocator(locator: PlaneIssueLocator): Record<string, string | num
 export const planeTaskUrlAdapter: InputAdapter = {
   id: "plane-task-url",
   description: "Load a Plane issue from a configured Plane task URL.",
+  loadEffects: ["configuration_read", "credential_read", "network_read"],
+  loadTimeoutMs: 60_000,
   async load(input, context) {
     return await loadPlaneTaskUrlInvocation(input, context);
   }

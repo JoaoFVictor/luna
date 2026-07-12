@@ -5,12 +5,15 @@ import type {
   PullRequestReviewPublishInput,
   PullRequestReviewPublishedResult
 } from "../../../capabilities/pull-request-review/contracts.js";
-import { runGh as defaultRunGh, type RunGh } from "../gh.js";
+import {
+  githubApiErrorResponse,
+  runGh as defaultRunGh,
+  type GitHubApiErrorResponse,
+  type RunGh
+} from "../gh.js";
 
 type PullRequestReviewError = Error & {
-  code:
-    | "pull_request_review_publish_failed"
-    | "pull_request_review_unknown_publish_outcome";
+  code: "pull_request_review_unknown_publish_outcome";
   details: {
     reason?: string;
     endpoint?: string;
@@ -22,6 +25,7 @@ type PullRequestReviewError = Error & {
       code?: string;
       message?: string;
       exit_code?: number | null;
+      stdout?: string;
       stderr?: string;
       timed_out?: boolean;
     };
@@ -29,29 +33,23 @@ type PullRequestReviewError = Error & {
   cause?: unknown;
 };
 
-function pullRequestReviewError(
-  message: string,
-  cause: unknown,
-  details: PullRequestReviewError["details"] = {}
-): PullRequestReviewError {
-  const error = new Error(message, { cause }) as PullRequestReviewError;
-  error.code = "pull_request_review_publish_failed";
-  error.details = {
-    ...details,
-    cause: causeDetails(cause)
-  };
-  error.cause = cause;
-
-  return error;
-}
-
 function unknownPublishOutcomeError(
   message: string,
-  details: PullRequestReviewError["details"]
+  details: PullRequestReviewError["details"],
+  cause?: unknown
 ): PullRequestReviewError {
-  const error = new Error(message) as PullRequestReviewError;
+  const error = new Error(
+    message,
+    cause === undefined ? undefined : { cause }
+  ) as PullRequestReviewError;
   error.code = "pull_request_review_unknown_publish_outcome";
-  error.details = details;
+  error.details = {
+    ...details,
+    ...(cause === undefined ? {} : { cause: causeDetails(cause) })
+  };
+  if (cause !== undefined) {
+    error.cause = cause;
+  }
 
   return error;
 }
@@ -75,6 +73,7 @@ function causeDetails(
     code?: unknown;
     details?: {
       exit_code?: unknown;
+      stdout?: unknown;
       stderr?: unknown;
       timed_out?: unknown;
     };
@@ -86,6 +85,9 @@ function causeDetails(
     message: cause.message,
     ...(typeof details?.exit_code === "number" || details?.exit_code === null
       ? { exit_code: details.exit_code }
+      : {}),
+    ...(typeof details?.stdout === "string" && details.stdout.trim() !== ""
+      ? { stdout: truncate(details.stdout.trim()) }
       : {}),
     ...(typeof details?.stderr === "string"
       ? { stderr: truncate(details.stderr.trim()) }
@@ -157,6 +159,90 @@ function reviewPayload(
   };
 }
 
+function isOwnPullRequestRequestChangesRejection(cause: unknown): boolean {
+  const response = githubApiErrorResponse(cause);
+  return response?.status === 422 && response.errors.some(
+    (error) => error.toLowerCase().includes(
+      "can not request changes on your own pull request"
+    )
+  );
+}
+
+function rejectedPublishError(
+  response: GitHubApiErrorResponse,
+  details: Omit<PullRequestReviewError["details"], "cause">,
+  cause: unknown
+): Error & {
+  code: "pull_request_review_publish_failed";
+  details: PullRequestReviewError["details"] & {
+    provider_status?: number;
+    provider_message?: string;
+    provider_errors: readonly string[];
+    documentation_url?: string;
+  };
+} {
+  const providerReason = response.errors[0] ?? response.message ?? "request rejected";
+  const error = new Error(
+    `GitHub pull request review was rejected: ${providerReason}`,
+    { cause }
+  ) as Error & {
+    code: "pull_request_review_publish_failed";
+    details: PullRequestReviewError["details"] & {
+      provider_status?: number;
+      provider_message?: string;
+      provider_errors: readonly string[];
+      documentation_url?: string;
+    };
+  };
+  error.code = "pull_request_review_publish_failed";
+  error.details = {
+    ...details,
+    reason: "provider_rejected",
+    ...(response.status === undefined ? {} : { provider_status: response.status }),
+    ...(response.message === undefined ? {} : { provider_message: response.message }),
+    provider_errors: response.errors,
+    ...(response.documentation_url === undefined
+      ? {}
+      : { documentation_url: response.documentation_url }),
+    cause: causeDetails(cause)
+  };
+  return error;
+}
+
+function publishDispatchError(
+  input: PullRequestReviewPublishInput,
+  endpoint: string,
+  event: ReturnType<typeof ghEvent>,
+  cause: unknown
+): Error {
+  const details = reviewErrorDetails(input, endpoint, event);
+  const response = githubApiErrorResponse(cause);
+  if (response !== undefined) {
+    return rejectedPublishError(response, details, cause);
+  }
+
+  return unknownPublishOutcomeError(
+    "GitHub pull request review acceptance is unknown",
+    { ...details, reason: "transport_result_unknown" },
+    cause
+  );
+}
+
+function publishReviewRequest(
+  input: PullRequestReviewPublishInput,
+  endpoint: string,
+  runGh: RunGh
+): Promise<string> {
+  return runGh(
+    input.repository_path,
+    ["api", "-X", "POST", endpoint, "--input", "-"],
+    {
+      input: JSON.stringify(reviewPayload(input)),
+      timeoutMs: 60_000
+    }
+  );
+}
+
 function parseReviewJson(
   output: string,
   details: Omit<PullRequestReviewError["details"], "cause">
@@ -222,28 +308,37 @@ export function createGitHubPullRequestReviewProviderFactory({
         async publishReview(input) {
           const endpoint =
             `repos/${input.owner}/${input.repo}/pulls/${input.pull_number}/reviews`;
-          const event = ghEvent(input.event);
-          const details = reviewErrorDetails(input, endpoint, event);
+          let effectiveInput = input;
+          let event = ghEvent(effectiveInput.event);
+          let details = reviewErrorDetails(effectiveInput, endpoint, event);
           let output: string;
           try {
-            output = await runGh(
-              input.repository_path,
-              ["api", "-X", "POST", endpoint, "--input", "-"],
-              {
-                input: JSON.stringify(reviewPayload(input)),
-                timeoutMs: 60_000
-              }
-            );
+            output = await publishReviewRequest(effectiveInput, endpoint, runGh);
           } catch (cause) {
-            throw pullRequestReviewError(
-              "Failed to publish GitHub pull request review",
-              cause,
-              details
-            );
+            if (
+              event !== "REQUEST_CHANGES" ||
+              !isOwnPullRequestRequestChangesRejection(cause)
+            ) {
+              throw publishDispatchError(effectiveInput, endpoint, event, cause);
+            }
+
+            effectiveInput = { ...input, event: "comment" };
+            event = ghEvent(effectiveInput.event);
+            details = reviewErrorDetails(effectiveInput, endpoint, event);
+            try {
+              output = await publishReviewRequest(effectiveInput, endpoint, runGh);
+            } catch (retryCause) {
+              throw publishDispatchError(
+                effectiveInput,
+                endpoint,
+                event,
+                retryCause
+              );
+            }
           }
 
           const response = parseReviewJson(output, details);
-          return parseReviewResponse(response, input, details);
+          return parseReviewResponse(response, effectiveInput, details);
         }
       };
     }

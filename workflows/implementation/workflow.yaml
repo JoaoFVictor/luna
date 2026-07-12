@@ -54,6 +54,7 @@ nodes:
     artifacts:
       - path: workspace.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.worktree.v1
         source:
           expression: "$.steps.workspace"
         format: json
@@ -103,6 +104,7 @@ nodes:
     artifacts:
       - path: implementation-plan.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.plan.v1
         source:
           expression: "$.steps.implementation_plan"
         format: json
@@ -127,6 +129,7 @@ nodes:
     artifacts:
       - path: implementation-result.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.gates.v1
         source:
           expression: "$.steps.implementation"
         format: json
@@ -159,6 +162,8 @@ nodes:
         type: quality-gates.agent_review
         input:
           review_agent: change-reviewer
+          context:
+            expression: "$.steps.context"
           subject:
             expression: "$.gate"
         block_when:
@@ -170,6 +175,8 @@ nodes:
         type: quality-gates.agent_review
         input:
           review_agent: change-acceptance-reviewer
+          context:
+            expression: "$.steps.context"
           subject:
             expression: "$.gate"
         block_when:
@@ -193,11 +200,13 @@ nodes:
     artifacts:
       - path: validation.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.validation.v1
         source:
           expression: "$.steps.implementation_validation.validation"
         format: json
       - path: acceptance-review.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.review.acceptance.v1
         source:
           expression: "$.steps.implementation_validation.acceptance"
         format: json
@@ -212,6 +221,7 @@ nodes:
     artifacts:
       - path: diff.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.diff.v1
         source:
           expression: "$.steps.worktree_diff"
         format: json
@@ -255,6 +265,7 @@ nodes:
     artifacts:
       - path: git-commit.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.commit.v1
         source:
           expression: "$.steps.commit"
         format: json
@@ -272,6 +283,7 @@ nodes:
     artifacts:
       - path: commit.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.commit.v1
         source:
           expression: "$.steps.commit_lifecycle"
         format: json
@@ -309,6 +321,7 @@ nodes:
     artifacts:
       - path: git-push.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.push.v1
         source:
           expression: "$.steps.push"
         format: json
@@ -326,6 +339,7 @@ nodes:
     artifacts:
       - path: push.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.push.v1
         source:
           expression: "$.steps.push_lifecycle"
         format: json
@@ -361,6 +375,7 @@ nodes:
     artifacts:
       - path: change-request.json
         publisher: artifacts.manifest_publisher
+        semantic_type: luna.implementation.change-request.v1
         source:
           expression: "$.steps.change_request"
         format: json

@@ -28,10 +28,15 @@ export async function appendWorkflowRuntimeStreamLog(
   input: RunWorkflowInput,
   event: WorkflowRuntimeStreamEvent
 ): Promise<void> {
-  await input.observability?.recorder.addEvent("runtime.stream", {
-    kind: event.kind,
-    ...structuredEventData(event)
-  });
+  try {
+    await input.observability?.recorder.addEvent("runtime.stream", {
+      kind: event.kind,
+      ...structuredEventData(event)
+    });
+  } catch {
+    // Stream projection is diagnostic and cannot alter scheduler semantics,
+    // especially after a durable interrupt has made the run resumable.
+  }
 }
 
 function structuredEventData(event: WorkflowRuntimeStreamEvent): Record<string, unknown> {

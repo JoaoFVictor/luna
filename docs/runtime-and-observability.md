@@ -110,17 +110,49 @@ node dist/src/cli.js webhook-worker
 For a containerized local runtime, use Compose:
 
 ```bash
+export HOST_UID="$(id -u)"
+export HOST_GID="$(id -g)"
+export LUNA_STUDIO_CHECKOUT_ID="$(pwd -P | sha256sum | cut -c1-24)"
+install -d -m 0700 .runs .luna/studio
 docker compose up --build
 ```
 
-This starts Redis, `webhook-server`, and `webhook-worker`. The containers use
+This starts Redis, `webhook-server`, `webhook-worker`, and `studio`. The
+containers use
 `REDIS_URL=redis://redis:6379`, keep Redis on the internal Compose network,
 expose the HTTP server on host port `4012`, mount `./dist` and `./config`
 read-only, mount
 `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth`, and write run
 artifacts to `./.runs`. The auth root is writable because the Pi runtime can
-refresh OAuth credentials. Compose also prepares `./.runs` before the app
-containers start so the non-root worker can write artifacts.
+refresh OAuth credentials. Luna services run as the required host
+`HOST_UID:HOST_GID`; `.runs` must be created privately by that identity before
+startup and Compose never recursively changes a bind mount's ownership. A
+read-only preflight requires `.runs` and `.luna/studio` to be owned by
+`HOST_UID` with mode `0700`; it fails rather than modifying an unsafe bind.
+
+The Studio is independently startable with `docker compose up --build studio`.
+Its production React assets are built into the image, and opening
+`http://127.0.0.1:43110` establishes the local browser session automatically.
+No token or log lookup is required. The port mapping is
+fixed to `127.0.0.1:43110:43110`: the process explicitly opts into a wildcard
+listener inside the container bridge, but accepts Host and Origin only for the
+public `127.0.0.1:43110` authority. Only this service receives read-write
+mounts for `workflows/`, `agents/`, and `config/`; its private drafts and apply
+journals persist under `.luna/studio/`, while the SQLite run catalog lives in a
+private checkout-scoped named volume at `/var/lib/luna-studio`, outside the
+checkout. Compose requires a stable `LUNA_STUDIO_CHECKOUT_ID`, includes it in
+the Compose project name, and hashes it again below the state root. The second
+namespace remains authoritative if an override shares one physical volume
+between checkouts. Local processes use `LUNA_STUDIO_STATE_ROOT` or the per-user
+XDG state directory. The state initializer changes only the named-volume root,
+non-recursively, to `HOST_UID:HOST_GID` with mode `0700`; it does not alter any
+bind mount. The Studio also mounts
+the shared auth root and repository parent because a confirmed Launch executes
+the real native runtime rather than a browser-only simulation. Git metadata for
+the Luna checkout itself is mounted read-only for history/compare/restore.
+Compose rejects linked worktrees explicitly: their `.git` gitfile points to an
+absolute host gitdir that is unavailable under the container namespace. Use a
+full clone for this deployment path.
 
 Run `npm run build` before restarting app services after TypeScript changes so
 the mounted `dist/` matches the mounted configuration.
@@ -145,8 +177,9 @@ directory that should appear as `/repositories`.
 For local smoke tests against personal repositories, prefer ignored local
 overrides over committing real repository names. A `docker-compose.override.yml`
 can mount `.luna/local-config/repositories.yaml` over
-`/app/config/repositories.yaml`, while `.env` sets `LUNA_REPOSITORIES_ROOT` to
-the host parent directory.
+`/app/config/repositories.yaml` for `webhook-server`, `webhook-worker`, and
+`studio`, while `.env` sets `LUNA_REPOSITORIES_ROOT` to the host parent
+directory.
 
 The queue name and Redis URL come from `config/webhooks.yaml`, with `REDIS_URL`
 available as a runtime override. Jobs use deterministic BullMQ job ids for
@@ -222,7 +255,24 @@ In code:
 When SQLite checkpoints are active, Luna installs a LangGraph checkpointer and
 uses synchronous durability for the stream. Without that backend, Luna still
 runs the scheduler but cannot provide the same native LangGraph checkpoint
-integration.
+integration. Each scheduler invocation uses a disposable internal LangGraph
+thread id, separate from the canonical Luna run id, so LangGraph reducers never
+restore and append Luna's waiting state a second time. Internal journals are
+cleaned up best-effort; Luna checkpoints remain the replay and resume authority.
+
+The LangGraph journal is auxiliary, not Luna's run authority. Each scheduler
+invocation receives a fresh internal thread id, isolated from canonical Luna
+checkpoints and from later run/resume invocations; cleanup is best-effort after
+the stream. This prevents append reducers from restoring canonical artifact
+references a second time. Journal I/O failures are surfaced as
+`runtime_durability_recovery_required`, never converted into a contradictory
+failed terminal after a Luna node completion or human wait is already durable.
+
+A compiled node that can create a pending interrupt must be dependency-ordered
+with every other workflow node. Independent HITL siblings are rejected at
+compile time, so a durable waiting result cannot race with and hide a failure
+from another branch. Luna may relax this restriction only after it has an
+explicit durable model for mixed parallel wait/failure outcomes.
 
 ## Pi Agent Runtime
 
@@ -272,6 +322,37 @@ Runtime-only context includes operational objects such as repository/workspace
 roots, executors, ports, artifact publishers, observability, and abort signals.
 Expressions can see selected context roots, but those objects are not serialized
 directly into checkpoints.
+
+After final output validation, terminalization has one authority. Ordinary CLI
+runs commit the exact succeeded checkpoint. A control plane may instead install
+a terminal durability barrier; Luna resolves that durable intent first and
+treats the runtime checkpoint as a secondary projection. This prevents a
+checkpoint from claiming success while control-plane recovery claims failure.
+
+Studio lease acquisitions use a fresh cryptographic token in mutable heartbeat
+and terminal transition ids. Reacquiring a run with the same logical owner cannot
+reuse ids merely because an in-memory sequence counter restarted; content-derived
+recovery claims and outcome proofs stay deterministic where replay idempotency is
+required.
+
+Resume migrates a legacy run that predates execution-identity checkpoints only
+after a read-only preflight validates its exact waiting checkpoint and matching
+interrupt against the compiled workflow revision and persisted resume context.
+Invalid resume input cannot create the identity checkpoint or bind the run to a
+newer definition.
+
+Terminalization never performs destructive workspace cleanup. Luna retains the
+workspace after both success and failure, for CLI and control-plane runs, so
+that terminal authority, returned state, and physical path cannot diverge. The
+`workspace.preserve_on_success` and `workspace.preserve_on_failure` fields are
+required retention assertions and only accept `true`; `false` is rejected as
+invalid configuration rather than being silently ignored.
+
+A future cleanup command needs its own durable intent,
+`pending/completed/unknown` reconciliation, confirmation policy, idempotent
+postcondition checks, and observable result. Until that separately planned
+operation exists, neither the runtime nor Studio deletes a run worktree during
+terminalization or recovery.
 
 ## Events
 
@@ -357,6 +438,81 @@ The native runner reloads app/repository config, reloads and recompiles the
 workflow definition, loads the checkpoint, reconstructs run/invocation context,
 authorizes resume, applies the decision, and continues execution.
 
+Before returning `waiting_for_input`, Luna completes a deterministic wait
+protocol for that run and gate:
+
+1. persist an `interrupt_wait_intent` with the stable checkpoint/interrupt ids,
+   workflow revision, resume context, timestamp, pre-gate artifact refs, and
+   prior interrupt refs;
+2. persist the prior step writes and the exact waiting checkpoint;
+3. create the interrupt with create-if-absent exact semantics;
+4. persist `interrupt_wait_completion` only after the other three stages are
+   durable.
+
+Every stage is reconciled against the same run/node identity. An exact record
+already present is adopted; conflicting durable state is rejected. If a store
+may have committed but its exact read-back is temporarily unavailable, Luna
+returns `runtime_checkpoint_write_acceptance_unknown` or
+`runtime_durability_recovery_required`. These codes mean the outcome is
+inconclusive and must be replayed with the same run identity. They do not write a
+failed terminal checkpoint or a false `run.failed`/`node.failed` event. On that
+replay, durable completed nodes before the gate are rehydrated rather than
+executed again, and the wait protocol advances to its exact completion marker.
+After that completion marker exists, a late LangGraph stream or auxiliary
+checkpointer failure returns the authoritative `waiting_for_input` result; it
+cannot create a failed terminal. Auxiliary journal failures after an ordinary
+node completion instead return `runtime_durability_recovery_required`, allowing
+an exact replay to adopt the node completion without rerunning its executor.
+Checkpoint-write access failures while loading a wait intent, resume writes, or
+persisted node recovery receive the same non-terminal classification; semantic
+validation of successfully read records remains a deterministic state error.
+
+The waiting checkpoint appends the current interrupt ref to the prior history
+with exact deduplication. Resume validates and rehydrates that collection, so
+sequential gates retain `[A]`, then `[A, B]`, and the final state/terminal
+projection still carries `[A, B]` for audit provenance.
+
+After authorization, the interrupt store atomically resolves the exact resume
+input. Applying the decision to workflow state uses a durable step write, while
+the `resume_completion` marker is written only after the resumed node output and
+all required artifacts are durable. A retry that finds only the decision repeats
+artifact publication; a retry that finds the exact completion marker restores
+its artifact references without republishing. A commit-then-throw response is
+accepted only when exact read-back returns the same deterministic record.
+
+Authorization and expiration are evaluated before the first `pending` to
+`resuming` claim. If the process stops after that claim, an exact retry adopts
+its persisted resume attempt and input without re-evaluating policies that may
+have changed meanwhile; this lets the already-authorized transition finish.
+A different decision, actor, or payload remains `interrupt_conflict`, and an
+incomplete claim fails closed for operator recovery.
+
+Normal nodes use the same rule: a `steps` write proves only that executor output
+is durable. A separate `node_completion` marker, bound to that output digest, is
+written after every declared artifact succeeds. Resume rehydrates artifact refs
+from exact markers, skips completed nodes without re-entering their executors,
+and can finish an output-only node by retrying its artifact batch. Pre-gate
+artifact refs are also retained in the waiting checkpoint.
+
+Fresh execution and resume application share one run-scoped lease through
+terminalization, so two callers for the same run cannot advance nodes
+concurrently.
+Before a fresh run or resume performs recovery or executes a node, Luna loads
+and validates both possible terminal checkpoint identities. Any exact succeeded
+or failed terminal rejects the replay because its ref-only snapshot cannot
+reconstruct the complete workflow output. If both terminal identities exist,
+Luna reports `runtime_checkpoint_schema_mismatch` as an integrity violation.
+A durable gate marker never bypasses the
+workflow success checkpoint/control-plane barrier; that barrier is attempted
+again until it establishes the success authority.
+
+Filesystem lease recovery is fail-closed. A stale heartbeat alone never proves
+that a holder is dead. Luna recovers a live PID only when a strong Linux procfs
+identity proves PID reuse; when that identity is unavailable (including other
+operating systems), a live PID remains non-recoverable regardless of lock age.
+This may require operator cleanup after PID reuse, but it cannot create two live
+resume holders that execute downstream effects concurrently.
+
 ## Failure Model
 
 Failures are surfaced with structured runtime errors where possible.
@@ -373,6 +529,40 @@ Common failure classes:
 - side-effect policy mismatch.
 - provider auth/config/API error.
 
+When a parallel LangGraph batch produces nested `AggregateError` values, Luna
+recursively extracts every node-attempt failure, orders the primary cause by
+stable node identity, and merges all failed lifecycles with completed sibling
+state before terminal projection. Partial artifact refs and completed sibling
+steps are therefore not lost merely because another branch failed first.
+
+`runtime_checkpoint_write_acceptance_unknown` and
+`runtime_durability_recovery_required` are deliberately not terminal failure
+classifications. They require exact reconciliation with the same durable
+identity; converting either one into a failed run could contradict a write that
+already committed.
+
+The runtime binds a `run_id` to the compiled workflow id and revision in an exact
+checkpoint before it executes the first node. Persisted node output/completion
+ids include a digest of the same identity. Retrying that exact revision can reuse
+durable work; presenting the same `run_id` with another workflow or revision is a
+state conflict raised before node execution. Native workflow revision loading
+includes referenced agent definition digests, so changing an agent cannot inherit
+the prior node completion marker.
+
+Studio adds a stricter control-plane rule for uncertain external effects: once a
+write-capable dispatch has started, missing terminal proof becomes
+`outcome_unknown` and is never replayed automatically. Only a preflight-proven
+read-only job with an exact durable recovery intent may be requeued. This does not
+change the generic checkpoint acceptance rule above; it narrows Studio dispatch
+recovery where an external side effect could already have happened.
+
+If an ordinary runtime failure cannot be committed and read back as the exact
+failed terminal checkpoint, Luna returns
+`runtime_durability_recovery_required`. It does not emit `run.failed` or call the
+failed-state terminal observer, because either projection would falsely invite a
+resume that might repeat an external effect. Studio maps that uncertainty to its
+manual-reconciliation outcome instead of replaying the run.
+
 The run artifacts and events should contain enough evidence to inspect what
 failed and where.
 
@@ -388,6 +578,9 @@ failed and where.
 - LangGraph runner: `src/runtime/langgraph/workflow-runner.ts`
 - Generic runner engine: `src/runtime/workflow/runner-engine.ts`
 - Node runner: `src/runtime/workflow/node-runner.ts`
+- Checkpoint exact-write protocol: `src/runtime/workflow/checkpoints.ts`
+- Human-wait protocol: `src/runtime/workflow/interrupts.ts`
+- Persisted node recovery: `src/runtime/workflow/persisted-node-recovery.ts`
 - Resume application: `src/runtime/workflow/resume-application.ts`
 - Observability recorder: `src/core/observability/tracing.ts`
 - Observability sinks: `src/core/observability/sinks.ts`

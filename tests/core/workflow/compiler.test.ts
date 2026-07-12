@@ -9,6 +9,7 @@ import {
   compileWorkflow,
   type CompiledWorkflow
 } from "../../../src/core/workflow/compiler.js";
+import { validateNodesAgainstCapabilities } from "../../../src/core/workflow/definition-validation.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -45,6 +46,7 @@ const registry = createCapabilityRegistry([
     id: "agents",
     kind: "execution",
     version: "1.0.0",
+    workflow_node_types: ["agent"],
     schemas: {
       "agents.review_output": {
         id: "agents.review_output",
@@ -106,6 +108,98 @@ function edgePairs(compiled: CompiledWorkflow): string[] {
 }
 
 describe("workflow compiler", () => {
+  it.each([
+    "__luna_wait_intent__:approve",
+    "__luna_wait_completion__:approve",
+    "__luna_resume_completion__:approve",
+    "__start__",
+    "__end__",
+    "contains:colon",
+    "contains|pipe",
+    "state_schema_version",
+    "invocation",
+    "config",
+    "run",
+    "workflow",
+    "run_status",
+    "node_statuses",
+    "steps",
+    "attempts",
+    "artifact_refs",
+    "interrupt_refs",
+    "event_cursor",
+    "primary_failure"
+  ])("rejects runtime-reserved workflow node id %s", (nodeId) => {
+    const nodes: WorkflowNode[] = [{
+      id: nodeId,
+      type: "built_in",
+      uses: "runtime.preflight"
+    }];
+
+    expect(() => validateNodesAgainstCapabilities(
+      nodes,
+      ["runtime"],
+      new Set([nodeId]),
+      registry
+    )).toThrow(expect.objectContaining({
+      code: "workflow_node_id_reserved",
+      path: "$.nodes[0].id"
+    }));
+    expect(() => compileWorkflow({ workflow: workflow(nodes), registry }))
+      .toThrow(expect.objectContaining({
+        code: "workflow_node_id_reserved",
+        path: "$.nodes[0].id"
+      }));
+  });
+
+  it("derives an agent node capability from the registry semantic role", () => {
+    const modelRegistry = createCapabilityRegistry([
+      capabilityManifest({
+        id: "model-execution",
+        kind: "execution",
+        version: "1.0.0",
+        workflow_node_types: ["agent"],
+        schemas: {
+          "model-execution.result": {
+            id: "model-execution.result",
+            schema: { type: "object" }
+          }
+        }
+      })
+    ]);
+    const definition = workflow([{
+      id: "review",
+      type: "agent",
+      agent: "reviewer",
+      output_schema: "model-execution.result"
+    }]);
+
+    expect(compileWorkflow({ workflow: definition, registry: modelRegistry }).nodes[0])
+      .toMatchObject({ kind: "agent", capability_id: "model-execution" });
+
+    const parsedNode = {
+      id: "review",
+      type: "agent" as const,
+      agent: "reviewer",
+      output_schema: "model-execution.result"
+    };
+    expect(() => validateNodesAgainstCapabilities(
+      [parsedNode],
+      ["model-execution"],
+      new Set([parsedNode.id]),
+      modelRegistry
+    )).not.toThrow();
+    expect(() => validateNodesAgainstCapabilities(
+      [parsedNode],
+      [],
+      new Set([parsedNode.id]),
+      modelRegistry
+    )).toThrow(expect.objectContaining({
+      code: "workflow_capability_missing",
+      capability: "model-execution"
+    }));
+  });
+
   it("copies pattern execution policy metadata from the capability registration", () => {
     const compiled = compileWorkflow({
       workflow: workflow([
@@ -189,4 +283,34 @@ describe("workflow compiler", () => {
       })
     ).toThrowError(expect.objectContaining({ code: "workflow_parallel_hitl_unsupported" }));
   });
+
+  it.each(["gate-first", "sibling-first"] as const)(
+    "rejects a pending HITL node parallel to an ordinary sibling (%s)",
+    (order) => {
+      const gate = {
+        id: "approve",
+        type: "human_gate" as const,
+        uses: "quality.approval",
+        after: ["start"]
+      };
+      const sibling = {
+        id: "reader",
+        type: "built_in" as const,
+        uses: "runtime.preflight",
+        after: ["start"]
+      };
+
+      expect(() =>
+        compileWorkflow({
+          workflow: workflow([
+            { id: "start", type: "built_in", uses: "runtime.preflight" },
+            ...(order === "gate-first" ? [gate, sibling] : [sibling, gate])
+          ]),
+          registry
+        })
+      ).toThrowError(expect.objectContaining({
+        code: "workflow_parallel_hitl_unsupported"
+      }));
+    }
+  );
 });

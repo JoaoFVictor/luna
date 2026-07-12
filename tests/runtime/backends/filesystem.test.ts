@@ -1,7 +1,15 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA } from "../../../src/core/runtime/artifacts/contracts.js";
 import {
   createFilesystemArtifactContentStore,
   createFilesystemArtifactManifestStore
@@ -109,6 +117,120 @@ describe("filesystem runtime backends", () => {
     }
   });
 
+  it("enforces manifest count and per-file byte limits at list origin", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
+    const artifacts = createFilesystemArtifactManifestStore({ root });
+
+    try {
+      for (const id of ["one", "two"]) {
+        await artifacts.put({
+          id,
+          run_id: "run-count",
+          uri: `artifact://run-count/${id}.json`,
+          artifact_path: `${id}.json`,
+          created_at: "2026-06-25T00:00:00.000Z"
+        });
+      }
+      await expect(artifacts.list("run-count", {
+        max_entries: 1,
+        max_entry_bytes: 4_096,
+        max_total_bytes: 8_192,
+        max_scanned_entries: 3
+      })).rejects.toMatchObject({
+        code: "artifact_manifest_list_limit_exceeded",
+        kind: "entries",
+        maximum: 1
+      });
+
+      await artifacts.put({
+        id: "oversized",
+        run_id: "run-entry-bytes",
+        uri: `artifact://run-entry-bytes/${"x".repeat(1_024)}`,
+        artifact_path: "oversized.json",
+        created_at: "2026-06-25T00:00:00.000Z"
+      });
+      await expect(artifacts.list("run-entry-bytes", {
+        max_entries: 2,
+        max_entry_bytes: 256,
+        max_total_bytes: 4_096,
+        max_scanned_entries: 2
+      })).rejects.toMatchObject({
+        code: "artifact_manifest_list_limit_exceeded",
+        kind: "entry_bytes",
+        maximum: 256
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces aggregate bytes and directory iteration while listing manifests", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
+    const artifacts = createFilesystemArtifactManifestStore({ root });
+
+    try {
+      for (const id of ["one", "two"]) {
+        await artifacts.put({
+          id,
+          run_id: "run-total",
+          uri: `artifact://run-total/${id}.json`,
+          artifact_path: `${id}.json`,
+          created_at: "2026-06-25T00:00:00.000Z"
+        });
+      }
+      const manifestRoot = path.join(root, "run-total", ".manifests");
+      const manifestFiles = await readdir(manifestRoot);
+      const sizes = await Promise.all(
+        manifestFiles.map(async (file) => (await stat(path.join(manifestRoot, file))).size)
+      );
+      const maxEntryBytes = Math.max(...sizes);
+      const totalBytes = sizes.reduce((total, size) => total + size, 0);
+      await expect(artifacts.list("run-total", {
+        max_entries: 2,
+        max_entry_bytes: maxEntryBytes,
+        max_total_bytes: totalBytes - 1,
+        max_scanned_entries: 2
+      })).rejects.toMatchObject({
+        code: "artifact_manifest_list_limit_exceeded",
+        kind: "total_bytes",
+        maximum: totalBytes - 1
+      });
+
+      const junkRoot = path.join(root, "run-scan", ".manifests");
+      await mkdir(junkRoot, { recursive: true });
+      await Promise.all([
+        writeFile(path.join(junkRoot, "junk-a"), "x"),
+        writeFile(path.join(junkRoot, "junk-b"), "x"),
+        writeFile(path.join(junkRoot, "junk-c"), "x")
+      ]);
+      await expect(artifacts.list("run-scan", {
+        max_entries: 1,
+        max_entry_bytes: 256,
+        max_total_bytes: 256,
+        max_scanned_entries: 2
+      })).rejects.toMatchObject({
+        code: "artifact_manifest_list_limit_exceeded",
+        kind: "scanned_entries",
+        maximum: 2
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects manifest list configuration above absolute safety ceilings", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
+    const artifacts = createFilesystemArtifactManifestStore({ root });
+
+    try {
+      await expect(artifacts.list("run-limit-config", {
+        max_entries: ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA.max_entries + 1
+      })).rejects.toThrow(/max_entries.*no greater/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects conflicting artifact content commits", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
     const content = createFilesystemArtifactContentStore({ root });
@@ -192,7 +314,21 @@ describe("filesystem runtime backends", () => {
     }
   });
 
-  it("rejects artifact payload paths under reserved filesystem metadata directories", async () => {
+  it.each([
+    ".manifests/result.json",
+    ".MaNiFeStS/result.json",
+    ".pending/result.json",
+    ".PENDING/result.json",
+    "events.jsonl",
+    "EVENTS.JSONL",
+    "runtime.log.jsonl",
+    "Runtime.Log.Jsonl",
+    "runtime.log.jsonl/nested/payload.json",
+    "EVENTS.JSONL/nested/payload.json",
+    "trace.jsonl",
+    "TRACE.JSONL",
+    "trace.jsonl/nested/payload.json"
+  ])("rejects artifact payload paths under reserved run storage: %s", async (artifactPath) => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
     const content = createFilesystemArtifactContentStore({ root });
 
@@ -203,7 +339,7 @@ describe("filesystem runtime backends", () => {
           run_id: "run-1",
           node_id: "writer",
           artifact_id: "artifact-1",
-          artifact_path: ".manifests/result.json",
+          artifact_path: artifactPath,
           content: "payload",
           content_hash: "sha256:unused"
         })

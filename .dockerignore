@@ -2,7 +2,11 @@ node_modules/
 dist/
 build/
 .runs/
+repositories/
+.worktrees/
 coverage/
+playwright-report/
+test-results/
 .cache/
 .turbo/
 
@@ -13,8 +17,7 @@ coverage/
 docker-compose.override.yml
 luna.auth.json
 auth.json
-.luna/auth/**
-.luna/local-config/**
+.luna/**
 
 *.log
 .DS_Store

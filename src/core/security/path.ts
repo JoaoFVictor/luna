@@ -1,8 +1,7 @@
 import {
   lstat,
   mkdir,
-  realpath,
-  stat
+  realpath
 } from "node:fs/promises";
 import path from "node:path";
 
@@ -56,15 +55,29 @@ async function realpathNearestExisting(
   let current = candidate;
 
   while (true) {
+    let exists = false;
     try {
       await lstat(current);
-      return {
-        ancestorReal: await realpath(current),
-        missingSegments: missingSegments.reverse()
-      };
+      exists = true;
     } catch (cause) {
       const code = (cause as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
+        throw cause;
+      }
+    }
+
+    if (exists) {
+      try {
+        return {
+          ancestorReal: await realpath(current),
+          missingSegments: missingSegments.reverse()
+        };
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
+          throw pathSecurityError(
+            "Existing path cannot be resolved; it may contain a dangling symbolic link"
+          );
+        }
         throw cause;
       }
     }
@@ -86,8 +99,17 @@ export async function safeJoin(
   for (const segment of segments) {
     assertSafeSegment(segment);
   }
-
   await mkdir(root, { recursive: true, mode: 0o700 });
+  return await resolvePathInsideRoot(root, segments);
+}
+
+export async function resolvePathInsideRoot(
+  root: string,
+  segments: readonly string[]
+): Promise<string> {
+  for (const segment of segments) {
+    assertSafeSegment(segment);
+  }
 
   const rootReal = await realpath(root);
   const candidate = path.resolve(root, ...segments);
@@ -98,20 +120,10 @@ export async function safeJoin(
     throw pathSecurityError("Resolved path is outside the root");
   }
 
-  try {
-    const candidateStat = await stat(candidate);
-    if (candidateStat.isDirectory() || candidateStat.isFile()) {
-      const realCandidate = await realpath(candidate);
-      if (!isInsideRoot(rootReal, realCandidate)) {
-        throw pathSecurityError("Resolved path is outside the root");
-      }
-    }
-  } catch (cause) {
-    const code = (cause as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") {
-      throw cause;
-    }
-  }
-
-  return candidate;
+  // Return the physical path derived from the validated existing ancestor so
+  // the caller does not retain the logical symlink alias used for resolution.
+  // This is a point-in-time check, not an openat-style capability: callers that
+  // admit concurrent same-principal filesystem mutation must additionally pin
+  // and compare opened-file identity before consuming the path.
+  return candidateReal;
 }

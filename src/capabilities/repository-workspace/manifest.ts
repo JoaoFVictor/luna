@@ -176,6 +176,7 @@ export const manifest = capabilityManifest({
       id: "repository-workspace.capture_policy",
       config_schema: capturePolicySchema,
       side_effect_semantics: "write",
+      side_effect_category: "repository_write",
       side_effect_operation_ids: ["repository-workspace.capture"],
       idempotency_scope: "run",
       retry_semantics: "retry_requires_adoption",

@@ -21,6 +21,7 @@ import {
   createSqliteCheckpointStore,
   sqliteCheckpointFile
 } from "../../../src/runtime/backends/sqlite/checkpoints.js";
+import { createWorkflowObservability } from "../../../src/core/observability/workflow-observability.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -71,6 +72,7 @@ const registry = createCapabilityRegistry([
     id: "agents",
     kind: "execution",
     version: "1.0.0",
+    workflow_node_types: ["agent"],
     schemas: {
       "agents.output": {
         id: "agents.output",
@@ -139,6 +141,60 @@ function backends() {
 }
 
 describe("workflow runner checkpoint resume", () => {
+  it("keeps a durable waiting outcome when required telemetry fails afterward", async () => {
+    const stores = backends();
+    const telemetryFailure = new Error("interrupt telemetry unavailable");
+    const observability = createWorkflowObservability({
+      run: { id: "run-waiting-telemetry", workflowId: workflow.id, attempt: 1 },
+      sinks: [
+        {
+          id: "required-interrupt-telemetry",
+          required: true,
+          emit(record) {
+            if (
+              record.type === "span.event" &&
+              record.event.name === "interrupt.created"
+            ) {
+              throw telemetryFailure;
+            }
+          },
+          async flush() {
+            throw telemetryFailure;
+          }
+        }
+      ]
+    });
+
+    const waiting = await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow, registry }),
+      workflow,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-waiting-telemetry",
+        workflow_id: workflow.id,
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      backends: stores,
+      builtIns: { "runtime.pre": async () => ({ ready: true }) },
+      agentRuntime: {} as AgentRuntimePort,
+      observability
+    });
+
+    expect(waiting).toMatchObject({
+      status: "waiting_for_input",
+      state: { run_status: "waiting_for_input" }
+    });
+    await expect(stores.checkpoints.load(
+      "run-waiting-telemetry",
+      { checkpointId: "checkpoint-run-waiting-telemetry-approve" }
+    )).resolves.toMatchObject({ state: { run_status: "waiting_for_input" } });
+    await expect(stores.interrupts.get(
+      "interrupt-run-waiting-telemetry-approve"
+    )).resolves.toMatchObject({ status: "pending" });
+  });
+
   it("rehydrates captured workspace context from checkpoint writes on resume", async () => {
     const stores = backends();
     const compiled = compileWorkflow({ workflow: workspaceWorkflow, registry });
@@ -315,7 +371,7 @@ describe("workflow runner checkpoint resume", () => {
     expect(downstreamRan).toBe(false);
   });
 
-  it("retries resume idempotently after the decision was saved but downstream failed", async () => {
+  it("does not revive a resume after downstream failure became terminal", async () => {
     const stores = backends();
     const compiled = compileWorkflow({ workflow, registry });
     await runCompiledWorkflow({
@@ -357,17 +413,237 @@ describe("workflow runner checkpoint resume", () => {
       })
     ).rejects.toThrow("downstream failed after decision persistence");
 
-    const resumed = await resumeCompiledWorkflow({
+    let retryRan = false;
+    await expect(resumeCompiledWorkflow({
         ...resumeInput,
         builtIns: {
-          "runtime.after": async ({ state }) => {
-            expect(state.steps.approve).toEqual({ approved: true });
+          "runtime.after": async () => {
+            retryRan = true;
             return { done: true };
+          }
+        }
+      })).rejects.toMatchObject({ code: "runtime_state_invalid" });
+
+    expect(retryRan).toBe(false);
+  });
+
+  it("retries required gate artifacts before durably completing a saved resume decision", async () => {
+    const artifactWorkflow: WorkflowDefinition = {
+      ...workflow,
+      id: "checkpoint-artifact-test",
+      graph: {
+        nodes: [
+          { id: "pre", type: "built_in", uses: "runtime.pre" },
+          {
+            id: "approve",
+            type: "human_gate",
+            uses: "approval.human",
+            after: ["pre"],
+            artifacts: [
+              {
+                path: "approval.json",
+                publisher: "artifacts.manifest_publisher",
+                source: { expression: "$.steps.approve" },
+                format: "json",
+                required: true
+              }
+            ]
+          },
+          { id: "after", type: "built_in", uses: "runtime.after", after: ["approve"] }
+        ]
+      }
+    };
+    const stores = backends();
+    const checkpointStore = stores.checkpoints;
+    let failAfterCompletionCommit = true;
+    stores.checkpoints = {
+      ...checkpointStore,
+      async saveWrites(writes) {
+        await checkpointStore.saveWrites(writes);
+        if (
+          failAfterCompletionCommit &&
+          writes.some((write) => write.channel === "resume_completion")
+        ) {
+          failAfterCompletionCommit = false;
+          throw new Error("completion marker response lost after commit");
         }
       }
+    };
+    const compiled = compileWorkflow({ workflow: artifactWorkflow, registry });
+    const waiting = await runCompiledWorkflow({
+      compiled,
+      workflow: artifactWorkflow,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-resume-artifact-retry",
+        workflow_id: artifactWorkflow.id,
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      backends: stores,
+      builtIns: {
+        "runtime.pre": async () => ({ before: true })
+      },
+      agentRuntime: {} as AgentRuntimePort
     });
+    expect(waiting.status).toBe("waiting_for_input");
+    if (waiting.status !== "waiting_for_input") {
+      throw new Error("expected workflow to wait for input");
+    }
 
-    expect(resumed.status).toBe("succeeded");
+    let publishAttempts = 0;
+    const artifactPublisher = {
+      async publish({ node_id, path: artifactPath }: { node_id: string; path: string }) {
+        publishAttempts += 1;
+        if (publishAttempts === 1) {
+          throw new Error("approval artifact failed once");
+        }
+        return {
+          id: artifactPath,
+          uri: `memory://${artifactPath}`,
+          node_id
+        };
+      }
+    };
+    const resumeInput = {
+      compiled,
+      workflow: artifactWorkflow,
+      checkpoint_id: waiting.checkpoint_id,
+      thread_id: "run-resume-artifact-retry",
+      interrupt_id: waiting.interrupt_id,
+      decision: { approved: true },
+      backends: stores,
+      artifactPublisher,
+      builtIns: {
+        "runtime.after": async () => ({ done: true })
+      },
+      agentRuntime: {} as AgentRuntimePort
+    };
+
+    await expect(resumeCompiledWorkflow(resumeInput)).rejects.toThrow(
+      "approval artifact failed once"
+    );
+    expect(publishAttempts).toBe(1);
+    await expect(stores.checkpoints.listWrites(
+      resumeInput.thread_id,
+      "",
+      resumeInput.checkpoint_id
+    )).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        task_id: "approve",
+        channel: "steps",
+        value: { approved: true }
+      })
+    ]));
+    expect((await stores.checkpoints.listWrites(
+      resumeInput.thread_id,
+      "",
+      resumeInput.checkpoint_id
+    )).some((write) => write.channel === "resume_completion")).toBe(false);
+
+    const resumed = await resumeCompiledWorkflow(resumeInput);
+    expect(resumed).toMatchObject({
+      status: "succeeded",
+      state: {
+        artifact_refs: [
+          {
+            id: "approval.json",
+            uri: "memory://approval.json",
+            node_id: "approve"
+          }
+        ]
+      }
+    });
+    expect(publishAttempts).toBe(2);
+    expect((await stores.checkpoints.listWrites(
+      resumeInput.thread_id,
+      "",
+      resumeInput.checkpoint_id
+    )).some((write) => write.channel === "resume_completion")).toBe(true);
+
+    await expect(resumeCompiledWorkflow(resumeInput)).rejects.toMatchObject({
+      code: "runtime_state_invalid",
+      details: { run_status: "succeeded" }
+    });
+    expect(publishAttempts).toBe(2);
+  });
+
+  it("retries the success barrier when a terminal gate decision is already durable", async () => {
+    const gateLastWorkflow: WorkflowDefinition = {
+      ...workflow,
+      id: "checkpoint-terminal-gate-test",
+      graph: {
+        nodes: [
+          { id: "pre", type: "built_in", uses: "runtime.pre" },
+          { id: "approve", type: "human_gate", uses: "approval.human", after: ["pre"] }
+        ]
+      }
+    };
+    const stores = backends();
+    const compiled = compileWorkflow({ workflow: gateLastWorkflow, registry });
+    const waiting = await runCompiledWorkflow({
+      compiled,
+      workflow: gateLastWorkflow,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-resume-terminal-gate",
+        workflow_id: gateLastWorkflow.id,
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      backends: stores,
+      builtIns: { "runtime.pre": async () => ({ before: true }) },
+      agentRuntime: {} as AgentRuntimePort
+    });
+    if (waiting.status !== "waiting_for_input") {
+      throw new Error("expected workflow to wait for input");
+    }
+
+    const firstBarrierFailure = new Error("success authority unavailable");
+    let barrierAttempts = 0;
+    const resumeInput = {
+      compiled,
+      workflow: gateLastWorkflow,
+      checkpoint_id: waiting.checkpoint_id,
+      thread_id: "run-resume-terminal-gate",
+      interrupt_id: waiting.interrupt_id,
+      decision: { approved: true },
+      backends: stores,
+      builtIns: {},
+      agentRuntime: {} as AgentRuntimePort,
+      async onSucceededState() {
+        barrierAttempts += 1;
+        if (barrierAttempts === 1) {
+          throw firstBarrierFailure;
+        }
+      }
+    };
+
+    await expect(resumeCompiledWorkflow(resumeInput)).rejects.toBe(
+      firstBarrierFailure
+    );
+    expect(barrierAttempts).toBe(1);
+    expect((await stores.checkpoints.listWrites(
+      resumeInput.thread_id,
+      "",
+      resumeInput.checkpoint_id
+    )).some((write) => write.channel === "resume_completion")).toBe(true);
+    await expect(stores.checkpoints.load(
+      resumeInput.thread_id,
+      { checkpointId: `terminal-${resumeInput.thread_id}-succeeded` }
+    )).resolves.toBeUndefined();
+
+    await expect(resumeCompiledWorkflow(resumeInput)).resolves.toMatchObject({
+      status: "succeeded",
+      state: { run_status: "succeeded" }
+    });
+    expect(barrierAttempts).toBe(2);
+    await expect(stores.checkpoints.load(
+      resumeInput.thread_id,
+      { checkpointId: `terminal-${resumeInput.thread_id}-succeeded` }
+    )).resolves.toMatchObject({ state: { run_status: "succeeded" } });
   });
 
   it("resumes idempotently across durable checkpoint and filesystem interrupt stores", async () => {
@@ -437,7 +713,7 @@ describe("workflow runner checkpoint resume", () => {
       });
       expect(resumed.status).toBe("succeeded");
 
-      const repeated = await resumeCompiledWorkflow({
+      await expect(resumeCompiledWorkflow({
         ...resumeInput,
         builtIns: {
           "runtime.after": async () => {
@@ -445,8 +721,10 @@ describe("workflow runner checkpoint resume", () => {
             return { done: true };
           }
         }
+      })).rejects.toMatchObject({
+        code: "runtime_state_invalid",
+        details: { run_status: "succeeded" }
       });
-      expect(repeated.status).toBe("succeeded");
       expect(downstreamRuns).toBe(1);
       await expect(sharedStores.events.query({
         runId: "run-durable-resume",
@@ -464,7 +742,10 @@ describe("workflow runner checkpoint resume", () => {
             "runtime.after": async () => ({ done: true })
           }
         })
-      ).rejects.toMatchObject({ code: "interrupt_conflict" });
+      ).rejects.toMatchObject({
+        code: "runtime_state_invalid",
+        details: { run_status: "succeeded" }
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

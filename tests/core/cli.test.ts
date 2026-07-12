@@ -3,11 +3,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { InputAdapterRegistry } from "../../src/adapters/registry.js";
-import type { InputAdapter } from "../../src/adapters/types.js";
+import type {
+  InputAdapter,
+  RegisteredInputAdapter
+} from "../../src/adapters/types.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
 import { createInitialRuntimeState } from "../../src/core/runtime/state.js";
 import type { WorkflowRunResult } from "../../src/core/workflow/execution-contracts.js";
 import type { LunaPlatform } from "../../src/platform/native/native-platform.js";
+import type { StudioServerHandle } from "../../src/studio/server/studio-server.js";
 import { defineWebhookProviderAdapterFactories } from "../../src/webhooks/provider-registry.js";
 import {
   findProjectRoot,
@@ -40,20 +44,24 @@ const validInvocation: Invocation = {
   payload: { pull_request: { number: 42 } }
 };
 
-function registryWith(adapter: InputAdapter): InputAdapterRegistry {
+function registryWith(
+  adapter: InputAdapter,
+  source = "test"
+): InputAdapterRegistry<RegisteredInputAdapter> {
+  const registered = { ...adapter, source };
   return {
     get(id) {
-      return id === adapter.id ? adapter : undefined;
+      return id === registered.id ? registered : undefined;
     },
     require(id) {
-      if (id !== adapter.id) {
+      if (id !== registered.id) {
         throw new Error(`Unexpected adapter id: ${id}`);
       }
 
-      return adapter;
+      return registered;
     },
     ids() {
-      return [adapter.id];
+      return [registered.id];
     }
   };
 }
@@ -92,7 +100,7 @@ async function writeCliProjectConfig({
       "workspace:",
       "  strategy: git_worktree",
       `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
-      "  preserve_on_success: false",
+      "  preserve_on_success: true",
       "  preserve_on_failure: true",
       "artifacts:",
       `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
@@ -202,6 +210,30 @@ describe("Luna CLI", () => {
     });
   });
 
+  it("parses the generic Studio server arguments", () => {
+    expect(
+      parseCliArgs([
+        "studio",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "43111",
+        "--allow-non-loopback-bind",
+        "--public-host",
+        "127.0.0.1",
+        "--public-port",
+        "43112"
+      ])
+    ).toEqual({
+      command: "studio",
+      host: "0.0.0.0",
+      port: 43_111,
+      allowNonLoopbackBind: true,
+      publicHost: "127.0.0.1",
+      publicPort: 43_112
+    });
+  });
+
   it("parses generic webhook worker arguments", () => {
     expect(
       parseCliArgs([
@@ -222,6 +254,12 @@ describe("Luna CLI", () => {
     expect(() => parseCliArgs(["webhook-worker", "--port", "8080"])).toThrow(
       expect.objectContaining({ code: "unsupported_flag" })
     );
+    expect(() =>
+      parseCliArgs(["webhook-server", "--public-host", "127.0.0.1"])
+    ).toThrow(expect.objectContaining({ code: "unsupported_flag" }));
+    expect(() => parseCliArgs(["studio", "--config", "config"])).toThrow(
+      expect.objectContaining({ code: "unsupported_flag" })
+    );
   });
 
   it("finds the project root from compiled dist paths", async () => {
@@ -237,23 +275,24 @@ describe("Luna CLI", () => {
   it("loads routing from LUNA_CONFIG_ROOT outside projectRoot/config", async () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-project-"));
     const configRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-config-"));
+    await mkdir(path.join(configRoot, "nested"));
     await writeFile(
       path.join(configRoot, "app.yaml"),
       [
         "workspace:",
         "  strategy: git_worktree",
         `  root: ${JSON.stringify(path.join(projectRoot, "workspaces"))}`,
-        "  preserve_on_success: false",
+        "  preserve_on_success: true",
         "  preserve_on_failure: true",
         "artifacts:",
         `  root: ${JSON.stringify(path.join(projectRoot, "artifacts"))}`,
         "routing:",
-        "  path: external-routing.yaml",
+        "  path: ./nested//external-routing.yaml",
         ""
       ].join("\n")
     );
     await writeFile(
-      path.join(configRoot, "external-routing.yaml"),
+      path.join(configRoot, "nested", "external-routing.yaml"),
       [
         "type: router",
         "version: \"2026-06\"",
@@ -297,7 +336,7 @@ describe("Luna CLI", () => {
       load
     };
     const platform = {
-      inputAdapterRegistry: registryWith(adapter),
+      inputAdapterRegistry: registryWith(adapter, "github"),
       runWorkflow: vi.fn(async () => undefined),
       resumeWorkflow: vi.fn(async () => succeededWorkflowResult())
     } satisfies Pick<
@@ -435,6 +474,61 @@ describe("Luna CLI", () => {
         })
       })
     );
+  });
+
+  it("starts Luna Studio with resolved roots and loopback overrides", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "luna-cli-studio-"));
+    const configRoot = path.join(projectRoot, "config");
+    const studioHandle = {
+      close: vi.fn(async () => undefined)
+    } as unknown as StudioServerHandle;
+    const startStudioServer = vi.fn(async () => studioHandle);
+    const waitForStudioShutdown = vi.fn(async () => undefined);
+    const studioOutput = { write: vi.fn() };
+    await writeCliProjectConfig({ projectRoot, configRoot });
+
+    await expect(
+      main(
+        [
+          "studio",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "43111",
+          "--allow-non-loopback-bind",
+          "--public-host",
+          "127.0.0.1",
+          "--public-port",
+          "43112"
+        ],
+        {
+          projectRoot,
+          env: { LUNA_CONFIG_ROOT: configRoot },
+          startStudioServer,
+          studioOutput,
+          waitForStudioShutdown
+        }
+      )
+    ).resolves.toBe(0);
+
+    expect(startStudioServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectRoot,
+        configRoot,
+        host: "0.0.0.0",
+        port: 43_111,
+        allowNonLoopbackBind: true,
+        publicHost: "127.0.0.1",
+        publicPort: 43_112,
+        output: studioOutput,
+        app: expect.objectContaining({
+          workspace: expect.any(Object),
+          artifacts: expect.any(Object)
+        })
+      })
+    );
+    expect(waitForStudioShutdown).toHaveBeenCalledOnce();
+    expect(waitForStudioShutdown).toHaveBeenCalledWith(studioHandle);
   });
 
   it("starts the webhook worker with resolved config and CLI overrides", async () => {

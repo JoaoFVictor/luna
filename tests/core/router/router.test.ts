@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  decideInvocationRoute,
   parseWorkflowTarget,
   routeInvocation
 } from "../../../src/core/router/router.js";
-import { RouterDefinitionSchema, type RouterDefinition } from "../../../src/core/router/router-definition.js";
+import {
+  ROUTER_DEFINITION_MAX_RULES,
+  ROUTER_RULE_EXPRESSION_MAX_LENGTH,
+  RouterDefinitionSchema,
+  type RouterDefinition
+} from "../../../src/core/router/router-definition.js";
 import type { InvocationEnvelope } from "../../../src/core/router/invocation.js";
 
 const githubPullRequest = {
@@ -71,10 +77,58 @@ describe("declarative router", () => {
     ).toThrow();
   });
 
+  it("bounds rule count and JSONata expression length", () => {
+    const rules = Array.from(
+      { length: ROUTER_DEFINITION_MAX_RULES + 1 },
+      (_, index) => ({
+        id: `rule-${index}`,
+        when: { expression: "true" },
+        target: "workflow:code-review"
+      })
+    );
+
+    expect(
+      RouterDefinitionSchema.safeParse({
+        type: "router",
+        version: "2026-06",
+        rules
+      }).success
+    ).toBe(false);
+    expect(
+      RouterDefinitionSchema.safeParse({
+        type: "router",
+        version: "2026-06",
+        rules: [
+          {
+            id: "oversized-expression",
+            when: {
+              expression: "x".repeat(ROUTER_RULE_EXPRESSION_MAX_LENGTH + 1)
+            },
+            target: "workflow:code-review"
+          }
+        ]
+      }).success
+    ).toBe(false);
+  });
+
   it("routes deterministically with the first matching JSONata rule", async () => {
     await expect(routeInvocation(githubPullRequest, routingConfig)).resolves.toEqual({
       type: "workflow",
       id: "code-review"
+    });
+  });
+
+  it("returns the canonical detailed decision without observer callbacks", async () => {
+    const decision = await decideInvocationRoute(githubPullRequest, routingConfig);
+
+    expect(decision).toMatchObject({
+      outcome: "matched",
+      target: { type: "workflow", id: "code-review" },
+      matchedRule: { ruleIndex: 1, ruleId: "github_pr_code_review" },
+      evaluations: [
+        { outcome: "boolean", ruleIndex: 0, result: false },
+        { outcome: "boolean", ruleIndex: 1, result: true }
+      ]
     });
   });
 
@@ -139,6 +193,63 @@ describe("declarative router", () => {
       code: "router_expression_failed",
       path: "$.rules[0].when.expression"
     });
+  });
+
+  it("keeps failed evaluations in the canonical detailed decision", async () => {
+    const decision = await decideInvocationRoute(githubPullRequest, {
+      type: "router",
+      version: "2026-06",
+      rules: [
+        {
+          id: "broken",
+          when: { expression: "$notAFunction(" },
+          target: "workflow:code-review"
+        }
+      ]
+    });
+
+    expect(decision).toMatchObject({
+      outcome: "error",
+      error: { code: "router_expression_failed" },
+      evaluations: [
+        {
+          outcome: "error",
+          ruleIndex: 0,
+          ruleId: "broken",
+          error: { code: "router_expression_failed" }
+        }
+      ]
+    });
+  });
+
+  it("never exposes JSONata error messages or oversized invocation secrets", async () => {
+    const secret = `do-not-expose-${"x".repeat(100_000)}`;
+    const decision = await decideInvocationRoute({
+      ...githubPullRequest,
+      payload: { secret }
+    }, {
+      type: "router",
+      version: "2026-06",
+      rules: [
+        {
+          id: "secret-error",
+          when: { expression: "$error($.invocation.payload.secret)" },
+          target: "workflow:code-review"
+        }
+      ]
+    });
+
+    expect(decision.outcome).toBe("error");
+    if (decision.outcome !== "error") {
+      throw new Error("Expected the route decision to fail");
+    }
+    expect(decision.error).toMatchObject({
+      code: "router_expression_failed",
+      message: "Router expression failed at $.rules[0].when.expression."
+    });
+    expect(decision.error.message).not.toContain("do-not-expose");
+    expect(decision.error.message.length).toBeLessThan(128);
+    expect(decision.error).not.toHaveProperty("cause");
   });
 
   it("parses workflow string targets only", () => {

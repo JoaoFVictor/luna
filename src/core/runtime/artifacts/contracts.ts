@@ -1,19 +1,26 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
+import { ArtifactSemanticTypeSchema } from "../../artifacts/semantic-type.js";
 
-export type ArtifactManifest = {
-  id: string;
-  run_id: string;
-  uri: string;
-  backend_id?: string;
-  backend_root?: string;
-  source_node_id?: string;
-  media_type?: string;
-  content_hash?: string;
-  artifact_path?: string;
-  status?: "pending" | "committed" | "failed";
-  attempt?: number;
-  created_at: string;
-};
+export const ArtifactManifestSchema = z
+  .object({
+    id: z.string().min(1),
+    run_id: z.string().min(1),
+    uri: z.string().min(1),
+    backend_id: z.string().min(1).optional(),
+    backend_root: z.string().min(1).optional(),
+    source_node_id: z.string().min(1).optional(),
+    media_type: z.string().min(1).optional(),
+    semantic_type: ArtifactSemanticTypeSchema.optional(),
+    content_hash: z.string().min(1).optional(),
+    artifact_path: z.string().min(1).optional(),
+    status: z.enum(["pending", "committed", "failed"]).optional(),
+    attempt: z.number().int().positive().optional(),
+    created_at: z.string().min(1)
+  })
+  .strict();
+
+export type ArtifactManifest = z.infer<typeof ArtifactManifestSchema>;
 
 export type ArtifactManifestKey = {
   id: string;
@@ -25,10 +32,103 @@ export type ArtifactManifestKey = {
   backend_root: string;
 };
 
+export const ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA = {
+  max_entries: 100_000,
+  max_entry_bytes: 4 * 1024 * 1024,
+  max_total_bytes: 512 * 1024 * 1024,
+  max_scanned_entries: 200_000
+} as const;
+
+const ARTIFACT_MANIFEST_LIST_LIMIT_DEFAULTS: ArtifactManifestListLimits = {
+  max_entries: ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA.max_entries,
+  max_entry_bytes: 1024 * 1024,
+  max_total_bytes: 256 * 1024 * 1024,
+  max_scanned_entries: ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA.max_scanned_entries
+};
+
+export type ArtifactManifestListLimits = {
+  readonly max_entries: number;
+  readonly max_entry_bytes: number;
+  readonly max_total_bytes: number;
+  readonly max_scanned_entries: number;
+};
+
+export type ArtifactManifestListLimitKind =
+  | "entries"
+  | "entry_bytes"
+  | "total_bytes"
+  | "scanned_entries";
+
+export class ArtifactManifestListLimitError extends Error {
+  readonly code = "artifact_manifest_list_limit_exceeded" as const;
+  readonly kind: ArtifactManifestListLimitKind;
+  readonly maximum: number;
+
+  constructor(kind: ArtifactManifestListLimitKind, maximum: number) {
+    super(`Artifact manifest list exceeded its ${kind} limit`);
+    this.name = "ArtifactManifestListLimitError";
+    this.kind = kind;
+    this.maximum = maximum;
+  }
+}
+
+function positiveBoundedListLimit(
+  value: number,
+  label: keyof ArtifactManifestListLimits
+): number {
+  const maximum = ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA[label];
+  if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
+    throw new Error(`${label} must be a positive safe integer no greater than ${maximum}`);
+  }
+  return value;
+}
+
+export function resolveArtifactManifestListLimits(
+  input: Partial<ArtifactManifestListLimits> = {}
+): ArtifactManifestListLimits {
+  const limits = {
+    max_entries: positiveBoundedListLimit(
+      input.max_entries ?? ARTIFACT_MANIFEST_LIST_LIMIT_DEFAULTS.max_entries,
+      "max_entries"
+    ),
+    max_entry_bytes: positiveBoundedListLimit(
+      input.max_entry_bytes ?? ARTIFACT_MANIFEST_LIST_LIMIT_DEFAULTS.max_entry_bytes,
+      "max_entry_bytes"
+    ),
+    max_total_bytes: positiveBoundedListLimit(
+      input.max_total_bytes ?? ARTIFACT_MANIFEST_LIST_LIMIT_DEFAULTS.max_total_bytes,
+      "max_total_bytes"
+    ),
+    max_scanned_entries: positiveBoundedListLimit(
+      input.max_scanned_entries ??
+        ARTIFACT_MANIFEST_LIST_LIMIT_DEFAULTS.max_scanned_entries,
+      "max_scanned_entries"
+    )
+  } satisfies ArtifactManifestListLimits;
+
+  if (limits.max_entries > limits.max_scanned_entries) {
+    throw new Error("max_entries cannot exceed max_scanned_entries");
+  }
+  if (limits.max_entry_bytes > limits.max_total_bytes) {
+    throw new Error("max_entry_bytes cannot exceed max_total_bytes");
+  }
+  return limits;
+}
+
+export function artifactManifestListLimitError(
+  kind: ArtifactManifestListLimitKind,
+  maximum: number
+): ArtifactManifestListLimitError {
+  return new ArtifactManifestListLimitError(kind, maximum);
+}
+
 export type ArtifactManifestStore = {
   put(manifest: ArtifactManifest): Promise<void>;
   get(key: ArtifactManifestKey): Promise<ArtifactManifest | undefined>;
-  list(runId: string): Promise<ArtifactManifest[]>;
+  list(
+    runId: string,
+    limits?: Partial<ArtifactManifestListLimits>
+  ): Promise<ArtifactManifest[]>;
 };
 
 export function artifactManifestKeyHash(key: ArtifactManifestKey): string {

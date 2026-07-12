@@ -1,4 +1,7 @@
-import type { CapabilityManifest } from "./manifest.js";
+import type {
+  CapabilityManifest,
+  CapabilityWorkflowNodeType
+} from "./manifest.js";
 import {
   CapabilityRegistrationIndexError,
   createCapabilityRegistrationIndex,
@@ -9,6 +12,9 @@ import { validateCapabilityManifest } from "./validation.js";
 export type CapabilityRegistry = {
   get(id: string): CapabilityManifest;
   has(id: string): boolean;
+  workflowNodeCapability(
+    nodeType: CapabilityWorkflowNodeType
+  ): CapabilityManifest | undefined;
   orderedManifests(): CapabilityManifest[];
   registrations(): CapabilityRegistrationIndex;
 };
@@ -16,6 +22,7 @@ export type CapabilityRegistry = {
 type RegistryErrorCode =
   | "capability_duplicate_id"
   | "capability_duplicate_registration_id"
+  | "capability_duplicate_workflow_node_type"
   | "capability_unknown_dependency"
   | "capability_dependency_cycle"
   | "capability_unresolved_reference"
@@ -37,6 +44,10 @@ export function createCapabilityRegistry(
   manifests: readonly CapabilityManifest[]
 ): CapabilityRegistry {
   const byId = new Map<string, CapabilityManifest>();
+  const workflowNodeCapabilities = new Map<
+    CapabilityWorkflowNodeType,
+    CapabilityManifest
+  >();
   for (const manifest of manifests) {
     validateCapabilityManifest(manifest);
     if (byId.has(manifest.id)) {
@@ -46,6 +57,16 @@ export function createCapabilityRegistry(
       );
     }
     byId.set(manifest.id, manifest);
+    for (const nodeType of manifest.workflow_node_types ?? []) {
+      const existing = workflowNodeCapabilities.get(nodeType);
+      if (existing !== undefined) {
+        throw new CapabilityRegistryError(
+          "capability_duplicate_workflow_node_type",
+          `Workflow node type ${nodeType} is supplied by both ${existing.id} and ${manifest.id}.`
+        );
+      }
+      workflowNodeCapabilities.set(nodeType, manifest);
+    }
   }
 
   for (const manifest of manifests) {
@@ -78,6 +99,11 @@ export function createCapabilityRegistry(
     has(id: string): boolean {
       return byId.has(id);
     },
+    workflowNodeCapability(
+      nodeType: CapabilityWorkflowNodeType
+    ): CapabilityManifest | undefined {
+      return workflowNodeCapabilities.get(nodeType);
+    },
     orderedManifests(): CapabilityManifest[] {
       return [...ordered];
     },
@@ -103,15 +129,39 @@ function registrationIndexForRegistry(
 function validateSideEffectOperationIds(
   manifests: readonly CapabilityManifest[]
 ): void {
-  const operationIds = new Map<string, string>();
+  const operationOwners = new Map<string, string>();
 
   for (const manifest of manifests) {
     for (const policy of Object.values(manifest.policies ?? {})) {
+      const operationIds = policy.side_effect_operation_ids ?? [];
+      if (
+        policy.side_effect_category !== undefined &&
+        (policy.side_effect_semantics === undefined ||
+          policy.side_effect_semantics === "none")
+      ) {
+        throw new CapabilityRegistryError(
+          "capability_side_effect_policy_invalid",
+          `Side-effect policy ${policy.id} cannot declare a category without read/write semantics.`
+        );
+      }
+      if (
+        (operationIds.length > 0 &&
+          (policy.side_effect_semantics === undefined ||
+            policy.side_effect_semantics === "none")) ||
+        ((policy.side_effect_semantics === "read" ||
+          policy.side_effect_semantics === "write") &&
+          operationIds.length === 0)
+      ) {
+        throw new CapabilityRegistryError(
+          "capability_side_effect_policy_invalid",
+          `Side-effect policy ${policy.id} must bind read/write semantics to at least one operation id.`
+        );
+      }
       if (policy.side_effect_semantics === "write") {
         if (
           !policy.retry_semantics ||
           !policy.idempotency_scope ||
-          (policy.side_effect_operation_ids ?? []).length === 0
+          operationIds.length === 0
         ) {
           throw new CapabilityRegistryError(
             "capability_side_effect_policy_invalid",
@@ -120,15 +170,15 @@ function validateSideEffectOperationIds(
         }
       }
 
-      for (const operationId of policy.side_effect_operation_ids ?? []) {
-        const existingPolicy = operationIds.get(operationId);
+      for (const operationId of operationIds) {
+        const existingPolicy = operationOwners.get(operationId);
         if (existingPolicy !== undefined) {
           throw new CapabilityRegistryError(
             "capability_duplicate_side_effect_operation_id",
             `Side-effect operation id ${operationId} is registered by both ${existingPolicy} and ${policy.id}.`
           );
         }
-        operationIds.set(operationId, policy.id);
+        operationOwners.set(operationId, policy.id);
       }
     }
   }

@@ -8,8 +8,10 @@ import type {
 } from "../../../core/runtime/interrupts/contracts.js";
 import { resumeInputsEqual } from "../../../core/runtime/interrupts/resume.js";
 import { runtimeError } from "../../../core/runtime/errors.js";
+import { stableJson } from "../../../core/runtime/json.js";
 import { safeJoin } from "../../../core/security/path.js";
 import { atomicWriteFile } from "../../../core/artifacts/atomic-write.js";
+import { RunLockManager } from "../../../core/workflow/lock-manager.js";
 
 export const FilesystemInterruptBackendOptionsSchema = z
   .object({ root: z.string().min(1) })
@@ -30,6 +32,12 @@ const writeTails = new Map<string, Promise<unknown>>();
 export function createFilesystemInterruptStore({
   root
 }: FilesystemInterruptStoreOptions): InterruptStore {
+  const resumeLocks = new RunLockManager({
+    root: path.join(path.resolve(root), ".resume-locks"),
+    runId: "interrupt-resume-store",
+    timeoutMs: 30_000,
+    staleAfterMs: 60_000
+  });
   async function filePath(id: string): Promise<string> {
     return await safeJoin(root, [`${encodeURIComponent(id)}.json`]);
   }
@@ -65,6 +73,17 @@ export function createFilesystemInterruptStore({
   return {
     async create(record) {
       await withRecordTail(record.id, async () => {
+        const existing = await readRecord(record.id);
+        if (existing !== undefined) {
+          if (stableJson(existing) === stableJson(record)) {
+            return;
+          }
+          throw runtimeError(
+            "Interrupt identity already belongs to different durable state",
+            "interrupt_conflict",
+            { details: { interrupt_id: record.id } }
+          );
+        }
         await writeRecord({ ...record });
       });
     },
@@ -92,6 +111,24 @@ export function createFilesystemInterruptStore({
           return [];
         }
         throw cause;
+      }
+    },
+    async withResumeLease(id, operation) {
+      const release = await resumeLocks.acquire(`interrupt:${id}`, "exclusive");
+      let operationFailure: unknown;
+      try {
+        return await operation();
+      } catch (cause) {
+        operationFailure = cause;
+        throw cause;
+      } finally {
+        try {
+          await release();
+        } catch (cause) {
+          if (operationFailure === undefined) {
+            throw cause;
+          }
+        }
       }
     },
     async beginResume(id, resumeAttempt, input) {

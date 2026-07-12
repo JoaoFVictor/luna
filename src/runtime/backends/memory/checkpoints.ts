@@ -6,7 +6,9 @@ import {
 } from "../../../core/runtime/backends/contracts.js";
 import type { BackendRegistration } from "../../../core/runtime/backends/contracts.js";
 import { runtimeError } from "../../../core/runtime/errors.js";
+import { assertCheckpointJsonValue } from "../../../core/runtime/json.js";
 import { z } from "zod";
+import { isDeepStrictEqual } from "node:util";
 
 export const MemoryCheckpointBackendOptionsSchema = z.object({}).strict();
 export const memoryCheckpointBackendRegistration = {
@@ -114,12 +116,35 @@ export function createMemoryCheckpointStore(): CheckpointStore {
     },
     async saveWrites(records) {
       for (const record of records) {
+        assertCheckpointJsonValue(record.value, "$.write.value");
         const key = `${record.thread_id}:${record.checkpoint_ns}:${record.checkpoint_id}`;
-        const existing = (writes.get(key) ?? []).filter(
+        const existing = writes.get(key) ?? [];
+        const previous = existing.find(
           (write) =>
-            write.task_id !== record.task_id ||
-            write.index !== record.index
+            write.task_id === record.task_id &&
+            write.index === record.index
         );
+        if (previous !== undefined) {
+          if (
+            previous.channel === record.channel &&
+            isDeepStrictEqual(previous.value, record.value)
+          ) {
+            continue;
+          }
+          throw runtimeError(
+            "Checkpoint write identity already belongs to different durable output",
+            "runtime_duplicate_node_output",
+            {
+              details: {
+                thread_id: record.thread_id,
+                checkpoint_ns: record.checkpoint_ns,
+                checkpoint_id: record.checkpoint_id,
+                task_id: record.task_id,
+                index: record.index
+              }
+            }
+          );
+        }
         existing.push(structuredClone(record));
         writes.set(key, existing);
       }
@@ -127,10 +152,18 @@ export function createMemoryCheckpointStore(): CheckpointStore {
     async listWrites(threadId, checkpointNs, checkpointId) {
       return structuredClone(writes.get(`${threadId}:${checkpointNs}:${checkpointId}`) ?? []);
     },
+    async hasThreadWrites(threadId) {
+      for (const records of writes.values()) {
+        if (records.some((write) => write.thread_id === threadId)) {
+          return true;
+        }
+      }
+      return false;
+    },
     async deleteThread(threadId) {
       checkpointsByThread.delete(threadId);
-      for (const key of writes.keys()) {
-        if (key.startsWith(`${threadId}:`)) {
+      for (const [key, records] of writes.entries()) {
+        if (records.some((write) => write.thread_id === threadId)) {
           writes.delete(key);
         }
       }

@@ -1,4 +1,5 @@
 import YAML from "yaml";
+import { ArtifactSemanticTypeSchema } from "../artifacts/semantic-type.js";
 import { AgentRuntimeRequirementSchema } from "../agent-runtime/contracts.js";
 import { assertExpressionObject } from "./expression.js";
 import { WorkflowDefinitionError } from "./definition-errors.js";
@@ -30,7 +31,8 @@ const NODE_FIELDS: Record<string, ReadonlySet<string>> = {
   built_in: new Set(["id", "type", "uses", "input", "artifacts", "after", "policies"]),
   agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "runtime_requirements", "policies"]),
   pattern: new Set(["id", "type", "uses", "worker", "input", "gates", "repair", "artifacts", "after", "capabilities", "policies"]),
-  human_gate: new Set(["id", "type", "uses", "decision", "after", "input", "artifacts"])
+  human_gate: new Set(["id", "type", "uses", "decision", "after", "input", "artifacts"]),
+  workflow: new Set(["id", "type", "workflow", "input", "artifacts", "after"])
 };
 
 const GATE_FIELDS = new Set([
@@ -48,6 +50,7 @@ const ARTIFACT_FIELDS = new Set([
   "format",
   "required",
   "publisher",
+  "semantic_type",
   "config"
 ]);
 
@@ -288,6 +291,13 @@ function readNode(
       ...(raw.decision === undefined ? {} : { decision: raw.decision })
     };
   }
+  if (type === "workflow") {
+    return {
+      ...base,
+      type: "workflow",
+      workflow: requireString(raw.workflow, `${yamlPath}.workflow`)
+    };
+  }
 
   return {
     ...base,
@@ -396,12 +406,23 @@ function readArtifacts(
         { path: `${artifactPath}.required` }
       );
     }
+    const semanticType = raw.semantic_type === undefined
+      ? undefined
+      : ArtifactSemanticTypeSchema.safeParse(raw.semantic_type);
+    if (semanticType !== undefined && !semanticType.success) {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_invalid",
+        "Artifact semantic_type must be a bounded, namespaced id ending in .vN.",
+        { path: `${artifactPath}.semantic_type` }
+      );
+    }
     return {
       path: requireString(raw.path, `${artifactPath}.path`),
       source: assertExpressionObject(raw.source, `${artifactPath}.source`, publisher),
       format,
       required: raw.required !== false,
       publisher,
+      ...(semanticType === undefined ? {} : { semantic_type: semanticType.data }),
       ...(raw.config === undefined
         ? {}
         : { config: assertObject(raw.config, `${artifactPath}.config`) })

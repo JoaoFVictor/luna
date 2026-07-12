@@ -12,16 +12,27 @@ type ConfigEnv = {
   LUNA_CONFIG_ROOT?: string;
 };
 
-type ConfigErrorCode =
+export type ConfigErrorCode =
   | "config_read_failed"
   | "config_parse_failed"
   | "config_schema_invalid";
 
-type ConfigError = Error & {
-  code: ConfigErrorCode;
-  path: string;
-  cause: unknown;
-};
+export class ConfigError extends Error {
+  readonly code: ConfigErrorCode;
+  readonly path: string;
+
+  constructor(
+    message: string,
+    code: ConfigErrorCode,
+    path: string,
+    cause: unknown
+  ) {
+    super(message, { cause });
+    this.name = "ConfigError";
+    this.code = code;
+    this.path = path;
+  }
+}
 
 class JsonSchemaConfigValidationError extends Error {
   constructor(readonly value: unknown) {
@@ -35,11 +46,7 @@ function configError(
   path: string,
   cause: unknown
 ): ConfigError {
-  const error = new Error(message, { cause }) as ConfigError;
-  error.code = code;
-  error.path = path;
-
-  return error;
+  return new ConfigError(message, code, path, cause);
 }
 
 async function readConfig(path: string): Promise<string> {

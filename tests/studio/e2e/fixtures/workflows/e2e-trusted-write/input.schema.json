@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source", "event", "target", "repository", "subject"],
+  "properties": {
+    "version": { "const": "2026-06" },
+    "source": { "const": "studio-e2e" },
+    "event": { "const": "manual" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "workflow" },
+        "id": { "const": "e2e-trusted-write" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "owner", "name"],
+      "properties": {
+        "provider": { "const": "github" },
+        "owner": { "const": "studio-e2e" },
+        "name": { "const": "fixture" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "const": "trusted-write-e2e" },
+        "title": { "const": "Trusted write E2E" }
+      }
+    },
+    "payload": { "type": "object", "additionalProperties": true }
+  }
+}

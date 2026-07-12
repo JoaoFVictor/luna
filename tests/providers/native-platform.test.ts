@@ -144,6 +144,25 @@ describe("native Luna platform", () => {
     expect(registrations.webhookProviderRegistry.ids()).toContain("plane");
   });
 
+  it("registers dedicated health probes for every default external provider", () => {
+    const registrations = createNativeLunaPlatformRegistrations({
+      plugins: nativePlatformPlugins,
+      baseCapabilityManifests: []
+    });
+
+    expect(registrations.providerHealthProbeRegistry.ids()).toEqual([
+      "github",
+      "jira",
+      "plane"
+    ]);
+    expect(
+      registrations.providerHealthProbeRegistry.require("github").effects
+    ).toEqual(["credential_read", "network_read", "process_execution"]);
+    expect(
+      registrations.providerHealthProbeRegistry.require("plane").effects
+    ).toEqual(["credential_read", "network_read"]);
+  });
+
   it("rejects duplicate runtime registrations even when registrations are built manually", () => {
     const agentRuntimeFactory = {
       id: "shared.agent",

@@ -1,4 +1,8 @@
 import { assertJsonValue } from "../../core/json/value.js";
+import {
+  ArtifactSemanticTypeSchema,
+  type ArtifactSemanticType
+} from "../../core/artifacts/semantic-type.js";
 import type { WorkflowExpression } from "../../core/workflow/expression.js";
 import type { WorkflowState } from "../../core/workflow/state.js";
 import { matchesJsonSchema } from "../../core/capabilities/json-schema.js";
@@ -33,12 +37,41 @@ export type ArtifactPublishInput = {
   path: string;
   format: ArtifactFormat;
   value: unknown;
+  semantic_type?: ArtifactSemanticType;
   overwrite_policy: ArtifactOverwritePolicy;
 };
 
 export type ArtifactPublisherPort = {
   publish(input: ArtifactPublishInput): Promise<ArtifactRef>;
 };
+
+/**
+ * Carries refs that were already durably committed before a later artifact in
+ * the same declared batch failed. Callers must retain these refs while still
+ * surfacing runtimeCause as the authoritative node failure.
+ */
+export class PartialArtifactPublishFailure extends Error {
+  readonly runtimeCause: unknown;
+  readonly publishedArtifacts: readonly ArtifactRef[];
+
+  constructor(runtimeCause: unknown, publishedArtifacts: readonly ArtifactRef[]) {
+    super(
+      runtimeCause instanceof Error
+        ? runtimeCause.message
+        : "Declared artifact publication failed",
+      { cause: runtimeCause }
+    );
+    this.name = "PartialArtifactPublishFailure";
+    this.runtimeCause = runtimeCause;
+    this.publishedArtifacts = [...publishedArtifacts];
+  }
+}
+
+export function partialArtifactPublishFailure(
+  cause: unknown
+): PartialArtifactPublishFailure | undefined {
+  return cause instanceof PartialArtifactPublishFailure ? cause : undefined;
+}
 
 export type TransactionalArtifactPublisherOptions = {
   run_id: string;
@@ -61,6 +94,7 @@ type WorkflowArtifactLike = {
   source: string | WorkflowExpression;
   format: ArtifactFormat;
   required: boolean;
+  semantic_type?: ArtifactSemanticType;
   config?: Record<string, unknown>;
 };
 
@@ -234,6 +268,16 @@ function rejectUnsupportedOverwritePolicy(policy: ArtifactOverwritePolicy): void
 function assertArtifactPublishInput(input: ArtifactPublishInput): void {
   rejectUnsupportedOverwritePolicy(input.overwrite_policy);
 
+  if (
+    input.semantic_type !== undefined &&
+    !ArtifactSemanticTypeSchema.safeParse(input.semantic_type).success
+  ) {
+    throw artifactPlanError(
+      "Artifact semantic_type is invalid",
+      "workflow_artifact_semantic_type_invalid"
+    );
+  }
+
   if (input.format === "markdown" && typeof input.value !== "string") {
     throw artifactPlanError(
       `Artifact source must resolve to a string for ${input.format}: ${input.path}`,
@@ -260,6 +304,9 @@ export function transactionalArtifactPublisher(
         artifact_path: input.path,
         content: artifactContent(input),
         media_type: artifactMediaType(input.format),
+        ...(input.semantic_type === undefined
+          ? {}
+          : { semantic_type: input.semantic_type }),
         overwrite_policy: input.overwrite_policy,
         attempt: options.attempt,
         backend: options.backend,
@@ -302,6 +349,7 @@ export async function publishDeclaredArtifacts({
     }
   };
   const refs: ArtifactRef[] = [];
+  const publishInputs: ArtifactPublishInput[] = [];
 
   assertNoDuplicateArtifactPaths(node);
 
@@ -330,16 +378,28 @@ export async function publishDeclaredArtifacts({
       );
     }
 
-    const publishInput = {
+    const publishInput: ArtifactPublishInput = {
       node_id: node.id,
       path: artifact.path,
       format: artifact.format,
       value: resolved.value,
+      ...(artifact.semantic_type === undefined
+        ? {}
+        : { semantic_type: artifact.semantic_type }),
       overwrite_policy: overwritePolicy(artifact.config)
     };
     assertArtifactPublishInput(publishInput);
+    publishInputs.push(publishInput);
+  }
 
-    refs.push(await publisher.publish(publishInput));
+  // Validate and resolve the complete declaration before the first durable
+  // side effect. Only publisher failures can therefore create a partial batch.
+  for (const publishInput of publishInputs) {
+    try {
+      refs.push(await publisher.publish(publishInput));
+    } catch (cause) {
+      throw new PartialArtifactPublishFailure(cause, refs);
+    }
   }
 
   const publisherOutput = { artifacts: refs };

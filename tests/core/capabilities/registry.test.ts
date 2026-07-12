@@ -166,6 +166,47 @@ describe("capability registry", () => {
     );
   });
 
+  it("resolves one capability owner per intrinsic workflow node type", () => {
+    const modelExecution = executionManifest("model-execution", {
+      workflow_node_types: ["agent"]
+    });
+
+    expect(createCapabilityRegistry([modelExecution])
+      .workflowNodeCapability("agent")).toBe(modelExecution);
+    expect(() => createCapabilityRegistry([
+      modelExecution,
+      executionManifest("other-model", { workflow_node_types: ["agent"] })
+    ])).toThrow(expect.objectContaining({
+      code: "capability_duplicate_workflow_node_type"
+    }));
+  });
+
+  it("accepts canonical local tool mode and safety authority", () => {
+    const manifest = capabilityManifest({
+      id: "repository",
+      kind: "execution",
+      version: "2026.06.25",
+      tools: {
+        "repository.write-file": {
+          id: "repository.write-file",
+          protocol: "local",
+          input_schema: schema,
+          output_schema: schema,
+          runtime_requirements: ["tool_calling"],
+          materialization: "local",
+          allowed_agent_modes: ["trusted_local_write"],
+          safety: {
+            localWrites: true,
+            network: false,
+            externalSideEffects: false
+          }
+        }
+      }
+    });
+
+    expect(validateCapabilityManifest(manifest)).toBe(manifest);
+  });
+
   it("resolves built-in port and side-effect policy references only from local registrations or explicit dependencies", () => {
     const ports = capabilityManifest({
       id: "ports",
@@ -225,6 +266,22 @@ describe("capability registry", () => {
   it("validates registered side-effect operation ids across capabilities", () => {
     expect(() =>
       createCapabilityRegistry([
+        executionManifest("categorized", {
+          policies: {
+            "categorized.policy": {
+              id: "categorized.policy",
+              config_schema: schema,
+              side_effect_category: "external_write"
+            }
+          }
+        })
+      ])
+    ).toThrow(
+      expect.objectContaining({ code: "capability_side_effect_policy_invalid" })
+    );
+
+    expect(() =>
+      createCapabilityRegistry([
         executionManifest("local-exec", {
           policies: {
             "local-exec.command": {
@@ -247,13 +304,17 @@ describe("capability registry", () => {
             "git.write": {
               id: "git.write",
               config_schema: schema,
+              side_effect_semantics: "write",
               side_effect_operation_ids: ["git.commit"],
+              idempotency_scope: "external_resource",
               retry_semantics: "retry_requires_adoption"
             },
             "git.write_again": {
               id: "git.write_again",
               config_schema: schema,
+              side_effect_semantics: "write",
               side_effect_operation_ids: ["git.commit"],
+              idempotency_scope: "external_resource",
               retry_semantics: "retry_requires_adoption"
             }
           }
@@ -263,6 +324,38 @@ describe("capability registry", () => {
       expect.objectContaining({
         code: "capability_duplicate_side_effect_operation_id"
       })
+    );
+
+    expect(() =>
+      createCapabilityRegistry([
+        executionManifest("hidden-effect", {
+          policies: {
+            "hidden-effect.policy": {
+              id: "hidden-effect.policy",
+              config_schema: schema,
+              side_effect_operation_ids: ["hidden-effect.publish"]
+            }
+          }
+        })
+      ])
+    ).toThrow(
+      expect.objectContaining({ code: "capability_side_effect_policy_invalid" })
+    );
+
+    expect(() =>
+      createCapabilityRegistry([
+        executionManifest("unbound-read", {
+          policies: {
+            "unbound-read.policy": {
+              id: "unbound-read.policy",
+              config_schema: schema,
+              side_effect_semantics: "read"
+            }
+          }
+        })
+      ])
+    ).toThrow(
+      expect.objectContaining({ code: "capability_side_effect_policy_invalid" })
     );
   });
 

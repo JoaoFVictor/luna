@@ -1,4 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  utimes,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -134,6 +143,128 @@ describe("run lock manager", () => {
     ).rejects.toMatchObject({ code: "lock_timeout" });
   });
 
+  it("recovers a stale lock when a live pid has a different proc identity", async () => {
+    if (process.platform !== "linux") {
+      return;
+    }
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const probe = new RunLockManager({
+      root,
+      runId: "identity-probe",
+      timeoutMs: 1000,
+      staleAfterMs: 3000
+    });
+    const releaseProbe = await probe.acquire("identity-probe", "exclusive");
+    const probeOwner = JSON.parse(
+      await readFile(path.join(root, "identity-probe.lock", "owner.json"), "utf8")
+    ) as {
+      process_identity?: {
+        source: "linux_proc";
+        boot_id: string;
+        start_time_ticks: string;
+      };
+    };
+    await releaseProbe();
+    expect(probeOwner.process_identity).toBeDefined();
+
+    const lockPath = path.join(root, "repository_repo.lock");
+    await mkdir(lockPath);
+    const identity = probeOwner.process_identity!;
+    await writeFile(
+      path.join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        resource: "repository:repo",
+        mode: "exclusive",
+        run_id: "previous-container",
+        owner_token: "previous-owner-token",
+        process_identity: {
+          ...identity,
+          start_time_ticks: identity.start_time_ticks === "1" ? "2" : "1"
+        },
+        pid: process.pid,
+        heartbeat_at: new Date(Date.now() - 10_000).toISOString()
+      })}\n`,
+      "utf8"
+    );
+    const manager = new RunLockManager({
+      root,
+      runId: "run-1",
+      timeoutMs: 1000,
+      staleAfterMs: 3000
+    });
+
+    const release = await manager.acquire("repository:repo", "exclusive");
+    await expect(readFile(path.join(lockPath, "owner.json"), "utf8"))
+      .resolves.toContain('"run_id": "run-1"');
+    await release();
+  });
+
+  it("does not steal a stale-looking lock with the same live proc identity", async () => {
+    if (process.platform !== "linux") {
+      return;
+    }
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const ownerManager = new RunLockManager({
+      root,
+      runId: "owner",
+      timeoutMs: 1000,
+      staleAfterMs: 3000
+    });
+    const releaseOwner = await ownerManager.acquire("repository:repo", "exclusive");
+    const lockPath = path.join(root, "repository_repo.lock");
+    const owner = JSON.parse(
+      await readFile(path.join(lockPath, "owner.json"), "utf8")
+    ) as Record<string, unknown>;
+    await writeFile(
+      path.join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        ...owner,
+        heartbeat_at: new Date(0).toISOString()
+      })}\n`,
+      "utf8"
+    );
+    const contender = new RunLockManager({
+      root,
+      runId: "contender",
+      timeoutMs: 20,
+      staleAfterMs: 3000
+    });
+
+    await expect(
+      contender.acquire("repository:repo", "exclusive", { timeoutMs: 20 })
+    ).rejects.toMatchObject({ code: "lock_timeout" });
+    await releaseOwner();
+  });
+
+  it("never steals an unverifiable owner while its pid is live regardless of age", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const lockPath = path.join(root, "repository_repo.lock");
+    await mkdir(lockPath);
+    await writeFile(
+      path.join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        resource: "repository:repo",
+        mode: "exclusive",
+        run_id: "legacy-run",
+        pid: process.pid,
+        heartbeat_at: new Date(0).toISOString()
+      })}\n`,
+      "utf8"
+    );
+    const manager = new RunLockManager({
+      root,
+      runId: "run-1",
+      timeoutMs: 20,
+      staleAfterMs: 3000
+    });
+
+    await expect(
+      manager.acquire("repository:repo", "exclusive", { timeoutMs: 20 })
+    ).rejects.toMatchObject({ code: "lock_timeout" });
+    await expect(readFile(path.join(lockPath, "owner.json"), "utf8"))
+      .resolves.toContain('"run_id":"legacy-run"');
+  });
+
   it("treats corrupt owner metadata as non-recoverable until timeout", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
     await mkdir(path.join(root, "repository_repo.lock"), { recursive: true });
@@ -152,6 +283,121 @@ describe("run lock manager", () => {
     await expect(
       manager.acquire("repository:repo", "exclusive", { timeoutMs: 20 })
     ).rejects.toMatchObject({ code: "lock_timeout" });
+  });
+
+  it("recovers only an empty ownerless lock older than staleAfterMs", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const lockPath = path.join(root, "repository_repo.lock");
+    await mkdir(lockPath);
+    const stale = new Date(Date.now() - 10_000);
+    await utimes(lockPath, stale, stale);
+    const manager = new RunLockManager({
+      root,
+      runId: "run-1",
+      timeoutMs: 1000,
+      staleAfterMs: 3000
+    });
+
+    const release = await manager.acquire("repository:repo", "exclusive");
+    await expect(
+      readFile(path.join(lockPath, "owner.json"), "utf8")
+    ).resolves.toContain('"run_id": "run-1"');
+    await release();
+  });
+
+  it("recovers a stale ownerless lock left during atomic owner publication", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const lockPath = path.join(root, "repository_repo.lock");
+    await mkdir(lockPath);
+    await writeFile(
+      path.join(lockPath, "owner.0123456789abcdef0123456789abcdef.claim"),
+      "partially prepared claim"
+    );
+    const stale = new Date(Date.now() - 10_000);
+    await utimes(lockPath, stale, stale);
+    const manager = new RunLockManager({
+      root,
+      runId: "run-1",
+      timeoutMs: 1000,
+      staleAfterMs: 3000
+    });
+
+    const release = await manager.acquire("repository:repo", "exclusive");
+    await expect(
+      readFile(path.join(lockPath, "owner.json"), "utf8")
+    ).resolves.toContain('"run_id": "run-1"');
+    await release();
+  });
+
+  it("serializes concurrent recovery of the same stale ownerless lock", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const lockPath = path.join(root, "repository_repo.lock");
+    await mkdir(lockPath);
+    const stale = new Date(Date.now() - 10_000);
+    await utimes(lockPath, stale, stale);
+    const managers = ["run-1", "run-2"].map(
+      (runId) =>
+        new RunLockManager({
+          root,
+          runId,
+          timeoutMs: 1000,
+          staleAfterMs: 3000
+        })
+    );
+    let acquired = 0;
+    const attempts = managers.map((manager, index) =>
+      manager.acquire("repository:repo", "exclusive").then((release) => {
+        acquired += 1;
+        return { index, release };
+      })
+    );
+
+    const first = await withTimeout(
+      Promise.race(attempts),
+      500,
+      "no manager recovered the stale ownerless lock"
+    );
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(acquired).toBe(1);
+    await first.release();
+    const second = await attempts[first.index === 0 ? 1 : 0]!;
+    expect(acquired).toBe(2);
+    await second.release();
+  });
+
+  it("does not recover a fresh or non-empty ownerless lock", async () => {
+    const freshRoot = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    await mkdir(path.join(freshRoot, "repository_repo.lock"));
+    const freshManager = new RunLockManager({
+      root: freshRoot,
+      runId: "run-1",
+      timeoutMs: 20,
+      staleAfterMs: 3000
+    });
+    await expect(
+      freshManager.acquire("repository:repo", "exclusive", { timeoutMs: 20 })
+    ).rejects.toMatchObject({ code: "lock_timeout" });
+
+    const occupiedRoot = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const occupiedLock = path.join(occupiedRoot, "repository_repo.lock");
+    await mkdir(occupiedLock);
+    await writeFile(path.join(occupiedLock, "claim-in-progress"), "preserve");
+    const stale = new Date(Date.now() - 10_000);
+    await utimes(occupiedLock, stale, stale);
+    const occupiedManager = new RunLockManager({
+      root: occupiedRoot,
+      runId: "run-1",
+      timeoutMs: 50,
+      staleAfterMs: 3000
+    });
+    await expect(
+      occupiedManager.acquire("repository:repo", "exclusive", {
+        timeoutMs: 50
+      })
+    ).rejects.toMatchObject({ code: "lock_timeout" });
+    await expect(
+      readFile(path.join(occupiedLock, "claim-in-progress"), "utf8")
+    ).resolves.toBe("preserve");
   });
 
   it("recovers a stale lock from a dead pid", async () => {
@@ -218,6 +464,113 @@ describe("run lock manager", () => {
     await expect(
       readFile(path.join(root, "repository_repo.lock", "owner.json"), "utf8")
     ).resolves.toContain("replacement-run");
+  });
+
+  it("allows a failed release to be retried without double releasing", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const manager = new RunLockManager({
+      root,
+      runId: "run-1",
+      timeoutMs: 1000,
+      staleAfterMs: 3000
+    });
+    const lockPath = path.join(root, "repository_repo.lock");
+    const release = await manager.acquire("repository:repo", "exclusive");
+    const owner = JSON.parse(
+      await readFile(path.join(lockPath, "owner.json"), "utf8")
+    ) as { owner_token: string };
+    const quarantine = `${lockPath}.released-${owner.owner_token}`;
+    await mkdir(quarantine);
+    await writeFile(path.join(quarantine, "occupied"), "keep");
+
+    const first = release();
+    const concurrent = release();
+    await expect(first).rejects.toMatchObject({
+      code: expect.stringMatching(/^(?:EEXIST|ENOTEMPTY)$/u)
+    });
+    await expect(concurrent).rejects.toMatchObject({
+      code: expect.stringMatching(/^(?:EEXIST|ENOTEMPTY)$/u)
+    });
+    await expect(readFile(path.join(lockPath, "owner.json"), "utf8")).resolves.toContain(
+      owner.owner_token
+    );
+
+    await rm(quarantine, { recursive: true });
+    await expect(release()).resolves.toBeUndefined();
+    await expect(release()).resolves.toBeUndefined();
+    await expect(readFile(path.join(lockPath, "owner.json"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+  });
+
+  it("keeps retrying a failed release when the caller drops the closure", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const manager = new RunLockManager({
+      root,
+      runId: "run-1",
+      timeoutMs: 1000,
+      staleAfterMs: 3000
+    });
+    const lockPath = path.join(root, "repository_repo.lock");
+    const release = await manager.acquire("repository:repo", "exclusive");
+    const owner = JSON.parse(
+      await readFile(path.join(lockPath, "owner.json"), "utf8")
+    ) as { owner_token: string };
+    const quarantine = `${lockPath}.released-${owner.owner_token}`;
+    await mkdir(quarantine);
+    await writeFile(path.join(quarantine, "occupied"), "keep");
+
+    await expect(release()).rejects.toMatchObject({
+      code: expect.stringMatching(/^(?:EEXIST|ENOTEMPTY)$/u)
+    });
+    const contender = new RunLockManager({
+      root,
+      runId: "run-2",
+      timeoutMs: 20,
+      staleAfterMs: 3000
+    });
+    await expect(
+      contender.acquire("repository:repo", "exclusive", { timeoutMs: 20 })
+    ).rejects.toMatchObject({ code: "lock_timeout" });
+
+    await rm(quarantine, { recursive: true });
+    const releaseContender = await contender.acquire(
+      "repository:repo",
+      "exclusive",
+      { timeoutMs: 1000 }
+    );
+    await releaseContender();
+  });
+
+  it("finishes removing its owned quarantine after a post-rename failure", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-locks-"));
+    const manager = new RunLockManager({
+      root,
+      runId: "run-1",
+      timeoutMs: 1000,
+      staleAfterMs: 3000
+    });
+    const lockPath = path.join(root, "repository_repo.lock");
+    const release = await manager.acquire("repository:repo", "exclusive");
+    const owner = JSON.parse(
+      await readFile(path.join(lockPath, "owner.json"), "utf8")
+    ) as { owner_token: string };
+    const quarantine = `${lockPath}.released-${owner.owner_token}`;
+    const blocked = path.join(lockPath, "blocked");
+    await mkdir(blocked);
+    await writeFile(path.join(blocked, "entry"), "keep");
+    await chmod(blocked, 0o000);
+
+    await expect(release()).rejects.toMatchObject({ code: "EACCES" });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    await expect(readFile(path.join(lockPath, "owner.json"), "utf8"))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(quarantine)).resolves.toMatchObject({});
+
+    await chmod(path.join(quarantine, "blocked"), 0o700);
+    await expect(release()).resolves.toBeUndefined();
+    await expect(lstat(quarantine))
+      .rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not let observability failures prevent acquire release or timeout behavior", async () => {

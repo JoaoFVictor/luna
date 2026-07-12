@@ -1,13 +1,32 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": [
-    "src/workflows/luna.ts"
-  ],
-  "project": [
-    "src/**/*.ts",
-    "tests/**/*.ts",
-    "*.ts"
-  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/workflows/luna.ts",
+        "tests/studio/e2e/global-setup.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts",
+        "*.ts"
+      ]
+    },
+    "apps/studio": {
+      "entry": [
+        "src/main.tsx"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ],
+      "ignoreDependencies": [
+        "@fontsource-variable/geist",
+        "shadcn",
+        "tailwindcss",
+        "tw-animate-css"
+      ]
+    }
+  },
   "include": [
     "files",
     "dependencies",

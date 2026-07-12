@@ -1,3 +1,5 @@
+import { redactUrlCredentials } from "./url-credentials.js";
+
 const REDACTED = "[REDACTED]";
 
 function keyWords(key: string): string[] {
@@ -49,7 +51,7 @@ function isExtraSensitiveKey(
 }
 
 export function redactString(value: string): string {
-  return value
+  return redactUrlCredentials(value)
     .replace(
       /(\bAuthorization:\s*Bearer\s+)([^\s'"`]+)/gi,
       `$1${REDACTED}`
@@ -100,9 +102,19 @@ export function redactValue(
     const redacted: Record<string, unknown> = {};
 
     for (const [key, nestedValue] of Object.entries(value)) {
-      redacted[key] = isSecretKey(key) || isExtraSensitiveKey(key, extraSensitiveKeys)
+      const nextValue = isSecretKey(key) ||
+          isExtraSensitiveKey(key, extraSensitiveKeys)
         ? REDACTED
         : redactValue(nestedValue, options);
+      // Assignment to `__proto__` invokes Object.prototype's legacy setter.
+      // Define every projected key as data so parsed JSON retains that own
+      // property without allowing attacker-controlled prototype inheritance.
+      Object.defineProperty(redacted, key, {
+        value: nextValue,
+        enumerable: true,
+        configurable: true,
+        writable: true
+      });
     }
 
     return redacted;

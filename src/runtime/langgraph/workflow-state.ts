@@ -2,6 +2,7 @@ import { Annotation } from "@langchain/langgraph";
 import type { JsonValue } from "../../core/runtime/json.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
+import type { WorkflowNodeRunUpdate } from "../workflow/node-runner.js";
 
 export const WorkflowStateAnnotation = Annotation.Root({
   state_schema_version: Annotation<LunaRuntimeState["state_schema_version"]>(),
@@ -45,3 +46,34 @@ export const WorkflowStateAnnotation = Annotation.Root({
 
 export type WorkflowGraphState = typeof WorkflowStateAnnotation.State;
 export type WorkflowGraphUpdate = typeof WorkflowStateAnnotation.Update;
+
+/**
+ * Applies one completed node update with the same reducers used by LangGraph.
+ * Keeping this projection local to the scheduler lets Luna retain completed
+ * sibling branches even when LangGraph rejects a parallel superstep.
+ */
+export function applyWorkflowGraphUpdate(
+  state: LunaRuntimeState,
+  update: WorkflowNodeRunUpdate
+): LunaRuntimeState {
+  return {
+    ...state,
+    ...update,
+    node_statuses: {
+      ...state.node_statuses,
+      ...(update.node_statuses ?? {})
+    },
+    steps: {
+      ...state.steps,
+      ...(update.steps ?? {})
+    },
+    attempts: {
+      ...state.attempts,
+      ...(update.attempts ?? {})
+    },
+    artifact_refs: [
+      ...state.artifact_refs,
+      ...(update.artifact_refs ?? [])
+    ]
+  };
+}

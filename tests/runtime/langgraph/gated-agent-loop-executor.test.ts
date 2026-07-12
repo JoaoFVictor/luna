@@ -37,6 +37,14 @@ const registry = createCapabilityRegistry([
     id: "quality-gates",
     kind: "execution",
     version: "1.0.0",
+    built_ins: {
+      "quality-gates.test_context": {
+        id: "quality-gates.test_context",
+        input_schema: { type: "object" },
+        output_schema: { type: "object" },
+        required_ports: []
+      }
+    },
     patterns: {
       "quality-gates.gated_agent_loop": {
         id: "quality-gates.gated_agent_loop",
@@ -71,6 +79,29 @@ const registry = createCapabilityRegistry([
     }
   })
 ]);
+
+const reviewerContext = {
+  kind: "luna.collect_context.v1",
+  repository: {
+    root: "/repo",
+    configured: [],
+    read: [],
+    missing: [],
+    skipped: []
+  },
+  agents: [{
+    id: "change-reviewer",
+    root: "/agents/change-reviewer",
+    configured: ["review-context.md"],
+    read: [{
+      path: "review-context.md",
+      bytes: 29,
+      content: "Reviewer contextual guidance.\n"
+    }],
+    missing: [],
+    skipped: []
+  }]
+} as const;
 
 function agentDefaults(agentId: string): WorkflowAgentDefaults {
   return {
@@ -176,17 +207,26 @@ describe("gated agent loop LangGraph executor", () => {
     ]);
     const definition = workflow([
       {
+        id: "context",
+        type: "built_in",
+        uses: "quality-gates.test_context"
+      },
+      {
         id: "implementation",
         type: "pattern",
         uses: "quality-gates.gated_agent_loop",
         worker: "code-implementer",
-        input: { prompt: "implement the change" },
+        input: {
+          prompt: "implement the change",
+          context: { expression: "$.steps.context" }
+        },
         gates: [
           {
             id: "review",
             type: "quality-gates.agent_review",
             input: {
               review_agent: "change-reviewer",
+              context: { expression: "$.steps.context" },
               subject: { expression: "$.gate" }
             },
             block_when: { expression: "$.gate.decision = 'fail'" },
@@ -197,13 +237,15 @@ describe("gated agent loop LangGraph executor", () => {
             type: "quality-gates.agent_review",
             input: {
               review_agent: "change-acceptance-reviewer",
+              context: { expression: "$.steps.context" },
               subject: { expression: "$.gate" }
             },
             block_when: { expression: "$.gate.status != 'accepted'" },
             feedback: { expression: "$.gate.summary" }
           }
         ],
-        repair: { attempts: 0 }
+        repair: { attempts: 0 },
+        after: ["context"]
       }
     ]);
     const runtimeBackends = backends();
@@ -221,7 +263,9 @@ describe("gated agent loop LangGraph executor", () => {
       },
       runtimeContext: { workspace: { path: workspacePath } },
       backends: runtimeBackends,
-      builtIns: {},
+      builtIns: {
+        "quality-gates.test_context": async () => reviewerContext
+      },
       patternExecutors: qualityGatePatternExecutors,
       agentRuntime: runtime,
       agentInputs: {
@@ -261,7 +305,12 @@ describe("gated agent loop LangGraph executor", () => {
         node_id: gatedAgentGateKey("implementation", "review"),
         agent_id: "change-reviewer",
         cwd: workspacePath,
+        context: reviewerContext,
+        instructions: expect.stringContaining("Reviewer contextual guidance."),
         input: expect.objectContaining({
+          context_audit: expect.objectContaining({
+            agent: expect.objectContaining({ id: "change-reviewer" })
+          }),
           subject: expect.objectContaining({
             output: { files_changed: ["src/example.ts"] },
             outputs: {}

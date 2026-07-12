@@ -1,0 +1,349 @@
+import { useMemo, useState, type FormEvent } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { AlertTriangleIcon, BotIcon, FilePlus2Icon, HistoryIcon, PencilLineIcon, SearchIcon } from "lucide-react"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import { toast } from "sonner"
+
+import { studioApi } from "@/api/client"
+import { agentsQuery, configurationModelsQuery, draftsQuery, studioKeys, workflowsQuery } from "@/api/queries"
+import type { AgentDraftCreateSource } from "@/api/types"
+import { useStudioSession } from "@/app/studio-context"
+import { PageHeader } from "@/components/page-header"
+import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
+import { ModeBadge } from "@/components/status-badge"
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { humanizeWorkflowIdentifier } from "@/features/workflows/workflow-node-catalog"
+import { formatCount } from "@/lib/presentation"
+
+const RESOURCE_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
+
+export function AgentsPage() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const session = useStudioSession()
+  const agents = useQuery(agentsQuery)
+  const drafts = useQuery(draftsQuery)
+  const models = useQuery(configurationModelsQuery)
+  const workflows = useQuery(workflowsQuery)
+  const [search, setSearch] = useState("")
+  const [newId, setNewId] = useState("")
+  const [newModelProfile, setNewModelProfile] = useState("")
+  const [params, setParams] = useSearchParams()
+  const newOpen = session.canMutate && params.get("new") === "1"
+  const selectedId = params.get("selected")
+  const selected = agents.data?.agents.find((agent) => agent.id === selectedId)
+  const draftByAgent = useMemo(() => {
+    const index = new Map<string, NonNullable<typeof drafts.data>["items"][number]>()
+    for (const draft of drafts.data?.items ?? []) {
+      if (draft.primary_resource.kind === "agent" && !index.has(draft.primary_resource.id)) {
+        index.set(draft.primary_resource.id, draft)
+      }
+    }
+    return index
+  }, [drafts.data])
+  const workflowsByAgent = useMemo(() => {
+    const index = new Map<string, string[]>()
+    for (const workflow of workflows.data?.workflows ?? []) {
+      for (const agentId of workflow.agents) {
+        index.set(agentId, [...(index.get(agentId) ?? []), workflow.id])
+      }
+    }
+    return index
+  }, [workflows.data])
+
+  const openDraft = useMutation({
+    mutationFn: ({ id, source }: { id: string; source: AgentDraftCreateSource }) => {
+      if (!session.canMutate) {
+        throw new Error("A sessão atual é somente leitura")
+      }
+      return studioApi.createDraft({
+        resource: { kind: "agent", id },
+        source,
+      })
+    },
+    onSuccess: (draft) => {
+      void queryClient.invalidateQueries({ queryKey: studioKeys.drafts })
+      setNewOpen(false)
+      setNewId("")
+      setNewModelProfile("")
+      void navigate(`/agent-drafts/${encodeURIComponent(draft.draft_id)}`)
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Falha ao criar draft do agent"),
+  })
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase()
+    return (agents.data?.agents ?? []).filter(
+      (agent) =>
+        term.length === 0 ||
+        agent.id.toLocaleLowerCase().includes(term) ||
+        agent.description.toLocaleLowerCase().includes(term) ||
+        agent.tools.some((tool) => tool.toLocaleLowerCase().includes(term)),
+    )
+  }, [agents.data, search])
+
+  const selectAgent = (id: string | undefined) => {
+    const next = new URLSearchParams(params)
+    if (id === undefined) next.delete("selected")
+    else next.set("selected", id)
+    setParams(next, { replace: true })
+  }
+
+  const setNewOpen = (open: boolean) => {
+    const next = new URLSearchParams(params)
+    if (open && !session.canMutate) {
+      next.delete("new")
+      setParams(next, { replace: true })
+      return
+    }
+    if (open) {
+      next.set("new", "1")
+      next.delete("selected")
+    } else {
+      next.delete("new")
+      setNewId("")
+      setNewModelProfile("")
+    }
+    setParams(next, { replace: true })
+  }
+
+  const editAgent = (id: string) => {
+    const existing = draftByAgent.get(id)
+    if (existing !== undefined) {
+      void navigate(`/agent-drafts/${encodeURIComponent(existing.draft_id)}`)
+      return
+    }
+    openDraft.mutate({ id, source: { mode: "existing" } })
+  }
+
+  const submitNew = (event: FormEvent) => {
+    event.preventDefault()
+    if (
+      !session.canMutate ||
+      !RESOURCE_ID.test(newId) ||
+      newId.length > 128 ||
+      !modelProfileSelected
+    ) return
+    openDraft.mutate({
+      id: newId,
+      source: { mode: "blank", model_profile: newModelProfile },
+    })
+  }
+
+  const catalogDiagnostics = agents.data?.diagnostics ?? []
+  const modelConfigurationHasErrors = models.data?.diagnostics.some(
+    (diagnostic) => diagnostic.severity === "error",
+  ) ?? false
+  const modelProfilesAvailable =
+    !models.isError &&
+    !modelConfigurationHasErrors &&
+    (models.data?.profiles.length ?? 0) > 0
+  const modelProfileSelected =
+    modelProfilesAvailable &&
+    (models.data?.profiles.some(
+      (profile) => profile.id === newModelProfile,
+    ) ?? false)
+
+  return (
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6">
+      <PageHeader
+        eyebrow="IA reutilizável"
+        title="Agents"
+        description="Crie especialistas reutilizáveis, defina o que podem fazer e teste a resposta antes de usá-los em workflows."
+        actions={<Button disabled={!session.canMutate || drafts.isError} onClick={() => setNewOpen(true)}><FilePlus2Icon aria-hidden="true" />Novo agent</Button>}
+      />
+      <div className="relative max-w-md">
+        <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="pl-8"
+          placeholder="Buscar por nome, propósito ou recurso"
+          aria-label="Buscar agents"
+        />
+      </div>
+
+      {agents.data?.status === "partial" && (
+        <Alert variant="destructive">
+          <AlertTriangleIcon aria-hidden="true" />
+            <AlertTitle>
+              Catálogo parcial: {formatCount(catalogDiagnostics.length, "agent inválido", "agents inválidos")}
+            </AlertTitle>
+          <AlertDescription>
+            <p>Alguns agents foram ignorados porque a configuração está inválida. Os agents utilizáveis continuam abaixo.</p>
+            <details className="mt-2"><summary className="cursor-pointer text-xs">Ver detalhes técnicos</summary><ul className="mt-2 space-y-1 font-mono text-xs">{catalogDiagnostics.slice(0, 20).map((diagnostic, index) => <li key={`${diagnostic.resource_id}:${diagnostic.code}:${index}`}>{diagnostic.resource_id}: {diagnostic.code} — {diagnostic.message}</li>)}</ul>{catalogDiagnostics.length > 20 && <p className="mt-2 text-xs">Mais {catalogDiagnostics.length - 20} diagnóstico(s) não exibido(s).</p>}</details>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {agents.isPending ? (
+        <PageLoading label="Carregando agents" />
+      ) : agents.isError ? (
+        <PageError error={agents.error} retry={() => void agents.refetch()} />
+      ) : filtered.length === 0 ? (
+        <PageEmpty
+          title={search.length > 0 ? "Nenhum agent corresponde à busca" : "Nenhum agent válido carregado"}
+          description={agents.data?.status === "partial" ? "Todos os candidatos podem ter sido rejeitados; revise os diagnósticos do catálogo acima." : "O catálogo seguro não retornou um agent correspondente."}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Agent</TableHead>
+                <TableHead>Permissão</TableHead>
+                <TableHead>Usado em</TableHead>
+                <TableHead className="text-right">Ação</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((agent) => (
+                <TableRow key={agent.id}>
+                  <TableCell>
+                    <button
+                      type="button"
+                      className="max-w-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => selectAgent(agent.id)}
+                    >
+                      <span className="flex items-center gap-2 font-medium hover:underline">
+                        <BotIcon className="size-4 text-muted-foreground" aria-hidden="true" /> {humanizeWorkflowIdentifier(agent.id)}
+                      </span>
+                      <span className="mt-1 block truncate text-xs text-muted-foreground">{agent.description}</span>
+                    </button>
+                  </TableCell>
+                  <TableCell><ModeBadge mode={agent.mode} /></TableCell>
+                  <TableCell>
+                    {workflows.isPending
+                      ? "…"
+                      : formatCount(workflowsByAgent.get(agent.id)?.length ?? 0, "workflow", "workflows")}
+                  </TableCell>
+                  <TableCell className="text-right"><Button variant="outline" size="sm" disabled={!session.canMutate || openDraft.isPending || drafts.isError} onClick={() => editAgent(agent.id)}><PencilLineIcon aria-hidden="true" />{draftByAgent.has(agent.id) ? "Abrir draft" : "Editar"}</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <Sheet open={selected !== undefined} onOpenChange={(open) => { if (!open) selectAgent(undefined) }}>
+        <SheetContent className="w-full sm:max-w-xl">
+          {selected !== undefined && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{humanizeWorkflowIdentifier(selected.id)}</SheetTitle>
+                <SheetDescription>{selected.description}</SheetDescription>
+              </SheetHeader>
+              <ScrollArea className="min-h-0 flex-1 px-4 pb-4">
+                <div className="space-y-6">
+                  <section className="space-y-2">
+                    <h2 className="text-sm font-medium">Autoridade</h2>
+                    <div className="flex flex-wrap gap-2"><ModeBadge mode={selected.mode} /><Badge variant="outline">Modelo {selected.model_profile}</Badge></div>
+                  </section>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button variant="outline" onClick={() => void navigate(`/agents/${encodeURIComponent(selected.id)}/history`)}><HistoryIcon aria-hidden="true" />Histórico</Button>
+                    <Button disabled={!session.canMutate || openDraft.isPending || drafts.isError} onClick={() => editAgent(selected.id)}><PencilLineIcon aria-hidden="true" />{draftByAgent.has(selected.id) ? "Abrir draft" : "Editar agent"}</Button>
+                  </div>
+                  <section className="space-y-2">
+                    <h2 className="text-sm font-medium">Onde é usado</h2>
+                    <div className="flex flex-wrap gap-1">{(workflowsByAgent.get(selected.id) ?? []).length === 0 ? <span className="text-xs text-muted-foreground">Nenhum workflow carregado usa este agent.</span> : workflowsByAgent.get(selected.id)?.map((workflowId) => <Badge key={workflowId} variant="outline">{humanizeWorkflowIdentifier(workflowId)}</Badge>)}</div>
+                  </section>
+                  <section className="space-y-2">
+                    <h2 className="text-sm font-medium">Formato da resposta</h2>
+                    <p className="text-xs text-muted-foreground">Saída estruturada validada por {selected.output_schema_reference}.</p>
+                    <details className="rounded-lg border">
+                      <summary className="cursor-pointer px-3 py-2 text-xs font-medium">Ver JSON Schema</summary>
+                      <pre className="max-h-64 overflow-auto border-t bg-muted p-3 text-xs">{JSON.stringify(selected.output_schema, null, 2)}</pre>
+                    </details>
+                  </section>
+                  <section className="space-y-2">
+                    <h2 className="text-sm font-medium">O que pode usar</h2>
+                    <p className="text-xs text-muted-foreground">Ferramentas</p>
+                    <div className="flex flex-wrap gap-1">{selected.tools.length === 0 ? <span className="text-xs text-muted-foreground">Nenhuma</span> : selected.tools.map((tool) => <Badge key={tool} variant="outline">{tool}</Badge>)}</div>
+                    <p className="pt-2 text-xs text-muted-foreground">Skills</p>
+                    <div className="flex flex-wrap gap-1">{selected.skills.length === 0 ? <span className="text-xs text-muted-foreground">Nenhuma</span> : selected.skills.map((skill) => <Badge key={skill} variant="outline">{skill}</Badge>)}</div>
+                    <p className="pt-2 text-xs text-muted-foreground">Servidores MCP</p>
+                    <div className="flex flex-wrap gap-1">{selected.mcp_servers.length === 0 ? <span className="text-xs text-muted-foreground">Nenhum</span> : selected.mcp_servers.map((server) => <Badge key={server} variant="outline">{server}</Badge>)}</div>
+                  </section>
+                </div>
+              </ScrollArea>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+        <DialogContent>
+          <form onSubmit={submitNew} className="contents">
+            <DialogHeader><DialogTitle>Que especialista você quer criar?</DialogTitle><DialogDescription>Dê um nome e escolha o modelo inicial. Em seguida você definirá propósito, instruções, recursos e formato da resposta.</DialogDescription></DialogHeader>
+            <Field>
+              <FieldLabel htmlFor="new-agent-id">Nome curto</FieldLabel>
+              <Input id="new-agent-id" autoFocus value={newId} onChange={(event) => setNewId(event.target.value)} placeholder="meu-agent" aria-invalid={newId.length > 0 && (!RESOURCE_ID.test(newId) || newId.length > 128)} />
+              <FieldDescription>Exemplo: revisor-seguranca. Este nome também será o identificador técnico.</FieldDescription>
+              {newId.length > 0 && (!RESOURCE_ID.test(newId) || newId.length > 128) && <FieldError>Use letras, números, ponto, hífen ou underscore; máximo 128 caracteres.</FieldError>}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-agent-model-profile">Modelo inicial</FieldLabel>
+              <NativeSelect
+                id="new-agent-model-profile"
+                className="w-full"
+                value={newModelProfile}
+                onChange={(event) => setNewModelProfile(event.target.value)}
+                disabled={models.isPending || models.isError || !modelProfilesAvailable}
+                aria-invalid={!models.isPending && !models.isError && !modelProfilesAvailable}
+              >
+                <NativeSelectOption value="">Selecione um profile</NativeSelectOption>
+                {(models.data?.profiles ?? []).map((profile) => (
+                  <NativeSelectOption key={profile.id} value={profile.id}>{profile.id}</NativeSelectOption>
+                ))}
+              </NativeSelect>
+              <FieldDescription>Você poderá revisar o runtime e os limites na etapa de autoridade.</FieldDescription>
+              {models.isPending && <p className="text-xs text-muted-foreground" role="status">Carregando perfis de modelo…</p>}
+              {models.isError && <FieldError>Não foi possível carregar os perfis de modelo. Tente novamente antes de criar o agent.</FieldError>}
+              {!models.isPending && !models.isError && !modelProfilesAvailable && <FieldError>Nenhum perfil de modelo válido está disponível em config/models.yaml.</FieldError>}
+              {(models.data?.diagnostics.length ?? 0) > 0 && (
+                <details className="text-xs text-destructive">
+                  <summary className="cursor-pointer">Alguns modelos não puderam ser carregados</summary>
+                  <ul className="mt-1 space-y-1 font-mono">
+                    {models.data?.diagnostics.map((diagnostic) => (
+                      <li key={diagnostic.code}>{diagnostic.code}: {diagnostic.message}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </Field>
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setNewOpen(false)}>Cancelar</Button><Button type="submit" disabled={!session.canMutate || openDraft.isPending || !RESOURCE_ID.test(newId) || newId.length > 128 || !modelProfileSelected}>{openDraft.isPending ? "Criando…" : "Continuar"}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
