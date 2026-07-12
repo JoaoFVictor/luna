@@ -4,7 +4,6 @@ import {
   BotIcon,
   BoxesIcon,
   CircleIcon,
-  CommandIcon,
   HouseIcon,
   NetworkIcon,
   RocketIcon,
@@ -139,9 +138,12 @@ export function AppShell() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" render={<Link to="/" />} tooltip="Luna Studio">
-                <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <CommandIcon aria-hidden="true" />
-                </div>
+                <img
+                  src="/favicon.svg"
+                  alt=""
+                  aria-hidden="true"
+                  className="size-8 rounded-lg"
+                />
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">Luna Studio</span>
                   <span className="truncate text-xs text-muted-foreground">Projeto local</span>
