@@ -44,7 +44,9 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
     props.acknowledgedAdapterEffects.includes(effect),
   )
   const selectedDescription = selectedAdapter === undefined
-    ? "Nenhuma entrada registrada."
+    ? props.adapters.length === 0
+      ? "Nenhuma fonte de entrada está configurada."
+      : "Selecione uma fonte para ver o formato e os efeitos declarados."
     : launchAdapterDescription(selectedAdapter.id, selectedAdapter.description)
 
   return (
@@ -52,7 +54,8 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
       <CardHeader>
         <CardTitle>Escolha uma entrada</CardTitle>
         <CardDescription>
-          Use o valor de entrada aceito por uma das fontes configuradas.
+          Escolha uma fonte configurada e informe o valor que ela aceita. A rota
+          resultante será mostrada antes de preparar a execução.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -65,13 +68,14 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
 
             <TabsContent value="adapter" className="space-y-5 pt-4">
               <Field>
-                <FieldLabel htmlFor="launch-adapter">Fonte</FieldLabel>
+                <FieldLabel htmlFor="launch-adapter">Fonte de entrada</FieldLabel>
                 <NativeSelect
                   id="launch-adapter"
                   className="w-full"
                   value={props.adapterId}
                   onChange={(event) => props.onAdapterChange(event.target.value)}
                 >
+                  <NativeSelectOption value="">Selecione uma fonte</NativeSelectOption>
                   {props.adapters.map((adapter) => (
                     <NativeSelectOption key={adapter.id} value={adapter.id}>
                       {launchAdapterLabel(adapter.id, adapter.source)}
@@ -90,7 +94,10 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
                   placeholder={launchAdapterPlaceholder()}
                   autoComplete="off"
                 />
-                <FieldDescription>{selectedDescription}</FieldDescription>
+                <FieldDescription>
+                  O valor será interpretado pela fonte selecionada; nenhum efeito
+                  é aplicado antes da revisão do plano.
+                </FieldDescription>
               </Field>
 
               {selectedAdapter?.preview.enabled === false && (

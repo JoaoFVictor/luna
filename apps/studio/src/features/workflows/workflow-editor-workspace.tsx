@@ -185,7 +185,15 @@ export function WorkflowEditorWorkspace({
             </>
           )}
         </TabsList>
-        <Button size="sm" variant={technicalOpen ? "secondary" : "ghost"} onClick={() => setTechnicalOpen((current) => !current)}>
+        <Button size="sm" variant={technicalOpen ? "secondary" : "ghost"} onClick={() => {
+          if (technicalOpen) {
+            setTechnicalOpen(false)
+            if (["yaml", "schemas", "compiled", "diff"].includes(editor.view.active)) editor.view.setActive("design")
+            return
+          }
+          setTechnicalOpen(true)
+          editor.view.setActive("yaml")
+        }}>
           <Settings2Icon aria-hidden="true" /> Técnico
         </Button>
       </div>
@@ -251,6 +259,8 @@ export function WorkflowEditorWorkspace({
           diagnostics={editor.view.validation?.diagnostics ?? []}
           validated={editor.view.validation !== undefined}
           onOpenDiagnostic={openDiagnostic}
+          onValidate={editor.actions.validate}
+          validating={editor.pending.validate}
         />
       </TabsContent>
     </Tabs>

@@ -52,13 +52,17 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>
     <Handle
       type="target"
       position={data.direction === "horizontal" ? Position.Left : Position.Top}
-      className="!size-4 border-[3px] border-background bg-primary shadow-sm transition-transform hover:scale-125"
-      style={{ width: 16, height: 16 }}
+      className="!size-5 border-[4px] border-background bg-primary shadow-sm transition-transform hover:scale-125"
+      style={{ width: 20, height: 20 }}
       title="Solte uma conexão aqui"
       aria-label={`Entrada de conexão de ${data.presentation?.title ?? data.compiled.id}`}
       role={data.onConnectionTargetClick === undefined ? undefined : "button"}
       tabIndex={data.onConnectionTargetClick === undefined ? undefined : 0}
-      onClick={data.onConnectionTargetClick}
+      onClick={(event) => {
+        if (data.onConnectionTargetClick === undefined) return
+        event.stopPropagation()
+        data.onConnectionTargetClick()
+      }}
       onKeyDown={(event) => activateConnectionByKeyboard(event, data.onConnectionTargetClick)}
     />
     <div className="flex items-start gap-2"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted"><Icon className="size-4" aria-hidden="true" /></div><div className="min-w-0"><p className="truncate text-sm font-medium">{data.presentation?.title ?? data.compiled.id}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{data.compiled.kind === "agent" ? "Agent" : data.compiled.kind === "interrupt" ? "Aprovação" : data.compiled.kind === "workflow" ? "Subworkflow" : "Passo"} · {data.compiled.id}</p></div></div>
@@ -97,16 +101,19 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>
       type="source"
       position={data.direction === "horizontal" ? Position.Right : Position.Bottom}
       className={cn(
-        "!size-4 border-[3px] border-background bg-primary shadow-sm transition-transform hover:scale-125",
+        "!size-5 border-[4px] border-background bg-primary shadow-sm transition-transform hover:scale-125",
         data.connectionSourceActive && "scale-125 ring-4 ring-primary/25",
       )}
-      style={{ width: 16, height: 16 }}
+      style={{ width: 20, height: 20 }}
       title="Clique ou arraste para conectar; solte no vazio para adicionar outro passo"
       aria-label={`Saída de conexão de ${data.presentation?.title ?? data.compiled.id}`}
       role={data.onConnectionSourceClick === undefined ? undefined : "button"}
       tabIndex={data.onConnectionSourceClick === undefined ? undefined : 0}
       aria-pressed={data.connectionSourceActive}
-      onClick={data.onConnectionSourceClick}
+      onClick={(event) => {
+        event.stopPropagation()
+        data.onConnectionSourceClick?.()
+      }}
       onKeyDown={(event) => activateConnectionByKeyboard(event, data.onConnectionSourceClick)}
     />
   </div>

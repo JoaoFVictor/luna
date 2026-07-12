@@ -17,6 +17,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { formatDateTime } from "@/lib/format"
+import { formatCount } from "@/lib/presentation"
 import type { RunLaunchNotice } from "@/features/launch/use-run-launch"
 import { launchEffectLabel } from "@/features/launch/launch-presentation"
 
@@ -86,7 +87,9 @@ function PlanIdentity({ plan }: { plan: RunPlan }) {
           <Alert>
             <DatabaseIcon aria-hidden="true" />
             <AlertTitle>
-              {plan.execution_profile.test_data.length} {plan.execution_profile.test_data.length === 1 ? "node será substituído" : "nodes serão substituídos"} por dados salvos
+              {plan.execution_profile.test_data.length === 1
+                ? "1 nó será substituído por dados salvos"
+                : `${formatCount(plan.execution_profile.test_data.length, "nó", "nós")} serão substituídos por dados salvos`}
             </AlertTitle>
             <AlertDescription>
               <ul className="mt-1 list-disc space-y-1 pl-5">
@@ -96,7 +99,7 @@ function PlanIdentity({ plan }: { plan: RunPlan }) {
                   </li>
                 ))}
               </ul>
-              <p className="mt-2">Nodes restantes e seus efeitos continuam reais.</p>
+              <p className="mt-2">Os demais nós e seus efeitos continuam reais.</p>
             </AlertDescription>
           </Alert>
         )}

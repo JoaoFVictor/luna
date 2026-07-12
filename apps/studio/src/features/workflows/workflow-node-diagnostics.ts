@@ -16,6 +16,8 @@ export type WorkflowInspectorField =
   | "input"
   | "advanced"
 
+export type WorkflowInspectorSection = "summary" | "inputs" | "advanced"
+
 export function workflowInspectorField(
   fieldPath: readonly (string | number)[] | undefined,
 ): WorkflowInspectorField | undefined {
@@ -27,6 +29,15 @@ export function workflowInspectorField(
   if (root === "after") return "dependencies"
   if (root === "input") return "input"
   return "advanced"
+}
+
+export function workflowInspectorSection(
+  fieldPath: readonly (string | number)[] | undefined,
+): WorkflowInspectorSection {
+  const field = workflowInspectorField(fieldPath)
+  if (field === "dependencies" || field === "input") return "inputs"
+  if (field === "identity" || field === "worker" || field === "advanced") return "advanced"
+  return "summary"
 }
 
 export function workflowInspectorFieldDiagnostics(

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table"
 import { NewWorkflowDialog } from "@/features/workflows/new-workflow-dialog"
 import { humanizeWorkflowIdentifier } from "@/features/workflows/workflow-node-catalog"
+import { formatCount } from "@/lib/presentation"
 
 function nodeTotal(counts: {
   built_in?: number
@@ -134,7 +135,7 @@ export function WorkflowsPage() {
       {workflows.data?.status === "partial" && (
         <Alert variant="destructive">
           <AlertTriangleIcon aria-hidden="true" />
-          <AlertTitle>Catálogo parcial: {catalogDiagnostics.length} workflow(s) inválido(s)</AlertTitle>
+          <AlertTitle>Catálogo parcial: {formatCount(catalogDiagnostics.length, "workflow inválido", "workflows inválidos")}</AlertTitle>
           <AlertDescription>
             <p>Somente workflows aceitos pelo loader canônico aparecem na tabela. Corrija os itens abaixo antes de tratar a lista como completa.</p>
             <ul className="mt-2 space-y-1 font-mono text-xs">

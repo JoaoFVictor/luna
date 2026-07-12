@@ -17,6 +17,7 @@ import {
 } from "@/features/runs/artifact-views/common"
 import { SpecializedArtifactView } from "@/features/runs/artifact-views/specialized-artifact-view"
 import { formatDateTime } from "@/lib/format"
+import { humanizeTechnicalId } from "@/lib/presentation"
 
 function GenericArtifactPreview({ preview }: { preview: ArtifactPreview }) {
   if (preview.kind === "json") {
@@ -172,6 +173,19 @@ function isInternalManifest(artifact: ArtifactSummary): boolean {
   return artifact.semantic_type === undefined && artifact.source_node_id === undefined
 }
 
+function artifactDisplayName(artifact: ArtifactSummary): string {
+  if (!isInternalManifest(artifact)) return artifact.name
+  const stem = artifact.name.replace(/\.[A-Za-z0-9]+$/, "")
+  return `Manifest técnico · ${stem.slice(0, 12)}${stem.length > 12 ? "…" : ""}`
+}
+
+function artifactStatusLabel(status: ArtifactSummary["status"]): string {
+  if (status === "committed") return "pronto"
+  if (status === "pending") return "processando"
+  if (status === "failed") return "falhou"
+  return status
+}
+
 export function ArtifactsPanel({
   runId,
   expectedCount,
@@ -256,20 +270,26 @@ export function ArtifactsPanel({
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-          <div className="max-h-[36rem] space-y-2 overflow-y-auto overscroll-contain pr-2" aria-label="Resultados da execução">
+          <div className="space-y-2 pr-2" aria-label="Resultados da execução">
             {visibleArtifacts.map((artifact) => (
           <button
             key={artifact.manifest_handle}
             type="button"
             aria-pressed={selected === artifact.manifest_handle}
+            title={artifact.name}
             className="w-full rounded-lg border p-3 text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:border-primary"
             data-selected={selected === artifact.manifest_handle}
             onClick={() => setSelected(artifact.manifest_handle)}
           >
-            <span className="flex items-center justify-between gap-2 font-medium"><span className="flex min-w-0 items-center gap-2"><FileTextIcon className="size-4 shrink-0" aria-hidden="true" /><span className="truncate">{artifact.name}</span></span><span className="flex shrink-0 items-center gap-1"><Badge variant={isInternalManifest(artifact) ? "secondary" : artifact.status === "failed" ? "destructive" : "outline"}>{isInternalManifest(artifact) ? "técnico" : artifact.status}</Badge></span></span>
+            <span className="flex items-center justify-between gap-2 font-medium"><span className="flex min-w-0 items-center gap-2"><FileTextIcon className="size-4 shrink-0" aria-hidden="true" /><span className="truncate">{artifactDisplayName(artifact)}</span>{isInternalManifest(artifact) && <span className="sr-only">{artifact.name}</span>}</span><span className="flex shrink-0 items-center gap-1"><Badge variant={isInternalManifest(artifact) ? "secondary" : artifact.status === "failed" ? "destructive" : "outline"}>{isInternalManifest(artifact) ? "técnico" : artifactStatusLabel(artifact.status)}</Badge></span></span>
             <span className="mt-1 block text-xs text-muted-foreground">
               {artifact.media_type} · tentativa {artifact.attempt}
             </span>
+            {artifact.source_node_id !== undefined && (
+              <span className="mt-1 block break-all text-xs text-muted-foreground">
+                etapa: {humanizeTechnicalId(artifact.source_node_id)}
+              </span>
+            )}
             {artifact.semantic_type !== undefined && (
               <span className="mt-1 block break-all text-xs text-muted-foreground">
                 {artifact.semantic_type}

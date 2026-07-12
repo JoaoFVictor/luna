@@ -26,5 +26,5 @@ export function launchAdapterDescription(id: string, fallback: string): string {
 }
 
 export function launchAdapterPlaceholder(): string {
-  return "Informe o valor esperado por este adapter"
+  return "Informe o valor aceito por esta fonte"
 }

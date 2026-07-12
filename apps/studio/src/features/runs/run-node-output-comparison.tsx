@@ -109,10 +109,10 @@ function ComparableResult({ result }: { result: ComparableResponse }) {
                 </div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   {change.kind !== "added" && (
-                    <div><p className="text-xs text-muted-foreground">Antes</p><pre className="mt-1 max-h-44 overflow-auto rounded bg-muted p-2 text-xs">{displayValue(change.before)}</pre></div>
+                    <div><p className="text-xs text-muted-foreground">Antes</p><pre className="mt-1 max-h-44 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-all rounded bg-muted p-2 text-xs">{displayValue(change.before)}</pre></div>
                   )}
                   {change.kind !== "removed" && (
-                    <div><p className="text-xs text-muted-foreground">Depois</p><pre className="mt-1 max-h-44 overflow-auto rounded bg-muted p-2 text-xs">{displayValue(change.after)}</pre></div>
+                    <div><p className="text-xs text-muted-foreground">Depois</p><pre className="mt-1 max-h-44 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-all rounded bg-muted p-2 text-xs">{displayValue(change.after)}</pre></div>
                   )}
                 </div>
               </li>

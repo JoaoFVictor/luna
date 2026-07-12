@@ -107,42 +107,60 @@ export function RunDetailPage() {
       </div>
 
       <p className="text-xs text-muted-foreground">Ao executar novamente, revise a entrada: dados sensíveis não são recuperados desta execução.</p>
-      <RunGraphPanel
-        runId={runId}
-        record={record}
-        events={timelineEvents}
-        eventHistoryComplete={!timeline.hasNextPage && !timeline.isError}
-      />
-
-      <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(20rem,1fr)]">
-        <RunTimelinePanel
-          events={timelineEvents}
-          streamStatus={streamStatus}
-          terminal={terminal}
-          pending={timeline.isPending}
-          error={timeline.isError ? timeline.error : undefined}
-          retry={() => void timeline.refetch()}
-          hasPrevious={timeline.hasNextPage}
-          fetchingPrevious={timeline.isFetchingNextPage}
-          fetchPrevious={() => void timeline.fetchNextPage()}
-        />
-        <RunRecordDetails record={record} />
-      </div>
-
-      <section aria-labelledby="run-results-heading" className="space-y-3">
-        <div>
-          <h2 id="run-results-heading" className="font-heading text-xl font-semibold tracking-tight">Resultados e diagnóstico</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Separe o que foi produzido do histórico técnico usado para explicar a execução.</p>
-        </div>
-        <Tabs defaultValue="artifacts" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="artifacts">Resultados</TabsTrigger>
-            <TabsTrigger value="logs">Diagnóstico</TabsTrigger>
+      <Tabs defaultValue="flow" className="min-w-0 space-y-4">
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="w-max min-w-full justify-start">
+            <TabsTrigger value="flow">Fluxo</TabsTrigger>
+            <TabsTrigger value="results">Resultados</TabsTrigger>
+            <TabsTrigger value="diagnostics">Diagnóstico</TabsTrigger>
+            <TabsTrigger value="timeline">Linha do tempo</TabsTrigger>
+            <TabsTrigger value="context">Contexto</TabsTrigger>
           </TabsList>
-          <TabsContent value="artifacts"><ArtifactsPanel runId={runId} expectedCount={record.artifact_count} terminalAt={record.finished_at} /></TabsContent>
-          <TabsContent value="logs"><RunLogsPanel runId={runId} /></TabsContent>
-        </Tabs>
-      </section>
+        </div>
+
+        <TabsContent value="flow">
+          <RunGraphPanel
+            runId={runId}
+            record={record}
+            events={timelineEvents}
+            eventHistoryComplete={!timeline.hasNextPage && !timeline.isError}
+          />
+        </TabsContent>
+
+        <TabsContent value="results" className="space-y-3">
+          <div>
+            <h2 className="font-heading text-xl font-semibold tracking-tight">Resultados produzidos</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Entregas finais e artefatos associados às etapas que os produziram.</p>
+          </div>
+          <ArtifactsPanel runId={runId} expectedCount={record.artifact_count} terminalAt={record.finished_at} />
+        </TabsContent>
+
+        <TabsContent value="diagnostics" className="space-y-3">
+          <div>
+            <h2 className="font-heading text-xl font-semibold tracking-tight">Diagnóstico da execução</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Investigue falhas e avisos; detalhes técnicos permanecem disponíveis sob demanda.</p>
+          </div>
+          <RunLogsPanel runId={runId} />
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          <RunTimelinePanel
+            events={timelineEvents}
+            streamStatus={streamStatus}
+            terminal={terminal}
+            pending={timeline.isPending}
+            error={timeline.isError ? timeline.error : undefined}
+            retry={() => void timeline.refetch()}
+            hasPrevious={timeline.hasNextPage}
+            fetchingPrevious={timeline.isFetchingNextPage}
+            fetchPrevious={() => void timeline.fetchNextPage()}
+          />
+        </TabsContent>
+
+        <TabsContent value="context">
+          <RunRecordDetails record={record} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

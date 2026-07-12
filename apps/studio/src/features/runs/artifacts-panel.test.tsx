@@ -159,7 +159,7 @@ describe("ArtifactsPanel", () => {
       await vi.advanceTimersByTimeAsync(1_000)
     })
 
-    expect(screen.getByRole("button", { name: /report\.txt committed/ })).toBeDefined()
+    expect(screen.getByRole("button", { name: /report\.txt pronto/ })).toBeDefined()
     expect(artifacts).toHaveBeenCalledTimes(2)
     view.unmount()
     queryClient.clear()
@@ -213,7 +213,7 @@ describe("ArtifactsPanel", () => {
 
     expect(await screen.findByText(/safe/)).toBeDefined()
     expect(
-      screen.getByRole("button", { name: /ready\.json committed/ })
+      screen.getByRole("button", { name: /ready\.json pronto/ })
         .getAttribute("aria-pressed"),
     ).toBe("true")
     expect(preview).toHaveBeenCalledOnce()
@@ -378,5 +378,6 @@ describe("ArtifactsPanel", () => {
     expect(screen.queryByRole("button", { name: new RegExp(technicalName) })).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: /Mostrar técnicos/ }))
     expect(screen.getByRole("button", { name: new RegExp(technicalName) })).toBeDefined()
+    expect(screen.getByLabelText("Resultados da execução").className).not.toContain("overflow-y-auto")
   })
 })

@@ -171,14 +171,14 @@ export function RunLogsPanel({ runId }: { runId: string }) {
 
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_12rem]">
           <label className="relative block">
-            <span className="sr-only">Buscar em mensagens e nodes</span>
+            <span className="sr-only">Buscar em mensagens e etapas</span>
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               className="pl-8"
               placeholder="Buscar mensagem ou node…"
-              aria-label="Buscar em mensagens e nodes"
+              aria-label="Buscar em mensagens e etapas"
             />
           </label>
           <label className="space-y-1 text-xs font-medium text-muted-foreground">
@@ -189,7 +189,7 @@ export function RunLogsPanel({ runId }: { runId: string }) {
               className="w-full"
               aria-label="Filtrar logs por node"
             >
-              <NativeSelectOption value="">Todos os nodes</NativeSelectOption>
+              <NativeSelectOption value="">Todas as etapas</NativeSelectOption>
               {nodeOptions.map((option) => <NativeSelectOption key={option} value={option}>{option}</NativeSelectOption>)}
             </NativeSelect>
           </label>
@@ -247,7 +247,7 @@ export function RunLogsPanel({ runId }: { runId: string }) {
           <p className="mt-1 text-xs text-muted-foreground">Tente limpar a busca, trocar o node ou mostrar eventos técnicos.</p>
         </div>
       ) : (
-        <div className="max-h-[36rem] overflow-y-auto overscroll-contain rounded-xl border bg-card font-mono text-xs shadow-sm" aria-label="Entradas de log">
+        <div className="rounded-xl border bg-card font-mono text-xs shadow-sm" aria-label="Entradas de log">
           {filteredEntries.map((entry) => (
             <div
               key={entry.sequence}

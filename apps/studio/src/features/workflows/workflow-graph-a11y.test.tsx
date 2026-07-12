@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { act, render } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkflowGraph } from "@/features/workflows/workflow-graph"
 
@@ -398,5 +398,51 @@ describe("WorkflowGraph accessibility contract", () => {
       selected: boolean
     }>
     expect(projectedAfterClick.find((edge) => edge.id === edges[1]!.id)?.selected).toBe(false)
+  })
+
+  it("can hide dense data mappings and the minimap without losing node port counts", () => {
+    captured.minimapProps = undefined
+    render(
+      <WorkflowGraph
+        graph={{
+          nodes: [
+            { id: "source", kind: "built_in", capability_id: "one", can_create_pending_interrupt: false },
+            { id: "target", kind: "built_in", capability_id: "two", can_create_pending_interrupt: false },
+          ],
+          edges: [{ from: "source", to: "target" }],
+        }}
+        dataConnections={[{
+          sourceId: "source",
+          targetId: "target",
+          mappings: [{ expression: "$.steps.source.value", sourcePath: ["value"], targetPath: ["value"] }],
+        }]}
+        showDataConnections={false}
+        showMiniMap={false}
+      />,
+    )
+
+    const edges = captured.props?.edges as Array<{ type: string }>
+    expect(edges.map((edge) => edge.type)).toEqual(["workflow-dependency"])
+    const nodes = captured.props?.nodes as Array<{ id: string; data: { dataInputCount?: number; dataOutputCount?: number } }>
+    expect(nodes.find((node) => node.id === "source")?.data.dataOutputCount).toBe(1)
+    expect(nodes.find((node) => node.id === "target")?.data.dataInputCount).toBe(1)
+    expect(captured.minimapProps).toBeUndefined()
+  })
+
+  it("announces click-to-connect mode and lets the user cancel it", () => {
+    render(
+      <WorkflowGraph
+        graph={{ nodes: [{ id: "source", kind: "built_in", capability_id: "one", can_create_pending_interrupt: false }], edges: [] }}
+        onConnectNodes={vi.fn()}
+      />,
+    )
+    let nodes = captured.props?.nodes as Array<{ data: { onConnectionSourceClick?: () => void } }>
+    act(() => nodes[0]?.data.onConnectionSourceClick?.())
+    expect(screen.getByRole("status").textContent).toContain("Conectando de source")
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar conexão" }))
+    expect(screen.queryByRole("status")).toBeNull()
+    nodes = captured.props?.nodes as typeof nodes
+    expect(nodes[0]?.data).not.toHaveProperty("connectionSourceActive")
   })
 })

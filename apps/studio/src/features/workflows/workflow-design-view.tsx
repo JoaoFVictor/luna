@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { ClipboardPasteIcon, HistoryIcon, ListTreeIcon, PinOffIcon, PlayIcon, Settings2Icon, WandSparklesIcon, XIcon } from "lucide-react"
+import { ClipboardPasteIcon, DatabaseIcon, HistoryIcon, ListTreeIcon, MapIcon, PinOffIcon, PlayIcon, Settings2Icon, WandSparklesIcon, XIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import type {
@@ -16,6 +16,7 @@ import type {
 import { Button } from "@/components/ui/button"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Sheet,
   SheetContent,
@@ -38,8 +39,10 @@ import { WorkflowNodeAdd } from "@/features/workflows/workflow-node-add"
 import { workflowNodePresentations } from "@/features/workflows/workflow-node-catalog"
 import {
   workflowEdgeDiagnostics,
+  workflowInspectorSection,
   workflowNodeDiagnostics,
   workflowNodeFallbackDiagnostics,
+  type WorkflowInspectorSection,
 } from "@/features/workflows/workflow-node-diagnostics"
 import { WorkflowNodeInspector } from "@/features/workflows/workflow-node-inspector"
 import { WorkflowNodeActionsMenu } from "@/features/workflows/workflow-node-actions-menu"
@@ -129,6 +132,9 @@ export function WorkflowDesignView({
   const [layoutPending, setLayoutPending] = useState(false)
   const [fitViewRequest, setFitViewRequest] = useState(0)
   const [runOverlayOpen, setRunOverlayOpen] = useState(false)
+  const [showDataConnections, setShowDataConnections] = useState(false)
+  const [showMiniMap, setShowMiniMap] = useState(false)
+  const [inspectorSection, setInspectorSection] = useState<WorkflowInspectorSection>("summary")
   const runOverlay = useWorkflowRunOverlay({
     workflowId,
     compiledRevision: compiled?.workflow_revision,
@@ -147,6 +153,11 @@ export function WorkflowDesignView({
     (entry) => entry.selectionId === selectedNodeId,
   )
   const selected = selectedSourceEntry?.node ?? nodes.find((node) => node.id === selectedNodeId)
+  useEffect(() => setInspectorSection("summary"), [selectedNodeId])
+  useEffect(() => {
+    if (focusedDiagnostic === undefined || focusedDiagnostic.nodeId !== selected?.id) return
+    setInspectorSection(workflowInspectorSection(focusedDiagnostic.fieldPath))
+  }, [focusedDiagnostic, selected?.id])
   const multiSelection = useWorkflowMultiSelection({
     nodes,
     selectedNodeId: selected?.id,
@@ -342,6 +353,22 @@ export function WorkflowDesignView({
           <Button size="sm" variant="outline" disabled={!canMutate || pending || layoutPending || nodes.length === 0} onClick={() => void applyAutoLayout()}>
             <WandSparklesIcon aria-hidden="true" /> {layoutPending ? "Organizando…" : "Organizar"}
           </Button>
+          {dataConnections.length > 0 && <Button
+            size="sm"
+            variant={showDataConnections ? "secondary" : "outline"}
+            aria-pressed={showDataConnections}
+            onClick={() => setShowDataConnections((current) => !current)}
+          >
+            <DatabaseIcon aria-hidden="true" /> Dados {showDataConnections ? "visíveis" : "ocultos"}
+          </Button>}
+          {nodes.length > 6 && <Button
+            size="sm"
+            variant={showMiniMap ? "secondary" : "outline"}
+            aria-pressed={showMiniMap}
+            onClick={() => setShowMiniMap((current) => !current)}
+          >
+            <MapIcon aria-hidden="true" /> Mapa
+          </Button>}
           {canvasLayout.pinnedNodeIds.length > 0 && (
             <Button
               size="sm"
@@ -365,7 +392,7 @@ export function WorkflowDesignView({
         "grid min-h-0 flex-1 grid-cols-1 overflow-hidden",
         outlineOpen && selected !== undefined && "xl:grid-cols-[17rem_minmax(30rem,1fr)_22rem]",
         outlineOpen && selected === undefined && "xl:grid-cols-[17rem_minmax(30rem,1fr)]",
-        !outlineOpen && selected !== undefined && "xl:grid-cols-[minmax(30rem,1fr)_22rem]",
+        !outlineOpen && selected !== undefined && "xl:grid-cols-[minmax(30rem,1fr)_20rem]",
       )}>
         {outlineOpen && <aside className="min-h-0 border-b p-3 xl:border-r xl:border-b-0" aria-label="Outline do workflow">
           <h2 className="mb-1 text-sm font-medium">Outline</h2>
@@ -391,6 +418,8 @@ export function WorkflowDesignView({
           <WorkflowGraph
             graph={authoringGraph}
             dataConnections={dataConnections}
+            showDataConnections={showDataConnections}
+            showMiniMap={showMiniMap}
             execution={runOverlayOpen && runOverlay.overlay.kind === "compatible"
               ? runOverlay.overlay.execution
               : undefined}
@@ -446,13 +475,16 @@ export function WorkflowDesignView({
             }}
           />
         </section>
-        {(selected !== undefined || selectedSourceEntry !== undefined) && <aside className="relative min-h-0 max-h-none overflow-y-auto border-l p-4" aria-label="Inspector do node">
+        {(selected !== undefined || selectedSourceEntry !== undefined) && <aside className="relative min-h-0 max-h-none overflow-y-auto border-l bg-background" aria-label="Inspector do node">
+          <div className="sticky top-0 z-10 border-b bg-background/95 p-3 backdrop-blur">
           <Button variant="ghost" size="icon-sm" className="absolute top-2 right-2" onClick={() => onSelectNode(undefined)}>
             <XIcon aria-hidden="true" /><span className="sr-only">Fechar inspector</span>
           </Button>
           <h2 className="pr-8 text-sm font-medium">{selectedSourceEntry !== undefined && selected === undefined ? "Passo inválido" : "Configurar passo"}</h2>
+          {selected !== undefined && <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{selected.id}</p>}
+          </div>
           {selectedSourceEntry !== undefined && selected === undefined ? (
-            <div className="mt-4 space-y-4" role="status">
+            <div className="space-y-4 p-3" role="status">
               <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-3">
                 <p className="text-sm font-medium">Este item continua acessível, mas não é um node estruturado válido.</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
@@ -466,7 +498,7 @@ export function WorkflowDesignView({
               </section>
             </div>
           ) : selected !== undefined ? (
-            <div className="mt-4 space-y-4">
+            <div className="space-y-3 p-3">
               {runOverlayOpen && runOverlay.overlay.kind === "compatible" && runOverlay.selectedRunId !== undefined && (
                 <section className="space-y-2 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
                   <div>
@@ -497,6 +529,17 @@ export function WorkflowDesignView({
                   {selectedSourceEntry.problems.join(" ")}
                 </div>
               )}
+              <Tabs value={inspectorSection} onValueChange={(value) => {
+                if (value === "summary" || value === "inputs" || value === "advanced") {
+                  setInspectorSection(value)
+                }
+              }}>
+                <TabsList className="grid w-full grid-cols-3" aria-label="Seções do inspector">
+                  <TabsTrigger value="summary">Resumo</TabsTrigger>
+                  <TabsTrigger value="inputs">Entradas</TabsTrigger>
+                  <TabsTrigger value="advanced">Avançado</TabsTrigger>
+                </TabsList>
+              <TabsContent value={inspectorSection}>
               <WorkflowNodeInspector
                 source={source}
                 nodes={nodes}
@@ -521,7 +564,10 @@ export function WorkflowDesignView({
                 focusedFieldPath={focusedDiagnostic?.nodeId === selected.id
                   ? focusedDiagnostic.fieldPath
                   : undefined}
+                section={inspectorSection}
               />
+              </TabsContent>
+              </Tabs>
             </div>
           ) : null}
         </aside>}

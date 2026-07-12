@@ -28,6 +28,7 @@ import {
   RunPlanPanel,
 } from "@/features/launch/run-plan-panel"
 import { useRunLaunch } from "@/features/launch/use-run-launch"
+import { formatCount } from "@/lib/presentation"
 
 type PreviewRequest = {
   adapterId: string
@@ -102,8 +103,6 @@ export function LaunchPage({
     const requested = adapters.data?.adapters.find((adapter) => adapter.id === requestedAdapter)
     if (requested !== undefined) {
       setAdapterId(requested.id)
-    } else if (adapters.data?.adapters[0] !== undefined) {
-      setAdapterId(adapters.data.adapters[0].id)
     }
   }, [adapterId, adapters.data, requestedAdapter])
 
@@ -280,7 +279,9 @@ export function LaunchPage({
         <Alert>
           <DatabaseIcon aria-hidden="true" />
           <AlertTitle>
-            {testData.length} {testData.length === 1 ? "node será substituído" : "nodes serão substituídos"} neste teste
+            {testData.length === 1
+              ? "1 nó será substituído neste teste"
+              : `${formatCount(testData.length, "nó", "nós")} serão substituídos neste teste`}
           </AlertTitle>
           <AlertDescription>
             <ul className="mt-1 list-disc space-y-1 pl-5">
@@ -348,7 +349,7 @@ export function LaunchPage({
               ? definitionSource.kind === "draft"
                 ? "A revisão salva deste draft foi preparada para execução."
                 : "A primeira regra correspondente direcionou a entrada para este workflow."
-              : <>Você abriu <code>{expectedWorkflow}</code>, mas a primeira regra correspondente escolheu <code>{launch.prepared.plan.workflow_id}</code>. Revise as regras de routing antes de continuar.</>}
+              : <>Você abriu <code>{expectedWorkflow}</code>, mas a primeira regra correspondente escolheu <code>{launch.prepared.plan.workflow_id}</code>. Revise as regras de roteamento antes de continuar.</>}
           </AlertDescription>
         </Alert>
       )}

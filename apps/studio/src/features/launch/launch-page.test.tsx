@@ -78,6 +78,9 @@ function renderLaunch(
 }
 
 async function prepareAdapterPlan() {
+  fireEvent.change(await screen.findByLabelText("Fonte de entrada"), {
+    target: { value: "task-url" },
+  })
   const input = await screen.findByLabelText("Valor de entrada")
   fireEvent.change(input, { target: { value: "opaque://task/42" } })
   fireEvent.click(screen.getByRole("button", { name: "Continuar" }))
@@ -177,7 +180,7 @@ describe("LaunchPage", () => {
     })
     renderLaunch("/launch?workflow=review", undefined, definitionSource, testData)
 
-    expect(await screen.findByText("2 nodes serão substituídos neste teste")).toBeDefined()
+    expect(await screen.findByText("2 nós serão substituídos neste teste")).toBeDefined()
     expect(screen.getByText("context-output")).toBeDefined()
     expect(screen.getByText("review-output")).toBeDefined()
     await prepareAdapterPlan()
@@ -192,7 +195,7 @@ describe("LaunchPage", () => {
       },
       expect.any(AbortSignal),
     )
-    expect(screen.getByText("2 nodes serão substituídos por dados salvos")).toBeDefined()
+    expect(screen.getByText("2 nós serão substituídos por dados salvos")).toBeDefined()
   })
 
   it("sends the selected node as an authoritative partial execution scope", async () => {
@@ -236,6 +239,9 @@ describe("LaunchPage", () => {
     }))
     renderLaunch()
 
+    fireEvent.change(await screen.findByLabelText("Fonte de entrada"), {
+      target: { value: "task-url" },
+    })
     const input = await screen.findByLabelText("Valor de entrada")
     fireEvent.change(input, { target: { value: "opaque://task/42" } })
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }))
@@ -382,6 +388,9 @@ describe("LaunchPage", () => {
     const planRun = vi.spyOn(studioApi, "planRun").mockResolvedValue(plan)
     renderLaunch()
 
+    fireEvent.change(await screen.findByLabelText("Fonte de entrada"), {
+      target: { value: "task-url" },
+    })
     fireEvent.change(await screen.findByLabelText("Valor de entrada"), {
       target: { value: "opaque://task/42" },
     })

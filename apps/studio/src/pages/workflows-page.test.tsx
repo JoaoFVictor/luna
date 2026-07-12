@@ -69,7 +69,7 @@ describe("WorkflowsPage", () => {
     render(<WorkflowsPage />, { wrapper: wrapper() })
 
     expect(await screen.findByText(
-      "Catálogo parcial: 1 workflow(s) inválido(s)",
+      "Catálogo parcial: 1 workflow inválido",
     )).toBeTruthy()
     expect(screen.getByText(/broken: workflow_definition_invalid/u)).toBeTruthy()
     expect(screen.getByText("Nenhum workflow válido carregado")).toBeTruthy()

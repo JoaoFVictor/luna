@@ -299,7 +299,26 @@ export function AgentEditorPage() {
       </header>
 
       <Tabs value={activeView} onValueChange={setActiveView} className="min-h-0 flex-1 gap-0">
-        <div className="flex items-center justify-between border-b px-4"><TabsList variant="line"><TabsTrigger value="studio">Configurar</TabsTrigger><TabsTrigger value="test-bench">Testar</TabsTrigger><TabsTrigger value="problems">Problemas</TabsTrigger>{technicalOpen && <TabsTrigger value="files">Arquivos</TabsTrigger>}</TabsList><Button size="sm" variant={technicalOpen ? "secondary" : "ghost"} onClick={() => setTechnicalOpen((current) => !current)}><Settings2Icon aria-hidden="true" /> Técnico</Button></div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4">
+          <TabsList variant="line">
+            <TabsTrigger value="studio">Configurar</TabsTrigger>
+            <TabsTrigger value="test-bench">Testar</TabsTrigger>
+            <TabsTrigger value="problems">Problemas</TabsTrigger>
+            {technicalOpen && <TabsTrigger value="files">Técnico</TabsTrigger>}
+          </TabsList>
+          <Button
+            size="sm"
+            variant={technicalOpen ? "secondary" : "ghost"}
+            onClick={() => setTechnicalOpen((current) => {
+              const next = !current
+              if (!next && activeView === "files") setActiveView("studio")
+              return next
+            })}
+            aria-pressed={technicalOpen}
+          >
+            <Settings2Icon aria-hidden="true" /> {technicalOpen ? "Ocultar técnico" : "Técnico"}
+          </Button>
+        </div>
         <TabsContent value="studio" className="min-h-0" keepMounted>
           {structuredAuthorityPending ? (
             <div className="p-6"><PageLoading label="Carregando autoridade do agent" /></div>

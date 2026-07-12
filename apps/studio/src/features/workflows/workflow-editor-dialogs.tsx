@@ -27,7 +27,7 @@ export function WorkflowDraftDeleteControl({
 }) {
   return (
     <>
-      <div className="border-t px-4 py-3">
+      <div className="relative z-20 shrink-0 border-t bg-background px-4 py-3">
         <Button
           className="border-destructive/40 text-foreground"
           variant="destructive"

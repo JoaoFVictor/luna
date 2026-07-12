@@ -60,6 +60,7 @@ export function WorkflowNodeInspector({
   onSaveNote,
   diagnostics = [],
   focusedFieldPath,
+  section = "all",
 }: {
   source: JsonValue
   nodes: readonly WorkflowSourceNode[]
@@ -79,6 +80,7 @@ export function WorkflowNodeInspector({
   onSaveNote: (note: string) => void
   diagnostics?: readonly WorkflowNodeDiagnostic[]
   focusedFieldPath?: readonly (string | number)[]
+  section?: "all" | "summary" | "inputs" | "advanced"
 }) {
   const focusedField = workflowInspectorField(focusedFieldPath)
   const registrations = useMemo(
@@ -269,6 +271,7 @@ export function WorkflowNodeInspector({
 
   return (
     <div className="mt-4 space-y-5 text-sm">
+      {(section === "all" || section === "summary") && <>
       <WorkflowInspectorDiagnosticField field="registration" diagnostics={diagnostics} focused={focusedField === "registration"}>
         {selected.type === "agent" || selected.type === "workflow" ? registrationField : (
           <details className="rounded-lg border" open={workflowInspectorFieldDiagnostics(diagnostics, "registration").length > 0 || undefined}>
@@ -293,7 +296,9 @@ export function WorkflowNodeInspector({
         disabled={!canMutate || pending}
         onSave={onSaveNote}
       />
+      </>}
 
+      {(section === "all" || section === "advanced") && <>
       <WorkflowInspectorDiagnosticField field="identity" diagnostics={diagnostics} focused={focusedField === "identity"}>
         <details className="rounded-lg border" open={workflowInspectorFieldDiagnostics(diagnostics, "identity").length > 0 || undefined}>
           <summary className="cursor-pointer px-3 py-2 text-sm font-medium">ID e refactor técnico</summary>
@@ -355,7 +360,9 @@ export function WorkflowNodeInspector({
         </Field>
         </WorkflowInspectorDiagnosticField>
       )}
+      </>}
 
+      {(section === "all" || section === "inputs") && <>
       <WorkflowInspectorDiagnosticField field="dependencies" diagnostics={diagnostics} focused={focusedField === "dependencies"}>
       <WorkflowNodeDependencies nodes={nodes} selected={selected} dependencies={dependencies} canMutate={canMutate} pending={pending} onToggle={toggleDependency} />
       </WorkflowInspectorDiagnosticField>
@@ -383,9 +390,12 @@ export function WorkflowNodeInspector({
         availableSourceFields={availableSourceFields}
       />
       </WorkflowInspectorDiagnosticField>
+      </>}
+      {(section === "all" || section === "advanced") && (
       <WorkflowInspectorDiagnosticField field="advanced" diagnostics={diagnostics} focused={focusedField === "advanced"}>
       <WorkflowNodeAdvancedFields source={source} nodes={nodes} selected={selected} library={library} canMutate={canMutate} pending={pending} onOperations={onOperations} />
       </WorkflowInspectorDiagnosticField>
+      )}
     </div>
   )
 }

@@ -198,7 +198,7 @@ export function RunNodeOutputPanel({
               </Button>
             )}
           </div>
-          <pre className="max-h-72 overflow-auto rounded-md border bg-background p-3 text-xs">
+          <pre className="max-h-72 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-all rounded-md border bg-background p-3 text-xs">
             {JSON.stringify(retainedOutput.value, null, 2)}
           </pre>
           {previewSaveOpen && draftId !== undefined && (

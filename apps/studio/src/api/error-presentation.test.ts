@@ -41,4 +41,16 @@ describe("describeStudioError", () => {
       code: "studio_run_repository_not_ready",
     })
   })
+
+  it("explains when Git history is not a capability of the checkout", () => {
+    expect(describeStudioError(new StudioApiError({
+      status: 409,
+      code: "studio_history_unavailable",
+      message: "Git history requires an attached branch",
+    }))).toMatchObject({
+      title: "Histórico Git indisponível",
+      message: expect.stringContaining("branch Git anexado"),
+      technicalMessage: "Git history requires an attached branch",
+    })
+  })
 })

@@ -151,7 +151,7 @@ export function HomePage() {
         <Card>
           <CardHeader>
             <CardTitle>Últimas execuções</CardTitle>
-            <CardDescription>Read model do RunCatalog, sem varrer arquivos no navegador.</CardDescription>
+            <CardDescription>Acompanhe as execuções mais recentes e abra seus resultados.</CardDescription>
             <CardAction>
               <Link className={buttonVariants({ variant: "ghost", size: "sm" })} to="/runs">
                 Ver runs <ArrowRightIcon aria-hidden="true" />

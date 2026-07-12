@@ -23,3 +23,11 @@ export function humanizeTechnicalId(value: string, keepNamespace = false): strin
 export function presentationTitle(id: string, title: string): string {
   return title === id ? humanizeTechnicalId(id) : title
 }
+
+export function formatCount(
+  count: number,
+  singular: string,
+  plural = `${singular}s`,
+): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}

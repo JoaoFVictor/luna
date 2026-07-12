@@ -3,6 +3,7 @@ import { CheckCircle2Icon, CircleAlertIcon } from "lucide-react"
 import type { AdapterRoutingPreview } from "@/api/types"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { humanizeTechnicalId } from "@/lib/presentation"
 
 export function AdapterRoutingPreviewPanel({
   result,
@@ -23,8 +24,8 @@ export function AdapterRoutingPreviewPanel({
           </CardTitle>
           <CardDescription>
             {result.routing.target === null
-              ? "Revise a entrada ou as regras ordenadas de routing."
-              : `A primeira regra correspondente escolheu ${result.routing.target.id}.`}
+              ? "Revise a entrada ou as regras ordenadas de roteamento."
+              : `A primeira regra correspondente escolheu ${humanizeTechnicalId(result.routing.target.id, true)} (${result.routing.target.id}).`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

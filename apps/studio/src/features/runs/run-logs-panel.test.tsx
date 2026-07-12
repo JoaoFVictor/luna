@@ -71,8 +71,9 @@ describe("RunLogsPanel", () => {
 
     expect(await screen.findByText("request failed")).toBeDefined()
     expect(screen.queryByText("heartbeat")).toBeNull()
+    expect(screen.getByLabelText("Entradas de log").className).not.toContain("overflow-y-auto")
 
-    fireEvent.change(screen.getByLabelText("Buscar em mensagens e nodes"), {
+    fireEvent.change(screen.getByLabelText("Buscar em mensagens e etapas"), {
       target: { value: "request" },
     })
     expect(screen.getByText("request failed")).toBeDefined()

@@ -14,6 +14,32 @@ export function isTechnicalTimelineEvent(event: RunEvent): boolean {
   return event.event_type === "run.heartbeat"
 }
 
+const TIMELINE_EVENT_SUBJECTS: Readonly<Record<string, string>> = {
+  agent_call: "Chamada do agent",
+  node: "Etapa",
+  run: "Execução",
+}
+
+const TIMELINE_EVENT_ACTIONS: Readonly<Record<string, string>> = {
+  failed: "falha",
+  interrupted: "interrupção",
+  preparing: "preparação",
+  queued: "na fila",
+  started: "início",
+  succeeded: "conclusão",
+}
+
+export function runTimelineEventLabel(eventType: string): string {
+  const segments = eventType.split(".")
+  const subject = TIMELINE_EVENT_SUBJECTS[segments[0] ?? ""]
+  const action = eventType === "run.heartbeat"
+    ? "atividade técnica"
+    : TIMELINE_EVENT_ACTIONS[segments.at(-1) ?? ""]
+  return subject !== undefined && action !== undefined
+    ? `${subject}: ${action}`
+    : humanizeTechnicalId(eventType)
+}
+
 function streamPresentation(status: RunEventStreamStatus, terminal: boolean) {
   if (terminal || status === "complete") return { label: "Finalizada", description: "Histórico persistido desta execução." }
   if (status === "live") return { label: "Ao vivo", description: "Novos eventos aparecem automaticamente." }
@@ -76,19 +102,19 @@ export function RunTimelinePanel({
         </div>
       </CardHeader>
       <CardContent>
-        {pending ? <PageLoading label="Carregando timeline" /> : error !== undefined ? <PageError error={error} retry={retry} /> : visibleEvents.length === 0 ? (
+        {pending ? <PageLoading label="Carregando linha do tempo" /> : error !== undefined ? <PageError error={error} retry={retry} /> : visibleEvents.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Nenhum evento registrado.</p>
         ) : (
           <>
-            <div className="max-h-[36rem] overflow-y-auto overscroll-contain pr-2" aria-label="Eventos da execução">
-            <ol>
+            <div className="pr-2" aria-label="Eventos da execução">
+            <ol className="min-w-0">
               {visibleEvents.map((event, index) => (
                 <li key={event.event_id} className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2.5">
                   <div className="flex flex-col items-center"><CircleIcon className="mt-1.5 size-2 fill-foreground" aria-hidden="true" />{index < visibleEvents.length - 1 && <span className="h-full w-px bg-border" />}</div>
                   <div className="min-w-0 pb-4">
-                    <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{humanizeTechnicalId(event.event_type)}</p><span className="font-mono text-[10px] text-muted-foreground">#{event.sequence}</span></div>
+                    <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{runTimelineEventLabel(event.event_type)}</p><span className="font-mono text-[10px] text-muted-foreground">#{event.sequence}</span></div>
                     <p className="text-xs text-muted-foreground">{formatDateTime(event.occurred_at)}</p>
-                    <details className="mt-1.5"><summary className="cursor-pointer text-xs text-muted-foreground">Dados do evento</summary><pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-muted p-2 text-xs">{JSON.stringify(event.data, null, 2)}</pre></details>
+                    <details className="mt-1.5"><summary className="cursor-pointer text-xs text-muted-foreground">Dados do evento</summary><pre className="mt-2 max-w-full whitespace-pre-wrap break-all rounded-lg bg-muted p-2 text-xs">{JSON.stringify(event.data, null, 2)}</pre></details>
                   </div>
                 </li>
               ))}

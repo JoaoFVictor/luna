@@ -32,9 +32,10 @@ describe("LaunchInputCard provider neutrality", () => {
     />)
 
     expect(screen.getByText("Record key · Acme cloud")).toBeTruthy()
-    expect(screen.getAllByText("Informe a chave opaca aceita pela integração Acme.")).toHaveLength(2)
+    expect(screen.getByText("Informe a chave opaca aceita pela integração Acme.")).toBeTruthy()
+    expect(screen.getByText(/O valor será interpretado pela fonte selecionada/)).toBeTruthy()
     expect(screen.getByLabelText("Valor de entrada").getAttribute("placeholder")).toBe(
-      "Informe o valor esperado por este adapter",
+      "Informe o valor aceito por esta fonte",
     )
     expect(screen.queryByText(/pull request|tarefa do|URL ou identificador/iu)).toBeNull()
   })

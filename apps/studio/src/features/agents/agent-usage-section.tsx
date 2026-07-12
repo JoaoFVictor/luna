@@ -110,20 +110,20 @@ export function AgentUsageSection({
           <CardHeader><CardTitle>Contrato declarado</CardTitle><CardDescription>Resumo auditável; não representa uma execução.</CardDescription></CardHeader>
           <CardContent>
             <dl className="space-y-4">
-              <SummaryList label="Model profile" values={[agent.modelProfile]} />
+              <SummaryList label="Perfil de modelo" values={[agent.modelProfile]} />
               <SummaryList
-                label="Mode"
+                label="Modo"
                 values={[agent.modeIsKnown ? agent.mode : "inválido (tools fail-closed como read_only)"]}
               />
-              <SummaryList label="Output schema" values={[agent.outputSchema]} />
-              <SummaryList label="Tools" values={agent.tools} />
-              <SummaryList label="MCP servers" values={agent.mcpServers} />
-              <SummaryList label="Subagents" values={subagents} />
+              <SummaryList label="Schema de saída" values={[agent.outputSchema]} />
+              <SummaryList label="Ferramentas" values={agent.tools} />
+              <SummaryList label="Servidores MCP" values={agent.mcpServers} />
+              <SummaryList label="Subagentes" values={subagents} />
               <SummaryList label="Skills" values={agent.skills} />
-              <SummaryList label="Context files" values={agent.contextFiles} />
-              <SummaryList label="Runtime requirements" values={agent.runtimeRequirements} />
-              <SummaryList label="Preferred runtime" values={agent.preferredRuntime.length === 0 ? [] : [agent.preferredRuntime]} />
-              <SummaryList label="Runtime order" values={agent.runtimeOrder} />
+              <SummaryList label="Arquivos de contexto" values={agent.contextFiles} />
+              <SummaryList label="Requisitos de runtime" values={agent.runtimeRequirements} />
+              <SummaryList label="Runtime preferido" values={agent.preferredRuntime.length === 0 ? [] : [agent.preferredRuntime]} />
+              <SummaryList label="Ordem de runtime" values={agent.runtimeOrder} />
             </dl>
           </CardContent>
         </Card>

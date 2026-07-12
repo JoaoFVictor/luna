@@ -10,7 +10,7 @@ import {
   type FinalConnectionState,
   type ReactFlowInstance,
 } from "@xyflow/react"
-import { PlusIcon } from "lucide-react"
+import { Link2Icon, PlusIcon, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   autoWorkflowPositions,
@@ -238,6 +238,8 @@ export function WorkflowGraph({
   fitViewRequest = 0,
   onAddFirstNode,
   dataConnections = [],
+  showDataConnections = true,
+  showMiniMap = true,
 }: {
   graph: WorkflowGraphModel
   selectedNodeId?: string
@@ -264,6 +266,8 @@ export function WorkflowGraph({
   fitViewRequest?: number
   onAddFirstNode?: () => void
   dataConnections?: readonly WorkflowDataConnection[]
+  showDataConnections?: boolean
+  showMiniMap?: boolean
 }) {
   const canConnect = onConnectNodes !== undefined
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>()
@@ -295,7 +299,9 @@ export function WorkflowGraph({
       canConnect,
       clickConnectionSourceId,
       canConnect ? startClickConnection : undefined,
-      canConnect ? finishClickConnection : undefined,
+      canConnect && clickConnectionSourceId !== undefined
+        ? finishClickConnection
+        : undefined,
       onConnectToEmpty,
       presentations,
       onDeleteDependency !== undefined,
@@ -324,20 +330,41 @@ export function WorkflowGraph({
     },
     [canMove, elements.nodes, selectedNodeId, selectedNodeIds],
   )
+  const initialFocusNodes = workflowNodes.length > 8
+    ? workflowNodes.slice(0, 3)
+    : workflowNodes
   const nodes = useMemo(() => [...groupNodes(groups, workflowNodes), ...workflowNodes], [groups, workflowNodes])
   const edges = useMemo<Array<WorkflowDependencyEdge | WorkflowDataEdge>>(
-    () => elements.edges.map((edge) => ({
-      ...edge,
-      selected: edge.id === selectedEdgeId,
-    })),
-    [elements.edges, selectedEdgeId],
+    () => elements.edges.flatMap((edge) => {
+      if (edge.type === "workflow-data" && !showDataConnections) return []
+      const touchesSelection = selectedNodeId === undefined ||
+        edge.source === selectedNodeId || edge.target === selectedNodeId
+      return [{
+        ...edge,
+        selected: edge.id === selectedEdgeId,
+        style: {
+          ...edge.style,
+          opacity: touchesSelection ? 1 : 0.16,
+        },
+      }]
+    }),
+    [elements.edges, selectedEdgeId, selectedNodeId, showDataConnections],
   )
 
   useEffect(() => {
     if (fitViewRequest === previousFitRequest.current) return
     previousFitRequest.current = fitViewRequest
-    void instance.current?.fitView({ padding: 0.12, minZoom: 0.5, maxZoom: 1.25 })
+    void instance.current?.fitView({ padding: 0.16, minZoom: 0.2, maxZoom: 1.15 })
   }, [fitViewRequest])
+
+  useEffect(() => {
+    if (clickConnectionSourceId === undefined) return
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setClickConnectionSourceId(undefined)
+    }
+    window.addEventListener("keydown", cancel)
+    return () => window.removeEventListener("keydown", cancel)
+  }, [clickConnectionSourceId])
 
   const finishConnection = (
     _event: MouseEvent | TouchEvent,
@@ -372,6 +399,13 @@ export function WorkflowGraph({
               <PlusIcon aria-hidden="true" /> Adicionar primeiro passo
             </Button>
           </div>
+        </div>
+      )}
+      {clickConnectionSourceId !== undefined && (
+        <div className="absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-primary/40 bg-background/95 px-3 py-2 text-xs shadow-lg" role="status">
+          <Link2Icon className="size-4 text-primary" aria-hidden="true" />
+          <span><strong>Conectando de {clickConnectionSourceId}</strong> · escolha o passo de destino ou clique no vazio para adicionar outro.</span>
+          <Button variant="ghost" size="icon-xs" aria-label="Cancelar conexão" onClick={() => setClickConnectionSourceId(undefined)}><XIcon aria-hidden="true" /></Button>
         </div>
       )}
       <ReactFlow
@@ -446,13 +480,18 @@ export function WorkflowGraph({
           onSelectNode?.("")
         }}
         fitView
-        fitViewOptions={{ padding: 0.12, minZoom: 0.5, maxZoom: 1.25 }}
-        minZoom={0.45}
+        fitViewOptions={{
+          nodes: initialFocusNodes,
+          padding: 0.2,
+          minZoom: 0.65,
+          maxZoom: 1.15,
+        }}
+        minZoom={0.2}
         maxZoom={1.6}
         nodesDraggable={canMove}
         nodesConnectable={canConnect}
         connectOnClick={false}
-        connectionRadius={30}
+        connectionRadius={36}
         connectionLineStyle={{ strokeWidth: 2 }}
         nodesFocusable
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
@@ -463,22 +502,22 @@ export function WorkflowGraph({
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={24} size={1} />
-        <MiniMap
+        {showMiniMap && <MiniMap
           pannable
           zoomable
           nodeColor="var(--primary)"
           nodeStrokeColor="var(--primary-foreground)"
           className="pointer-events-auto"
           ariaLabel="Minimapa da DAG"
-        />
+        />}
         <Controls
           showInteractive={false}
           className="pointer-events-auto"
           aria-label="Controles de visualização da DAG"
         />
       </ReactFlow>
-      {dataConnections.length > 0 && (
-        <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex flex-wrap gap-2 rounded-lg border bg-background/95 px-2 py-1 text-[10px] shadow-sm" aria-label="Legenda das conexões">
+      {dataConnections.length > 0 && showDataConnections && (
+        <div className="pointer-events-none absolute top-3 right-3 z-10 flex flex-wrap gap-2 rounded-lg border bg-background/95 px-2 py-1 text-[10px] shadow-sm" aria-label="Legenda das conexões">
           <span className="flex items-center gap-1.5"><span className="h-0.5 w-5 bg-foreground/50" /> Controle (after)</span>
           <span className="flex items-center gap-1.5 text-sky-700 dark:text-sky-300"><span className="w-5 border-t-2 border-dashed border-sky-500" /> Dados diretos (input)</span>
         </div>

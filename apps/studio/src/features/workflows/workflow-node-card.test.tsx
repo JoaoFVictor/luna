@@ -51,6 +51,65 @@ describe("WorkflowNodeCard connection handles", () => {
     expect(screen.getByTestId("source-handle").getAttribute("aria-pressed")).toBe("true")
   })
 
+  it("keeps handle clicks from selecting the node underneath", () => {
+    const onSource = vi.fn()
+    const onCard = vi.fn()
+    render(
+      <div onClick={onCard}>
+        <WorkflowNodeCard
+          id="step"
+          type="workflow-node"
+          data={{
+            compiled: { id: "step", kind: "built_in", capability_id: "test.step", can_create_pending_interrupt: false },
+            direction: "vertical",
+            onConnectionSourceClick: onSource,
+          }}
+          dragging={false}
+          zIndex={1}
+          selectable
+          deletable={false}
+          selected={false}
+          draggable
+          isConnectable
+          positionAbsoluteX={0}
+          positionAbsoluteY={0}
+        />
+      </div>,
+    )
+
+    fireEvent.click(screen.getByTestId("source-handle"))
+    expect(onSource).toHaveBeenCalledOnce()
+    expect(onCard).not.toHaveBeenCalled()
+  })
+
+  it("lets an inactive target handle select the node underneath", () => {
+    const onCard = vi.fn()
+    render(
+      <div onClick={onCard}>
+        <WorkflowNodeCard
+          id="step"
+          type="workflow-node"
+          data={{
+            compiled: { id: "step", kind: "built_in", capability_id: "test.step", can_create_pending_interrupt: false },
+            direction: "vertical",
+          }}
+          dragging={false}
+          zIndex={1}
+          selectable
+          deletable={false}
+          selected={false}
+          draggable
+          isConnectable
+          positionAbsoluteX={0}
+          positionAbsoluteY={0}
+        />
+      </div>,
+    )
+
+    fireEvent.click(screen.getByTestId("target-handle"))
+    expect(onCard).toHaveBeenCalledOnce()
+  })
+
   it.each([
     ["active" as const, "Substituição ativa"],
     ["saved" as const, "Dados salvos"],

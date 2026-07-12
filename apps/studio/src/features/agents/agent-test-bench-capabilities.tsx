@@ -53,7 +53,7 @@ export function AgentTestBenchCapabilities({
         <Separator />
 
         <section aria-labelledby="agent-test-mcp">
-          <h3 id="agent-test-mcp" className="text-sm font-semibold">MCP servers</h3>
+          <h3 id="agent-test-mcp" className="text-sm font-semibold">Servidores MCP</h3>
           {resolution.mcp_servers.length === 0 ? (
             <AgentTestBenchEmptyLine>Nenhum MCP declarado.</AgentTestBenchEmptyLine>
           ) : (

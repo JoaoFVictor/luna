@@ -87,7 +87,7 @@ export function WorkflowDetailPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card size="sm"><CardHeader><CardDescription>Mode</CardDescription><CardTitle><ModeBadge mode={workflow.mode} /></CardTitle></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardDescription>Modo</CardDescription><CardTitle><ModeBadge mode={workflow.mode} /></CardTitle></CardHeader></Card>
         <Card size="sm"><CardHeader><CardDescription>Nodes</CardDescription><CardTitle>{Object.values(workflow.node_counts).reduce((sum, count) => sum + count, 0)}</CardTitle></CardHeader></Card>
         <Card size="sm"><CardHeader><CardDescription>Concorrência máxima</CardDescription><CardTitle>{workflow.max_concurrency}</CardTitle></CardHeader></Card>
         <Card size="sm"><CardHeader><CardDescription>Revision</CardDescription><CardTitle className="font-mono">{shortDigest(workflow.revision)}</CardTitle></CardHeader></Card>

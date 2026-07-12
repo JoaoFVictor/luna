@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 
 import type { RunEvent } from "@/api/types"
-import { RunTimelinePanel } from "@/features/runs/run-timeline-panel"
+import { RunTimelinePanel, runTimelineEventLabel } from "@/features/runs/run-timeline-panel"
 
 const event = (sequence: number, eventType: string): RunEvent => ({
   schema_version: 1,
@@ -15,6 +15,12 @@ const event = (sequence: number, eventType: string): RunEvent => ({
 })
 
 describe("RunTimelinePanel", () => {
+  it("presents common runtime events in user-facing Portuguese", () => {
+    expect(runTimelineEventLabel("run.queued")).toBe("Execução: na fila")
+    expect(runTimelineEventLabel("run.preparing")).toBe("Execução: preparação")
+    expect(runTimelineEventLabel("node.succeeded")).toBe("Etapa: conclusão")
+  })
+
   it("hides heartbeats until technical events are requested", () => {
     render(
       <RunTimelinePanel
@@ -31,8 +37,9 @@ describe("RunTimelinePanel", () => {
     )
 
     expect(screen.queryByText("Heartbeat")).toBeNull()
-    expect(screen.getByText("Failed")).toBeDefined()
+    expect(screen.getByText("Execução: falha")).toBeDefined()
+    expect(screen.getByLabelText("Eventos da execução").className).not.toContain("overflow-y-auto")
     fireEvent.click(screen.getByRole("button", { name: /Mostrar 1 técnicos/ }))
-    expect(screen.getByText("Heartbeat")).toBeDefined()
+    expect(screen.getByText("Execução: atividade técnica")).toBeDefined()
   })
 })

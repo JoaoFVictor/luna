@@ -9,13 +9,20 @@ export function ProblemsPanel({
   diagnostics,
   validated,
   onOpenDiagnostic,
+  onValidate,
+  validating = false,
 }: {
   diagnostics: ValidationDiagnostic[]
   validated: boolean
   onOpenDiagnostic?: (diagnostic: ValidationDiagnostic) => void
+  onValidate?: () => void
+  validating?: boolean
 }) {
   if (!validated) {
-    return <p className="py-10 text-center text-sm text-muted-foreground">Valide ou compile para obter diagnostics autoritativos.</p>
+    return <div className="flex flex-col items-center gap-3 py-10 text-center">
+      <div><p className="text-sm font-medium">Diagnóstico ainda não carregado</p><p className="mt-1 text-sm text-muted-foreground">O selo do draft representa a última validação salva. Verifique novamente para analisar o conteúdo atual.</p></div>
+      {onValidate !== undefined && <Button size="sm" variant="outline" disabled={validating} onClick={onValidate}>{validating ? "Verificando…" : "Verificar agora"}</Button>}
+    </div>
   }
   if (diagnostics.length === 0) {
     return (

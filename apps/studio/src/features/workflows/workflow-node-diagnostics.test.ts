@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { DraftValidationResult } from "@/api/types"
 import {
   workflowInspectorField,
+  workflowInspectorSection,
   workflowNodeDiagnostics,
 } from "@/features/workflows/workflow-node-diagnostics"
 import { workflowSourceNodes } from "@/features/workflows/workflow-source-model"
@@ -52,6 +53,14 @@ describe("workflow node diagnostics", () => {
     expect(workflowInspectorField(["after", 0])).toBe("dependencies")
     expect(workflowInspectorField(["agent"])).toBe("registration")
     expect(workflowInspectorField(undefined)).toBeUndefined()
+  })
+
+  it("opens the inspector section that owns a diagnostic field", () => {
+    expect(workflowInspectorSection(["input", "prompt"])).toBe("inputs")
+    expect(workflowInspectorSection(["after", 0])).toBe("inputs")
+    expect(workflowInspectorSection(["worker"])).toBe("advanced")
+    expect(workflowInspectorSection(["id"])).toBe("advanced")
+    expect(workflowInspectorSection(["agent"])).toBe("summary")
   })
 
   it("leaves resource-level diagnostics in the global problems surface", () => {

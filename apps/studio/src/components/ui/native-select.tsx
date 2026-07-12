@@ -123,7 +123,7 @@ function NativeSelect({
         <Select.Portal>
           <Select.Positioner sideOffset={5} className="z-50 outline-none">
             <Select.Popup className="min-w-[var(--anchor-width)] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl shadow-black/15 outline-none data-[side=bottom]:animate-in data-[side=top]:animate-in">
-              <Select.List className="max-h-[min(22rem,var(--available-height))] overflow-y-auto overscroll-contain">
+              <Select.List className="max-h-[min(22rem,var(--available-height),calc(100dvh-1rem))] overflow-y-auto overscroll-contain">
                 {options.map((option) => (
                   <Select.Item
                     key={option.value}

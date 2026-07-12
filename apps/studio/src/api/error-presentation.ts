@@ -9,6 +9,10 @@ export type StudioErrorPresentation = {
 }
 
 const ACTIONABLE_ERRORS: Readonly<Record<string, Pick<StudioErrorPresentation, "title" | "message">>> = {
+  studio_history_unavailable: {
+    title: "Histórico Git indisponível",
+    message: "Este checkout não possui um branch Git anexado. O recurso continua disponível, mas não há revisões para comparar ou restaurar nesta sessão.",
+  },
   studio_run_repository_unavailable: {
     title: "Repositório necessário",
     message: "Informe o repository na entrada ou configure-o em Configurações → Repositórios antes de testar.",

@@ -5,6 +5,7 @@ import { InfoIcon, NetworkIcon, ShieldAlertIcon } from "lucide-react"
 import { artifactsQuery, runGraphQuery } from "@/api/queries"
 import type { RunEvent, RunRecord } from "@/api/types"
 import { PageError, PageLoading } from "@/components/page-state"
+import { runStatusLabel } from "@/components/status-badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -166,7 +167,7 @@ export function RunGraphPanel({
             </CardDescription>
           </div>
           <Badge variant="outline">
-            {response.graph.nodes.length} node{response.graph.nodes.length === 1 ? "" : "s"}
+            {response.graph.nodes.length} {response.graph.nodes.length === 1 ? "etapa" : "etapas"}
           </Badge>
         </div>
       </CardHeader>
@@ -174,7 +175,7 @@ export function RunGraphPanel({
         {response.overlay.observation === "unobservable" && (
           <Alert>
             <InfoIcon aria-hidden="true" />
-            <AlertTitle>Status dos nodes não observado</AlertTitle>
+            <AlertTitle>Status das etapas não observado</AlertTitle>
             <AlertDescription>
               {overlayCopy[response.overlay.reason] ?? "Não há overlay confiável para esta revisão da run."}
             </AlertDescription>
@@ -183,7 +184,7 @@ export function RunGraphPanel({
         {response.overlay.observation === "observed" && (
           <p className="text-xs text-muted-foreground" aria-live="polite">
             {response.overlay.source === "persisted"
-              ? `Resultado final persistido na revisão ${response.overlay.record_revision}; status ${response.overlay.run_status}.`
+              ? `Resultado final persistido na revisão ${response.overlay.record_revision}; status ${runStatusLabel(response.overlay.run_status)}.`
               : `Execução ao vivo na revisão ${response.overlay.record_revision}; ${response.overlay.history === "complete" ? "histórico completo" : response.overlay.history === "recent" ? "últimos eventos persistidos" : "somente passos ativos"}.`}
           </p>
         )}
@@ -220,7 +221,7 @@ export function RunGraphPanel({
               </ScrollArea>
             </TabsContent>
           </Tabs>
-          <div className="h-[30rem] lg:mt-10">
+          <div className="min-h-0 overflow-hidden lg:mt-10 lg:h-[30rem]">
             <RunStepNavigator
               graph={graphModel}
               execution={execution}

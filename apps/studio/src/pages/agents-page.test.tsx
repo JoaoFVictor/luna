@@ -84,7 +84,7 @@ describe("AgentsPage", () => {
 
     render(<AgentsPage />, { wrapper: wrapper() })
 
-    expect(await screen.findByText("Catálogo parcial: 1 agent(s) inválido(s)")).toBeTruthy()
+    expect(await screen.findByText("Catálogo parcial: 1 agent inválido")).toBeTruthy()
     expect(screen.getByText(/broken: agent_definition_invalid/u)).toBeTruthy()
     expect(screen.getByText("Nenhum agent válido carregado")).toBeTruthy()
   })
@@ -141,7 +141,7 @@ describe("AgentsPage", () => {
     fireEvent.change(await screen.findByLabelText("Nome curto"), {
       target: { value: "reviewer" },
     })
-    expect(screen.getByText("Nenhum model profile válido está disponível em config/models.yaml.")).toBeTruthy()
+    expect(screen.getByText("Nenhum perfil de modelo válido está disponível em config/models.yaml.")).toBeTruthy()
     expect((screen.getByRole("button", { name: "Continuar" }) as HTMLButtonElement).disabled).toBe(true)
     expect(create).not.toHaveBeenCalled()
   })

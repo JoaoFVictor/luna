@@ -73,7 +73,7 @@ export function ConfigurationPosture() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <BotIcon aria-hidden="true" /> Model profiles
+              <BotIcon aria-hidden="true" /> Perfis de modelo
             </CardTitle>
             <CardDescription>Consumidores e resolução de referência sem o valor do environment.</CardDescription>
           </CardHeader>

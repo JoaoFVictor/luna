@@ -42,6 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { humanizeWorkflowIdentifier } from "@/features/workflows/workflow-node-catalog"
+import { formatCount } from "@/lib/presentation"
 
 const RESOURCE_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
 
@@ -194,7 +195,9 @@ export function AgentsPage() {
       {agents.data?.status === "partial" && (
         <Alert variant="destructive">
           <AlertTriangleIcon aria-hidden="true" />
-          <AlertTitle>Catálogo parcial: {catalogDiagnostics.length} agent(s) inválido(s)</AlertTitle>
+            <AlertTitle>
+              Catálogo parcial: {formatCount(catalogDiagnostics.length, "agent inválido", "agents inválidos")}
+            </AlertTitle>
           <AlertDescription>
             <p>Alguns agents foram ignorados porque a configuração está inválida. Os agents utilizáveis continuam abaixo.</p>
             <details className="mt-2"><summary className="cursor-pointer text-xs">Ver detalhes técnicos</summary><ul className="mt-2 space-y-1 font-mono text-xs">{catalogDiagnostics.slice(0, 20).map((diagnostic, index) => <li key={`${diagnostic.resource_id}:${diagnostic.code}:${index}`}>{diagnostic.resource_id}: {diagnostic.code} — {diagnostic.message}</li>)}</ul>{catalogDiagnostics.length > 20 && <p className="mt-2 text-xs">Mais {catalogDiagnostics.length - 20} diagnóstico(s) não exibido(s).</p>}</details>
@@ -238,7 +241,11 @@ export function AgentsPage() {
                     </button>
                   </TableCell>
                   <TableCell><ModeBadge mode={agent.mode} /></TableCell>
-                  <TableCell>{workflows.isPending ? "…" : `${workflowsByAgent.get(agent.id)?.length ?? 0} workflow(s)`}</TableCell>
+                  <TableCell>
+                    {workflows.isPending
+                      ? "…"
+                      : formatCount(workflowsByAgent.get(agent.id)?.length ?? 0, "workflow", "workflows")}
+                  </TableCell>
                   <TableCell className="text-right"><Button variant="outline" size="sm" disabled={!session.canMutate || openDraft.isPending || drafts.isError} onClick={() => editAgent(agent.id)}><PencilLineIcon aria-hidden="true" />{draftByAgent.has(agent.id) ? "Abrir draft" : "Editar"}</Button></TableCell>
                 </TableRow>
               ))}
@@ -319,9 +326,9 @@ export function AgentsPage() {
                 ))}
               </NativeSelect>
               <FieldDescription>Você poderá revisar o runtime e os limites na etapa de autoridade.</FieldDescription>
-              {models.isPending && <p className="text-xs text-muted-foreground" role="status">Carregando model profiles…</p>}
-              {models.isError && <FieldError>Não foi possível carregar os model profiles. Tente novamente antes de criar o agent.</FieldError>}
-              {!models.isPending && !models.isError && !modelProfilesAvailable && <FieldError>Nenhum model profile válido está disponível em config/models.yaml.</FieldError>}
+              {models.isPending && <p className="text-xs text-muted-foreground" role="status">Carregando perfis de modelo…</p>}
+              {models.isError && <FieldError>Não foi possível carregar os perfis de modelo. Tente novamente antes de criar o agent.</FieldError>}
+              {!models.isPending && !models.isError && !modelProfilesAvailable && <FieldError>Nenhum perfil de modelo válido está disponível em config/models.yaml.</FieldError>}
               {(models.data?.diagnostics.length ?? 0) > 0 && (
                 <details className="text-xs text-destructive">
                   <summary className="cursor-pointer">Alguns modelos não puderam ser carregados</summary>

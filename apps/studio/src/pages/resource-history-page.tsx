@@ -116,7 +116,15 @@ function ResourceHistoryPage({ kind }: { kind: HistoryResource["kind"] }) {
   }
   if (history.isError) {
     return (
-      <div className="p-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-6">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-fit"
+          onClick={() => void navigate(backPath)}
+        >
+          <ArrowLeftIcon aria-hidden="true" /> Voltar ao {resourceLabel}
+        </Button>
         <PageError error={history.error} retry={() => void history.refetch()} />
       </div>
     )

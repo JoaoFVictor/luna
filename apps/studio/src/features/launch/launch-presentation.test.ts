@@ -8,7 +8,7 @@ describe("launch presentation", () => {
   })
 
   it("does not invent provider-specific input examples", () => {
-    expect(launchAdapterPlaceholder()).toBe("Informe o valor esperado por este adapter")
+    expect(launchAdapterPlaceholder()).toBe("Informe o valor aceito por esta fonte")
   })
 
   it("keeps unknown effects readable without hiding their meaning", () => {

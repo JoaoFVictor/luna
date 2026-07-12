@@ -83,9 +83,10 @@ export function NewWorkflowDialog({ open, onOpenChange }: {
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <form onSubmit={submit} className="contents">
-          <DialogHeader><DialogTitle>O que você quer automatizar?</DialogTitle><DialogDescription>Comece vazio ou escolha uma estrutura pronta. Você poderá mudar todos os passos no canvas.</DialogDescription></DialogHeader>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-hidden p-0 sm:max-w-2xl">
+        <form onSubmit={submit} className="flex min-h-0 flex-col">
+          <DialogHeader className="shrink-0 px-4 pt-4 pr-12"><DialogTitle>O que você quer automatizar?</DialogTitle><DialogDescription>Comece vazio ou escolha uma estrutura pronta. Você poderá mudar todos os passos no canvas.</DialogDescription></DialogHeader>
+          <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-2">
           <Field>
             <FieldLabel>Começar com</FieldLabel>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -114,7 +115,8 @@ export function NewWorkflowDialog({ open, onOpenChange }: {
             </Field>
           ))}
           {selectedTemplate !== undefined && <details className="rounded-lg border"><summary className="cursor-pointer px-3 py-2 text-sm font-medium">Detalhes técnicos do que será criado</summary><div className="border-t p-3"><WorkflowTemplatePreview template={selectedTemplate} workflowId={newId} agents={selectedAgents} /></div></details>}
-          <DialogFooter><Button type="button" variant="outline" onClick={() => changeOpen(false)}>Cancelar</Button><Button type="submit" disabled={!session.canMutate || create.isPending || templates.isPending || templates.isError || selectedTemplate === undefined || !validId || !requiredAgentsSelected}>{create.isPending ? "Criando…" : "Criar draft"}</Button></DialogFooter>
+          </div>
+          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none px-4 py-3"><Button type="button" variant="outline" onClick={() => changeOpen(false)}>Cancelar</Button><Button type="submit" disabled={!session.canMutate || create.isPending || templates.isPending || templates.isError || selectedTemplate === undefined || !validId || !requiredAgentsSelected}>{create.isPending ? "Criando…" : "Criar draft"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

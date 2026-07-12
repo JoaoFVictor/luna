@@ -89,7 +89,7 @@ export function RunStepNavigator({
 }) {
   const groups = groupRunSteps(graph, execution)
   return (
-    <aside className="flex min-h-0 flex-col rounded-lg border bg-background" aria-label="Navegação pelas etapas da execução">
+    <aside className="flex h-full min-h-0 flex-col rounded-lg border bg-background" aria-label="Navegação pelas etapas da execução">
       <div className="border-b px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Etapas</h3>
