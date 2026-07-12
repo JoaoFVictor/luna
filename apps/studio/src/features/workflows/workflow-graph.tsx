@@ -50,6 +50,12 @@ const EMPTY_TEST_DATA: ReadonlyMap<string, WorkflowNodeTestDataState> = new Map(
 const WORKFLOW_NODE_TYPES = { ...workflowNodeTypes, ...workflowGroupNodeTypes }
 const WORKFLOW_EDGE_TYPES = { ...workflowDependencyEdgeTypes, ...workflowDataEdgeTypes }
 
+// XYFlow's MiniMap only paints nodes that already have dimensions. The cards
+// measure themselves after mount, so provide a conservative initial footprint
+// to keep the minimap useful during the first render as well.
+const WORKFLOW_NODE_INITIAL_WIDTH = 192
+const WORKFLOW_NODE_INITIAL_HEIGHT = 72
+
 const workflowAriaLabelConfig = {
   "node.a11yDescription.default":
     "Pressione Enter ou espaço para selecionar este node. Use Tab para navegar pelo grafo.",
@@ -136,6 +142,8 @@ function graphElements(
         ...(onAddBranch === undefined ? {} : { onAddBranch: () => onAddBranch(node.id) }),
       },
       position: positions[node.id] ?? automatic[node.id] ?? { x: 0, y: 0 },
+      initialWidth: WORKFLOW_NODE_INITIAL_WIDTH,
+      initialHeight: WORKFLOW_NODE_INITIAL_HEIGHT,
       zIndex: 1,
       connectable,
       selectable: true,
@@ -190,6 +198,8 @@ function groupNodes(
       type: "workflow-group" as const,
       data: { title: group.title },
       position: { x: minX, y: minY },
+      initialWidth: maxX - minX,
+      initialHeight: maxY - minY,
       style: { width: maxX - minX, height: maxY - minY, pointerEvents: "none" },
       draggable: false,
       selectable: false,
@@ -453,8 +463,19 @@ export function WorkflowGraph({
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={24} size={1} />
-        <MiniMap pannable zoomable ariaLabel="Minimapa da DAG" />
-        <Controls showInteractive={false} aria-label="Controles de visualização da DAG" />
+        <MiniMap
+          pannable
+          zoomable
+          nodeColor="var(--primary)"
+          nodeStrokeColor="var(--primary-foreground)"
+          className="pointer-events-auto"
+          ariaLabel="Minimapa da DAG"
+        />
+        <Controls
+          showInteractive={false}
+          className="pointer-events-auto"
+          aria-label="Controles de visualização da DAG"
+        />
       </ReactFlow>
       {dataConnections.length > 0 && (
         <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex flex-wrap gap-2 rounded-lg border bg-background/95 px-2 py-1 text-[10px] shadow-sm" aria-label="Legenda das conexões">

@@ -350,4 +350,33 @@ describe("ArtifactsPanel", () => {
     expect(writeText.mock.calls[0]?.[0]).toContain("[PATH REDACTED]")
     expect(writeText.mock.calls[0]?.[0]).not.toContain("/home/alice")
   })
+
+  it("keeps hash-named technical manifests out of the result list by default", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const technicalName = `${"e".repeat(40)}.json`
+    vi.spyOn(studioApi, "artifacts").mockResolvedValue({
+      ...findingsArtifactList(),
+      items: [
+        ...findingsArtifactList().items,
+        {
+          ...findingsArtifactList().items[0]!,
+          manifest_handle: `ah_${"c".repeat(43)}`,
+          name: technicalName,
+          semantic_type: undefined,
+          source_node_id: "preflight",
+          preview_capability: "unavailable",
+          status: "pending",
+        },
+      ],
+    })
+
+    render(<ArtifactsPanel runId={RUN_ID} />, { wrapper: wrapper(queryClient) })
+
+    expect(await screen.findByText("Resultados da execução")).toBeDefined()
+    expect(screen.queryByRole("button", { name: new RegExp(technicalName) })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: /Mostrar técnicos/ }))
+    expect(screen.getByRole("button", { name: new RegExp(technicalName) })).toBeDefined()
+  })
 })

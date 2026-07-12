@@ -34,7 +34,7 @@ const agentInputSchema = {
       required: ["model", "reasoning_effort"],
       properties: {
         model: { type: "string" },
-        reasoning_effort: { enum: ["low", "medium", "high"] },
+        reasoning_effort: { enum: ["low", "medium", "high", "xhigh"] },
         transport: { enum: ["auto", "sse", "websocket"] }
       }
     },

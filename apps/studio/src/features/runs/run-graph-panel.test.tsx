@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { studioApi } from "@/api/client"
@@ -323,6 +323,11 @@ describe("RunGraphPanel", () => {
     expect(await screen.findByText("Depuração do passo")).toBeDefined()
     expect(screen.getByText("Este passo encerrou a execução")).toBeDefined()
     expect(document.body.textContent).toContain("1.0 s")
+    expect(screen.getByText("Precisam de atenção · 1")).toBeDefined()
+    expect(screen.getByText("Concluídos · 1")).toBeDefined()
+
+    fireEvent.click(screen.getByRole("button", { name: /Review/ }))
+    expect(screen.getByRole("heading", { name: "Review" })).toBeDefined()
   })
 
   it("selects the failure from the new run instead of retaining the previous run node", async () => {

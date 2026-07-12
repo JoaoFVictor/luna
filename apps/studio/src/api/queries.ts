@@ -131,8 +131,8 @@ export const studioKeys = {
   artifacts: (runId: string) => ["studio", "run", runId, "artifacts"] as const,
   artifactPreview: (runId: string, handle: string) =>
     ["studio", "run", runId, "artifact", handle, "preview"] as const,
-  logs: (runId: string, levels: readonly RunLogLevel[]) =>
-    ["studio", "run", runId, "logs", levels] as const,
+  logs: (runId: string, levels: readonly RunLogLevel[], nodeId?: string) =>
+    ["studio", "run", runId, "logs", levels, nodeId ?? ""] as const,
   inputAdapters: ["studio", "input-adapters"] as const,
   routing: ["studio", "routing"] as const,
   routingEditor: ["studio", "routing", "editor"] as const,
@@ -416,9 +416,10 @@ export function artifactPreviewQuery(runId: string, handle: string) {
 export function runLogsInfiniteQuery(
   runId: string,
   levels: readonly RunLogLevel[],
+  nodeId?: string,
 ) {
   return infiniteQueryOptions({
-    queryKey: studioKeys.logs(runId, levels),
+    queryKey: studioKeys.logs(runId, levels, nodeId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       studioApi.runLogs(
@@ -426,6 +427,7 @@ export function runLogsInfiniteQuery(
         {
           ...(pageParam === undefined ? {} : { cursor: pageParam }),
           levels: [...levels],
+          ...(nodeId === undefined || nodeId.length === 0 ? {} : { nodeId }),
         },
         signal,
     ),

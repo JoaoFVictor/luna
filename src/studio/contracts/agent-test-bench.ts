@@ -122,7 +122,7 @@ export const StudioAgentTestModelProfileSchema = z
     id: BoundedIdSchema,
     provider: NonEmptyStringSchema.max(256).optional(),
     model: NonEmptyStringSchema.max(512),
-    reasoning_effort: z.enum(["low", "medium", "high"]),
+    reasoning_effort: z.enum(["low", "medium", "high", "xhigh"]),
     transport: z.enum(["auto", "sse", "websocket"]).optional()
   })
   .strict();

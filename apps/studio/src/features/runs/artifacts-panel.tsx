@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CopyIcon, DownloadIcon, FileTextIcon, ShieldAlertIcon } from "lucide-react"
+import { CopyIcon, DownloadIcon, FileTextIcon, Settings2Icon, ShieldAlertIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { studioApi } from "@/api/client"
@@ -11,7 +11,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   redactPhysicalPaths,
   redactPhysicalPathsInJson,
@@ -22,21 +21,21 @@ import { formatDateTime } from "@/lib/format"
 function GenericArtifactPreview({ preview }: { preview: ArtifactPreview }) {
   if (preview.kind === "json") {
     return (
-      <ScrollArea className="max-h-96 rounded-lg border bg-muted/40">
-        <pre className="p-3 text-xs">
+      <div className="max-h-96 overflow-auto overscroll-contain rounded-lg border bg-muted/40">
+        <pre className="p-3 text-xs whitespace-pre-wrap break-words">
           {JSON.stringify(redactPhysicalPathsInJson(preview.value), null, 2)}
         </pre>
-      </ScrollArea>
+      </div>
     )
   }
 
   if (preview.kind === "text") {
     return (
-      <ScrollArea className="max-h-96 rounded-lg border bg-muted/40">
-        <pre className="p-3 text-xs whitespace-pre-wrap">
+      <div className="max-h-96 overflow-auto overscroll-contain rounded-lg border bg-muted/40">
+        <pre className="p-3 text-xs whitespace-pre-wrap break-words">
           {redactPhysicalPaths(preview.text)}
         </pre>
-      </ScrollArea>
+      </div>
     )
   }
 
@@ -153,6 +152,26 @@ function defaultArtifactHandle(
   )?.manifest_handle ?? artifacts[0]?.manifest_handle ?? ""
 }
 
+/**
+ * Filesystem readers can expose implementation manifests alongside authored
+ * outputs. They are still inspectable, but should not compete with results in
+ * the default view. This deliberately uses presentation metadata only: the
+ * backend remains the source of truth and no provider-specific names are
+ * assumed.
+ */
+function isInternalManifest(artifact: ArtifactSummary): boolean {
+  const stem = artifact.name.replace(/\.[A-Za-z0-9]+$/, "")
+  const hashNamed = /^(?:[a-f0-9]{32,}|(?:manifest|artifact)[._-][a-f0-9]{12,})$/i.test(stem)
+  if (!hashNamed) return false
+  // Pending, preview-less hash manifests are reader bookkeeping aliases. A
+  // committed authored output can still have a hash-like name and must stay
+  // visible when it carries semantic or node provenance.
+  if (artifact.status === "pending" && artifact.preview_capability === "unavailable") {
+    return true
+  }
+  return artifact.semantic_type === undefined && artifact.source_node_id === undefined
+}
+
 export function ArtifactsPanel({
   runId,
   expectedCount,
@@ -164,15 +183,28 @@ export function ArtifactsPanel({
 }) {
   const artifacts = useQuery(artifactsQuery(runId, { expectedCount, terminalAt }))
   const [selected, setSelected] = useState("")
+  const [showTechnical, setShowTechnical] = useState(false)
+
+  const groupedArtifacts = useMemo(() => {
+    const items = artifacts.data?.items ?? []
+    return {
+      results: items.filter((item) => !isInternalManifest(item)),
+      technical: items.filter(isInternalManifest),
+    }
+  }, [artifacts.data?.items])
+
+  const visibleArtifacts = showTechnical
+    ? [...groupedArtifacts.results, ...groupedArtifacts.technical]
+    : groupedArtifacts.results
 
   useEffect(() => {
     if (
       artifacts.data !== undefined &&
-      !artifacts.data.items.some((item) => item.manifest_handle === selected)
+      !visibleArtifacts.some((item) => item.manifest_handle === selected)
     ) {
-      setSelected(defaultArtifactHandle(artifacts.data.items))
+      setSelected(defaultArtifactHandle(visibleArtifacts))
     }
-  }, [artifacts.data, selected])
+  }, [artifacts.data, selected, visibleArtifacts])
 
   if (artifacts.isPending) return <PageLoading label="Carregando artifacts" />
   if (artifacts.isError) {
@@ -181,7 +213,7 @@ export function ArtifactsPanel({
   if (artifacts.data.items.length === 0) {
     return <p className="py-8 text-center text-sm text-muted-foreground">Nenhum artifact exposto pelo reader.</p>
   }
-  const selectedArtifact = artifacts.data.items.find(
+  const selectedArtifact = visibleArtifacts.find(
     (artifact) => artifact.manifest_handle === selected,
   )
   const unavailable =
@@ -190,9 +222,42 @@ export function ArtifactsPanel({
       : unavailableArtifactCopy(selectedArtifact)
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-      <div className="space-y-2" aria-label="Artifacts da run">
-        {artifacts.data.items.map((artifact) => (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4 shadow-sm">
+        <div>
+          <div className="flex items-center gap-2">
+            <FileTextIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+            <h3 className="font-heading text-sm font-medium">Resultados da execução</h3>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {groupedArtifacts.results.length} resultado{groupedArtifacts.results.length === 1 ? " final" : "s finais"}
+            {groupedArtifacts.technical.length > 0 && ` · ${groupedArtifacts.technical.length} manifest${groupedArtifacts.technical.length === 1 ? "" : "s"} técnico${groupedArtifacts.technical.length === 1 ? "" : "s"} oculto${groupedArtifacts.technical.length === 1 ? "" : "s"}`}
+          </p>
+        </div>
+        {groupedArtifacts.technical.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowTechnical((current) => !current)}
+            aria-pressed={showTechnical}
+          >
+            <Settings2Icon aria-hidden="true" /> {showTechnical ? "Ocultar técnicos" : "Mostrar técnicos"}
+          </Button>
+        )}
+      </div>
+      {visibleArtifacts.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-8 text-center">
+          <p className="text-sm font-medium">Nenhum resultado final disponível</p>
+          <p className="mt-1 text-xs text-muted-foreground">A execução só expôs manifests técnicos.</p>
+          <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => setShowTechnical(true)}>
+            <Settings2Icon aria-hidden="true" /> Mostrar manifests técnicos
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+          <div className="max-h-[36rem] space-y-2 overflow-y-auto overscroll-contain pr-2" aria-label="Resultados da execução">
+            {visibleArtifacts.map((artifact) => (
           <button
             key={artifact.manifest_handle}
             type="button"
@@ -201,7 +266,7 @@ export function ArtifactsPanel({
             data-selected={selected === artifact.manifest_handle}
             onClick={() => setSelected(artifact.manifest_handle)}
           >
-            <span className="flex items-center justify-between gap-2 font-medium"><span className="flex min-w-0 items-center gap-2"><FileTextIcon className="size-4 shrink-0" aria-hidden="true" /><span className="truncate">{artifact.name}</span></span><Badge variant={artifact.status === "failed" ? "destructive" : "outline"}>{artifact.status}</Badge></span>
+            <span className="flex items-center justify-between gap-2 font-medium"><span className="flex min-w-0 items-center gap-2"><FileTextIcon className="size-4 shrink-0" aria-hidden="true" /><span className="truncate">{artifact.name}</span></span><span className="flex shrink-0 items-center gap-1"><Badge variant={isInternalManifest(artifact) ? "secondary" : artifact.status === "failed" ? "destructive" : "outline"}>{isInternalManifest(artifact) ? "técnico" : artifact.status}</Badge></span></span>
             <span className="mt-1 block text-xs text-muted-foreground">
               {artifact.media_type} · tentativa {artifact.attempt}
             </span>
@@ -212,9 +277,9 @@ export function ArtifactsPanel({
             )}
             <span className="mt-1 block text-xs text-muted-foreground">{formatDateTime(artifact.created_at)}</span>
           </button>
-        ))}
-      </div>
-      <Card>
+            ))}
+          </div>
+          <Card>
         <CardHeader>
           <CardTitle>Preview seguro</CardTitle>
           <CardDescription>
@@ -236,7 +301,9 @@ export function ArtifactsPanel({
             />
           ) : null}
         </CardContent>
-      </Card>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

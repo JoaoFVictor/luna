@@ -24,6 +24,13 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 
+const REASONING_LABELS: Readonly<Record<string, string>> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "extra high",
+}
+
 export function ConfigurationPosture() {
   const models = useQuery(configurationModelsQuery)
   const repositories = useQuery(configurationRepositoriesQuery)
@@ -87,7 +94,7 @@ export function ConfigurationPosture() {
                 <div key={profile.id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{profile.id}</span>
-                    <Badge variant="outline">{profile.reasoning_effort}</Badge>
+                    <Badge variant="outline">{REASONING_LABELS[profile.reasoning_effort] ?? profile.reasoning_effort}</Badge>
                     <Badge variant="outline">{profile.transport}</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">

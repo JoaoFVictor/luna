@@ -70,7 +70,7 @@ export const ModelProfileSchema = z
   .object({
     provider: NonEmptyStringSchema.optional(),
     model: NonEmptyStringSchema,
-    reasoning_effort: z.enum(["low", "medium", "high"]),
+    reasoning_effort: z.enum(["low", "medium", "high", "xhigh"]),
     transport: z.enum(["auto", "sse", "websocket"]).optional()
   })
   .strict();

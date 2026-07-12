@@ -22,4 +22,26 @@ describe("runFailurePresentation", () => {
       description: "Revise o passo que falhou e os detalhes técnicos antes de executar novamente.",
     })
   })
+
+  it("explains when an external outcome is not safe to repeat", () => {
+    expect(runFailurePresentation(
+      {
+        code: "external_outcome_unknown",
+        message: "Native workflow execution failed",
+        diagnostics: { category: "external", retryability: "unsafe", certainty: "unknown" },
+      },
+      "publish",
+    )).toEqual({
+      title: "Resultado externo não confirmado",
+      description: "A execução pode ter produzido um efeito, mas o Studio não recebeu confirmação suficiente para afirmar o resultado. Não repita sem revisar o destino e a operação.",
+    })
+  })
+
+  it("uses the persisted outcome status for legacy failures without diagnostics", () => {
+    expect(runFailurePresentation(
+      { code: "legacy_failure", message: "Native workflow execution failed" },
+      undefined,
+      "outcome_unknown",
+    ).title).toBe("Resultado externo não confirmado")
+  })
 })

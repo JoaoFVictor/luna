@@ -8,6 +8,7 @@ import {
   type StoredRunGraphOutcome
 } from "../../application/runs/graph-snapshot.js";
 import { studioRunLaunchError } from "../../application/runs/launch-errors.js";
+import { failureDiagnosticsFrom } from "../../application/runs/failure-diagnostics.js";
 import type {
   AppendRunTransitionInput,
   RunLedgerPort,
@@ -258,7 +259,14 @@ export class NativeStudioRunLease {
         status: "outcome_unknown",
         active_node_ids: [],
         completeness: "partial",
-        failure: input
+        failure: {
+          ...input,
+          diagnostics: failureDiagnosticsFrom({
+            cause: input,
+            code: input.code,
+            certainty: "unknown"
+          })
+        }
       });
     } finally {
       this.#phase = "released";
@@ -335,12 +343,14 @@ export class NativeStudioRunLease {
   async reject(cause: unknown): Promise<void> {
     this.beginRelease("reject");
     try {
+      const code = failureCode(cause);
       await this.transition({
         kind: "dispatch_rejected",
         owner_id: this.#ownerId,
         failure: {
-          code: failureCode(cause),
-          message: "Native workflow dispatch failed before runtime start"
+          code,
+          message: "Native workflow dispatch failed before runtime start",
+          diagnostics: failureDiagnosticsFrom({ cause, code })
         }
       });
     } finally {
@@ -432,22 +442,32 @@ export class NativeStudioRunLease {
       );
     }
     const outcome = options.createOutcome?.(terminalRevision);
+    const failure = terminal.status === "failed"
+      ? (() => {
+          const code = failureCode(terminal.cause);
+          return {
+            code,
+            message: "Native workflow execution failed",
+            diagnostics: failureDiagnosticsFrom({
+              cause: terminal.cause,
+              code
+            })
+          };
+        })()
+      : undefined;
     const transition: RunTransition = {
       kind: "runtime_status",
       owner_id: this.#ownerId,
       status: terminal.status,
       active_node_ids: [],
-      ...(terminal.status === "failed"
-        ? {
+      ...(failure === undefined
+        ? {}
+        : {
             ...(state?.primary_failure === undefined
               ? {}
               : { failed_node_id: state.primary_failure.node_id }),
-            failure: {
-              code: failureCode(terminal.cause),
-              message: "Native workflow execution failed"
-            }
-          }
-        : {}),
+            failure
+          }),
       ...(state === undefined
         ? { completeness: "partial" as const }
         : {

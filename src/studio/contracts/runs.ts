@@ -100,10 +100,64 @@ export const RunSubjectSchema = z
   });
 export type RunSubject = z.infer<typeof RunSubjectSchema>;
 
+export const RunFailureCategorySchema = z.enum([
+  "configuration",
+  "validation",
+  "authentication",
+  "authorization",
+  "dependency",
+  "transport",
+  "rate_limit",
+  "timeout",
+  "runtime",
+  "external",
+  "unknown"
+]);
+export type RunFailureCategory = z.infer<typeof RunFailureCategorySchema>;
+
+export const RunFailureRetryabilitySchema = z.enum([
+  "safe",
+  "unsafe",
+  "conditional",
+  "unknown"
+]);
+export type RunFailureRetryability = z.infer<
+  typeof RunFailureRetryabilitySchema
+>;
+
+export const RunFailureCauseSchema = z
+  .object({
+    code: BoundedStringSchema.optional(),
+    message: z.string().trim().min(1).max(1_024).optional()
+  })
+  .strict()
+  .refine((cause) => Object.keys(cause).length > 0, {
+    message: "Failure cause must contain at least one field"
+  });
+export type RunFailureCause = z.infer<typeof RunFailureCauseSchema>;
+
+export const RunFailureDiagnosticsSchema = z
+  .object({
+    category: RunFailureCategorySchema.optional(),
+    retryability: RunFailureRetryabilitySchema.optional(),
+    operation_id: BoundedStringSchema.optional(),
+    status_code: z.number().int().min(100).max(599).optional(),
+    cause: RunFailureCauseSchema.optional(),
+    certainty: z.enum(["known", "unknown"]).optional()
+  })
+  .strict()
+  .refine((diagnostics) => Object.keys(diagnostics).length > 0, {
+    message: "Failure diagnostics must contain at least one field"
+  });
+export type RunFailureDiagnostics = z.infer<
+  typeof RunFailureDiagnosticsSchema
+>;
+
 export const RunFailureSchema = z
   .object({
     code: RunOpaqueIdSchema,
-    message: z.string().trim().min(1).max(4_096)
+    message: z.string().trim().min(1).max(4_096),
+    diagnostics: RunFailureDiagnosticsSchema.optional()
   })
   .strict();
 export type RunFailure = z.infer<typeof RunFailureSchema>;

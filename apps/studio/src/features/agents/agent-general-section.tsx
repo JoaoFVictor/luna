@@ -16,11 +16,13 @@ import { useServerBackedForm } from "@/features/agents/use-server-backed-form"
 import { humanizeTechnicalId } from "@/lib/presentation"
 
 function profileLabel(profile: ModelConfiguration["profiles"][number]): string {
-  const depth = profile.reasoning_effort === "high"
-    ? "raciocínio profundo"
-    : profile.reasoning_effort === "low"
-      ? "mais rápido"
-      : "equilibrado"
+  const depth = profile.reasoning_effort === "xhigh"
+    ? "raciocínio extra profundo"
+    : profile.reasoning_effort === "high"
+      ? "raciocínio profundo"
+      : profile.reasoning_effort === "low"
+        ? "mais rápido"
+        : "equilibrado"
   return `${humanizeTechnicalId(profile.id)} · ${depth}`
 }
 

@@ -5,14 +5,22 @@ import { WorkflowGraph } from "@/features/workflows/workflow-graph"
 
 const captured = vi.hoisted(() => ({
   props: undefined as undefined | Record<string, unknown>,
+  minimapProps: undefined as undefined | Record<string, unknown>,
+  controlsProps: undefined as undefined | Record<string, unknown>,
 }))
 
 vi.mock("@xyflow/react", () => ({
   Background: () => null,
-  Controls: () => null,
+  Controls: (props: Record<string, unknown>) => {
+    captured.controlsProps = props
+    return null
+  },
   Handle: () => null,
   MarkerType: { ArrowClosed: "arrowclosed" },
-  MiniMap: () => null,
+  MiniMap: (props: Record<string, unknown>) => {
+    captured.minimapProps = props
+    return null
+  },
   Position: { Top: "top", Bottom: "bottom" },
   ReactFlow: (props: Record<string, unknown> & { children?: ReactNode }) => {
     captured.props = props
@@ -64,6 +72,8 @@ describe("WorkflowGraph accessibility contract", () => {
     expect(nodes[0]).toMatchObject({
       focusable: true,
       ariaLabel: expect.stringContaining("Em execução, 1 tentativa"),
+      initialWidth: 192,
+      initialHeight: 72,
     })
     expect(edges[0]).toMatchObject({
       focusable: true,
@@ -72,6 +82,15 @@ describe("WorkflowGraph accessibility contract", () => {
     const aria = captured.props?.ariaLabelConfig as Record<string, unknown>
     expect(aria["controls.zoomIn.ariaLabel"]).toBe("Aumentar zoom")
     expect(aria["node.a11yDescription.default"]).toContain("Pressione Enter")
+    expect(captured.minimapProps).toMatchObject({
+      pannable: true,
+      zoomable: true,
+      nodeColor: "var(--primary)",
+    })
+    expect(captured.controlsProps).toMatchObject({
+      showInteractive: false,
+      className: "pointer-events-auto",
+    })
   })
 
   it("keeps the clicked edge selected so its contextual actions can render", () => {

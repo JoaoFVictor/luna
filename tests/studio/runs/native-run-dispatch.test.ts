@@ -519,7 +519,18 @@ describe("native Studio run dispatch", () => {
       expect(terminalRecord).toMatchObject({
         run_status: "failed",
         failed_node_id: "analyze",
-        failure: { code: "runtime_node_output_schema_invalid" }
+        failure: {
+          code: "runtime_node_output_schema_invalid",
+          diagnostics: {
+            category: "runtime",
+            retryability: "unknown",
+            certainty: "known",
+            cause: {
+              code: "runtime_node_output_schema_invalid",
+              message: "native node failed"
+            }
+          }
+        }
       });
       const handle = terminalRecord.graph_snapshot_handle;
       if (handle === undefined) {

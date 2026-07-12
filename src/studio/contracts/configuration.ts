@@ -420,7 +420,7 @@ export const StudioModelConfigurationSchema = z
         .object({
           id: z.string().min(1).max(256),
           source: ModelSourceSchema,
-          reasoning_effort: z.enum(["low", "medium", "high"]),
+          reasoning_effort: z.enum(["low", "medium", "high", "xhigh"]),
           transport: z.enum(["auto", "sse", "websocket"]),
           consumers: z.array(z.string().min(1).max(256))
         })

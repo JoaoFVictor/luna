@@ -5,7 +5,10 @@ import type {
 import {
   createGitHubPullRequestReviewProviderFactory
 } from "../../../src/providers/github/pull-request-review/factory.js";
-import type { RunGh } from "../../../src/providers/github/gh.js";
+import type {
+  GitHubCliError,
+  RunGh
+} from "../../../src/providers/github/gh.js";
 
 function reviewResponse(id: number): string {
   return JSON.stringify({
@@ -38,6 +41,18 @@ function providerFor(runGh: RunGh) {
   return createGitHubPullRequestReviewProviderFactory({
     runGh
   }).createProvider();
+}
+
+function githubCliFailure(payload: unknown): GitHubCliError {
+  const error = new Error("GitHub CLI command failed") as GitHubCliError;
+  error.code = "github_cli_failed";
+  error.details = {
+    exit_code: 1,
+    stdout: JSON.stringify(payload),
+    stderr: "gh: request failed",
+    timed_out: false
+  };
+  return error;
 }
 
 describe("GitHub pull request review provider", () => {
@@ -194,6 +209,78 @@ describe("GitHub pull request review provider", () => {
           stderr: "GraphQL: Cannot request changes on your own pull request",
           timed_out: false
         }
+      }
+    });
+  });
+
+  it("retries an own-PR request-changes review as a comment with the same inline comments", async () => {
+    const rejection = githubCliFailure({
+      message: "Unprocessable Entity",
+      errors: ["Review Can not request changes on your own pull request"],
+      documentation_url:
+        "https://docs.github.com/rest/pulls/reviews#create-a-review-for-a-pull-request",
+      status: "422"
+    });
+    const runGh = vi.fn()
+      .mockRejectedValueOnce(rejection)
+      .mockResolvedValueOnce(reviewResponse(126));
+    const provider = providerFor(runGh);
+    const comments = [{
+      path: "src/app.ts",
+      line: 43,
+      side: "RIGHT" as const,
+      body: "Fix the nullable value."
+    }];
+
+    await expect(
+      provider.publishReview(reviewInput({ event: "request_changes", comments }))
+    ).resolves.toMatchObject({
+      external_id: "126",
+      event: "comment",
+      inline_comments: 1
+    });
+
+    expect(runGh).toHaveBeenCalledTimes(2);
+    expect(runGh).toHaveBeenNthCalledWith(
+      2,
+      "/repo/workspace",
+      [
+        "api",
+        "-X",
+        "POST",
+        "repos/octo-org/hello-world/pulls/42/reviews",
+        "--input",
+        "-"
+      ],
+      expect.objectContaining({
+        input: JSON.stringify({
+          event: "COMMENT",
+          body: "Luna found issues.",
+          comments
+        })
+      })
+    );
+  });
+
+  it("reports a structured GitHub API rejection as a confirmed publish failure", async () => {
+    const rejection = githubCliFailure({
+      message: "Validation Failed",
+      errors: ["A review comment line is invalid"],
+      status: 422
+    });
+    const provider = providerFor(vi.fn(async () => {
+      throw rejection;
+    }));
+
+    await expect(provider.publishReview(reviewInput())).rejects.toMatchObject({
+      code: "pull_request_review_publish_failed",
+      message:
+        "GitHub pull request review was rejected: A review comment line is invalid",
+      details: {
+        reason: "provider_rejected",
+        provider_status: 422,
+        provider_message: "Validation Failed",
+        provider_errors: ["A review comment line is invalid"]
       }
     });
   });

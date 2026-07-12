@@ -18,6 +18,7 @@ import {
 } from "@/features/workflows/workflow-graph"
 import { workflowRunExecutionProjection } from "@/features/workflows/workflow-run-overlay-model"
 import { RunNodeDebugger } from "@/features/runs/run-node-debugger"
+import { RunStepNavigator } from "@/features/runs/run-step-navigator"
 
 const unavailableCopy: Readonly<Record<string, { title: string; description: string }>> = {
   graph_not_persisted_yet: {
@@ -29,8 +30,8 @@ const unavailableCopy: Readonly<Record<string, { title: string; description: str
     description: "Esta run legada não possui um DAG imutável associado.",
   },
   partial_run_without_snapshot: {
-    title: "Run parcial",
-    description: "O ledger não contém identidade suficiente para localizar um snapshot exato.",
+    title: "Grafo indisponível para uma execução parcial",
+    description: "O histórico desta execução foi registrado parcialmente e não há um snapshot exato seguro para desenhar.",
   },
   graph_snapshot_not_preallocated: {
     title: "Snapshot não prealocado",
@@ -150,17 +151,18 @@ export function RunGraphPanel({
   }
 
   const response = graph.data
+  const graphModel = workflowGraphModel(response.graph)
   const selected = response.graph.nodes.find((node) => node.id === selectedNodeId)
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <NetworkIcon aria-hidden="true" /> Grafo da execução
+              <NetworkIcon aria-hidden="true" /> Etapas da execução
             </CardTitle>
             <CardDescription>
-              DAG imutável da revisão realmente compilada; overlay apenas de evidência persistida.
+              Acompanhe o caminho executado e selecione um passo para investigar.
             </CardDescription>
           </div>
           <Badge variant="outline">
@@ -168,21 +170,7 @@ export function RunGraphPanel({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <details className="rounded-lg border bg-muted/20 p-3 text-xs">
-          <summary className="cursor-pointer font-medium">Identidade técnica do grafo</summary>
-          <dl className="mt-3 grid gap-3 lg:grid-cols-2">
-            {[
-              ["Workflow revision", response.run.workflow_revision],
-              ["Definition bundle", response.run.definition_bundle_hash],
-              ["Execution snapshot", response.run.execution_snapshot_hash],
-              ["Graph hash", response.graph_hash],
-            ].map(([label, value]) => (
-              <div key={label} className="min-w-0"><dt className="text-muted-foreground">{label}</dt><dd className="break-all font-mono">{value}</dd></div>
-            ))}
-          </dl>
-        </details>
-
+      <CardContent className="space-y-3">
         {response.overlay.observation === "unobservable" && (
           <Alert>
             <InfoIcon aria-hidden="true" />
@@ -207,36 +195,60 @@ export function RunGraphPanel({
           </Alert>
         )}
 
-        <Tabs defaultValue="graph">
-          <TabsList aria-label="Visualização do grafo da execução">
-            <TabsTrigger value="graph">Grafo</TabsTrigger>
-            <TabsTrigger value="outline">Outline acessível</TabsTrigger>
-          </TabsList>
-          <TabsContent value="graph" className="mt-3 h-[34rem] overflow-hidden rounded-lg border bg-muted/20">
-            <WorkflowGraph
-              graph={workflowGraphModel(response.graph)}
-              selectedNodeId={selectedNodeId}
-              execution={execution}
-              onSelectNode={(nodeId) => selectNode(nodeId || undefined)}
-            />
-          </TabsContent>
-          <TabsContent value="outline" className="mt-3 rounded-lg border p-3">
-            <ScrollArea className="max-h-[32rem]">
-              <WorkflowOutline
-                compiled={workflowGraphModel(response.graph)}
+        <div className="grid min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <Tabs defaultValue="graph" className="min-w-0">
+            <TabsList aria-label="Visualização das etapas da execução">
+              <TabsTrigger value="graph">Fluxo visual</TabsTrigger>
+              <TabsTrigger value="outline">Lista acessível</TabsTrigger>
+            </TabsList>
+            <TabsContent value="graph" className="mt-2 h-[30rem] overflow-hidden rounded-lg border bg-muted/20">
+              <WorkflowGraph
+                graph={graphModel}
                 selectedNodeId={selectedNodeId}
                 execution={execution}
-                onSelectNode={selectNode}
+                onSelectNode={(nodeId) => selectNode(nodeId || undefined)}
               />
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
+            </TabsContent>
+            <TabsContent value="outline" className="mt-2 h-[30rem] rounded-lg border p-2">
+              <ScrollArea className="h-full">
+                <WorkflowOutline
+                  compiled={graphModel}
+                  selectedNodeId={selectedNodeId}
+                  execution={execution}
+                  onSelectNode={selectNode}
+                />
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
+          <div className="h-[30rem] lg:mt-10">
+            <RunStepNavigator
+              graph={graphModel}
+              execution={execution}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={selectNode}
+            />
+          </div>
+        </div>
 
         {selected === undefined ? (
-          <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">Clique em um passo para inspecionar tentativas, duração, saídas e falhas.</p>
+          <p className="rounded-lg border border-dashed p-3 text-center text-sm text-muted-foreground">Selecione um passo no fluxo ou na lista para ver tentativas, duração, saídas e falhas.</p>
         ) : (
           <RunNodeDebugger node={selected} overlay={response.overlay} events={events} eventsComplete={eventHistoryComplete} artifacts={artifacts.data?.items ?? []} record={record} />
         )}
+
+        <details className="rounded-lg border bg-muted/20 p-3 text-xs">
+          <summary className="cursor-pointer font-medium">Identidade técnica do grafo</summary>
+          <dl className="mt-3 grid gap-3 lg:grid-cols-2">
+            {[
+              ["Workflow revision", response.run.workflow_revision],
+              ["Definition bundle", response.run.definition_bundle_hash],
+              ["Execution snapshot", response.run.execution_snapshot_hash],
+              ["Graph hash", response.graph_hash],
+            ].map(([label, value]) => (
+              <div key={label} className="min-w-0"><dt className="text-muted-foreground">{label}</dt><dd className="break-all font-mono">{value}</dd></div>
+            ))}
+          </dl>
+        </details>
       </CardContent>
     </Card>
   )
