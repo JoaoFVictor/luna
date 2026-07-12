@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  createPiAgentRuntimeAdapter
+  createPiAgentRuntimeAdapter,
+  type PiModels
 } from "../../../src/agent-runtimes/pi/adapter.js";
-import { registerPiProviderApiKey } from "../../../src/agent-runtimes/pi/auth.js";
 import type {
   RunAgentInput
 } from "../../../src/core/agent-runtime/contracts.js";
@@ -43,6 +43,13 @@ const fakeModel = {
   input: ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 } as Model<string>;
+
+function injectedModels(
+  complete: unknown,
+  getModel: unknown
+): PiModels {
+  return { complete, getModel } as unknown as PiModels;
+}
 
 function input(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
   return {
@@ -86,7 +93,9 @@ describe("Pi agent runtime adapter", () => {
       ) => message([{ type: "text", text: "{\"summary\":\"ok\"}" }])
     );
     const getModel = vi.fn(() => fakeModel);
-    const adapter = createPiAgentRuntimeAdapter({ complete, getModel });
+    const adapter = createPiAgentRuntimeAdapter({
+      models: injectedModels(complete, getModel)
+    });
 
     await expect(adapter.runAgent(input())).resolves.toMatchObject({
       output: { summary: "ok" },
@@ -104,7 +113,7 @@ describe("Pi agent runtime adapter", () => {
     expect(getModel).toHaveBeenCalledWith("openai-codex", "gpt-5.4-mini");
   });
 
-  it("passes registered Pi OAuth API keys into provider calls", async () => {
+  it("passes generic provider options through the model registry", async () => {
     const complete = vi.fn(
       async (
         _model: Model<string>,
@@ -113,9 +122,9 @@ describe("Pi agent runtime adapter", () => {
       ) => message([{ type: "text", text: "{\"summary\":\"ok\"}" }])
     );
     const getModel = vi.fn(() => fakeModel);
-    const adapter = createPiAgentRuntimeAdapter({ complete, getModel });
-
-    registerPiProviderApiKey("test-provider", { apiKey: "oauth-access-token" });
+    const adapter = createPiAgentRuntimeAdapter({
+      models: injectedModels(complete, getModel)
+    });
 
     await expect(
       adapter.runAgent(
@@ -130,18 +139,20 @@ describe("Pi agent runtime adapter", () => {
     ).resolves.toMatchObject({ output: { summary: "ok" } });
 
     expect(complete.mock.calls[0]?.[2]).toMatchObject({
-      apiKey: "oauth-access-token"
+      reasoning: "low",
+      sessionId: expect.stringMatching(/^luna-/)
     });
+    expect(complete.mock.calls[0]?.[2]).not.toHaveProperty("apiKey");
   });
 
   it("times out model requests that do not settle", async () => {
-    const adapter = createPiAgentRuntimeAdapter({
-      complete: vi.fn(
+    const complete = vi.fn(
         () => new Promise<AssistantMessage>(() => {
           // Intentionally never settles.
         })
-      ),
-      getModel: vi.fn(() => fakeModel),
+      );
+    const adapter = createPiAgentRuntimeAdapter({
+      models: injectedModels(complete, vi.fn(() => fakeModel)),
       requestTimeoutMs: 5
     });
 
@@ -159,8 +170,7 @@ describe("Pi agent runtime adapter", () => {
       ) => message([{ type: "text", text: "{\"summary\":\"ok\"}" }])
     );
     const adapter = createPiAgentRuntimeAdapter({
-      complete,
-      getModel: vi.fn(() => fakeModel)
+      models: injectedModels(complete, vi.fn(() => fakeModel))
     });
     const longRunId = `run-${"x".repeat(140)}`;
 
@@ -220,7 +230,9 @@ describe("Pi agent runtime adapter", () => {
       ],
       runtime_requirements: ["tool_calling"]
     };
-    const adapter = createPiAgentRuntimeAdapter({ complete, getModel });
+    const adapter = createPiAgentRuntimeAdapter({
+      models: injectedModels(complete, getModel)
+    });
 
     await expect(
       adapter.runAgent(

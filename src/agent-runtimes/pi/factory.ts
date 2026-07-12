@@ -1,7 +1,6 @@
 import { runtimeError } from "../../core/runtime/errors.js";
 import type { JsonObject } from "../../core/runtime/backends/contracts.js";
 import type { AgentRuntimeFactory } from "../../runtime/composition/runtime-composition.js";
-import { registerConfiguredPiOAuthProviders } from "./auth.js";
 import { createPiAgentRuntimeAdapter } from "./adapter.js";
 
 function optionalPositiveInteger(value: unknown, label: string): number | undefined {
@@ -19,13 +18,6 @@ function optionalPositiveInteger(value: unknown, label: string): number | undefi
 
 export const piAgentRuntimeFactory = {
   id: "pi",
-  async prepare({ projectRoot, configRoot, hasAgents }) {
-    if (!hasAgents) {
-      return;
-    }
-
-    await registerConfiguredPiOAuthProviders({ projectRoot, configRoot });
-  },
   create: (options: JsonObject) =>
     createPiAgentRuntimeAdapter({
       maxToolIterations: optionalPositiveInteger(
