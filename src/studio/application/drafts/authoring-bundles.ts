@@ -221,11 +221,16 @@ async function collectWorkflowDependencies(
   budget: SourceBudget,
   editable: ReadonlySet<string>,
   dependencies: Map<string, ReadStudioFile>,
+  expanded: Set<string>,
   visiting: ReadonlySet<string> = new Set()
 ): Promise<void> {
   const definitionFile = studioEditableDefinitionFile(resource);
   const definitionKey = studioPathKey(definitionFile);
-  if (editable.has(definitionKey) || visiting.has(definitionKey)) return;
+  if (
+    editable.has(definitionKey) ||
+    visiting.has(definitionKey) ||
+    expanded.has(definitionKey)
+  ) return;
 
   let definition = dependencies.get(definitionKey);
   if (definition === undefined) {
@@ -233,6 +238,7 @@ async function collectWorkflowDependencies(
     if (definition === undefined) return;
     dependencies.set(definitionKey, definition);
   }
+  expanded.add(definitionKey);
 
   const references = discoverStudioWorkflowResources(definition.content);
   for (const relativePath of references.editable) {
@@ -273,6 +279,7 @@ async function collectWorkflowDependencies(
       budget,
       editable,
       dependencies,
+      expanded,
       nestedVisiting
     );
   }
@@ -328,6 +335,7 @@ async function existingBundle(
     const workflowReferences = discoverStudioWorkflowResources(
       loadedDefinition.content
     );
+    const expandedWorkflows = new Set<string>();
     for (const agent of workflowReferences.agents) {
       await collectAgentDependencies(
         agent,
@@ -343,7 +351,8 @@ async function existingBundle(
         options.source,
         budget,
         editable,
-        dependencies
+        dependencies,
+        expandedWorkflows
       );
     }
     await addDependencyIfPresent(
@@ -471,6 +480,7 @@ async function generatedBundle(
       );
     }
     const references = discoverStudioWorkflowResources(definition.content);
+    const expandedWorkflows = new Set<string>();
     for (const agent of references.agents) {
       await collectAgentDependencies(
         agent,
@@ -496,7 +506,8 @@ async function generatedBundle(
         options.source,
         budget,
         editable,
-        dependencies
+        dependencies,
+        expandedWorkflows
       );
       if (
         !dependencies.has(

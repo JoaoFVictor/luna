@@ -45,14 +45,14 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
   )
   const selectedDescription = selectedAdapter === undefined
     ? "Nenhuma entrada registrada."
-    : launchAdapterDescription(selectedAdapter.id, selectedAdapter.source, selectedAdapter.description)
+    : launchAdapterDescription(selectedAdapter.id, selectedAdapter.description)
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Escolha uma entrada</CardTitle>
         <CardDescription>
-          Use uma URL ou identificador aceito por uma das fontes configuradas.
+          Use o valor de entrada aceito por uma das fontes configuradas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -82,12 +82,12 @@ export function LaunchInputCard(props: LaunchInputCardProps) {
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="launch-input">URL ou identificador</FieldLabel>
+                <FieldLabel htmlFor="launch-input">Valor de entrada</FieldLabel>
                 <Input
                   id="launch-input"
                   value={props.opaqueInput}
                   onChange={(event) => props.onOpaqueInputChange(event.target.value)}
-                  placeholder={launchAdapterPlaceholder(selectedAdapter?.source ?? "")}
+                  placeholder={launchAdapterPlaceholder()}
                   autoComplete="off"
                 />
                 <FieldDescription>{selectedDescription}</FieldDescription>

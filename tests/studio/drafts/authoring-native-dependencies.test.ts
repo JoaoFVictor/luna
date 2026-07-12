@@ -12,7 +12,15 @@ describe("native Studio draft dependency authoring", () => {
   it("adds a composed workflow closure and validates the draft", async () => {
     const { service, projectRoot, drafts } = await nativeFixture();
     const childDirectory = path.join(projectRoot, "workflows", "child-flow");
-    await mkdir(childDirectory, { recursive: true });
+    const grandchildDirectory = path.join(
+      projectRoot,
+      "workflows",
+      "grandchild-flow"
+    );
+    await Promise.all([
+      mkdir(childDirectory, { recursive: true }),
+      mkdir(grandchildDirectory, { recursive: true })
+    ]);
     await Promise.all([
       writeFile(
         path.join(childDirectory, "workflow.yaml"),
@@ -23,13 +31,41 @@ describe("native Studio draft dependency authoring", () => {
           "input_schema: input.schema.json",
           "output_schema: output.schema.json",
           "capabilities: []",
-          "nodes: []",
+          "nodes:",
+          "  - id: grandchild",
+          "    type: workflow",
+          "    workflow: grandchild-flow",
+          "    input: {}",
           ""
         ].join("\n"),
         "utf8"
       ),
       writeFile(path.join(childDirectory, "input.schema.json"), JSON_SCHEMA, "utf8"),
-      writeFile(path.join(childDirectory, "output.schema.json"), JSON_SCHEMA, "utf8")
+      writeFile(path.join(childDirectory, "output.schema.json"), JSON_SCHEMA, "utf8"),
+      writeFile(
+        path.join(grandchildDirectory, "workflow.yaml"),
+        [
+          "id: grandchild-flow",
+          "type: workflow",
+          "mode: read_only",
+          "input_schema: input.schema.json",
+          "output_schema: output.schema.json",
+          "capabilities: []",
+          "nodes: []",
+          ""
+        ].join("\n"),
+        "utf8"
+      ),
+      writeFile(
+        path.join(grandchildDirectory, "input.schema.json"),
+        JSON_SCHEMA,
+        "utf8"
+      ),
+      writeFile(
+        path.join(grandchildDirectory, "output.schema.json"),
+        JSON_SCHEMA,
+        "utf8"
+      )
     ]);
     const draft = await service.create({
       resource: { kind: "workflow", id: "parent-flow" },
@@ -72,7 +108,10 @@ describe("native Studio draft dependency authoring", () => {
     ).toEqual([
       "workflows/child-flow/input.schema.json",
       "workflows/child-flow/output.schema.json",
-      "workflows/child-flow/workflow.yaml"
+      "workflows/child-flow/workflow.yaml",
+      "workflows/grandchild-flow/input.schema.json",
+      "workflows/grandchild-flow/output.schema.json",
+      "workflows/grandchild-flow/workflow.yaml"
     ]);
     await expect(service.validate(updated.draft_id, updated.etag)).resolves.toMatchObject({
       validation: { status: "valid" }

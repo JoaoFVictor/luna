@@ -6,6 +6,8 @@ import {
   WorkflowExecutionScopeError,
   WorkflowExecutionScopeFixtureError
 } from "../../../core/workflow/execution-scope.js";
+import { WorkflowCompilerError } from "../../../core/workflow/compiler.js";
+import { WorkflowDefinitionError } from "../../../core/workflow/definition.js";
 import {
   loadNativeRunContext,
   NativePrecompletedStepNodeError
@@ -245,6 +247,17 @@ export class NativeStudioRunPlanResolver
             throw studioRunLaunchError(
               "studio_run_repository_unavailable",
               "The workflow requires a repository that is missing from this invocation or local configuration",
+              {},
+              { cause }
+            );
+          }
+          if (
+            cause instanceof WorkflowDefinitionError ||
+            cause instanceof WorkflowCompilerError
+          ) {
+            throw studioRunLaunchError(
+              "studio_run_plan_resolution_invalid",
+              "The saved workflow definition is not executable",
               {},
               { cause }
             );

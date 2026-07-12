@@ -125,4 +125,31 @@ describe("workflow composition definitions", () => {
       code: "workflow_composition_interrupt_unsupported"
     });
   });
+
+  it("memoizes a shared child across a composition diamond", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-composition-"));
+    await writeWorkflow(root, "shared", { nodes: "[]" });
+    for (const id of ["left", "right"]) {
+      await writeWorkflow(root, id, {
+        nodes: "  - id: shared\n    type: workflow\n    workflow: shared\n    input: {}"
+      });
+    }
+    await writeWorkflow(root, "diamond", {
+      nodes: [
+        "  - id: left",
+        "    type: workflow",
+        "    workflow: left",
+        "    input: {}",
+        "  - id: right",
+        "    type: workflow",
+        "    workflow: right",
+        "    input: {}"
+      ].join("\n")
+    });
+
+    const definition = await loadWorkflowDefinition(root, "diamond");
+    expect(definition.compositions?.left.compositions?.shared).toBe(
+      definition.compositions?.right.compositions?.shared
+    );
+  });
 });

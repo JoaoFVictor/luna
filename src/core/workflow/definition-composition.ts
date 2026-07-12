@@ -22,7 +22,8 @@ export async function resolveWorkflowCompositions(options: {
       `Workflow ${options.parentId} contains composition references without a resolver.`
     );
   }
-  const entries = await Promise.all(ids.map(async (childId) => {
+  const entries: Array<readonly [string, WorkflowDefinition]> = [];
+  for (const childId of ids) {
     const child = await options.resolver!(childId);
     if (
       options.parentMode === "read_only" &&
@@ -39,8 +40,8 @@ export async function resolveWorkflowCompositions(options: {
         `Composed workflow ${childId} can suspend for human input; synchronous composition does not support HITL yet.`
       );
     }
-    return [childId, child] as const;
-  }));
+    entries.push([childId, child]);
+  }
   return Object.fromEntries(entries);
 }
 

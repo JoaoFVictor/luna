@@ -5,10 +5,10 @@ import { routingRuleDescription } from "@/features/configuration/routing-present
 describe("routingRuleDescription", () => {
   it("translates the common deterministic routing expression", () => {
     expect(routingRuleDescription({
-      id: "github",
-      when: { expression: "$.invocation.source = 'github' and $.invocation.event = 'pull_request' and $.invocation.action in ['opened', 'reopened']" },
-      target: "workflow:code-review",
-    })).toBe("Se origem é GitHub e evento é Pull request e ação é Opened, Reopened, enviar para Code review")
+      id: "vendor-work-item",
+      when: { expression: "$.invocation.source = 'vendor' and $.invocation.event = 'work_item' and $.invocation.action in ['opened', 'reopened']" },
+      target: "workflow:work-handler",
+    })).toBe("Se origem é Vendor e evento é Work item e ação é Opened, Reopened, enviar para Work handler")
   })
 
   it("explains the explicit target rule without exposing JSONata", () => {

@@ -1,5 +1,9 @@
 import { validateCheckpointState } from "../../../core/runtime/state.js";
 import type { LunaRuntimeState } from "../../../core/runtime/state.js";
+import {
+  assertCheckpointJsonValue,
+  isCheckpointPlainObject
+} from "../../../core/runtime/json.js";
 import type { WorkflowRunResult } from "../../../core/workflow/execution-contracts.js";
 import type { NativeWorkflowRunInput } from "../../../runtime/composition/target-executor.js";
 import { isRuntimeDurabilityRecoveryRequired } from "../../../core/runtime/errors.js";
@@ -49,16 +53,13 @@ function graphSnapshotIdentity(record: RunRecord): RunGraphSnapshotIdentity {
 }
 
 function workflowRunResult(value: unknown): WorkflowRunResult {
-  if (value === null || typeof value !== "object") {
+  if (!isCheckpointPlainObject(value)) {
     throw studioRunLaunchError(
       "studio_run_dispatch_failed",
       "Native workflow runner returned an invalid result"
     );
   }
-  const candidate = value as {
-    readonly status?: unknown;
-    readonly state?: unknown;
-  };
+  const candidate = value;
   if (
     (candidate.status !== "succeeded" &&
       candidate.status !== "waiting_for_input") ||
@@ -81,18 +82,49 @@ function workflowRunResult(value: unknown): WorkflowRunResult {
   }
   if (
     (candidate.status === "succeeded" &&
-      (candidate.state as { readonly run_status?: unknown }).run_status !==
-        "succeeded") ||
+      candidate.state.run_status !== "succeeded") ||
     (candidate.status === "waiting_for_input" &&
-      (candidate.state as { readonly run_status?: unknown }).run_status !==
-        "waiting_for_input")
+      candidate.state.run_status !== "waiting_for_input")
   ) {
     throw studioRunLaunchError(
       "studio_run_dispatch_failed",
       "Native workflow result status does not match its runtime state"
     );
   }
-  return value as WorkflowRunResult;
+  if (candidate.status === "succeeded") {
+    try {
+      assertCheckpointJsonValue(candidate.output, "$.output");
+    } catch (cause) {
+      throw studioRunLaunchError(
+        "studio_run_dispatch_failed",
+        "Native workflow runner returned an invalid succeeded output",
+        {},
+        { cause }
+      );
+    }
+    return {
+      status: "succeeded",
+      output: candidate.output,
+      state: candidate.state
+    };
+  }
+  if (
+    typeof candidate.interrupt_id !== "string" ||
+    candidate.interrupt_id === "" ||
+    typeof candidate.checkpoint_id !== "string" ||
+    candidate.checkpoint_id === ""
+  ) {
+    throw studioRunLaunchError(
+      "studio_run_dispatch_failed",
+      "Native workflow runner returned incomplete durable interrupt identity"
+    );
+  }
+  return {
+    status: "waiting_for_input",
+    interrupt_id: candidate.interrupt_id,
+    checkpoint_id: candidate.checkpoint_id,
+    state: candidate.state
+  };
 }
 
 export class NativeStudioRunExecutor {
@@ -202,6 +234,14 @@ export class NativeStudioRunExecutor {
               "Native workflow runner invoked the compiled workflow barrier more than once"
             );
           }
+          // Bind the compiled graph to the same immutable bytes checked before
+          // loading. A mutation during definition loading must fail before the
+          // lease starts and before any workflow node can execute.
+          await verifyMaterializedNativeStudioRunSnapshot({
+            roots: definitionRoots,
+            manifest: job.snapshot
+          });
+          signal.throwIfAborted();
           compiledCaptured = true;
           storedGraph = projectStoredRunGraphSnapshot({
             identity: snapshotIdentity,

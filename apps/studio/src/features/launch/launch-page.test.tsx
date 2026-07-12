@@ -78,7 +78,7 @@ function renderLaunch(
 }
 
 async function prepareAdapterPlan() {
-  const input = await screen.findByLabelText("URL ou identificador")
+  const input = await screen.findByLabelText("Valor de entrada")
   fireEvent.change(input, { target: { value: "opaque://task/42" } })
   fireEvent.click(screen.getByRole("button", { name: "Continuar" }))
   expect(await screen.findByText("Antes de executar")).toBeDefined()
@@ -236,7 +236,7 @@ describe("LaunchPage", () => {
     }))
     renderLaunch()
 
-    const input = await screen.findByLabelText("URL ou identificador")
+    const input = await screen.findByLabelText("Valor de entrada")
     fireEvent.change(input, { target: { value: "opaque://task/42" } })
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }))
 
@@ -274,7 +274,7 @@ describe("LaunchPage", () => {
       screen.getByText("Esta entrada foi direcionada para outro workflow"),
     ).toBeDefined()
 
-    fireEvent.change(screen.getByLabelText("URL ou identificador"), {
+    fireEvent.change(screen.getByLabelText("Valor de entrada"), {
       target: { value: "opaque://task/changed" },
     })
     await waitFor(() => {
@@ -355,7 +355,7 @@ describe("LaunchPage", () => {
     expect(execute).toHaveBeenCalledTimes(1)
     expect(screen.queryByText("run-detail-destination")).toBeNull()
 
-    fireEvent.change(screen.getByLabelText("URL ou identificador"), {
+    fireEvent.change(screen.getByLabelText("Valor de entrada"), {
       target: { value: "opaque://task/replanned" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }))
@@ -382,7 +382,7 @@ describe("LaunchPage", () => {
     const planRun = vi.spyOn(studioApi, "planRun").mockResolvedValue(plan)
     renderLaunch()
 
-    fireEvent.change(await screen.findByLabelText("URL ou identificador"), {
+    fireEvent.change(await screen.findByLabelText("Valor de entrada"), {
       target: { value: "opaque://task/42" },
     })
     const planButton = screen.getByRole("button", {

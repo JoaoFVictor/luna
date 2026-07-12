@@ -118,7 +118,7 @@ export function AgentGeneralSection({
             <NativeSelectOption value="read_only">Somente leitura</NativeSelectOption>
             <NativeSelectOption value="trusted_local_write">Pode editar arquivos locais</NativeSelectOption>
           </NativeSelect>
-          <FieldDescription>Editar arquivos não permite commit, push ou criação de pull request.</FieldDescription>
+          <FieldDescription>Editar arquivos não permite commit, push ou criação de change request.</FieldDescription>
         </Field>
       </div>
       <div className="flex flex-wrap items-center gap-2">

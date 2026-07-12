@@ -1,11 +1,8 @@
 const WORDS: Readonly<Record<string, string>> = {
   api: "API",
-  github: "GitHub",
-  gitlab: "GitLab",
   id: "ID",
   json: "JSON",
   mcp: "MCP",
-  pr: "PR",
   url: "URL",
 }
 

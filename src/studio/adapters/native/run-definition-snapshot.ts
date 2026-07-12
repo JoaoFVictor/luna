@@ -34,7 +34,7 @@ import {
 type SnapshotRoot = "project" | "config";
 type CaptureBudget = { files: number; directories: number; bytes: number };
 
-function snapshotFailure(message: string, cause?: unknown): Error {
+function snapshotFailure(message: string, cause?: unknown): StudioRunLaunchError {
   return studioRunLaunchError(
     "studio_run_plan_resolution_invalid",
     message,
@@ -43,13 +43,25 @@ function snapshotFailure(message: string, cause?: unknown): Error {
   );
 }
 
-function snapshotIntegrityFailure(message: string, cause?: unknown): Error {
+function snapshotIntegrityFailure(
+  message: string,
+  cause?: unknown
+): StudioRunLaunchError {
   return studioRunLaunchError(
     "studio_run_plan_resolution_invalid",
     message,
     { snapshot_integrity: true },
     cause === undefined ? undefined : { cause }
   );
+}
+
+function normalizeSnapshotCaptureFailure(
+  message: string,
+  cause: unknown
+): StudioRunLaunchError {
+  return cause instanceof StudioRunLaunchError
+    ? cause
+    : snapshotFailure(message, cause);
 }
 
 export function isNativeStudioRunSnapshotIntegrityFailure(
@@ -354,26 +366,33 @@ export async function captureNativeStudioRunSnapshot(options: {
   readonly configRoot: string;
   readonly workflowId: string;
 }): Promise<NativeStudioRunSnapshot> {
-  assertSafeSegment(options.workflowId);
-  const budget: CaptureBudget = { files: 0, directories: 0, bytes: 0 };
-  const files = new Map<string, NativeStudioRunSnapshotFile>();
-  await captureTree(
-    path.resolve(options.configRoot),
-    "config",
-    [],
-    budget,
-    files
-  );
-  await captureInstalledWorkflowClosure(
-    path.resolve(options.projectRoot),
-    options.workflowId,
-    budget,
-    files,
-    new Set(),
-    new Set()
-  );
+  try {
+    assertSafeSegment(options.workflowId);
+    const budget: CaptureBudget = { files: 0, directories: 0, bytes: 0 };
+    const files = new Map<string, NativeStudioRunSnapshotFile>();
+    await captureTree(
+      path.resolve(options.configRoot),
+      "config",
+      [],
+      budget,
+      files
+    );
+    await captureInstalledWorkflowClosure(
+      path.resolve(options.projectRoot),
+      options.workflowId,
+      budget,
+      files,
+      new Set(),
+      new Set()
+    );
 
-  return snapshotFromFiles(options.workflowId, [...files.values()], budget.bytes);
+    return snapshotFromFiles(options.workflowId, [...files.values()], budget.bytes);
+  } catch (cause) {
+    throw normalizeSnapshotCaptureFailure(
+      "Native installed workflow snapshot could not be captured safely",
+      cause
+    );
+  }
 }
 
 function draftSnapshotFile(
@@ -419,53 +438,60 @@ export async function captureNativeStudioDraftRunSnapshot(options: {
   readonly configRoot: string;
   readonly draft: StudioDraftItem;
 }): Promise<NativeStudioRunSnapshot> {
-  if (options.draft.primary_resource.kind !== "workflow") {
-    throw snapshotFailure("Native workflow runs require a workflow draft");
-  }
-  const workflowId = options.draft.primary_resource.id;
-  assertSafeSegment(workflowId);
-  const budget: CaptureBudget = { files: 0, directories: 0, bytes: 0 };
-  const files = new Map<string, NativeStudioRunSnapshotFile>();
-
-  await captureTree(
-    path.resolve(options.configRoot),
-    "config",
-    [],
-    budget,
-    files
-  );
-  for (const item of options.draft.files) {
-    const file = draftSnapshotFile(workflowId, item, budget);
-    if (file === undefined) continue;
-    const key = `${file.root}/${file.path}`;
-    if (files.has(key)) {
-      throw snapshotFailure("Workflow draft contains duplicate file paths");
+  try {
+    if (options.draft.primary_resource.kind !== "workflow") {
+      throw snapshotFailure("Native workflow runs require a workflow draft");
     }
-    files.set(key, file);
-  }
+    const workflowId = options.draft.primary_resource.id;
+    assertSafeSegment(workflowId);
+    const budget: CaptureBudget = { files: 0, directories: 0, bytes: 0 };
+    const files = new Map<string, NativeStudioRunSnapshotFile>();
 
-  const references = readWorkflowDefinitionReferences(
-    workflowSource(files, workflowId)
-  );
-  const projectRoot = path.resolve(options.projectRoot);
-  const capturedAgents = new Set<string>();
-  for (const agentId of [...new Set(references.agents.map(({ agentId }) => agentId))]
-    .sort((left, right) => left.localeCompare(right))) {
-    await captureAgentOnce(projectRoot, agentId, budget, files, capturedAgents);
-  }
-  const capturedWorkflows = new Set([workflowId]);
-  for (const childId of references.workflows) {
-    await captureInstalledWorkflowClosure(
-      projectRoot,
-      childId,
+    await captureTree(
+      path.resolve(options.configRoot),
+      "config",
+      [],
       budget,
-      files,
-      capturedWorkflows,
-      capturedAgents
+      files
+    );
+    for (const item of options.draft.files) {
+      const file = draftSnapshotFile(workflowId, item, budget);
+      if (file === undefined) continue;
+      const key = `${file.root}/${file.path}`;
+      if (files.has(key)) {
+        throw snapshotFailure("Workflow draft contains duplicate file paths");
+      }
+      files.set(key, file);
+    }
+
+    const references = readWorkflowDefinitionReferences(
+      workflowSource(files, workflowId)
+    );
+    const projectRoot = path.resolve(options.projectRoot);
+    const capturedAgents = new Set<string>();
+    for (const agentId of [...new Set(references.agents.map(({ agentId }) => agentId))]
+      .sort((left, right) => left.localeCompare(right))) {
+      await captureAgentOnce(projectRoot, agentId, budget, files, capturedAgents);
+    }
+    const capturedWorkflows = new Set([workflowId]);
+    for (const childId of references.workflows) {
+      await captureInstalledWorkflowClosure(
+        projectRoot,
+        childId,
+        budget,
+        files,
+        capturedWorkflows,
+        capturedAgents
+      );
+    }
+
+    return snapshotFromFiles(workflowId, [...files.values()], budget.bytes);
+  } catch (cause) {
+    throw normalizeSnapshotCaptureFailure(
+      "Native workflow draft snapshot could not be captured safely",
+      cause
     );
   }
-
-  return snapshotFromFiles(workflowId, [...files.values()], budget.bytes);
 }
 
 export function nativeStudioRunSnapshotManifest(

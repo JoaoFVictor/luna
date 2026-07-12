@@ -594,6 +594,106 @@ describe("native Studio run dispatch", () => {
     }
   });
 
+  it("rejects definition bytes changed during compilation before starting the lease", async () => {
+    const fixture = await writeFixture();
+    const { command } = await captureCommand(fixture);
+    const store = await createSqliteRunStore({ filePath: fixture.databasePath });
+    const scheduled: Array<() => void> = [];
+    const dispatcher = new NativeStudioRunDispatcher({
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      queueRoot: fixture.queueRoot,
+      ledger: store.ledger,
+      platform: nativeLunaPlatformRegistrations,
+      now: () => BASE_TIME,
+      ownerId: "definition-toctou-worker",
+      schedule: (task) => scheduled.push(task),
+      runWorkflow: async (input) => await successfulResult(input, {
+        beforeCompiledBarrier: async () => {
+          const roots = input.definitionRoots;
+          if (roots === undefined) throw new Error("Expected pinned definition roots");
+          await writeFile(
+            path.join(roots.projectRoot, "workflows", "pinned-workflow", "workflow.yaml"),
+            `${fixture.workflowSource}\n# changed during compile\n`,
+            "utf8"
+          );
+        }
+      })
+    });
+    try {
+      await dispatcher.initialize();
+      const receipt = await dispatcher.dispatch(command);
+      scheduled.splice(0).forEach((task) => task());
+
+      await vi.waitFor(async () => {
+        expect(await store.ledger.get(receipt.run_id)).toMatchObject({
+          dispatch_status: "rejected",
+          failure: { code: "studio_run_plan_resolution_invalid" }
+        });
+      });
+      expect(await store.ledger.get(receipt.run_id)).not.toHaveProperty("run_status");
+    } finally {
+      await dispatcher.close();
+      store.close();
+    }
+  });
+
+  it("rejects a waiting result without durable interrupt identity", async () => {
+    const fixture = await writeFixture();
+    const { command } = await captureCommand(fixture);
+    const store = await createSqliteRunStore({ filePath: fixture.databasePath });
+    const scheduled: Array<() => void> = [];
+    const dispatcher = new NativeStudioRunDispatcher({
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      queueRoot: fixture.queueRoot,
+      ledger: store.ledger,
+      platform: nativeLunaPlatformRegistrations,
+      now: () => BASE_TIME,
+      ownerId: "invalid-waiting-result-worker",
+      schedule: (task) => scheduled.push(task),
+      runWorkflow: async (input) => {
+        const context = await loadNativeRunContext(input, {
+          platform: nativeLunaPlatformRegistrations
+        });
+        await input.onCompiledWorkflow?.(context.nativeWorkflow.compiled);
+        if (input.run === undefined) throw new Error("Expected preallocated run");
+        const invocation = input.invocation;
+        const config = input.workflowConfig ?? {};
+        assertCheckpointJsonValue(invocation);
+        assertCheckpointJsonValue(config);
+        return {
+          status: "waiting_for_input",
+          state: {
+            ...createInitialRuntimeState({
+              invocation,
+              config,
+              run: input.run,
+              workflow: { id: "pinned-workflow", mode: "read_only" }
+            }),
+            run_status: "waiting_for_input"
+          }
+        };
+      }
+    });
+    try {
+      await dispatcher.initialize();
+      const receipt = await dispatcher.dispatch(command);
+      scheduled.splice(0).forEach((task) => task());
+
+      await vi.waitFor(async () => {
+        expect(await store.ledger.get(receipt.run_id)).toMatchObject({
+          dispatch_status: "started",
+          run_status: "failed",
+          failure: { code: "studio_run_dispatch_failed" }
+        });
+      });
+    } finally {
+      await dispatcher.close();
+      store.close();
+    }
+  });
+
   it("keeps a started job recoverable when checkpoint acceptance is unknown", async () => {
     const fixture = await writeFixture();
     await writeFile(fixture.workflowPath, replaySafeBuiltInWorkflowSource());

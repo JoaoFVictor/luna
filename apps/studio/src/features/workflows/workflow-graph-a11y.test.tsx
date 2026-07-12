@@ -98,6 +98,61 @@ describe("WorkflowGraph accessibility contract", () => {
     expect(edges[0]).toMatchObject({ id: "source:target:0", selected: true })
   })
 
+  it("moves a controlled node live and persists only when the drag ends", () => {
+    const onMoveNode = vi.fn()
+    render(
+      <WorkflowGraph
+        graph={{
+          nodes: [
+            { id: "source", kind: "built_in", capability_id: "one", can_create_pending_interrupt: false },
+            { id: "target", kind: "built_in", capability_id: "two", can_create_pending_interrupt: false },
+          ],
+          edges: [{ from: "source", to: "target" }],
+        }}
+        positions={{ source: { x: 10, y: 20 }, target: { x: 300, y: 20 } }}
+        dataConnections={[{
+          sourceId: "source",
+          targetId: "target",
+          mappings: [{ expression: "$.steps.source.value", sourcePath: ["value"], targetPath: ["value"] }],
+        }]}
+        canMove
+        onMoveNode={onMoveNode}
+      />,
+    )
+
+    const drag = captured.props?.onNodeDrag as (
+      event: unknown,
+      node: { id: string; type: string; position: { x: number; y: number } },
+    ) => void
+    act(() => drag({}, {
+      id: "source",
+      type: "workflow-node",
+      position: { x: 140, y: 180 },
+    }))
+
+    const movingNodes = captured.props?.nodes as Array<{
+      id: string
+      position: { x: number; y: number }
+    }>
+    expect(movingNodes.find((node) => node.id === "source")?.position).toEqual({
+      x: 140,
+      y: 180,
+    })
+    expect(onMoveNode).not.toHaveBeenCalled()
+    const movingEdges = (captured.props?.edges ?? []) as Array<{ type: string }>
+    expect(movingEdges.map((edge) => edge.type))
+      .toEqual(["workflow-dependency", "workflow-data"])
+
+    const stop = captured.props?.onNodeDragStop as typeof drag
+    act(() => stop({}, {
+      id: "source",
+      type: "workflow-node",
+      position: { x: 140, y: 180 },
+    }))
+    expect(onMoveNode).toHaveBeenCalledOnce()
+    expect(onMoveNode).toHaveBeenCalledWith("source", { x: 140, y: 180 })
+  })
+
   it("reports rejected connections for both drag and accessible click modes", () => {
     const onInvalidConnection = vi.fn()
     render(

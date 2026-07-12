@@ -465,6 +465,22 @@ describe("native Studio run planning", () => {
     expect(dispatches).toBe(0);
   });
 
+  it("reports an invalid saved workflow as a plan conflict instead of an internal failure", async () => {
+    const fixture = await writeFixture();
+    await writeFile(
+      fixture.workflowPath,
+      fixture.workflowSource.replace("    type: agent", "    type: unsupported")
+    );
+
+    await expect(launchService(fixture, {
+      dispatch: async () => {
+        throw new Error("invalid definitions must not dispatch");
+      }
+    }).plan(request, launchContext)).rejects.toMatchObject({
+      code: "studio_run_plan_resolution_invalid"
+    });
+  });
+
   it("fails closed when a read-only agent declares an MCP server", async () => {
     const fixture = await writeFixture();
     await appendFile(

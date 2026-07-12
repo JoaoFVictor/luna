@@ -67,7 +67,7 @@ export function WorkflowEntryPanel({
                 <div>
                   <h3 className="font-medium">{launchAdapterLabel(adapter.id, adapter.source)}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {launchAdapterDescription(adapter.id, adapter.source, adapter.description)}
+                    {launchAdapterDescription(adapter.id, adapter.description)}
                   </p>
                 </div>
                 <Badge variant="secondary"><RouteIcon aria-hidden="true" /> Roteada</Badge>

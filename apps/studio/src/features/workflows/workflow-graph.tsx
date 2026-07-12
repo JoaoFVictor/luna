@@ -258,6 +258,7 @@ export function WorkflowGraph({
   const canConnect = onConnectNodes !== undefined
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>()
   const [clickConnectionSourceId, setClickConnectionSourceId] = useState<string>()
+  const [dragPositions, setDragPositions] = useState<WorkflowPositions>({})
   const instance = useRef<ReactFlowInstance<WorkflowFlowNode | WorkflowGroupNode, WorkflowDependencyEdge | WorkflowDataEdge> | null>(null)
   const previousFitRequest = useRef(fitViewRequest)
   const startClickConnection = useCallback((sourceId: string) => {
@@ -272,10 +273,14 @@ export function WorkflowGraph({
     }
     setClickConnectionSourceId(undefined)
   }, [clickConnectionSourceId, isValidConnection, onConnectNodes, onInvalidConnection])
+  const renderedPositions = useMemo(
+    () => ({ ...positions, ...dragPositions }),
+    [dragPositions, positions],
+  )
   const elements = useMemo(
     () => graphElements(
       graph,
-      positions,
+      renderedPositions,
       execution,
       canConnect,
       clickConnectionSourceId,
@@ -293,7 +298,7 @@ export function WorkflowGraph({
       direction,
       dataConnections,
     ),
-    [authoringStates, canConnect, clickConnectionSourceId, dataConnections, diagnostics, direction, edgeDiagnostics, execution, finishClickConnection, graph, onConnectToEmpty, onDeleteDependency, onInsertDependency, positions, presentations, startClickConnection, testData],
+    [authoringStates, canConnect, clickConnectionSourceId, dataConnections, diagnostics, direction, edgeDiagnostics, execution, finishClickConnection, graph, onConnectToEmpty, onDeleteDependency, onInsertDependency, presentations, renderedPositions, startClickConnection, testData],
   )
   const workflowNodes = useMemo<WorkflowFlowNode[]>(
     () => {
@@ -378,7 +383,23 @@ export function WorkflowGraph({
           onSelectNode?.("")
         }}
         onNodeDragStop={(_event, node) => {
-          if (node.type !== "workflow-group") onMoveNode?.(node.id, node.position)
+          if (node.type === "workflow-group") return
+          setDragPositions((current) => {
+            if (current[node.id] === undefined) return current
+            const next = { ...current }
+            delete next[node.id]
+            return next
+          })
+          onMoveNode?.(node.id, node.position)
+        }}
+        onNodeDrag={(_event, node) => {
+          if (node.type === "workflow-group") return
+          setDragPositions((current) => {
+            const previous = current[node.id]
+            return previous?.x === node.position.x && previous.y === node.position.y
+              ? current
+              : { ...current, [node.id]: node.position }
+          })
         }}
         onConnect={(connection: Connection) => {
           if (connection.source !== null && connection.target !== null) {

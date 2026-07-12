@@ -82,14 +82,21 @@ export async function loadWorkflowDefinition(
   workflowId: string,
   options: LoadWorkflowDefinitionOptions = {}
 ): Promise<WorkflowDefinition> {
-  return await loadWorkflowDefinitionRecursive(workflowsRoot, workflowId, options, []);
+  return await loadWorkflowDefinitionRecursive(
+    workflowsRoot,
+    workflowId,
+    options,
+    [],
+    new Map()
+  );
 }
 
 async function loadWorkflowDefinitionRecursive(
   workflowsRoot: string,
   workflowId: string,
   options: LoadWorkflowDefinitionOptions,
-  ancestors: readonly string[]
+  ancestors: readonly string[],
+  resolved: Map<string, WorkflowDefinition>
 ): Promise<WorkflowDefinition> {
   assertSafeSegment(workflowId);
   if (ancestors.includes(workflowId)) {
@@ -98,6 +105,10 @@ async function loadWorkflowDefinitionRecursive(
       `Workflow composition cycle detected: ${[...ancestors, workflowId].join(" -> ")}.`
     );
   }
+  const cached = resolved.get(workflowId);
+  if (cached !== undefined) {
+    return cached;
+  }
   const directory = path.join(workflowsRoot, workflowId);
   const defaultAgentsRoot =
     path.basename(path.resolve(workflowsRoot)) === "workflows"
@@ -105,7 +116,7 @@ async function loadWorkflowDefinitionRecursive(
       : path.resolve(workflowsRoot, "agents");
   const workflowYaml = await readFile(path.join(directory, "workflow.yaml"), "utf8");
 
-  return await loadWorkflowDefinitionFromMetadata({
+  const definition = await loadWorkflowDefinitionFromMetadata({
     directory,
     metadata: parseWorkflowYaml(workflowYaml) as WorkflowMetadata,
     workflowId,
@@ -119,7 +130,8 @@ async function loadWorkflowDefinitionRecursive(
           workflowsRoot,
           childId,
           options,
-          [...ancestors, workflowId]
+          [...ancestors, workflowId],
+          resolved
         );
       } catch (cause) {
         if (cause instanceof WorkflowDefinitionError) throw cause;
@@ -131,6 +143,8 @@ async function loadWorkflowDefinitionRecursive(
       }
     }
   });
+  resolved.set(workflowId, definition);
+  return definition;
 }
 
 export async function loadWorkflowDefinitionFromMetadata({

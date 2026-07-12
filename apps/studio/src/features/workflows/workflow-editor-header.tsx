@@ -55,6 +55,10 @@ export function WorkflowEditorHeader({
   onPlanApply: () => void
 }) {
   const canRunCommands = canMutate && !hasLocalChanges
+  const canTest = canRunCommands &&
+    draft.status === "valid" &&
+    validation?.status === "valid" &&
+    validation.compiled
   return (
     <header className="border-b bg-background px-4 py-3">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -96,8 +100,12 @@ export function WorkflowEditorHeader({
           </div>
           <Button
             variant="outline"
-            disabled={hasLocalChanges || saving}
-            title={hasLocalChanges ? "Aguarde o salvamento automático antes de testar" : undefined}
+            disabled={!canTest || saving}
+            title={hasLocalChanges
+              ? "Aguarde o salvamento automático antes de testar"
+              : canTest
+                ? undefined
+                : "Corrija os problemas do workflow antes de testar"}
             onClick={onTest}
           >
             <PlayIcon aria-hidden="true" /> Testar
