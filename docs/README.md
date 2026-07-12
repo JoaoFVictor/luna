@@ -25,16 +25,12 @@ CLI / input adapter
 - [Capabilities reference](capabilities-reference.md)
 - [Runtime and observability](runtime-and-observability.md)
 - [Configuration reference](configuration-reference.md)
-- [Luna Studio operational guide](studio-guide.md)
 
 ## Luna Studio
 
 The Studio is the implemented local control plane for workflow and agent
 authoring, isolated agent smoke tests, classified workflow configuration,
 deterministic launch, run inspection, and Git-backed restore-as-draft:
-
-- [Operational guide and current limits](studio-guide.md)
-- [Architecture decisions](studio-architecture.md)
 
 Recipes live in `examples/`. Agent-facing operating rules live in `skills/`.
 

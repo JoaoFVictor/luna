@@ -33,7 +33,7 @@ Runtime entrypoints:
   projection, and summary artifacts.
 - `src/studio/**` and `apps/studio/`: local React control plane for authoring,
   classified configuration, deterministic launch, run inspection, and
-  restore-as-draft. See the [Luna Studio guide](docs/studio-guide.md).
+  restore-as-draft.
 
 Authoring surfaces:
 
