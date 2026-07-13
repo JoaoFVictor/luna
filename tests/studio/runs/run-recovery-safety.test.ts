@@ -5,6 +5,7 @@ import {
 } from "../../../src/core/runtime/state.js";
 import type { NativeStudioQueuedRun } from "../../../src/studio/adapters/filesystem/run-dispatch-contracts.js";
 import {
+  nativeStudioActiveResumeReplayIsSafe,
   nativeStudioCheckpointReplayIsSafe,
   nativeStudioFailedTerminalIsSafeForRuntimeState
 } from "../../../src/studio/adapters/native/run-recovery-safety.js";
@@ -108,6 +109,48 @@ describe("native Studio checkpoint replay safety", () => {
       confirmation_required: false,
       operation_id: "extension.read"
     }]))).toBe(false);
+  });
+});
+
+describe("native Studio active resume replay safety", () => {
+  it("allows recovery before any resumed node starts", () => {
+    expect(nativeStudioActiveResumeReplayIsSafe({
+      sideEffects: [imageGenerationEffect, publishEffect],
+      activeNodeIds: [],
+      lifecycleProjection: "exact"
+    })).toBe(true);
+  });
+
+  it("never replays a started external publish", () => {
+    expect(nativeStudioActiveResumeReplayIsSafe({
+      sideEffects: [imageGenerationEffect, publishEffect],
+      activeNodeIds: ["publish_post"],
+      lifecycleProjection: "exact"
+    })).toBe(false);
+  });
+
+  it("maps a durable loop execution id to its logical unsafe node", () => {
+    expect(nativeStudioActiveResumeReplayIsSafe({
+      sideEffects: [{ ...publishEffect, node_id: "review_loop/publish_post" }],
+      activeNodeIds: ["review_loop:iteration-12:publish_post"],
+      lifecycleProjection: "exact"
+    })).toBe(false);
+  });
+
+  it("does not collide a top-level node with an identically named loop body node", () => {
+    expect(nativeStudioActiveResumeReplayIsSafe({
+      sideEffects: [publishEffect],
+      activeNodeIds: ["review_loop:iteration-12:publish_post"],
+      lifecycleProjection: "exact"
+    })).toBe(true);
+  });
+
+  it("fails closed when lifecycle evidence is degraded", () => {
+    expect(nativeStudioActiveResumeReplayIsSafe({
+      sideEffects: [publishEffect],
+      activeNodeIds: [],
+      lifecycleProjection: "degraded"
+    })).toBe(false);
   });
 });
 

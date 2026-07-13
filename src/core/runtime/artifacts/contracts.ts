@@ -13,6 +13,7 @@ export const ArtifactManifestSchema = z
     media_type: z.string().min(1).optional(),
     semantic_type: ArtifactSemanticTypeSchema.optional(),
     content_hash: z.string().min(1).optional(),
+    content_size_bytes: z.number().int().safe().nonnegative().optional(),
     artifact_path: z.string().min(1).optional(),
     status: z.enum(["pending", "committed", "failed"]).optional(),
     attempt: z.number().int().positive().optional(),
@@ -39,9 +40,11 @@ export const ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA = {
   max_scanned_entries: 200_000
 } as const;
 
+export const ARTIFACT_MANIFEST_READ_MAX_BYTES = 1024 * 1024;
+
 const ARTIFACT_MANIFEST_LIST_LIMIT_DEFAULTS: ArtifactManifestListLimits = {
   max_entries: ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA.max_entries,
-  max_entry_bytes: 1024 * 1024,
+  max_entry_bytes: ARTIFACT_MANIFEST_READ_MAX_BYTES,
   max_total_bytes: 256 * 1024 * 1024,
   max_scanned_entries: ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA.max_scanned_entries
 };

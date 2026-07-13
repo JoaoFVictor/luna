@@ -117,6 +117,34 @@ describe("Pi imagegen extension", () => {
     expect(dispose).toHaveBeenCalledOnce();
   });
 
+  it("bounds stalled session initialization and disposes a session that arrives late", async () => {
+    const execute = vi.fn();
+    const dispose = vi.fn();
+    let resolveSession: ((session: {
+      extensionRunner: { createContext(): never };
+      getToolDefinition(): never;
+      dispose(): void;
+    }) => void) | undefined;
+    const factory = createPiImagegenProviderFactory({
+      createSession: async () => await new Promise((resolve) => {
+        resolveSession = resolve;
+      })
+    });
+
+    await expect(factory.createProvider().generateImage(
+      input,
+      execution({ timeoutMs: 5 })
+    )).rejects.toMatchObject({ code: "image_generation_timeout" });
+
+    resolveSession?.({
+      extensionRunner: { createContext: () => ({}) as never },
+      getToolDefinition: () => ({ name: "imagegen", execute }) as never,
+      dispose
+    });
+    await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce());
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("propagates caller cancellation to the extension and cleans up", async () => {
     let receivedSignal: AbortSignal | undefined;
     let markStarted: (() => void) | undefined;

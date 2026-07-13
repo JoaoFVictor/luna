@@ -124,7 +124,10 @@ export class StudioRunInterruptService {
           ...(review === undefined ? {} : {
             review: {
               targets: review.targets,
-              expected_artifact_count: review.artifact_refs.length
+              expected_artifact_count: review.artifact_refs.length,
+              ...(review.approval === undefined
+                ? {}
+                : { approval: review.approval })
             }
           }),
           ...(decision === undefined ? {} : { decision })
@@ -170,6 +173,15 @@ export class StudioRunInterruptService {
       throw runStoreError("run_transition_invalid", "Review materials are not available yet");
     }
     const comment = request.comment;
+    if (
+      request.action === "approve" &&
+      interrupt.payload.review?.approval?.allowed === false
+    ) {
+      throw runStoreError(
+        "run_transition_invalid",
+        interrupt.payload.review.approval.reason
+      );
+    }
     if (request.action === "request_changes") {
       const allowedTargets = new Set(interrupt.payload.review?.targets.map((target) => target.id) ?? []);
       if (

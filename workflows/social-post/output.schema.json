@@ -19,14 +19,14 @@
         "provider_id": { "type": "string", "minLength": 1 },
         "external_id": { "type": "string", "minLength": 1 },
         "url": { "type": "string", "minLength": 1 },
-        "text": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 10000 },
         "media_id": { "type": "string", "minLength": 1 }
       }
     },
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["action", "decision", "draft", "image"],
+      "required": ["action", "decision", "draft", "image", "prepared"],
       "properties": {
         "action": { "type": "string", "const": "reject" },
         "decision": {
@@ -39,7 +39,8 @@
           }
         },
         "draft": { "$ref": "#/definitions/draft" },
-        "image": { "$ref": "#/definitions/image" }
+        "image": { "$ref": "#/definitions/image" },
+        "prepared": { "$ref": "#/definitions/prepared" }
       }
     }
   ],
@@ -55,13 +56,14 @@
         "claims_to_verify"
       ],
       "properties": {
-        "text": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 10000 },
         "image_prompt": { "type": "string", "minLength": 1, "maxLength": 4000 },
-        "strategy": { "type": "string", "minLength": 1 },
-        "character_count": { "type": "integer", "minimum": 1, "maximum": 280 },
+        "strategy": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "character_count": { "type": "integer", "minimum": 1, "maximum": 10000 },
         "claims_to_verify": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "maxItems": 64,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
         }
       }
     },
@@ -92,6 +94,77 @@
         "media_type": { "type": "string", "const": "image/png" },
         "asset": { "$ref": "#/definitions/binary_asset" },
         "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "prepared": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_id",
+        "text_hash",
+        "image_content_hash",
+        "validation"
+      ],
+      "properties": {
+        "provider_id": { "type": "string", "minLength": 1 },
+        "text_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "image_content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "valid",
+            "code",
+            "message",
+            "text_weighted_length",
+            "text_max_weighted_length",
+            "text_policy_id",
+            "text_policy_revision",
+            "image_size_bytes",
+            "image_max_bytes",
+            "image_media_type",
+            "image_width",
+            "image_height"
+          ],
+          "properties": {
+            "valid": { "type": "boolean" },
+            "code": {
+              "type": "string",
+              "enum": ["ready", "text_invalid", "image_too_large", "image_invalid"]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "text_weighted_length": { "type": "integer", "minimum": 0 },
+            "text_max_weighted_length": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "text_policy_id": { "type": "string", "minLength": 1 },
+            "text_policy_revision": { "type": "string", "minLength": 1 },
+            "image_size_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "image_max_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 26214400
+            },
+            "image_media_type": { "type": "string", "const": "image/png" },
+            "image_width": { "type": "integer", "minimum": 0 },
+            "image_height": { "type": "integer", "minimum": 0 }
+          }
+        }
       }
     },
     "binary_asset": {

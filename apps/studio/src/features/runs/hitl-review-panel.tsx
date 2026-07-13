@@ -150,7 +150,12 @@ export function HitlReviewPanel({
       (interrupts.data?.pages ?? [])
         .flatMap((page) => page.items)
         .map((item) => [item.interrupt_id, item] as const),
-    ).values()].sort((left, right) => left.created_at.localeCompare(right.created_at)),
+    ).values()].sort((left, right) => {
+      const byCreatedAt = left.created_at.localeCompare(right.created_at)
+      return byCreatedAt === 0
+        ? left.interrupt_id.localeCompare(right.interrupt_id)
+        : byCreatedAt
+    }),
     [interrupts.data?.pages],
   )
   const pending = active
@@ -219,6 +224,7 @@ export function HitlReviewPanel({
   if (ordered.length === 0) return null
   const trimmedComment = comment.trim()
   const materialsUnavailable = pending?.materials_status !== "ready"
+  const approvalBlocked = pending?.review?.approval?.allowed === false
   const disabled = !session.canMutate || pending === undefined || resume.isPending || resuming || materialsUnavailable
   const resumeFailure = resume.isError ? describeStudioError(resume.error) : undefined
 
@@ -276,6 +282,14 @@ export function HitlReviewPanel({
                 <p className="mt-2 font-mono text-xs">Código: {resumeFailure.code}</p>
               )}
             </AlertDescription>
+          </Alert>
+        )}
+
+        {pending?.review?.approval?.allowed === false && (
+          <Alert variant="destructive">
+            <XCircleIcon aria-hidden="true" />
+            <AlertTitle>Esta versão ainda não pode ser aprovada</AlertTitle>
+            <AlertDescription>{pending.review.approval.reason}</AlertDescription>
           </Alert>
         )}
 
@@ -343,7 +357,7 @@ export function HitlReviewPanel({
               )}
               <Button
                 type="button"
-                disabled={disabled}
+                disabled={disabled || approvalBlocked}
                 onClick={() => resume.mutate({
                   interrupt: pending,
                   input: {
@@ -357,6 +371,7 @@ export function HitlReviewPanel({
             </div>
             {!session.canMutate && <p className="text-xs text-destructive">A sessão atual é somente leitura; reabra o Studio com uma sessão mutável para decidir.</p>}
             {materialsUnavailable && <p className="text-xs text-muted-foreground">Aprovar, rejeitar e solicitar alterações ficam indisponíveis até todos os materiais desta revisão estarem prontos.</p>}
+            {approvalBlocked && <p className="text-xs text-destructive">Solicite as alterações necessárias ou rejeite esta versão; a aprovação está bloqueada pelo runtime.</p>}
           </form>
         )}
       </CardContent>

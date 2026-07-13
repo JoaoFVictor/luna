@@ -90,7 +90,32 @@ export async function preflightWorkflowResume<TInput extends ResumeWorkflowInput
     interrupt
   });
   validateReviewDecisionTargets(input, interrupt.payload?.review?.targets);
+  validateReviewApproval(input, interrupt.payload?.review?.approval);
   return validated;
+}
+
+function validateReviewApproval(
+  input: Pick<ResumeWorkflowInput, "decision" | "interrupt_id">,
+  approval: { readonly allowed: boolean; readonly reason: string } | undefined
+): void {
+  if (
+    approval === undefined ||
+    approval.allowed ||
+    !isCheckpointPlainObject(input.decision) ||
+    input.decision.action !== "approve"
+  ) {
+    return;
+  }
+  throw runtimeError(
+    approval.reason,
+    "runtime_node_output_schema_invalid",
+    {
+      details: {
+        interrupt_id: input.interrupt_id,
+        approval_blocked: true
+      }
+    }
+  );
 }
 
 function validateReviewDecisionTargets(

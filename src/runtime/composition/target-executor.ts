@@ -63,6 +63,10 @@ export type NativeWorkflowRunInput = Omit<TargetExecutorInput, "invocation"> & {
    * never replaces or suppresses the runtime error.
    */
   readonly onFailedState?: (state: LunaRuntimeState) => void;
+  /** Authoritative durability barrier immediately before node execution. */
+  readonly onBeforeNodeExecution?: (
+    input: { readonly node_id: string; readonly attempt: number }
+  ) => Promise<void>;
   /** Ordered control-plane projection of runtime node lifecycle events. */
   readonly onLifecycleEvent?: WorkflowNodeLifecycleObserver;
   /** Best-effort notification that lifecycle projection degraded. */

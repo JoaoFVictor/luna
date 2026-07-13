@@ -10,7 +10,9 @@ import {
   pullRequestReviewPortsFromBuiltInOptions
 } from "../../capabilities/pull-request-review/built-ins.js";
 import {
+  createSocialPostPrepareBuiltIn,
   createSocialPostPublishBuiltIn,
+  socialPostApplyRevisionScopeBuiltIn,
   socialPostPortsFromBuiltInOptions
 } from "../../capabilities/social-post/built-ins.js";
 import {
@@ -134,6 +136,9 @@ export const pullRequestReviewPublishBuiltIn =
 export const socialPostPublishBuiltIn = createSocialPostPublishBuiltIn(
   socialPostPortsFromBuiltInOptions
 );
+export const socialPostPrepareBuiltIn = createSocialPostPrepareBuiltIn(
+  socialPostPortsFromBuiltInOptions
+);
 export const imageGenerateBuiltIn = createImageGenerateBuiltIn(
   imageGenerationPortsFromBuiltInOptions
 );
@@ -181,6 +186,8 @@ export function createNativeProviderBuiltIns({
       gitPushBranchBuiltIn,
       changeRequestCreateBuiltIn,
       pullRequestReviewPublishBuiltIn,
+      socialPostApplyRevisionScopeBuiltIn,
+      socialPostPrepareBuiltIn,
       socialPostPublishBuiltIn,
       imageGenerateBuiltIn,
       prepareImplementationWorktreeBuiltIn,

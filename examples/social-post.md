@@ -44,6 +44,18 @@ least one target; it produces a new version and another review gate. Approving
 unlocks exactly one `social-post.publish` attempt. Rejecting completes the run
 normally without publishing.
 
+Revision targets are enforced by `social-post.apply_revision_scope`, not by
+prompt compliance. An image-only request preserves the effective text and its
+supporting metadata byte-for-byte; a text-only request preserves the image
+prompt and skips generation, retaining the exact immutable asset reference.
+
+Before each review gate, `social-post.prepare` verifies the generated PNG's
+bytes, content hash, media type, and size against the selected provider. X
+declares a 5 MiB image upload limit, bounded by Luna's 25 MiB hard safety cap,
+so an image that is already known to be unpublishable is shown with a
+diagnostic. Approval remains blocked by the runtime while requesting a new
+image or rejecting the version remains available.
+
 The relevant artifacts are:
 
 - `loops/editorial/iterations/N/social-post-draft.json` and `social-post-draft.md`

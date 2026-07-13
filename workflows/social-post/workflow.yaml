@@ -22,7 +22,7 @@ nodes:
     type: loop
     body:
       nodes:
-        - id: draft
+        - id: proposal
           type: agent
           agent: social-post-writer
           output_schema: output.schema.json
@@ -36,6 +36,17 @@ nodes:
             constraints:
               character_limit: 280
               platform: X/Twitter
+
+        - id: draft
+          type: built_in
+          uses: social-post.apply_revision_scope
+          input:
+            proposed_draft:
+              expression: "$.steps.proposal"
+            previous_draft:
+              expression: "$exists($.steps.draft) ? $.steps.draft : null"
+            targets:
+              expression: "$exists($.steps.review.action) ? $.steps.review.targets : ['text', 'image']"
           artifacts:
             - path: social-post-draft.json
               publisher: artifacts.manifest_publisher
@@ -48,6 +59,7 @@ nodes:
               source:
                 expression: "$.steps.draft.text"
               format: markdown
+          after: [proposal]
 
         - id: image
           type: built_in
@@ -76,22 +88,40 @@ nodes:
               format: json
           after: [draft]
 
+        - id: prepare
+          type: built_in
+          uses: social-post.prepare
+          input:
+            provider_id:
+              expression: "$.config.social_post.provider"
+            text:
+              expression: "$.steps.draft.text"
+            image_asset:
+              expression: "$.steps.image.asset"
+          after: [image]
+
         - id: review
           type: human_gate
           uses: hitl.review
           input:
-            prompt: Revise esta versão. Aprove, rejeite ou solicite quantas alterações forem necessárias antes da publicação no X.
+            prompt:
+              expression: "$.steps.prepare.validation.valid ? 'Revise esta versão. Aprove, rejeite ou solicite quantas alterações forem necessárias antes da publicação no X.' : $.steps.prepare.validation.message"
             review:
+              approval:
+                allowed:
+                  expression: "$.steps.prepare.validation.valid"
+                reason:
+                  expression: "$.steps.prepare.validation.message"
               targets:
                 - id: text
                   label: Texto
                 - id: image
                   label: Imagem
-          after: [image]
+          after: [prepare]
     repeat_when:
       expression: "$.steps.review.action = 'request_changes'"
     result:
-      expression: "{'action': $.steps.review.action, 'decision': $.steps.review, 'draft': $.steps.draft, 'image': $.steps.image}"
+      expression: "{'action': $.steps.review.action, 'decision': $.steps.review, 'draft': $.steps.draft, 'image': $.steps.image, 'prepared': $.steps.prepare}"
     halt_when:
       expression: "$.result.action = 'reject'"
 
@@ -111,6 +141,8 @@ nodes:
         expression: "$.steps.editorial.draft.text"
       image_asset:
         expression: "$.steps.editorial.image.asset"
+      preparation:
+        expression: "$.steps.editorial.prepared"
     artifacts:
       - path: social-post-published.json
         publisher: artifacts.manifest_publisher

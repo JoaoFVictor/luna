@@ -1,8 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
+import {
+  createMemoryArtifactContentStore,
+  createMemoryArtifactManifestStore
+} from "../../../src/runtime/backends/memory/artifacts.js";
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 
 describe("memory runtime backends", () => {
+  it("rejects oversized UTF-8 content before materializing the read result", async () => {
+    const store = createMemoryArtifactContentStore();
+    const content = "🙂".repeat(1_024);
+    const pending = await store.write({
+      transaction_id: "bounded-read",
+      run_id: "run-bounded",
+      node_id: "image",
+      artifact_id: "image",
+      artifact_path: "image.txt",
+      content,
+      content_hash: "sha256:bounded"
+    });
+    await store.commit({
+      transaction_id: "bounded-read",
+      run_id: "run-bounded",
+      node_id: "image",
+      artifact_id: "image",
+      artifact_path: "image.txt",
+      pending_uri: pending.pending_uri,
+      content_hash: "sha256:bounded",
+      overwrite_policy: "forbid"
+    });
+
+    await expect(store.read?.({
+      run_id: "run-bounded",
+      artifact_path: "image.txt",
+      max_bytes: 4_095
+    })).rejects.toMatchObject({ code: "artifact_content_read_limit_exceeded" });
+    await expect(store.read?.({
+      run_id: "run-bounded",
+      artifact_path: "image.txt",
+      max_bytes: 4_096
+    })).resolves.toHaveLength(4_096);
+  });
+
   it("round-trips bounded semantic metadata and accepts legacy manifests", async () => {
     const store = createMemoryArtifactManifestStore();
     const base = {

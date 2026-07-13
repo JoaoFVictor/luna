@@ -12,6 +12,10 @@ export type InterruptReviewTarget = {
 export type InterruptReview = {
   targets: InterruptReviewTarget[];
   artifact_refs: RuntimeArtifactRef[];
+  approval?: {
+    allowed: boolean;
+    reason: string;
+  };
 };
 
 export type InterruptPayload = {

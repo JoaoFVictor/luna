@@ -52,6 +52,58 @@ describe("composition-tree projection", () => {
     expect(ids).toContain("a.b");
   });
 
+  it("projects durable loop body nodes under their owning loop", () => {
+    const root = workflow("loop-owner", [{
+      id: "editorial/loop",
+      type: "loop",
+      body: {
+        nodes: [
+          { id: "draft/image", type: "built_in", uses: "test.generate" },
+          {
+            id: "review",
+            type: "human_gate",
+            uses: "hitl.review",
+            after: ["draft/image"]
+          }
+        ]
+      },
+      repeat_when: { expression: "false" },
+      result: { expression: "{}" }
+    }]);
+
+    const projected = composedWorkflowNodes(root);
+    expect(projected.map(({ qualifiedNodeId }) => qualifiedNodeId)).toEqual([
+        "editorial%2Floop",
+        "editorial%2Floop/draft%2Fimage",
+        "editorial%2Floop/review"
+      ]);
+    expect(projected.map(({ executionBoundaryNodeId }) => executionBoundaryNodeId))
+      .toEqual([
+        "editorial/loop",
+        "editorial%2Floop/draft%2Fimage",
+        "editorial%2Floop/review"
+      ]);
+  });
+
+  it("attributes composed descendants to the parent runtime call boundary", () => {
+    const child = workflow("child", [
+      { id: "model", type: "agent", agent: "writer", output_schema: "out.json" },
+      { id: "write", type: "built_in", uses: "provider.write", after: ["model"] }
+    ]);
+    const parent = workflow("parent", [
+      { id: "child/call", type: "workflow", workflow: "child", input: {} }
+    ], { child });
+
+    expect(composedWorkflowNodes(parent).map((entry) => ({
+      id: entry.qualifiedNodeId,
+      boundary: entry.executionBoundaryNodeId
+    }))).toEqual([
+      { id: "child%2Fcall", boundary: "child/call" },
+      { id: "child%2Fcall/model", boundary: "child/call" },
+      { id: "child%2Fcall/write", boundary: "child/call" }
+    ]);
+  });
+
   it("walks composition inputs inside loops without making workflow calls legal there", () => {
     const child = {
       ...workflow("child", []),

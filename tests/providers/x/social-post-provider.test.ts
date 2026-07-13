@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SocialPostPublishInput } from "../../../src/capabilities/social-post/contracts.js";
 import { createXSocialPostProviderFactory } from "../../../src/providers/x/social-post/factory.js";
+import {
+  X_MAX_WEIGHTED_LENGTH,
+  X_TEXT_POLICY_ID,
+  X_TEXT_POLICY_REVISION
+} from "../../../src/providers/x/social-post/text-policy.js";
 
 const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+const crcCorrectInvalidIdatBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAACElEQVRub3QtemxpYq351UYAAAAASUVORK5CYII=";
 
 const input: SocialPostPublishInput = {
   operation_id: "social-post.publish",
@@ -40,6 +46,21 @@ describe("X social post provider", () => {
         data: { id: "123456", text: "Olá, X!" }
       }), { status: 201, headers: { "content-type": "application/json" } })) as typeof fetch;
     const provider = providerFor(fetchImpl);
+
+    expect(provider.limits).toEqual({
+      text: {
+        policy_id: X_TEXT_POLICY_ID,
+        policy_revision: X_TEXT_POLICY_REVISION,
+        max_weighted_length: X_MAX_WEIGHTED_LENGTH
+      },
+      image: {
+        max_bytes: 5 * 1024 * 1024,
+        media_types: ["image/png"],
+        max_width: 8192,
+        max_height: 8192,
+        max_pixels: 64 * 1024 * 1024
+      }
+    });
 
     await expect(provider.publishPost(input)).resolves.toEqual({
       operation_id: "social-post.publish",
@@ -106,5 +127,24 @@ describe("X social post provider", () => {
     await expect(provider.publishPost(input)).rejects.toMatchObject({
       code: "social_post_auth_failed"
     });
+  });
+
+  it("revalidates weighted text and structural PNG before any X request", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const provider = providerFor(fetchImpl);
+
+    await expect(provider.publishPost({
+      ...input,
+      text: "漢".repeat(141)
+    })).rejects.toMatchObject({ code: "social_post_publish_failed" });
+    await expect(provider.publishPost({
+      ...input,
+      image_base64: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64")
+    })).rejects.toMatchObject({ code: "social_post_publish_failed" });
+    await expect(provider.publishPost({
+      ...input,
+      image_base64: crcCorrectInvalidIdatBase64
+    })).rejects.toMatchObject({ code: "social_post_publish_failed" });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

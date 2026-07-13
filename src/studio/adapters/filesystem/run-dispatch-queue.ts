@@ -104,6 +104,29 @@ export class NativeStudioRunDispatchQueue {
     return await this.#resumes.read(resumeId);
   }
 
+  async readResumeIdentity(resumeId: string) {
+    return await this.#resumes.readIdentity(resumeId);
+  }
+
+  async inspectResumeCommand(resumeId: string) {
+    return await this.#resumes.inspectCommand(resumeId);
+  }
+
+  async initializeResumeStage(job: NativeStudioQueuedResume): Promise<void> {
+    await this.#resumes.initializeStage(job);
+  }
+
+  async readResumeStage(job: NativeStudioQueuedResume) {
+    return await this.#resumes.readStage(job);
+  }
+
+  async markResumeEffectMayHaveOccurred(
+    job: NativeStudioQueuedResume,
+    nodeId: string
+  ): Promise<void> {
+    await this.#resumes.markEffectMayHaveOccurred(job, nodeId);
+  }
+
   async listResumeIds(): Promise<readonly string[]> {
     return await this.#resumes.listIds();
   }

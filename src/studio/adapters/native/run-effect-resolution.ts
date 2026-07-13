@@ -33,6 +33,7 @@ function effectId(
 
 function effectForPolicy(options: {
   readonly nodeId: string;
+  readonly sourceNodeId: string;
   readonly registrationId: string;
   readonly policyId: string;
   readonly operationId: string;
@@ -63,15 +64,15 @@ function effectForPolicy(options: {
     : "provider_read");
   return {
     effect_id: effectId("effect", {
-      node_id: options.nodeId,
+      source_node_id: options.sourceNodeId,
       registration_id: options.registrationId,
       policy_id: options.policyId,
       operation_id: options.operationId
     }),
     category,
     description: confirmationRequired
-      ? `Node ${options.nodeId} may perform write operation ${options.operationId}.`
-      : `Node ${options.nodeId} may perform read operation ${options.operationId}.`,
+      ? `Node ${options.sourceNodeId} may perform write operation ${options.operationId}.`
+      : `Node ${options.sourceNodeId} may perform read operation ${options.operationId}.`,
     confirmation_required: confirmationRequired,
     ...(options.retrySemantics === undefined
       ? {}
@@ -93,7 +94,11 @@ function declaredEffects(
   const indexes = registry.registrations();
   const effects = new Map<string, StudioRunPotentialEffect>();
   for (const entry of composedWorkflowNodes(workflow)) {
-    const { node, qualifiedNodeId: nodeId } = entry;
+    const {
+      node,
+      qualifiedNodeId: sourceNodeId,
+      executionBoundaryNodeId: nodeId
+    } = entry;
     if (node.type === "human_gate" || node.type === "workflow" || node.type === "loop") {
       continue;
     }
@@ -112,6 +117,7 @@ function declaredEffects(
       for (const operationId of policy?.side_effect_operation_ids ?? []) {
         const effect = effectForPolicy({
           nodeId,
+          sourceNodeId,
           registrationId,
           policyId,
           operationId,
@@ -171,7 +177,11 @@ async function agentEffects(
   );
   const effects: StudioRunPotentialEffect[] = [];
   const uncertainties: StudioRunEffectUncertainty[] = [];
-  for (const { node, qualifiedNodeId: nodeId } of entries) {
+  for (const {
+    node,
+    qualifiedNodeId: sourceNodeId,
+    executionBoundaryNodeId: nodeId
+  } of entries) {
     const agentIds = node.type === "agent"
       ? [node.agent]
       : node.type === "pattern"
@@ -190,12 +200,12 @@ async function agentEffects(
       }
       effects.push({
         effect_id: effectId("effect", {
-          node_id: nodeId,
+          source_node_id: sourceNodeId,
           agent_id: agentId,
           kind: "model"
         }),
         category: "model_call",
-        description: `Node ${nodeId} may invoke model agent ${agentId}.`,
+        description: `Node ${sourceNodeId} may invoke model agent ${agentId}.`,
         confirmation_required: false,
         retry_semantics: "retry_forbidden",
         idempotency_scope: "attempt",
@@ -204,12 +214,12 @@ async function agentEffects(
       });
       uncertainties.push({
         uncertainty_id: effectId("uncertainty", {
-          node_id: nodeId,
+          source_node_id: sourceNodeId,
           agent_id: agentId,
           kind: "dynamic_agent_tools"
         }),
         kind: "dynamic_agent_tools",
-        description: `Agent ${agentId} can choose among its declared local and MCP runtime tools dynamically.`,
+        description: `Agent ${agentId} at node ${sourceNodeId} can choose among its declared local and MCP runtime tools dynamically.`,
         may_include_unlisted_write: agentMayIncludeUnlistedWrite(agent),
         node_id: nodeId
       });

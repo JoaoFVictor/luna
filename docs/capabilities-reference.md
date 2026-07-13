@@ -86,6 +86,8 @@ Runtime, context, and reports:
 - `reports.final_report`
 - `pull-request-review.publish`
 - `image-generation.generate`
+- `social-post.apply_revision_scope`
+- `social-post.prepare`
 - `social-post.publish`
 - `task-context.collect`
 - `task-context.final_report`
@@ -185,10 +187,24 @@ OpenAI provider is involved.
 Durable editorial revisions use the generic workflow `loop` node. Conditional
 body nodes preserve unselected outputs exactly, and every iteration receives a
 unique checkpoint, interrupt, execution identity, and artifact namespace.
+`social-post.apply_revision_scope` is the provider-neutral trust boundary for
+model proposals: the `text` target owns the publication text, strategy,
+derived character count, and claims; the `image` target owns only the image
+prompt. Fields outside the human-selected targets are copied from the prior
+effective draft, regardless of what the agent proposes. A text-only revision
+also skips image generation, preserving the opaque asset reference and hash.
 
-`social-post.publish` is provider-neutral and accepts approved text plus an
-opaque PNG asset reference. The bundled `x` provider reads the asset only at
-the side-effect boundary, uploads it through `POST /2/media/upload`,
+`social-post.prepare` is provider-neutral and runs inside the editorial loop
+before human review. It checks the immutable PNG bytes and hash against the
+selected provider's declared upload contract. The capability enforces an
+absolute 25 MiB safety ceiling; the bundled `x` provider declares its 5 MiB
+image limit. An invalid image still reaches human review with an actionable
+diagnostic, but the runtime rejects approval without resolving the interrupt;
+the reviewer can request regeneration or reject the version.
+
+`social-post.publish` accepts exactly the prepared text and opaque PNG asset
+reference, repeats the immutable asset validation at the side-effect boundary,
+uploads it through `POST /2/media/upload`,
 and attaches its media id through `POST /2/tweets` with an OAuth user access
 token. Its write policy forbids
 automatic retry because a transport failure can leave publication outcome
@@ -219,7 +235,10 @@ Human gates:
 Quality gates do not create runtime interrupts. `hitl.approval` creates a
 required binary approval interrupt (`approve` or `reject`). `hitl.review`
 creates a required editorial review interrupt that additionally accepts a
-targeted `request_changes` decision for durable review loops.
+targeted `request_changes` decision for durable review loops. A review may
+declare `review.approval.allowed` plus an actionable reason; when false, the
+runtime rejects `approve` before resolving the interrupt while change requests
+and rejection remain available.
 
 `quality-gates.agent_review` accepts an optional collected `input.context`.
 Context-dependent reviewers require the same explicit collector, dependency,

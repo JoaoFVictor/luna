@@ -58,7 +58,10 @@ function clonePayload(payload: InterruptPayload): InterruptPayload {
     ...(payload.review === undefined ? {} : {
       review: {
         targets: payload.review.targets.map((target) => ({ ...target })),
-        artifact_refs: payload.review.artifact_refs.map((reference) => ({ ...reference }))
+        artifact_refs: payload.review.artifact_refs.map((reference) => ({ ...reference })),
+        ...(payload.review.approval === undefined
+          ? {}
+          : { approval: { ...payload.review.approval } })
       }
     }),
     created_at: payload.created_at,

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { capabilityManifest, type CapabilitySideEffectCategory } from "../../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
+import { loadWorkflowDefinition } from "../../../src/core/workflow/definition.js";
 import type { WorkflowDefinition } from "../../../src/core/workflow/definition-types.js";
+import { nativeLunaPlatformRegistrations } from "../../../src/platform/native/native-platform-registrations.js";
 import { resolveNativeStudioRunEffects } from "../../../src/studio/adapters/native/run-effect-resolution.js";
 
 function workflow(
@@ -111,5 +113,156 @@ describe("native Studio effect categories", () => {
       capabilityId: "git-lookalike",
       semantics: "read"
     })).resolves.toBe("provider_read");
+  });
+
+  it("resolves effects declared by nodes inside a durable loop", async () => {
+    const capabilityId = "loop-image";
+    const registrationId = `${capabilityId}.generate`;
+    const policyId = `${capabilityId}.policy`;
+    const operationId = `${capabilityId}.operation`;
+    const registry = createCapabilityRegistry([capabilityManifest({
+      id: capabilityId,
+      kind: "execution",
+      version: "1.0.0",
+      built_ins: {
+        [registrationId]: {
+          id: registrationId,
+          input_schema: { type: "object" },
+          output_schema: { type: "object" },
+          side_effect_policy: policyId
+        }
+      },
+      policies: {
+        [policyId]: {
+          id: policyId,
+          config_schema: { type: "object" },
+          side_effect_semantics: "read",
+          side_effect_category: "model_call",
+          side_effect_operation_ids: [operationId],
+          idempotency_scope: "attempt",
+          retry_semantics: "retry_forbidden"
+        }
+      }
+    })]);
+    const base = workflow(capabilityId, registrationId);
+    const result = await resolveNativeStudioRunEffects({
+      workflow: {
+        ...base,
+        graph: {
+          nodes: [{
+            id: "review_loop",
+            type: "loop",
+            body: {
+              nodes: [
+                { id: "generate_image", type: "built_in", uses: registrationId },
+                {
+                  id: "review",
+                  type: "human_gate",
+                  uses: "hitl.review",
+                  after: ["generate_image"]
+                }
+              ]
+            },
+            repeat_when: { expression: "false" },
+            result: { expression: "{}" }
+          }]
+        }
+      },
+      agentsRoot: "/not-read",
+      capabilityRegistry: registry
+    });
+
+    expect(result.potential_effects).toContainEqual(expect.objectContaining({
+      operation_id: operationId,
+      category: "model_call",
+      retry_semantics: "retry_forbidden",
+      node_id: "review_loop/generate_image"
+    }));
+  });
+
+  it("includes the real social workflow's loop agents and pi-imagegen effect", async () => {
+    const social = await loadWorkflowDefinition("workflows", "social-post", {
+      agentsRoot: "agents",
+      capabilityRegistry: nativeLunaPlatformRegistrations.capabilityRegistry
+    });
+    const result = await resolveNativeStudioRunEffects({
+      workflow: social,
+      agentsRoot: "agents",
+      capabilityRegistry: nativeLunaPlatformRegistrations.capabilityRegistry
+    });
+
+    expect(result.potential_effects).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: "model_call",
+        registration_id: "social-post-writer",
+        node_id: "editorial/proposal"
+      }),
+      expect.objectContaining({
+        category: "model_call",
+        operation_id: "image-generation.generate",
+        registration_id: "image-generation.generate",
+        node_id: "editorial/image"
+      }),
+      expect.objectContaining({
+        category: "external_write",
+        operation_id: "social-post.publish",
+        node_id: "publish"
+      })
+    ]));
+  });
+
+  it("attributes composed child effects to the parent runtime call boundary", async () => {
+    const capabilityId = "child-write";
+    const registrationId = `${capabilityId}.execute`;
+    const policyId = `${capabilityId}.policy`;
+    const operationId = `${capabilityId}.operation`;
+    const registry = createCapabilityRegistry([capabilityManifest({
+      id: capabilityId,
+      kind: "execution",
+      version: "1.0.0",
+      built_ins: {
+        [registrationId]: {
+          id: registrationId,
+          input_schema: { type: "object" },
+          output_schema: { type: "object" },
+          side_effect_policy: policyId
+        }
+      },
+      policies: {
+        [policyId]: {
+          id: policyId,
+          config_schema: { type: "object" },
+          side_effect_semantics: "write",
+          side_effect_category: "external_write",
+          side_effect_operation_ids: [operationId],
+          idempotency_scope: "external_resource",
+          retry_semantics: "retry_requires_adoption"
+        }
+      }
+    })]);
+    const child = workflow(capabilityId, registrationId);
+    const parent = {
+      ...workflow(capabilityId, registrationId),
+      graph: {
+        nodes: [{
+          id: "child_call",
+          type: "workflow" as const,
+          workflow: child.id,
+          input: {}
+        }]
+      },
+      compositions: { [child.id]: child }
+    };
+
+    const result = await resolveNativeStudioRunEffects({
+      workflow: parent,
+      agentsRoot: "/not-read",
+      capabilityRegistry: registry
+    });
+    expect(result.potential_effects).toContainEqual(expect.objectContaining({
+      operation_id: operationId,
+      node_id: "child_call",
+      description: expect.stringContaining("child_call/effect")
+    }));
   });
 });

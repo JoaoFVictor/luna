@@ -157,6 +157,11 @@ async function runWorkflowNodeAttemptBody({
         runtimeContext,
         run: async () => {
           input.signal?.throwIfAborted();
+          await input.onBeforeNodeExecution?.({
+            node_id: node.id,
+            attempt: active.attempt
+          });
+          input.signal?.throwIfAborted();
           return await executeWorkflowNode(
             input,
             active.state,

@@ -5,12 +5,16 @@ import {
   readdir,
   rm,
   stat,
+  symlink,
   writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA } from "../../../src/core/runtime/artifacts/contracts.js";
+import {
+  ARTIFACT_MANIFEST_LIST_LIMIT_MAXIMA,
+  ARTIFACT_MANIFEST_READ_MAX_BYTES
+} from "../../../src/core/runtime/artifacts/contracts.js";
 import {
   createFilesystemArtifactContentStore,
   createFilesystemArtifactManifestStore
@@ -118,6 +122,46 @@ describe("filesystem runtime backends", () => {
     }
   });
 
+  it("rejects oversized artifact reads before allocating the payload", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
+    const content = createFilesystemArtifactContentStore({ root });
+
+    try {
+      const write = await content.write({
+        transaction_id: "run-bounded/writer/artifact-1",
+        run_id: "run-bounded",
+        node_id: "writer",
+        artifact_id: "artifact-1",
+        artifact_path: "image.png",
+        content: new Uint8Array(1025),
+        content_hash: "sha256:unused"
+      });
+      await content.commit({
+        transaction_id: "run-bounded/writer/artifact-1",
+        run_id: "run-bounded",
+        node_id: "writer",
+        artifact_id: "artifact-1",
+        artifact_path: "image.png",
+        pending_uri: write.pending_uri,
+        content_hash: requiredContentHash(write.content_hash),
+        overwrite_policy: "forbid"
+      });
+
+      await expect(content.read?.({
+        run_id: "run-bounded",
+        artifact_path: "image.png",
+        max_bytes: 1024
+      })).rejects.toMatchObject({ code: "artifact_content_read_limit_exceeded" });
+      await expect(content.read?.({
+        run_id: "run-bounded",
+        artifact_path: "image.png",
+        max_bytes: 1025
+      })).resolves.toHaveLength(1025);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("enforces manifest count and per-file byte limits at list origin", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
     const artifacts = createFilesystemArtifactManifestStore({ root });
@@ -159,6 +203,77 @@ describe("filesystem runtime backends", () => {
         code: "artifact_manifest_list_limit_exceeded",
         kind: "entry_bytes",
         maximum: 256
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a manifest lookup through the bounded no-follow descriptor path", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
+    const artifacts = createFilesystemArtifactManifestStore({ root });
+    const key = {
+      id: "manifest-safe-get",
+      run_id: "run-safe-get",
+      source_node_id: "writer",
+      artifact_path: "result.json",
+      attempt: 1,
+      backend_id: "filesystem.artifacts",
+      backend_root: "artifacts"
+    };
+
+    try {
+      await artifacts.put({
+        ...key,
+        uri: "artifact://run-safe-get/result.json",
+        created_at: "2026-06-25T00:00:00.000Z"
+      });
+      const manifestRoot = path.join(root, key.run_id, ".manifests");
+      const [filename] = await readdir(manifestRoot);
+      if (filename === undefined) throw new Error("expected a manifest fixture");
+      const manifestPath = path.join(manifestRoot, filename);
+      const symlinkTarget = path.join(root, "attacker-controlled-manifest.json");
+      await writeFile(symlinkTarget, await readFile(manifestPath));
+      await rm(manifestPath);
+      await symlink(symlinkTarget, manifestPath);
+
+      await expect(artifacts.get(key)).rejects.toMatchObject({ code: "ELOOP" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an oversized manifest lookup before allocating or parsing it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-backends-"));
+    const artifacts = createFilesystemArtifactManifestStore({ root });
+    const key = {
+      id: "manifest-bounded-get",
+      run_id: "run-bounded-get",
+      source_node_id: "writer",
+      artifact_path: "result.json",
+      attempt: 1,
+      backend_id: "filesystem.artifacts",
+      backend_root: "artifacts"
+    };
+
+    try {
+      await artifacts.put({
+        ...key,
+        uri: "artifact://run-bounded-get/result.json",
+        created_at: "2026-06-25T00:00:00.000Z"
+      });
+      const manifestRoot = path.join(root, key.run_id, ".manifests");
+      const [filename] = await readdir(manifestRoot);
+      if (filename === undefined) throw new Error("expected a manifest fixture");
+      await writeFile(
+        path.join(manifestRoot, filename),
+        Buffer.alloc(ARTIFACT_MANIFEST_READ_MAX_BYTES + 1)
+      );
+
+      await expect(artifacts.get(key)).rejects.toMatchObject({
+        code: "artifact_manifest_list_limit_exceeded",
+        kind: "entry_bytes",
+        maximum: ARTIFACT_MANIFEST_READ_MAX_BYTES
       });
     } finally {
       await rm(root, { recursive: true, force: true });

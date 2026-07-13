@@ -23,4 +23,20 @@ describe("built-in step catalog", () => {
       capability_id: "test.context"
     });
   });
+
+  it("preserves the run cancellation signal at the built-in boundary", async () => {
+    const controller = new AbortController();
+    const catalog = createBuiltInStepCatalog([
+      defineBuiltInStep({
+        name: "test.signal",
+        run: ({ signal }) => signal
+      })
+    ]);
+
+    await expect(catalog.runBuiltInStep({
+      uses: "test.signal",
+      state: { invocation: {}, steps: {} },
+      signal: controller.signal
+    })).resolves.toBe(controller.signal);
+  });
 });

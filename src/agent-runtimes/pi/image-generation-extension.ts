@@ -175,31 +175,44 @@ export function createPiImagegenProviderFactory(
           input,
           options
         ): Promise<GeneratedImagePayload> {
-          assertExecutionOptions(options);
-          if (options.signal?.aborted === true) {
-            throw imageGenerationError(
-              "image_generation_aborted",
-              `${PI_IMAGEGEN_ID} was cancelled before session creation`
-            );
-          }
-          const session = await createSession(input.project_root);
-          const tool = session.getToolDefinition("imagegen");
-          if (tool === undefined) {
-            session.dispose();
-            throw imageGenerationError(
-              "image_generation_extension_unavailable",
-              `${PI_IMAGEGEN_ID} did not register the imagegen tool`
-            );
-          }
-          let stagingDirectory: string | undefined;
-          let result: ImagegenToolResult;
           try {
-            stagingDirectory = await mkdtemp(
-              path.join(tmpdir(), "luna-pi-imagegen-")
-            );
-            const outputPath = path.join(stagingDirectory, "image.png");
-            result = await executeWithControls(async (signal) =>
-              await tool.execute(
+            return await executeWithControls(async (signal) => {
+              let session: PiImagegenSession | undefined;
+              let stagingDirectory: string | undefined;
+              let sessionDisposed = false;
+              const disposeSession = () => {
+                if (session === undefined || sessionDisposed) return;
+                sessionDisposed = true;
+                session.dispose();
+              };
+              const releaseOnAbort = () => {
+                try {
+                  disposeSession();
+                } catch {
+                  // Cancellation outcome remains authoritative. A synchronous
+                  // SDK disposal error cannot turn it into a successful call.
+                }
+                if (stagingDirectory !== undefined) {
+                  void rm(stagingDirectory, { recursive: true, force: true });
+                }
+              };
+              signal.addEventListener("abort", releaseOnAbort, { once: true });
+              try {
+                session = await createSession(input.project_root);
+                signal.throwIfAborted();
+                const tool = session.getToolDefinition("imagegen");
+                if (tool === undefined) {
+                  throw imageGenerationError(
+                    "image_generation_extension_unavailable",
+                    `${PI_IMAGEGEN_ID} did not register the imagegen tool`
+                  );
+                }
+                stagingDirectory = await mkdtemp(
+                  path.join(tmpdir(), "luna-pi-imagegen-")
+                );
+                signal.throwIfAborted();
+                const outputPath = path.join(stagingDirectory, "image.png");
+                const result = await tool.execute(
                 `luna-${randomUUID()}`,
                 {
                   prompt: input.prompt,
@@ -211,15 +224,69 @@ export function createPiImagegenProviderFactory(
                 signal,
                 undefined,
                 session.extensionRunner.createContext()
-              ) as ImagegenToolResult,
-            options);
+                ) as ImagegenToolResult;
+
+                const image = result.content.find((item) => item.type === "image");
+                const validation = image?.type === "image"
+                  ? validateGeneratedPngBase64(image.data, options.maxImageBytes)
+                  : undefined;
+                if (
+                  image?.type !== "image" ||
+                  image.mimeType !== "image/png" ||
+                  validation?.valid !== true
+                ) {
+                  throw imageGenerationError(
+                    validation?.valid === false && validation.reason === "oversized"
+                      ? "image_generation_payload_too_large"
+                      : "image_generation_failed",
+                    validation?.valid === false && validation.reason === "oversized"
+                      ? `${PI_IMAGEGEN_ID} returned an oversized image payload`
+                      : `${PI_IMAGEGEN_ID} returned no PNG image`
+                  );
+                }
+                if (!isImagegenDetails(result.details)) {
+                  throw imageGenerationError(
+                    "image_generation_failed",
+                    `${PI_IMAGEGEN_ID} returned invalid image metadata`
+                  );
+                }
+
+                const revisedPrompt = result.details.revisedPrompt;
+                return {
+                  operation_id: "image-generation.generate",
+                  provider: PI_IMAGEGEN_ID,
+                  provider_id: PI_IMAGEGEN_ID,
+                  model: result.details.imageModel || IMAGE_MODEL,
+                  prompt: input.prompt,
+                  ...(revisedPrompt === undefined ? {} : { revised_prompt: revisedPrompt }),
+                  size: input.size,
+                  quality: input.quality,
+                  media_type: "image/png",
+                  image_base64: image.data,
+                  metadata: {
+                    provider: PI_IMAGEGEN_ID,
+                    model: result.details.imageModel || IMAGE_MODEL,
+                    prompt: input.prompt,
+                    ...(revisedPrompt === undefined ? {} : { revised_prompt: revisedPrompt }),
+                    size: input.size,
+                    quality: input.quality,
+                    media_type: "image/png"
+                  }
+                };
+              } finally {
+                signal.removeEventListener("abort", releaseOnAbort);
+                disposeSession();
+                if (stagingDirectory !== undefined) {
+                  await rm(stagingDirectory, { recursive: true, force: true });
+                }
+              }
+            }, options);
           } catch (cause) {
             if (
               cause instanceof Error &&
               "code" in cause &&
-              (cause.code === "image_generation_timeout" ||
-                cause.code === "image_generation_aborted" ||
-                cause.code === "image_generation_config_invalid")
+              typeof cause.code === "string" &&
+              cause.code.startsWith("image_generation_")
             ) {
               throw cause;
             }
@@ -231,60 +298,7 @@ export function createPiImagegenProviderFactory(
               `${PI_IMAGEGEN_ID} failed: ${message}`,
               cause
             );
-          } finally {
-            session.dispose();
-            if (stagingDirectory !== undefined) {
-              await rm(stagingDirectory, { recursive: true, force: true });
-            }
           }
-
-          const image = result.content.find((item) => item.type === "image");
-          if (
-            image?.type !== "image" ||
-            image.mimeType !== "image/png" ||
-            !validateGeneratedPngBase64(image.data, options.maxImageBytes).valid
-          ) {
-            const validation = image?.type === "image"
-              ? validateGeneratedPngBase64(image.data, options.maxImageBytes)
-              : undefined;
-            throw imageGenerationError(
-              validation?.valid === false && validation.reason === "oversized"
-                ? "image_generation_payload_too_large"
-                : "image_generation_failed",
-              validation?.valid === false && validation.reason === "oversized"
-                ? `${PI_IMAGEGEN_ID} returned an oversized image payload`
-                : `${PI_IMAGEGEN_ID} returned no PNG image`
-            );
-          }
-          if (!isImagegenDetails(result.details)) {
-            throw imageGenerationError(
-              "image_generation_failed",
-              `${PI_IMAGEGEN_ID} returned invalid image metadata`
-            );
-          }
-
-          const revisedPrompt = result.details.revisedPrompt;
-          return {
-            operation_id: "image-generation.generate",
-            provider: PI_IMAGEGEN_ID,
-            provider_id: PI_IMAGEGEN_ID,
-            model: result.details.imageModel || IMAGE_MODEL,
-            prompt: input.prompt,
-            ...(revisedPrompt === undefined ? {} : { revised_prompt: revisedPrompt }),
-            size: input.size,
-            quality: input.quality,
-            media_type: "image/png",
-            image_base64: image.data,
-            metadata: {
-              provider: PI_IMAGEGEN_ID,
-              model: result.details.imageModel || IMAGE_MODEL,
-              prompt: input.prompt,
-              ...(revisedPrompt === undefined ? {} : { revised_prompt: revisedPrompt }),
-              size: input.size,
-              quality: input.quality,
-              media_type: "image/png"
-            }
-          };
         }
       };
     }

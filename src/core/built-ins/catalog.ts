@@ -27,6 +27,7 @@ export function createBuiltInStepCatalog<
       uses,
       state,
       input,
+      signal,
       dependencies = {},
       observability,
       node
@@ -36,6 +37,7 @@ export function createBuiltInStepCatalog<
       return await builtIn.run({
         state,
         input,
+        ...(signal === undefined ? {} : { signal }),
         dependencies,
         observability,
         node

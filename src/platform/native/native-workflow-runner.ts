@@ -80,6 +80,7 @@ type NativeWorkflowExecutionControls = Pick<
   | "signal"
   | "onSucceededState"
   | "onFailedState"
+  | "onBeforeNodeExecution"
   | "onLifecycleEvent"
   | "onLifecycleProjectionError"
 >;
@@ -164,6 +165,7 @@ function nativeWorkflowExecutionControls(
   | "signal"
   | "onSucceededState"
   | "onFailedState"
+  | "onBeforeNodeExecution"
   | "onLifecycleEvent"
   | "onLifecycleProjectionError"
 > {
@@ -175,6 +177,9 @@ function nativeWorkflowExecutionControls(
     ...(input.onSucceededState === undefined
       ? {}
       : { onSucceededState: input.onSucceededState }),
+    ...(input.onBeforeNodeExecution === undefined
+      ? {}
+      : { onBeforeNodeExecution: input.onBeforeNodeExecution }),
     ...(input.onLifecycleEvent === undefined
       ? {}
       : { onLifecycleEvent: input.onLifecycleEvent }),

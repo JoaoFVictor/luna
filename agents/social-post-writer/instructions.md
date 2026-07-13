@@ -30,7 +30,9 @@ Return only structured output matching `output.schema.json`:
   explicitly requires it; when it does, quote the exact short text. Do not
   request logos, public figures, or copyrighted characters unless they are
   explicitly supplied and authorized by the briefing.
-- `strategy`: a short explanation for the human reviewer.
+- `strategy`: a short explanation for the human reviewer, no longer than
+  4,000 characters.
 - `character_count`: the exact number of Unicode characters in `text`.
 - `claims_to_verify`: factual claims a human should verify before approval;
-  return an empty array when there are none.
+  return an empty array when there are none. Return at most 64 claims, each no
+  longer than 2,048 characters.

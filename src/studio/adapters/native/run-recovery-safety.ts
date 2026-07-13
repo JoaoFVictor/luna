@@ -51,6 +51,87 @@ export function nativeStudioCheckpointReplayIsSafe(
 }
 
 /**
+ * Classifies a stale running resume from durable pre-execution evidence.
+ * The authoritative pre-node journal is persisted before an unsafe executor
+ * is entered, so an active unsafe effect may already have reached its external
+ * boundary and must never be replayed automatically.
+ */
+export function nativeStudioActiveResumeReplayIsSafe(input: {
+  readonly sideEffects: readonly JsonValue[];
+  readonly activeNodeIds: readonly string[];
+  readonly lifecycleProjection: "exact" | "degraded" | "unknown";
+}): boolean {
+  if (input.lifecycleProjection !== "exact") return false;
+  const activeNodeIds = new Set(input.activeNodeIds);
+  if (activeNodeIds.size === 0) return true;
+  return input.sideEffects.every((raw) => {
+    const effect = stagedEffect(raw);
+    if (effect === undefined) return false;
+    if (effect.stage === "potential") {
+      const parsed = StudioRunPotentialEffectSchema.safeParse(effect.material);
+      return parsed.success && (
+        parsed.data.node_id !== undefined && (
+          !effectNodeIsActive(activeNodeIds, parsed.data.node_id) ||
+          effectAllowsAutomaticReplay(parsed.data)
+        )
+      );
+    }
+    if (effect.stage === "resolved") {
+      const parsed = StudioRunResolvedEffectSchema.safeParse(effect.material);
+      return parsed.success && (
+        parsed.data.node_id !== undefined && (
+          !effectNodeIsActive(activeNodeIds, parsed.data.node_id) ||
+          effectAllowsAutomaticReplay(parsed.data)
+        )
+      );
+    }
+    if (effect.stage === "uncertainty") {
+      const parsed = StudioRunEffectUncertaintySchema.safeParse(effect.material);
+      return parsed.success && (
+        parsed.data.node_id !== undefined && (
+          !effectNodeIsActive(activeNodeIds, parsed.data.node_id) ||
+          !parsed.data.may_include_unlisted_write
+        )
+      );
+    }
+    return false;
+  });
+}
+
+function effectNodeIsActive(
+  activeNodeIds: ReadonlySet<string>,
+  effectNodeId: string
+): boolean {
+  for (const activeNodeId of activeNodeIds) {
+    if (activeNodeId === effectNodeId) return true;
+    // Durable loop executions have physical ids of the form
+    // `<loop>:iteration-<n>:<logical-body-node>`. Effect planning uses the
+    // composition projection `<loop>/<body-node>` so identically named body
+    // nodes in different loops cannot collide. Public ids cannot contain `:`.
+    const loopExecution = /^([^:]+):iteration-[1-9][0-9]*:([^:]+)$/u
+      .exec(activeNodeId);
+    if (loopExecution !== null && effectNodeId === [
+      encodeURIComponent(loopExecution[1]!),
+      encodeURIComponent(loopExecution[2]!)
+    ].join("/")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function nativeStudioResumeNodeReplayIsSafe(
+  sideEffects: readonly JsonValue[],
+  nodeId: string
+): boolean {
+  return nativeStudioActiveResumeReplayIsSafe({
+    sideEffects,
+    activeNodeIds: [nodeId],
+    lifecycleProjection: "exact"
+  });
+}
+
+/**
  * A normal runtime failure is terminal only when the immutable plan excludes
  * confirmed writes. This is intentionally distinct from replay safety: a
  * completed model response can produce a deterministic failed workflow state,

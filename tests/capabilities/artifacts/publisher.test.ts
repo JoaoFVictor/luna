@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   publishDeclaredArtifacts,
@@ -130,6 +131,18 @@ describe("artifacts capability publisher", () => {
       new Uint8Array(Buffer.from(pngBase64, "base64"))
     );
     await expect(publisher.verify?.(ref)).resolves.toBe(true);
+    await expect(publisher.verify?.({
+      ...ref,
+      content_hash: `sha256:${createHash("sha256").update(Buffer.from(pngBase64, "base64")).digest("hex")}`,
+      size_bytes: Buffer.from(pngBase64, "base64").byteLength
+    })).resolves.toBe(true);
+    await expect(publisher.verify?.({
+      ...ref,
+      size_bytes: 1
+    })).resolves.toBe(false);
+    await expect(publisher.read(ref, {
+      max_bytes: Buffer.from(pngBase64, "base64").byteLength - 1
+    })).rejects.toMatchObject({ code: "artifact_content_read_limit_exceeded" });
     await expect(publisher.verify?.({
       ...ref,
       node_id: "forged-owner"

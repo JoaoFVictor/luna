@@ -32,6 +32,7 @@ export type NativeStudioRunTerminal =
   | {
       readonly status: "cancelled";
       readonly cause: unknown;
+      readonly state?: undefined;
     };
 
 export type NativeStudioRunTerminalPreparation = {

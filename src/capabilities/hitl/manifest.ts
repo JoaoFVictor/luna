@@ -4,6 +4,13 @@ import {
   approvalRequiredOutputSchema
 } from "./built-ins.js";
 
+const expressionSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["expression"],
+  properties: { expression: { type: "string" } }
+} as const;
+
 const approveDecisionSchema = {
   type: "object",
   additionalProperties: false,
@@ -87,6 +94,22 @@ export const manifest = capabilityManifest({
             additionalProperties: false,
             required: ["targets"],
             properties: {
+              approval: {
+                type: "object",
+                additionalProperties: false,
+                required: ["allowed", "reason"],
+                properties: {
+                  allowed: {
+                    anyOf: [{ type: "boolean" }, expressionSchema]
+                  },
+                  reason: {
+                    anyOf: [
+                      { type: "string", minLength: 1, maxLength: 2048 },
+                      expressionSchema
+                    ]
+                  }
+                }
+              },
               targets: {
                 type: "array",
                 minItems: 1,

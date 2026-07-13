@@ -43,8 +43,14 @@ export type ArtifactPublishInput = {
 
 export type ArtifactPublisherPort = {
   publish(input: ArtifactPublishInput): Promise<ArtifactRef>;
-  read(ref: Pick<ArtifactRef, "id" | "uri">): Promise<Uint8Array>;
-  verify?(ref: ArtifactRef & { readonly content_hash?: string }): Promise<boolean>;
+  read(
+    ref: Pick<ArtifactRef, "id" | "uri">,
+    options?: { readonly max_bytes?: number }
+  ): Promise<Uint8Array>;
+  verify?(ref: ArtifactRef & {
+    readonly content_hash?: string;
+    readonly size_bytes?: number;
+  }): Promise<boolean>;
 };
 
 /**
@@ -366,7 +372,7 @@ export function transactionalArtifactPublisher(
           : { media_type: result.manifest.media_type })
       };
     },
-    async read(ref) {
+    async read(ref, readOptions) {
       const expectedUri = `artifact://${options.run_id}/${ref.id}`;
       if (ref.uri !== expectedUri) {
         throw artifactPlanError(
@@ -383,7 +389,10 @@ export function transactionalArtifactPublisher(
       }
       return await options.contentStore.read({
         run_id: options.run_id,
-        artifact_path: ref.id
+        artifact_path: ref.id,
+        ...(readOptions?.max_bytes === undefined
+          ? {}
+          : { max_bytes: readOptions.max_bytes })
       });
     },
     async verify(ref) {
@@ -407,7 +416,8 @@ export function transactionalArtifactPublisher(
         manifest.uri === ref.uri &&
         manifest.source_node_id === ref.node_id &&
         (ref.media_type === undefined || manifest.media_type === ref.media_type) &&
-        (ref.content_hash === undefined || manifest.content_hash === ref.content_hash);
+        (ref.content_hash === undefined || manifest.content_hash === ref.content_hash) &&
+        (ref.size_bytes === undefined || manifest.content_size_bytes === ref.size_bytes);
     }
   };
 }

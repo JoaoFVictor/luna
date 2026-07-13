@@ -7,7 +7,7 @@
     "text": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 280
+      "maxLength": 10000
     },
     "image_prompt": {
       "type": "string",
@@ -16,18 +16,21 @@
     },
     "strategy": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 4000
     },
     "character_count": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 280
+      "maximum": 10000
     },
     "claims_to_verify": {
       "type": "array",
+      "maxItems": 64,
       "items": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "maxLength": 2048
       }
     }
   }

@@ -155,6 +155,20 @@ function interruptReview(reviewInput: JsonValue | undefined): InterruptReview | 
   ) {
     throw runtimeError("Human review presentation is invalid", "runtime_state_invalid");
   }
+  const approval = review.approval;
+  if (
+    approval !== undefined &&
+    (
+      !isCheckpointPlainObject(approval) ||
+      typeof approval.allowed !== "boolean" ||
+      typeof approval.reason !== "string" ||
+      approval.reason.length === 0 ||
+      approval.reason.length > 2048 ||
+      Object.keys(approval).some((key) => !["allowed", "reason"].includes(key))
+    )
+  ) {
+    throw runtimeError("Human review approval policy is invalid", "runtime_state_invalid");
+  }
   const targets = review.targets.map((value) => {
     if (
       !isCheckpointPlainObject(value) ||
@@ -198,7 +212,13 @@ function interruptReview(reviewInput: JsonValue | undefined): InterruptReview | 
   ) {
     throw runtimeError("Human review presentation contains duplicate ids", "runtime_state_invalid");
   }
-  return { targets, artifact_refs: artifactRefs };
+  return {
+    targets,
+    artifact_refs: artifactRefs,
+    ...(approval === undefined
+      ? {}
+      : { approval: { allowed: approval.allowed as boolean, reason: approval.reason as string } })
+  };
 }
 
 async function loadOrCreateWaitIntent(

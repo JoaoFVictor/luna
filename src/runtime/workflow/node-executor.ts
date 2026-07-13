@@ -76,6 +76,7 @@ export async function executeWorkflowNode(
         state,
         runtimeContext,
         workflow: input.workflow,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
         observability: input.observability
       });
 

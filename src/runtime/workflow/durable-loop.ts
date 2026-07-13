@@ -121,8 +121,20 @@ export async function runDurableLoop(input: RunWorkflowInput, state: LunaRuntime
       if (durability.kind === "output_pending") {
         output = durability.output;
       } else {
+        const executionInput = loopIterationExecutionInput(
+          input,
+          node,
+          bodyNode,
+          executionNode
+        );
+        input.signal?.throwIfAborted();
+        await executionInput.onBeforeNodeExecution?.({
+          node_id: executionNode.id,
+          attempt: 1
+        });
+        input.signal?.throwIfAborted();
         const raw = await executeWorkflowNode(
-          loopIterationExecutionInput(input, node, bodyNode, executionNode),
+          executionInput,
           bodyState,
           runtimeContext,
           executionNode

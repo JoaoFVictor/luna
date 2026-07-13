@@ -51,6 +51,34 @@ function wrapper(queryClient: QueryClient) {
 afterEach(() => vi.restoreAllMocks())
 
 describe("HitlReviewPanel", () => {
+  it("shows a preparation diagnostic and blocks only approval", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.spyOn(studioApi, "runInterrupts").mockResolvedValue({
+      run_id: RUN_ID,
+      items: [interrupt({
+        prompt: "O texto excede o limite ponderado do X.",
+        review: {
+          targets: [{ id: "text", label: "Texto" }, { id: "image", label: "Imagem" }],
+          expected_artifact_count: 0,
+          approval: {
+            allowed: false,
+            reason: "O texto excede o limite ponderado do X. Solicite uma versão mais curta.",
+          },
+        },
+      })],
+      next_cursor: null,
+    })
+
+    render(<HitlReviewPanel runId={RUN_ID} active />, { wrapper: wrapper(queryClient) })
+
+    expect(await screen.findByText("Esta versão ainda não pode ser aprovada")).toBeDefined()
+    expect(screen.getByText(/Solicite uma versão mais curta/)).toBeDefined()
+    expect(screen.getByText(/Solicite as alterações necessárias ou rejeite/)).toBeDefined()
+    expect(screen.queryByText(/alteração da imagem/)).toBeNull()
+    expect(screen.getByRole("button", { name: "Aprovar" }).hasAttribute("disabled")).toBe(true)
+    expect(screen.getByRole("button", { name: "Rejeitar e encerrar" }).hasAttribute("disabled")).toBe(false)
+  })
+
   it("shows an actionable error and retries loading the review", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const runInterrupts = vi.spyOn(studioApi, "runInterrupts")
@@ -132,20 +160,18 @@ describe("HitlReviewPanel", () => {
     expect(screen.getByText("Encerrar esta publicação.")).toBeDefined()
   })
 
-  it("does not let an older stale resume imply work after a newer review is pending", async () => {
+  it("uses the canonical id tie-breaker when reviews have the same timestamp", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     vi.spyOn(studioApi, "runInterrupts").mockResolvedValue({
       run_id: RUN_ID,
       items: [
         interrupt({
-          status: "resuming",
-          decision: { action: "request_changes", targets: ["text"], comment: "Mais curto." },
-        }),
-        interrupt({
           interrupt_id: "interrupt-review-2",
           checkpoint_id: "checkpoint-review-2",
-          created_at: "2026-07-12T12:02:00.000Z",
-          updated_at: "2026-07-12T12:02:00.000Z",
+        }),
+        interrupt({
+          status: "resuming",
+          decision: { action: "request_changes", targets: ["text"], comment: "Mais curto." },
         }),
       ],
       next_cursor: null,

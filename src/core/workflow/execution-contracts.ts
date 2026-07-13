@@ -50,6 +50,7 @@ export type WorkflowBuiltInExecutor = (input: {
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
+  readonly signal?: AbortSignal;
   readonly observability?: WorkflowObservability;
 }) => Promise<unknown> | unknown;
 
@@ -148,6 +149,15 @@ export type RunWorkflowInput = {
    */
   readonly onFailedState?: (state: LunaRuntimeState) => void;
   /**
+   * Internal authoritative barrier invoked immediately before a node executor
+   * is entered. Unlike lifecycle projection, rejection aborts the node attempt
+   * and must never be swallowed as observability degradation.
+   */
+  readonly onBeforeNodeExecution?: (input: {
+    readonly node_id: string;
+    readonly attempt: number;
+  }) => Promise<void>;
+  /**
    * Internal, ordered projection of node lifecycle events at their production
    * boundary. Projection failures are observational and must never change node
    * outcome or retry semantics.
@@ -173,6 +183,7 @@ export type ResumeWorkflowInput = {
   readonly observability?: WorkflowObservability;
   readonly onSucceededState?: RunWorkflowInput["onSucceededState"];
   readonly onFailedState?: RunWorkflowInput["onFailedState"];
+  readonly onBeforeNodeExecution?: RunWorkflowInput["onBeforeNodeExecution"];
   readonly onLifecycleEvent?: RunWorkflowInput["onLifecycleEvent"];
   readonly onLifecycleProjectionError?: RunWorkflowInput["onLifecycleProjectionError"];
   readonly thread_id: string;

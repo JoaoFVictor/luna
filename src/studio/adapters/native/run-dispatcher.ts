@@ -200,6 +200,8 @@ export class NativeStudioRunDispatcher
           graphStore: this.#graphStore,
           finalizer,
           platform: options.resume.platform,
+          ownerId: this.#ownerId,
+          orphanThresholdMs,
           schedule: (resumeId) => this.scheduleResume(resumeId),
           onBackgroundError: (cause) => this.reportDiagnostic(
             "dispatch_recovery_failed",

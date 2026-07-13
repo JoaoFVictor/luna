@@ -39,6 +39,7 @@
     "ioredis": "^5.11.1",
     "jsonata": "^2.2.1",
     "pi-imagegen": "0.2.0",
+    "twitter-text": "3.1.0",
     "typescript": "^5.9.3",
     "yaml": "^2.8.0",
     "zod": "^3.25.67"
@@ -52,6 +53,7 @@
     "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.61.1",
     "@types/node": "^22.15.33",
+    "@types/twitter-text": "3.1.10",
     "knip": "^6.17.1",
     "tsx": "^4.20.3",
     "vitest": "^3.2.4"

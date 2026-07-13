@@ -35,6 +35,38 @@ async function withTimeout<T>(
 }
 
 describe("workflow runner execution", () => {
+  it("passes the run cancellation signal to built-in executors", async () => {
+    const controller = new AbortController();
+    const definition = workflow([
+      { id: "ok", type: "built_in", uses: "runtime.ok" }
+    ]);
+    let receivedSignal: AbortSignal | undefined;
+
+    await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-built-in-signal",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      signal: controller.signal,
+      backends: backends(),
+      builtIns: {
+        "runtime.ok": async ({ signal }) => {
+          receivedSignal = signal;
+          return { ok: true };
+        }
+      },
+      agentRuntime: agentRuntime({})
+    });
+
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
   it("projects agent runtime input per node", async () => {
     const runtime = agentRuntime({ reviewed: true });
     const definition = workflow([

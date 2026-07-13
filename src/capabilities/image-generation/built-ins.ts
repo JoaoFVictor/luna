@@ -69,7 +69,8 @@ export function createImageGenerateBuiltIn(
         .get(input.provider_id)
         .generateImage(input, {
           timeoutMs: DEFAULT_IMAGE_GENERATION_TIMEOUT_MS,
-          maxImageBytes: MAX_GENERATED_IMAGE_BYTES
+          maxImageBytes: MAX_GENERATED_IMAGE_BYTES,
+          ...(options.signal === undefined ? {} : { signal: options.signal })
         });
       const generated = GeneratedImagePayloadSchema.safeParse(generatedResult);
       if (!generated.success) {

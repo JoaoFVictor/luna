@@ -81,7 +81,8 @@ Common public ids include:
   `validation.run_commands`, `findings.validate_evidence`,
   `reports.final_report`, `git.status`, `git.commit`, `git.push_branch`,
   `change-request.create`, `pull-request-review.publish`,
-  `image-generation.generate`, `social-post.publish`,
+  `image-generation.generate`, `social-post.apply_revision_scope`,
+  `social-post.prepare`, `social-post.publish`,
   `local-exec.command.read`, `local-exec.command.write`, and the
   `repository-change.*` lifecycle built-ins.
 - Patterns: `quality-gates.gated_agent_loop`.

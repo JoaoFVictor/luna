@@ -88,6 +88,30 @@ function service(options: {
 }
 
 describe("StudioRunInterruptService", () => {
+  it("rejects a blocked approval before dispatch and keeps change requests available", async () => {
+    const blocked = structuredClone(interrupt) as InterruptRecord;
+    blocked.payload!.review!.approval = {
+      allowed: false,
+      reason: "The image exceeds the provider upload limit"
+    };
+    const { value, resumer } = service({ record: blocked });
+
+    await expect(value.resume("run-1", "interrupt-1", {
+      action: "approve"
+    })).rejects.toMatchObject({
+      code: "run_transition_invalid",
+      message: "The image exceeds the provider upload limit"
+    });
+    expect(resumer.resume).not.toHaveBeenCalled();
+
+    await expect(value.resume("run-1", "interrupt-1", {
+      action: "request_changes",
+      comment: "Generate a smaller image",
+      targets: ["image"]
+    })).resolves.toMatchObject({ accepted: true });
+    expect(resumer.resume).toHaveBeenCalledTimes(1);
+  });
+
   it("resumes a rejected approval with the generic HITL decision", async () => {
     const subject = service();
     await subject.value.resume("run-1", "interrupt-1", { action: "reject", comment: "Not ready" });

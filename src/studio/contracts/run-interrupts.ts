@@ -24,7 +24,11 @@ export const StudioRunInterruptReviewTargetSchema = z.object({
 
 export const StudioRunInterruptReviewSchema = z.object({
   targets: z.array(StudioRunInterruptReviewTargetSchema).min(1).max(32),
-  expected_artifact_count: z.number().int().safe().nonnegative().max(128)
+  expected_artifact_count: z.number().int().safe().nonnegative().max(128),
+  approval: z.object({
+    allowed: z.boolean(),
+    reason: z.string().min(1).max(2048)
+  }).strict().optional()
 }).strict();
 
 export const StudioRunInterruptMaterialsStatusSchema = z.enum([

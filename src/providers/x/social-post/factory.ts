@@ -4,7 +4,14 @@ import type {
   SocialPostPublishedResult,
   SocialPostPublishInput
 } from "../../../capabilities/social-post/contracts.js";
+import { validatePngStructure } from "../../../capabilities/social-post/png-validation.js";
 import { loadXAuth, xAuthForInstance, type XLunaAuthConfig } from "../auth.js";
+import {
+  validateXText,
+  X_MAX_WEIGHTED_LENGTH,
+  X_TEXT_POLICY_ID,
+  X_TEXT_POLICY_REVISION
+} from "./text-policy.js";
 
 type XApiResponse = {
   readonly data?: {
@@ -33,6 +40,9 @@ type XSocialPostError = Error & {
 };
 
 type Fetch = typeof fetch;
+export const X_IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+export const X_IMAGE_MAX_DIMENSION = 8192;
+export const X_IMAGE_MAX_PIXELS = 64 * 1024 * 1024;
 
 function xSocialPostError(
   code: XSocialPostErrorCode,
@@ -75,6 +85,12 @@ async function publishPost(
   accessToken: string,
   fetchImpl: Fetch
 ): Promise<SocialPostPublishedResult> {
+  if (!validateXText(input.text).valid) {
+    throw xSocialPostError(
+      "social_post_publish_failed",
+      "The approved text no longer satisfies the declared X weighted-length policy."
+    );
+  }
   const mediaId = await uploadImage(input, accessToken, fetchImpl);
   let response: Response;
   try {
@@ -136,11 +152,12 @@ async function uploadImage(
   fetchImpl: Fetch
 ): Promise<string> {
   const bytes = Buffer.from(input.image_base64, "base64");
-  if (
-    bytes.length < 8 ||
-    bytes.length > 5 * 1024 * 1024 ||
-    !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-  ) {
+  const png = await validatePngStructure(bytes, {
+    max_width: X_IMAGE_MAX_DIMENSION,
+    max_height: X_IMAGE_MAX_DIMENSION,
+    max_pixels: X_IMAGE_MAX_PIXELS
+  });
+  if (bytes.length > X_IMAGE_UPLOAD_MAX_BYTES || !png.valid) {
     throw xSocialPostError(
       "social_post_publish_failed",
       "The approved image must be a valid PNG no larger than 5 MB."
@@ -215,6 +232,21 @@ export function createXSocialPostProviderFactory({
     createProvider() {
       return {
         provider_id: "x",
+        limits: {
+          text: {
+            policy_id: X_TEXT_POLICY_ID,
+            policy_revision: X_TEXT_POLICY_REVISION,
+            max_weighted_length: X_MAX_WEIGHTED_LENGTH
+          },
+          image: {
+            max_bytes: X_IMAGE_UPLOAD_MAX_BYTES,
+            media_types: ["image/png"],
+            max_width: X_IMAGE_MAX_DIMENSION,
+            max_height: X_IMAGE_MAX_DIMENSION,
+            max_pixels: X_IMAGE_MAX_PIXELS
+          }
+        },
+        validateText: validateXText,
         async publishPost(input) {
           let auth;
           try {

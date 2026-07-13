@@ -47,6 +47,7 @@ export type BuiltInStepRunOptions<
 > = {
   readonly state: WorkflowState;
   readonly input?: Record<string, unknown>;
+  readonly signal?: AbortSignal;
   readonly dependencies?: Dependencies;
   readonly observability?: WorkflowObservability;
   readonly node?: BuiltInStepNodeContext;

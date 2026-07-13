@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { capabilityManifest } from "../../../src/core/capabilities/manifest.js";
 import { createCapabilityRegistry } from "../../../src/core/capabilities/registry.js";
 import type { WorkflowDefinition } from "../../../src/core/workflow/definition-types.js";
@@ -144,6 +144,39 @@ function stores() {
 }
 
 describe("durable workflow loop", () => {
+  it("propagates the pre-node durability barrier before a loop body executor", async () => {
+    const execute = vi.fn(() => ({ count: 1 }));
+    const barrier = vi.fn(async () => {
+      throw new Error("resume stage fsync failed");
+    });
+
+    await expect(runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow, registry }),
+      workflow,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-durable-loop-barrier",
+        workflow_id: workflow.id,
+        attempt: 1,
+        started_at: "2026-07-12T00:00:00.000Z"
+      },
+      backends: stores(),
+      builtIns: {
+        "test.revise": execute,
+        "test.publish": () => ({ published: true })
+      },
+      onBeforeNodeExecution: barrier,
+      agentRuntime
+    })).rejects.toThrow("resume stage fsync failed");
+
+    expect(barrier).toHaveBeenCalledWith({
+      node_id: "editorial:iteration-1:draft",
+      attempt: 1
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("resumes more than ten human-requested revisions without a configured limit", async () => {
     const backends = stores();
     const compiled = compileWorkflow({ workflow, registry });
