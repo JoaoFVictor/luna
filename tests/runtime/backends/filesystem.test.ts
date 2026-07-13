@@ -1,6 +1,7 @@
 import {
   mkdir,
   mkdtemp,
+  readFile,
   readdir,
   rm,
   stat,
@@ -371,6 +372,11 @@ describe("filesystem runtime backends", () => {
         updated_at: "2026-06-28T00:00:00.000Z"
       });
       await first.beginResume("interrupt-1", "resume-1", resumeInput);
+      await expect(first.findFirst("run-1", {
+        thread_id: "run-1",
+        checkpoint_id: "checkpoint-1",
+        statuses: ["resuming"]
+      })).resolves.toMatchObject({ id: "interrupt-1", status: "resuming" });
 
       const restarted = createFilesystemInterruptStore({ root });
       await expect(
@@ -400,6 +406,164 @@ describe("filesystem runtime backends", () => {
         status: "resolved",
         resume: { resume_id: "resume-1" }
       });
+      await expect(restarted.findFirst("run-1", {
+        statuses: ["resolved"]
+      })).resolves.toMatchObject({ id: "interrupt-1", status: "resolved" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("pages interrupts from a durable per-run index and recovers an incomplete index update", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-interrupt-pages-"));
+    const record = (id: string, createdAt: string) => ({
+      id,
+      run_id: "run-pages",
+      thread_id: "run-pages",
+      checkpoint_id: `checkpoint-${id}`,
+      status: "pending" as const,
+      created_at: createdAt,
+      updated_at: createdAt
+    });
+
+    try {
+      const store = createFilesystemInterruptStore({ root });
+      await store.create(record("interrupt-1", "2026-07-12T12:00:00.000Z"));
+      await store.create(record("interrupt-2", "2026-07-12T12:01:00.000Z"));
+      await store.create(record("interrupt-3", "2026-07-12T12:02:00.000Z"));
+
+      const first = await store.listPage("run-pages", { limit: 2 });
+      expect(first.records.map((item) => item.id)).toEqual(["interrupt-3", "interrupt-2"]);
+      expect(first.next_cursor).not.toBeNull();
+
+      const restarted = createFilesystemInterruptStore({ root });
+      const second = await restarted.listPage("run-pages", {
+        limit: 2,
+        cursor: first.next_cursor!
+      });
+      expect(second.records.map((item) => item.id)).toEqual(["interrupt-1"]);
+      expect(second.next_cursor).toBeNull();
+
+      const interrupted = record("interrupt-4", "2026-07-12T12:03:00.000Z");
+      await writeFile(
+        path.join(root, `${encodeURIComponent(interrupted.id)}.json`),
+        JSON.stringify(interrupted),
+        { mode: 0o600 }
+      );
+      const markerDirectory = path.join(root, ".index-pending", encodeURIComponent("run-pages"));
+      await mkdir(markerDirectory, { recursive: true });
+      await writeFile(
+        path.join(markerDirectory, `${encodeURIComponent(interrupted.id)}.json`),
+        JSON.stringify({
+          version: 1,
+          run_id: "run-pages",
+          interrupt_id: interrupted.id
+        }),
+        { mode: 0o600 }
+      );
+
+      const recovered = await restarted.listPage("run-pages", { limit: 1 });
+      expect(recovered.records.map((item) => item.id)).toEqual(["interrupt-4"]);
+      await expect(readdir(markerDirectory)).resolves.toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rebuilds a missing interrupt index from legacy records", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-interrupt-legacy-"));
+    const legacy = {
+      id: "legacy-interrupt",
+      run_id: "legacy-run",
+      status: "pending" as const,
+      created_at: "2026-07-12T12:00:00.000Z",
+      updated_at: "2026-07-12T12:00:00.000Z"
+    };
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(
+        path.join(root, `${encodeURIComponent(legacy.id)}.json`),
+        JSON.stringify(legacy),
+        { mode: 0o600 }
+      );
+      const store = createFilesystemInterruptStore({ root });
+      await expect(store.listPage("legacy-run", { limit: 50 })).resolves.toMatchObject({
+        records: [{ id: legacy.id }],
+        next_cursor: null
+      });
+      expect((await stat(path.join(root, ".interrupt-index.sqlite"))).isFile()).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates large legacy history without rewriting its JSON index and reads only indexed candidates", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "luna-fs-interrupt-query-"));
+    const record = (id: string, nodeId: string, createdAt: string) => ({
+      id,
+      run_id: "run-query",
+      thread_id: "run-query",
+      checkpoint_id: "checkpoint-query",
+      node_id: nodeId,
+      status: "pending" as const,
+      created_at: createdAt,
+      updated_at: createdAt
+    });
+    try {
+      const old = record("interrupt-old", "review", "2026-07-12T12:00:00.000Z");
+      const later = record("interrupt-later", "publish", "2026-07-12T12:01:00.000Z");
+      const indexPath = path.join(root, ".index", `${encodeURIComponent("run-query")}.json`);
+      const irrelevant = Array.from({ length: 1_000 }, (_, index) =>
+        record(
+          `irrelevant-${index.toString().padStart(4, "0")}`,
+          "unrelated",
+          `2026-07-11T${Math.floor(index / 60).toString().padStart(2, "0")}:${(index % 60).toString().padStart(2, "0")}:00.000Z`
+        ));
+      await mkdir(path.dirname(indexPath), { recursive: true });
+      await Promise.all([old, later, ...irrelevant].map(async (item) => {
+        await writeFile(
+          path.join(root, `${encodeURIComponent(item.id)}.json`),
+          JSON.stringify(item),
+          { mode: 0o600 }
+        );
+      }));
+      const legacyIndex = JSON.stringify({
+        version: 1,
+        run_id: "run-query",
+        entries: [old, later, ...irrelevant].map(({ id, created_at }) => ({ id, created_at }))
+      });
+      await writeFile(indexPath, legacyIndex, { mode: 0o600 });
+
+      const store = createFilesystemInterruptStore({ root });
+      await expect(store.findFirst("run-query", {
+        exclude_id: old.id,
+        node_ids: ["publish"],
+        created_after: old.created_at,
+        statuses: ["pending"]
+      })).resolves.toMatchObject({ id: later.id });
+
+      await Promise.all(irrelevant.map(async (item) => {
+        await writeFile(
+          path.join(root, `${encodeURIComponent(item.id)}.json`),
+          "{invalid-after-indexing",
+          { mode: 0o600 }
+        );
+      }));
+      await expect(store.findFirst("run-query", {
+        node_ids: ["publish"],
+        statuses: ["pending"]
+      })).resolves.toMatchObject({ id: later.id });
+      await store.create(record(
+        "interrupt-new",
+        "publish",
+        "2026-07-12T12:02:00.000Z"
+      ));
+      expect(await readFile(indexPath, "utf8")).toBe(legacyIndex);
+      await expect(store.findFirst("run-query", {
+        node_ids: ["publish"],
+        statuses: ["pending"]
+      })).resolves.toMatchObject({ id: "interrupt-new" });
+      expect((await stat(path.join(root, ".interrupt-index.sqlite"))).isFile()).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

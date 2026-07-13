@@ -613,13 +613,13 @@ describe("native Studio run planning", () => {
     });
   });
 
-  it("blocks planning and execute revalidation when the compiled DAG can interrupt", async () => {
+  it("plans interruptible workflows while keeping stale-plan revalidation", async () => {
     const fixture = await writeFixture();
     let dispatches = 0;
     const service = launchService(fixture, {
       dispatch: async () => {
         dispatches += 1;
-        throw new Error("interruptible workflows must not reach dispatch");
+        throw new Error("the stale plan must not reach dispatch");
       }
     });
     const initialPlan = await service.plan(request, launchContext);
@@ -632,22 +632,14 @@ describe("native Studio run planning", () => {
       initialPlan.plan_id,
       executeRequest(initialPlan.confirmation_token),
       launchContext
-    )).rejects.toMatchObject({
-      code: "studio_run_interrupt_resume_unsupported",
-      details: {
-        workflow_id: "pinned-workflow",
-        mode: "read_only",
-        interruptible_node_count: 1
-      }
-    });
-    await expect(launchService(fixture, {
+    )).rejects.toMatchObject({ code: "studio_run_plan_stale" });
+    const interruptiblePlan = await launchService(fixture, {
       dispatch: async () => {
         dispatches += 1;
         throw new Error("planning must not dispatch");
       }
-    }).plan(request, launchContext)).rejects.toMatchObject({
-      code: "studio_run_interrupt_resume_unsupported"
-    });
+    }).plan(request, launchContext);
+    expect(interruptiblePlan.workflow_id).toBe("pinned-workflow");
     expect(dispatches).toBe(0);
   });
 

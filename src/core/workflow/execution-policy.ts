@@ -12,7 +12,7 @@ export type WorkflowExecutionNode = {
   artifacts?: readonly {
     path: string;
     source: unknown;
-    format: "json" | "markdown";
+    format: "json" | "markdown" | "png";
     required: boolean;
   }[];
   [key: string]: unknown;

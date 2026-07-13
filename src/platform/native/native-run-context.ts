@@ -266,8 +266,22 @@ async function materializeNativeAgentSchemas(
     { readonly id: string; readonly schema: JsonSchemaLike }
   >
 ): Promise<WorkflowDefinition> {
-  const nodes = await Promise.all(
-    workflow.graph.nodes.map(async (node) => {
+  const materializeNodes = async (
+    sourceNodes: readonly WorkflowDefinition["graph"]["nodes"][number][],
+    namespace: string
+  ): Promise<WorkflowDefinition["graph"]["nodes"]> => await Promise.all(
+    sourceNodes.map(async (node) => {
+      if (node.type === "loop") {
+        return {
+          ...node,
+          body: {
+            nodes: await materializeNodes(
+              node.body.nodes,
+              `${namespace}.${node.id}`
+            )
+          }
+        };
+      }
       if (node.type !== "agent") {
         return node;
       }
@@ -275,7 +289,7 @@ async function materializeNativeAgentSchemas(
       const agent = await loadAgentDefinition(agentsRoot, node.agent, {
         capabilityRegistry
       });
-      const schemaId = `workflow-agent-schemas.${workflow.id}.${node.id}`;
+      const schemaId = `workflow-agent-schemas.${namespace}.${node.id}`;
       const outputSchema = node.output_schema.endsWith(".json")
         ? schemaId
         : node.output_schema;
@@ -296,6 +310,7 @@ async function materializeNativeAgentSchemas(
       };
     })
   );
+  const nodes = await materializeNodes(workflow.graph.nodes, workflow.id);
   const compositions = await Promise.all(
     Object.entries(workflow.compositions ?? {}).map(async ([id, child]) => [
       id,
@@ -392,7 +407,12 @@ export function runtimeCompositionConfig(
 }
 
 export function workflowUsesAgents(workflow: WorkflowDefinition): boolean {
-  return workflow.graph.nodes.some((node) =>
-    node.type === "agent" || node.type === "pattern"
-  ) || Object.values(workflow.compositions ?? {}).some(workflowUsesAgents);
+  const nodesUseAgents = (nodes: WorkflowDefinition["graph"]["nodes"]): boolean =>
+    nodes.some((node) =>
+      node.type === "agent" ||
+      node.type === "pattern" ||
+      (node.type === "loop" && nodesUseAgents(node.body.nodes))
+    );
+  return nodesUseAgents(workflow.graph.nodes) ||
+    Object.values(workflow.compositions ?? {}).some(workflowUsesAgents);
 }

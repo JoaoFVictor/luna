@@ -76,7 +76,8 @@ export type CompiledWorkflowNodeKind =
   | "agent"
   | "pattern"
   | "interrupt"
-  | "workflow";
+  | "workflow"
+  | "loop";
 
 export type CompiledWorkflowNode = {
   readonly id: string;
@@ -90,6 +91,7 @@ export type CompiledWorkflowNode = {
     readonly workflow: WorkflowDefinition;
     readonly compiled: CompiledWorkflow;
   };
+  readonly loop_body?: readonly CompiledWorkflowNode[];
   readonly source: WorkflowNode;
 };
 
@@ -163,7 +165,8 @@ function assertSupportedNodes(nodes: readonly WorkflowNode[]): void {
       node.type !== "agent" &&
       node.type !== "pattern" &&
       node.type !== "human_gate" &&
-      node.type !== "workflow"
+      node.type !== "workflow" &&
+      node.type !== "loop"
     ) {
       throw new WorkflowCompilerError(
         "workflow_node_type_unsupported",
@@ -330,6 +333,36 @@ function compileNode(
         source: node
       };
     }
+    case "loop": {
+      const analysis = analyzeWorkflowGraph(node.body);
+      const body = analysis.topological_node_ids.map((bodyNodeId) => {
+        const bodyIndex = node.body.nodes.findIndex(
+          (candidate) => candidate.id === bodyNodeId
+        );
+        const compiled = compileNode(
+          node.body.nodes[bodyIndex],
+          bodyIndex,
+          indexes,
+          registry,
+          workflow,
+          reducers
+        );
+        return {
+          ...compiled,
+          yaml_path: `$.nodes[${nodeIndex}].body.nodes[${bodyIndex}]`
+        };
+      });
+      return {
+        id: node.id,
+        kind: "loop",
+        yaml_path: `$.nodes[${nodeIndex}]`,
+        capability_id: "workflow.loop",
+        output_schema: {},
+        can_create_pending_interrupt: true,
+        loop_body: body,
+        source: node
+      };
+    }
   }
 }
 
@@ -457,7 +490,7 @@ function assertProtectedOperationsAfterApproval(
 ): void {
   const approvalNodeIds = new Set(
     compiledNodes
-      .filter((node) => node.kind === "interrupt")
+      .filter((node) => node.kind === "interrupt" || node.kind === "loop")
       .map((node) => node.id)
   );
   if (approvalNodeIds.size === 0) {
@@ -466,6 +499,19 @@ function assertProtectedOperationsAfterApproval(
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
   for (const node of nodes) {
+    if (node.type === "loop") {
+      const protectedBodyIndex = node.body.nodes.findIndex((bodyNode) =>
+        isProtectedWriteNode(bodyNode, indexes)
+      );
+      if (protectedBodyIndex !== -1) {
+        const nodeIndex = nodes.findIndex((candidate) => candidate.id === node.id);
+        throw new WorkflowCompilerError(
+          "workflow_protected_operation_before_approval",
+          `Protected loop operation ${node.body.nodes[protectedBodyIndex]!.id} is scheduled before its approval interrupt.`,
+          { path: `$.nodes[${nodeIndex}].body.nodes[${protectedBodyIndex}]` }
+        );
+      }
+    }
     if (!isProtectedWriteNode(node, indexes)) {
       continue;
     }

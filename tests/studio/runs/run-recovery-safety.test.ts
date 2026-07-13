@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
+import {
+  createInitialRuntimeState,
+  type LunaRuntimeState
+} from "../../../src/core/runtime/state.js";
 import type { NativeStudioQueuedRun } from "../../../src/studio/adapters/filesystem/run-dispatch-contracts.js";
-import { nativeStudioCheckpointReplayIsSafe } from "../../../src/studio/adapters/native/run-recovery-safety.js";
+import {
+  nativeStudioCheckpointReplayIsSafe,
+  nativeStudioFailedTerminalIsSafeForRuntimeState
+} from "../../../src/studio/adapters/native/run-recovery-safety.js";
 
 function jobWithSideEffects(
   sideEffects: NativeStudioQueuedRun["preallocation"]["side_effects"]
@@ -9,6 +16,48 @@ function jobWithSideEffects(
     preallocation: { side_effects: sideEffects }
   } as NativeStudioQueuedRun;
 }
+
+function failedState(
+  nodeStatuses: LunaRuntimeState["node_statuses"]
+): LunaRuntimeState {
+  return {
+    ...createInitialRuntimeState({
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-resume-1",
+        workflow_id: "social-post",
+        attempt: 1,
+        started_at: "2026-07-12T12:00:00.000Z"
+      },
+      workflow: { id: "social-post" }
+    }),
+    run_status: "failed",
+    node_statuses: nodeStatuses
+  };
+}
+
+const imageGenerationEffect = {
+  stage: "potential" as const,
+  effect_id: "effect-generate-image",
+  category: "model_call" as const,
+  description: "Generate the proposed image",
+  confirmation_required: false,
+  retry_semantics: "retry_forbidden" as const,
+  idempotency_scope: "attempt" as const,
+  node_id: "generate_image"
+};
+
+const publishEffect = {
+  stage: "potential" as const,
+  effect_id: "effect-publish",
+  category: "external_write" as const,
+  description: "Publish the approved social post",
+  confirmation_required: true,
+  retry_semantics: "retry_requires_adoption" as const,
+  idempotency_scope: "external_resource" as const,
+  node_id: "publish_post"
+};
 
 describe("native Studio checkpoint replay safety", () => {
   it.each(["potential", "resolved"] as const)(
@@ -59,5 +108,38 @@ describe("native Studio checkpoint replay safety", () => {
       confirmation_required: false,
       operation_id: "extension.read"
     }]))).toBe(false);
+  });
+});
+
+describe("native Studio failed resume safety", () => {
+  it("records a known failure when a later write node was never reached", () => {
+    expect(nativeStudioFailedTerminalIsSafeForRuntimeState(
+      [imageGenerationEffect, publishEffect],
+      failedState({
+        generate_image: { status: "failed", attempt: 1 },
+        publish_post: { status: "skipped_dependency_failed" }
+      })
+    )).toBe(true);
+  });
+
+  it("keeps the outcome unknown when the write node may have run", () => {
+    expect(nativeStudioFailedTerminalIsSafeForRuntimeState(
+      [imageGenerationEffect, publishEffect],
+      failedState({
+        generate_image: { status: "succeeded", attempt: 1 },
+        publish_post: { status: "failed", attempt: 1 }
+      })
+    )).toBe(false);
+  });
+
+  it("fails closed when a future write has no node identity", () => {
+    const { node_id: _nodeId, ...unscopedPublishEffect } = publishEffect;
+    expect(nativeStudioFailedTerminalIsSafeForRuntimeState(
+      [imageGenerationEffect, unscopedPublishEffect],
+      failedState({
+        generate_image: { status: "failed", attempt: 1 },
+        publish_post: { status: "skipped_dependency_failed" }
+      })
+    )).toBe(false);
   });
 });

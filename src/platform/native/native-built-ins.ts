@@ -10,6 +10,14 @@ import {
   pullRequestReviewPortsFromBuiltInOptions
 } from "../../capabilities/pull-request-review/built-ins.js";
 import {
+  createSocialPostPublishBuiltIn,
+  socialPostPortsFromBuiltInOptions
+} from "../../capabilities/social-post/built-ins.js";
+import {
+  createImageGenerateBuiltIn,
+  imageGenerationPortsFromBuiltInOptions
+} from "../../capabilities/image-generation/built-ins.js";
+import {
   gitPortsFromBuiltInOptions
 } from "../../capabilities/git/shared.js";
 import { createGitCommitBuiltIn } from "../../capabilities/git/commit.js";
@@ -123,6 +131,12 @@ export const pullRequestReviewPublishBuiltIn =
   createPullRequestReviewPublishBuiltIn(
     pullRequestReviewPortsFromBuiltInOptions
   );
+export const socialPostPublishBuiltIn = createSocialPostPublishBuiltIn(
+  socialPostPortsFromBuiltInOptions
+);
+export const imageGenerateBuiltIn = createImageGenerateBuiltIn(
+  imageGenerationPortsFromBuiltInOptions
+);
 
 export function createNativeProviderBuiltIns({
   workflowBuiltIns = defaultWorkflowBuiltIns,
@@ -167,6 +181,8 @@ export function createNativeProviderBuiltIns({
       gitPushBranchBuiltIn,
       changeRequestCreateBuiltIn,
       pullRequestReviewPublishBuiltIn,
+      socialPostPublishBuiltIn,
+      imageGenerateBuiltIn,
       prepareImplementationWorktreeBuiltIn,
       collectTaskContext,
       runValidationCommandsBuiltIn,

@@ -11,7 +11,7 @@ import type { ArtifactOverwritePolicy } from "../runtime/artifacts/transaction.j
 import type { RuntimeBackends } from "../runtime/backends/contracts.js";
 import type { JsonValue } from "../runtime/json.js";
 import type { RunHandle } from "../runtime/run-handle.js";
-import type { LunaRuntimeState } from "../runtime/state.js";
+import type { LunaRuntimeState, RuntimeArtifactRef } from "../runtime/state.js";
 import type { ResolvedToolCatalog } from "../tools/resolved-catalog.js";
 import type { CompiledWorkflow, CompiledWorkflowNode } from "./compiler.js";
 import type { WorkflowDefinition } from "./definition-types.js";
@@ -34,11 +34,14 @@ export type WorkflowArtifactPublisherPort = {
   publish(input: {
     readonly node_id: string;
     readonly path: string;
-    readonly format: "json" | "markdown";
+    readonly format: "json" | "markdown" | "png";
     readonly value: unknown;
     readonly semantic_type?: ArtifactSemanticType;
     readonly overwrite_policy: ArtifactOverwritePolicy;
   }): Promise<WorkflowArtifactRef>;
+  verify?(ref: WorkflowArtifactRef & {
+    readonly content_hash?: string;
+  }): Promise<boolean>;
 };
 
 export type WorkflowBuiltInExecutor = (input: {
@@ -104,6 +107,21 @@ export type RunWorkflowInput = {
   readonly executionScope?: WorkflowExecutionScope;
   /** Development-only cut points. Their executors and exclusively-required ancestors do not run. */
   readonly precompleted_steps?: WorkflowPrecompletedSteps;
+  /** Internal continuation supplied only by the durable loop resume protocol. */
+  readonly loop_resume?: {
+    readonly node_id: string;
+    readonly iteration: number;
+    readonly steps: Record<string, JsonValue>;
+    readonly artifact_refs: RuntimeArtifactRef[];
+    readonly decision: JsonValue;
+  };
+  /** Internal continuation persisted when a loop reaches its human gate. */
+  readonly loop_continuation?: {
+    readonly node_id: string;
+    readonly iteration: number;
+    readonly steps: Record<string, JsonValue>;
+    readonly artifact_refs: RuntimeArtifactRef[];
+  };
   readonly signal?: AbortSignal;
   readonly runtimeContext?: WorkflowRuntimeContext;
   readonly backends: RuntimeBackends;

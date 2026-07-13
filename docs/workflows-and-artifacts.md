@@ -54,6 +54,8 @@ Supported node types:
 - `agent`: calls a reusable agent and validates structured JSON output.
 - `pattern`: calls a registered workflow pattern.
 - `human_gate`: creates a resumable interrupt backed by a gate registration.
+- `loop`: runs a sequential body ending in one human gate until its declared
+  repeat condition is false.
 - `workflow`: synchronously calls another installed workflow by id.
 
 Workflow composition remains YAML-owned and does not create a capability or a
@@ -270,6 +272,21 @@ reconstructs invocation/run context from checkpoint metadata, applies the
 decision, and continues the scheduler. Until concurrent HITL outcome merging
 has an explicit contract, every interrupt-capable node must be ordered before
 or after every other node in the workflow graph.
+
+## Durable Human Review Loops
+
+A `loop` body is a single sequential chain ending in exactly one `human_gate`.
+Its `repeat_when` expression decides whether the human response starts another
+iteration; no implicit iteration limit exists. `when` on body agents and
+built-ins supports selective regeneration and retains the previous output when
+the node is not selected. `result` projects the terminal business value.
+Optional `halt_when` evaluates only that result and can finish the workflow
+successfully without scheduling downstream nodes, for example after rejection.
+
+Each iteration has a deterministic execution identity, interrupt, checkpoint,
+and artifact namespace. Resume recovery reuses persisted node outputs rather
+than replaying completed work. Binary assets remain content-addressed artifacts
+and only opaque references enter loop state.
 
 ## Artifacts
 

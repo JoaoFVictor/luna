@@ -37,6 +37,11 @@ export type BuiltInStepMetadata = {
 
 export type BuiltInStepDependencies = Record<string, unknown>;
 
+export type BuiltInStepNodeContext = {
+  readonly id: string;
+  readonly capability_id: string;
+};
+
 export type BuiltInStepRunOptions<
   Dependencies extends object = BuiltInStepDependencies
 > = {
@@ -44,6 +49,7 @@ export type BuiltInStepRunOptions<
   readonly input?: Record<string, unknown>;
   readonly dependencies?: Dependencies;
   readonly observability?: WorkflowObservability;
+  readonly node?: BuiltInStepNodeContext;
 };
 
 export type BuiltInStep<

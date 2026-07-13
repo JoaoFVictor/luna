@@ -7,7 +7,11 @@ export async function publishArtifactsForNode(
   input: RunWorkflowInput,
   node: CompiledWorkflowNode,
   output: unknown,
-  state: LunaRuntimeState
+  state: LunaRuntimeState,
+  identity?: {
+    readonly node_id: string;
+    readonly path_prefix: string;
+  }
 ): Promise<LunaRuntimeState["artifact_refs"]> {
   const artifactPublisher = input.artifactPublisher;
   if (artifactPublisher === undefined || !nodeHasArtifacts(node)) {
@@ -15,7 +19,15 @@ export async function publishArtifactsForNode(
   }
 
   const published = await publishDeclaredArtifacts({
-    publisher: artifactPublisher,
+    publisher: identity === undefined
+      ? artifactPublisher
+      : {
+          publish: async (artifact) => await artifactPublisher.publish({
+            ...artifact,
+            node_id: identity.node_id,
+            path: `${identity.path_prefix}/${artifact.path}`
+          })
+        },
     node: node.source,
     output,
     state

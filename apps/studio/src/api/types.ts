@@ -128,6 +128,11 @@ import type {
   RunNodeOutputResponse as ContractRunNodeOutputResponse,
   RunNodeOutputSnapshot as ContractRunNodeOutputSnapshot,
 } from "../../../../src/studio/contracts/run-node-output.js"
+import type {
+  StudioRunInterruptList as ContractRunInterruptList,
+  StudioRunInterruptResumeReceipt as ContractRunInterruptResumeReceipt,
+  StudioRunInterruptResumeRequest as ContractRunInterruptResumeRequest,
+} from "../../../../src/studio/contracts/run-interrupts.js"
 
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = CoreJsonValue
@@ -211,6 +216,10 @@ export type RunGraphResponse = ContractRunGraphResponse
 export type RunNodeOutputSnapshot = ContractRunNodeOutputSnapshot
 export type RunNodeOutputResponse = ContractRunNodeOutputResponse
 export type RunNodeOutputComparisonResponse = ContractRunNodeOutputComparisonResponse
+export type RunInterruptList = ContractRunInterruptList
+export type RunInterrupt = RunInterruptList["items"][number]
+export type RunInterruptResumeRequest = ContractRunInterruptResumeRequest
+export type RunInterruptResumeReceipt = ContractRunInterruptResumeReceipt
 
 export type InputAdapterSummary = StudioInputAdapterSummary
 export type InputAdapterCatalog = StudioInputAdapterCatalog

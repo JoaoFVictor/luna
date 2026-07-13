@@ -4,6 +4,7 @@ import {
   RunStoreError
 } from "../../../src/studio/application/runs/errors.js";
 import { studioDomainHttpError } from "../../../src/studio/server/domain-error.js";
+import { StudioRunResumeError } from "../../../src/studio/application/runs/resume-errors.js";
 
 describe("Studio domain HTTP errors", () => {
   it("maps every Run Ledger error without publishing its internal message", () => {
@@ -31,5 +32,16 @@ describe("Studio domain HTTP errors", () => {
     expect(
       studioDomainHttpError(new RunStoreError("run_store_busy", "unsafe"))
     ).toMatchObject({ statusCode: 503, code: "run_store_busy" });
+  });
+
+  it("reports capability catalog drift as a safe conflict instead of storage corruption", () => {
+    expect(studioDomainHttpError(new StudioRunResumeError(
+      "studio_run_resume_catalog_changed",
+      "unsafe implementation detail"
+    ))).toEqual({
+      statusCode: 409,
+      code: "studio_run_resume_catalog_changed",
+      message: "The run cannot be resumed because the runtime capability catalog changed"
+    });
   });
 });

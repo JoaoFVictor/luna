@@ -28,6 +28,10 @@ export type NativeStudioRunTerminal =
       readonly status: "failed";
       readonly state?: LunaRuntimeState;
       readonly cause: unknown;
+    }
+  | {
+      readonly status: "cancelled";
+      readonly cause: unknown;
     };
 
 export type NativeStudioRunTerminalPreparation = {
@@ -134,6 +138,7 @@ export class NativeStudioRunLease {
   readonly #now: () => number;
   readonly #heartbeatIntervalMs: number;
   readonly #onHeartbeatError: (cause: unknown) => void;
+  readonly #lifecycleExecutionId: string | undefined;
   #tail: Promise<void> = Promise.resolve();
   #counter = 0;
   #heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -148,6 +153,7 @@ export class NativeStudioRunLease {
     readonly now: () => number;
     readonly heartbeatIntervalMs: number;
     readonly onHeartbeatError?: (cause: unknown) => void;
+    readonly lifecycleExecutionId?: string;
   }) {
     this.#ledger = options.ledger;
     this.#runId = options.runId;
@@ -156,6 +162,9 @@ export class NativeStudioRunLease {
     this.#now = options.now;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs;
     this.#onHeartbeatError = options.onHeartbeatError ?? (() => undefined);
+    this.#lifecycleExecutionId = options.lifecycleExecutionId === undefined
+      ? undefined
+      : RunOpaqueIdSchema.parse(options.lifecycleExecutionId);
   }
 
   async prepare(): Promise<RunRecord> {
@@ -171,6 +180,31 @@ export class NativeStudioRunLease {
       owner_id: this.#ownerId,
       active_node_ids: []
     });
+  }
+
+  async resume(): Promise<RunRecord> {
+    await this.prepareResume();
+    return await this.startResume();
+  }
+
+  async prepareResume(): Promise<RunRecord> {
+    return await this.transition({
+      kind: "runtime_status",
+      owner_id: this.#ownerId,
+      status: "resuming",
+      active_node_ids: []
+    });
+  }
+
+  async startResume(): Promise<RunRecord> {
+    const running = await this.transition({
+      kind: "runtime_status",
+      owner_id: this.#ownerId,
+      status: "running",
+      active_node_ids: []
+    });
+    this.startHeartbeat();
+    return running;
   }
 
   async claimRecovery(
@@ -279,6 +313,9 @@ export class NativeStudioRunLease {
     const digest = sha256Digest({
       schema_version: 1,
       run_id: this.#runId,
+      ...(this.#lifecycleExecutionId === undefined
+        ? {}
+        : { lifecycle_execution_id: this.#lifecycleExecutionId }),
       type: event.type,
       node_id: event.node_id,
       attempt: event.attempt
@@ -442,12 +479,14 @@ export class NativeStudioRunLease {
       );
     }
     const outcome = options.createOutcome?.(terminalRevision);
-    const failure = terminal.status === "failed"
+    const failure = terminal.status === "failed" || terminal.status === "cancelled"
       ? (() => {
           const code = failureCode(terminal.cause);
           return {
             code,
-            message: "Native workflow execution failed",
+            message: terminal.status === "cancelled"
+              ? "Native workflow execution was cancelled before a safe resume"
+              : "Native workflow execution failed",
             diagnostics: failureDiagnosticsFrom({
               cause: terminal.cause,
               code
@@ -624,6 +663,9 @@ export class NativeStudioRunLease {
     const digest = sha256Digest({
       schema_version: 1,
       run_id: this.#runId,
+      ...(this.#lifecycleExecutionId === undefined
+        ? {}
+        : { lifecycle_execution_id: this.#lifecycleExecutionId }),
       type: failure.type,
       node_id: failure.node_id,
       attempt: failure.attempt

@@ -143,6 +143,7 @@ function workflowExecutorFor(
   dependencies: BuiltInStepDependencies
 ): WorkflowBuiltInExecutor {
   return async ({
+    node,
     state,
     input,
     runtimeContext,
@@ -153,7 +154,8 @@ function workflowExecutorFor(
       state: workflowStateView(state, runtimeContext),
       input: workflowBuiltInInput(input),
       dependencies,
-      observability
+      observability,
+      node: { id: node.id, capability_id: node.capability_id }
     });
 }
 

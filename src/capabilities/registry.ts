@@ -19,6 +19,8 @@ import { manifest as runtimeManifest } from "./runtime/manifest.js";
 import { manifest as taskContextManifest } from "./task-context/manifest.js";
 import { manifest as validationManifest } from "./validation/manifest.js";
 import { manifest as repositoryChangeManifest } from "./repository-change/manifest.js";
+import { manifest as socialPostManifest } from "./social-post/manifest.js";
+import { manifest as imageGenerationManifest } from "./image-generation/manifest.js";
 import { createCapabilityRegistry } from "../core/capabilities/registry.js";
 
 export const officialCapabilityManifests = Object.freeze([
@@ -42,6 +44,8 @@ export const officialCapabilityManifests = Object.freeze([
   repositoryWorkspaceManifest,
   gitManifest,
   changeRequestManifest,
+  imageGenerationManifest,
+  socialPostManifest,
   repositoryWriteManifest
 ] as const);
 

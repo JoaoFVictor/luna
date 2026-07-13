@@ -29,9 +29,9 @@ import {
 } from "./deterministic-gates.js";
 import { gatedAgentGateKey, gatedAgentWorkerKey } from "./gated-agent-loop-keys.js";
 import {
-  requireAgentDefaults,
+  requirePatternAgentDefaults,
   runPatternAgent
-} from "./pattern-agent-runner.js";
+} from "../agents/pattern-agent-runner.js";
 
 const GATED_AGENT_LOOP_CAPABILITY = "quality-gates.gated_agent_loop";
 const AGENT_REVIEW_GATE = "quality-gates.agent_review";
@@ -80,7 +80,7 @@ export async function executeGatedAgentLoopPattern({
 }, dependencies: QualityGatePatternDependencies
 ): Promise<unknown> {
   const source = requireGatedAgentLoopSource(node);
-  const cwd = workspacePath(runtimeContext.workspace) ?? requireAgentDefaults(
+  const cwd = workspacePath(runtimeContext.workspace) ?? requirePatternAgentDefaults(
     input,
     gatedAgentWorkerKey(node.id),
     node.id,

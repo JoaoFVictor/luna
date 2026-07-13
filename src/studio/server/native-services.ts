@@ -245,6 +245,7 @@ export async function createNativeStudioServices(
     configuration: configuration.control,
     resourceHistory: resourceHistory.control,
     runs: runSubsystem.runs,
+    runInterrupts: runSubsystem.runInterrupts,
     runLaunch: runSubsystem.runLaunch,
     artifacts: runSubsystem.artifacts,
     runLogs: runSubsystem.runLogs,

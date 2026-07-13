@@ -260,6 +260,43 @@ describe("workflow compiler", () => {
     ).toThrowError(expect.objectContaining({ code: "workflow_protected_operation_before_approval" }));
   });
 
+  it("rejects protected side effects inside a durable review loop", () => {
+    expect(() =>
+      compileWorkflow({
+        workflow: workflow([
+          {
+            id: "editorial",
+            type: "loop",
+            body: {
+              nodes: [
+                {
+                  id: "write",
+                  type: "built_in",
+                  uses: "runtime.write",
+                  policies: [{ uses: "runtime.write_policy" }]
+                },
+                {
+                  id: "approve",
+                  type: "human_gate",
+                  uses: "quality.approval",
+                  after: ["write"]
+                }
+              ]
+            },
+            repeat_when: { expression: "false" },
+            result: { expression: "{}" }
+          }
+        ]),
+        registry
+      })
+    ).toThrowError(
+      expect.objectContaining({
+        code: "workflow_protected_operation_before_approval",
+        path: "$.nodes[0].body.nodes[0]"
+      })
+    );
+  });
+
   it("rejects fan-out branches that could create multiple pending HITL interrupts", () => {
     expect(() =>
       compileWorkflow({

@@ -28,11 +28,12 @@ const TOP_LEVEL_FIELDS = new Set([
 ]);
 
 const NODE_FIELDS: Record<string, ReadonlySet<string>> = {
-  built_in: new Set(["id", "type", "uses", "input", "artifacts", "after", "policies"]),
-  agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "runtime_requirements", "policies"]),
+  built_in: new Set(["id", "type", "uses", "input", "artifacts", "after", "policies", "when"]),
+  agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "runtime_requirements", "policies", "when"]),
   pattern: new Set(["id", "type", "uses", "worker", "input", "gates", "repair", "artifacts", "after", "capabilities", "policies"]),
-  human_gate: new Set(["id", "type", "uses", "decision", "after", "input", "artifacts"]),
-  workflow: new Set(["id", "type", "workflow", "input", "artifacts", "after"])
+  human_gate: new Set(["id", "type", "uses", "after", "input", "artifacts"]),
+  workflow: new Set(["id", "type", "workflow", "input", "artifacts", "after"]),
+  loop: new Set(["id", "type", "body", "repeat_when", "result", "halt_when", "after"])
 };
 
 const GATE_FIELDS = new Set([
@@ -246,7 +247,10 @@ function readNode(
       : { artifacts: readArtifacts(raw.artifacts, `${yamlPath}.artifacts`) }),
     ...(raw.policies === undefined
       ? {}
-      : { policies: readPolicies(raw.policies, `${yamlPath}.policies`) })
+      : { policies: readPolicies(raw.policies, `${yamlPath}.policies`) }),
+    ...(raw.when === undefined
+      ? {}
+      : { when: assertExpressionObject(raw.when, `${yamlPath}.when`) })
   };
 
   if (type === "built_in") {
@@ -287,8 +291,7 @@ function readNode(
     return {
       ...base,
       type: "human_gate",
-      uses: requireString(raw.uses, `${yamlPath}.uses`),
-      ...(raw.decision === undefined ? {} : { decision: raw.decision })
+      uses: requireString(raw.uses, `${yamlPath}.uses`)
     };
   }
   if (type === "workflow") {
@@ -296,6 +299,28 @@ function readNode(
       ...base,
       type: "workflow",
       workflow: requireString(raw.workflow, `${yamlPath}.workflow`)
+    };
+  }
+  if (type === "loop") {
+    const body = assertObject(raw.body, `${yamlPath}.body`);
+    assertKnownFields(body, new Set(["nodes"]), `${yamlPath}.body`);
+    return {
+      ...base,
+      type: "loop",
+      body: { nodes: readNodesAt(body.nodes, `${yamlPath}.body.nodes`) },
+      repeat_when: assertExpressionObject(
+        raw.repeat_when,
+        `${yamlPath}.repeat_when`
+      ),
+      result: assertExpressionObject(raw.result, `${yamlPath}.result`),
+      ...(raw.halt_when === undefined
+        ? {}
+        : {
+            halt_when: assertExpressionObject(
+              raw.halt_when,
+              `${yamlPath}.halt_when`
+            )
+          })
     };
   }
 
@@ -313,6 +338,17 @@ function readNode(
       ? {}
       : { repair: assertObject(raw.repair, `${yamlPath}.repair`) })
   };
+}
+
+function readNodesAt(value: unknown, yamlPath: string): ParsedWorkflowNode[] {
+  if (!Array.isArray(value)) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow loop body nodes must be an array.",
+      { path: yamlPath }
+    );
+  }
+  return value.map((node, index) => readNode(node, `${yamlPath}[${index}]`));
 }
 
 function readRuntimeRequirements(value: unknown, yamlPath: string): string[] {
@@ -389,13 +425,13 @@ function readArtifacts(
     const format =
       raw.format === undefined
         ? "json"
-        : raw.format === "json" || raw.format === "markdown"
+        : raw.format === "json" || raw.format === "markdown" || raw.format === "png"
           ? raw.format
           : undefined;
     if (format === undefined) {
       throw new WorkflowDefinitionError(
         "workflow_schema_invalid",
-        "Artifact format must be json or markdown.",
+        "Artifact format must be json, markdown, or png.",
         { path: `${artifactPath}.format` }
       );
     }

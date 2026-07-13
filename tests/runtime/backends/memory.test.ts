@@ -134,4 +134,35 @@ describe("memory runtime backends", () => {
     });
   });
 
+  it("finds a later interrupt through bounded semantic filters", async () => {
+    const store = createMemoryInterruptStore();
+    const record = (
+      id: string,
+      nodeId: string,
+      createdAt: string,
+      status: "pending" | "resolved"
+    ) => ({
+      id,
+      run_id: "run-query",
+      thread_id: "run-query",
+      checkpoint_id: "checkpoint-query",
+      node_id: nodeId,
+      status,
+      created_at: createdAt,
+      updated_at: createdAt
+    });
+    await store.create(record("old", "review", "2026-07-12T12:00:00.000Z", "resolved"));
+    await store.create(record("later-resolved", "review", "2026-07-12T12:01:00.000Z", "resolved"));
+    await store.create(record("later-pending", "publish", "2026-07-12T12:02:00.000Z", "pending"));
+
+    await expect(store.findFirst("run-query", {
+      exclude_id: "old",
+      thread_id: "run-query",
+      checkpoint_id: "checkpoint-query",
+      node_ids: ["review", "publish"],
+      created_after: "2026-07-12T12:00:00.000Z",
+      statuses: ["pending"]
+    })).resolves.toMatchObject({ id: "later-pending" });
+  });
+
 });

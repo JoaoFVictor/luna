@@ -1,13 +1,19 @@
 import type {
   InterruptRecord,
   ResumeInput,
-  InterruptStore
+  PagedInterruptStore
 } from "../../../core/runtime/interrupts/contracts.js";
 import { resumeInputsEqual } from "../../../core/runtime/interrupts/resume.js";
 import type { BackendRegistration } from "../../../core/runtime/backends/contracts.js";
 import { runtimeError } from "../../../core/runtime/errors.js";
 import { stableJson } from "../../../core/runtime/json.js";
 import { z } from "zod";
+import {
+  compareInterruptRecordsNewestFirst,
+  decodeInterruptPageCursor,
+  encodeInterruptPageCursor,
+  interruptPageStartIndex
+} from "../../../core/runtime/interrupts/page-cursor.js";
 
 export const MemoryInterruptBackendOptionsSchema = z.object({}).strict();
 export const memoryInterruptBackendRegistration = {
@@ -16,7 +22,7 @@ export const memoryInterruptBackendRegistration = {
   optionsSchema: MemoryInterruptBackendOptionsSchema
 } satisfies BackendRegistration<z.infer<typeof MemoryInterruptBackendOptionsSchema>>;
 
-export function createMemoryInterruptStore(): InterruptStore {
+export function createMemoryInterruptStore(): PagedInterruptStore {
   const interrupts = new Map<string, InterruptRecord>();
   const pendingResumes = new Map<string, PendingResume>();
   const resumeLeaseTails = new Map<string, Promise<void>>();
@@ -46,6 +52,46 @@ export function createMemoryInterruptStore(): InterruptStore {
       return [...interrupts.values()]
         .filter((interrupt) => interrupt.run_id === runId)
         .map((interrupt) => ({ ...interrupt }));
+    },
+    async findFirst(runId, query) {
+      const nodeIds = query.node_ids === undefined
+        ? undefined
+        : new Set(query.node_ids);
+      const statuses = query.statuses === undefined
+        ? undefined
+        : new Set(query.statuses);
+      const match = [...interrupts.values()]
+        .filter((interrupt) => interrupt.run_id === runId)
+        .sort(compareInterruptRecordsNewestFirst)
+        .find((interrupt) =>
+          interrupt.id !== query.exclude_id &&
+          (query.thread_id === undefined || interrupt.thread_id === query.thread_id) &&
+          (query.checkpoint_id === undefined || interrupt.checkpoint_id === query.checkpoint_id) &&
+          (nodeIds === undefined || nodeIds.has(interrupt.node_id ?? "")) &&
+          (query.created_after === undefined || interrupt.created_at > query.created_after) &&
+          (statuses === undefined || statuses.has(interrupt.status))
+        );
+      return match === undefined ? undefined : structuredClone(match);
+    },
+    async listPage(runId, query) {
+      if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 200) {
+        throw runtimeError("Interrupt page limit is invalid", "runtime_state_invalid");
+      }
+      const records = [...interrupts.values()]
+        .filter((interrupt) => interrupt.run_id === runId)
+        .sort(compareInterruptRecordsNewestFirst);
+      const cursor = query.cursor === undefined
+        ? undefined
+        : decodeInterruptPageCursor(runId, query.cursor);
+      const start = interruptPageStartIndex(records, cursor);
+      const page = records.slice(start, start + query.limit);
+      const hasMore = start + page.length < records.length;
+      return {
+        records: page.map((record) => structuredClone(record)),
+        next_cursor: hasMore && page.length > 0
+          ? encodeInterruptPageCursor(runId, page.at(-1)!)
+          : null
+      };
     },
     async withResumeLease(id, operation) {
       const previous = resumeLeaseTails.get(id) ?? Promise.resolve();

@@ -100,7 +100,13 @@ const workflow: WorkflowDefinition = {
   graph: {
     nodes: [
       { id: "pre", type: "built_in", uses: "runtime.pre" },
-      { id: "approve", type: "human_gate", uses: "approval.human", after: ["pre"] },
+      {
+        id: "approve",
+        type: "human_gate",
+        uses: "approval.human",
+        input: { prompt: "Review the generated output" },
+        after: ["pre"]
+      },
       { id: "after", type: "built_in", uses: "runtime.after", after: ["approve"] }
     ]
   },
@@ -192,7 +198,10 @@ describe("workflow runner checkpoint resume", () => {
     )).resolves.toMatchObject({ state: { run_status: "waiting_for_input" } });
     await expect(stores.interrupts.get(
       "interrupt-run-waiting-telemetry-approve"
-    )).resolves.toMatchObject({ status: "pending" });
+    )).resolves.toMatchObject({
+      status: "pending",
+      payload: { prompt: "Review the generated output" }
+    });
   });
 
   it("rehydrates captured workspace context from checkpoint writes on resume", async () => {

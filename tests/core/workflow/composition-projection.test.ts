@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { composedWorkflowNodes } from "../../../src/core/workflow/composition.js";
 import type { WorkflowDefinition } from "../../../src/core/workflow/definition-types.js";
+import {
+  validateNodesAgainstCapabilities,
+  validateWorkflowCallInputs
+} from "../../../src/core/workflow/definition-validation.js";
 
 function workflow(
   id: string,
@@ -46,5 +50,47 @@ describe("composition-tree projection", () => {
     expect(ids).toContain("a/b");
     expect(ids).toContain("a/slash%2F%25");
     expect(ids).toContain("a.b");
+  });
+
+  it("walks composition inputs inside loops without making workflow calls legal there", () => {
+    const child = {
+      ...workflow("child", []),
+      input_schema_content: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name"],
+        properties: { name: { type: "string" } }
+      }
+    } satisfies WorkflowDefinition;
+    const loop = {
+      id: "editorial",
+      type: "loop" as const,
+      body: {
+        nodes: [
+          { id: "call", type: "workflow" as const, workflow: "child", input: {} },
+          {
+            id: "review",
+            type: "human_gate" as const,
+            uses: "hitl.approval",
+            after: ["call"]
+          }
+        ]
+      },
+      repeat_when: { expression: "false" },
+      result: { expression: "{}" }
+    };
+
+    expect(() => validateWorkflowCallInputs([loop], { child })).toThrowError(
+      expect.objectContaining({
+        code: "workflow_capability_config_invalid",
+        path: "$.nodes[0].body.nodes[0].input"
+      })
+    );
+    expect(() =>
+      validateNodesAgainstCapabilities([loop], [], new Set([loop.id]), undefined)
+    ).toThrowError(expect.objectContaining({
+      code: "workflow_schema_invalid",
+      path: "$.nodes[0].body.nodes[0]"
+    }));
   });
 });

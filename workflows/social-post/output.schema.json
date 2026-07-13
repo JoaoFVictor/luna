@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "provider",
+        "provider_id",
+        "external_id",
+        "url",
+        "text",
+        "media_id"
+      ],
+      "properties": {
+        "operation_id": { "type": "string", "const": "social-post.publish" },
+        "provider": { "type": "string", "minLength": 1 },
+        "provider_id": { "type": "string", "minLength": 1 },
+        "external_id": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "media_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "decision", "draft", "image"],
+      "properties": {
+        "action": { "type": "string", "const": "reject" },
+        "decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action"],
+          "properties": {
+            "action": { "type": "string", "const": "reject" },
+            "comment": { "type": "string", "minLength": 1, "maxLength": 8192 }
+          }
+        },
+        "draft": { "$ref": "#/definitions/draft" },
+        "image": { "$ref": "#/definitions/image" }
+      }
+    }
+  ],
+  "definitions": {
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "image_prompt",
+        "strategy",
+        "character_count",
+        "claims_to_verify"
+      ],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "image_prompt": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "strategy": { "type": "string", "minLength": 1 },
+        "character_count": { "type": "integer", "minimum": 1, "maximum": 280 },
+        "claims_to_verify": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "provider",
+        "provider_id",
+        "model",
+        "prompt",
+        "size",
+        "quality",
+        "media_type",
+        "asset",
+        "metadata"
+      ],
+      "properties": {
+        "operation_id": { "type": "string", "const": "image-generation.generate" },
+        "provider": { "type": "string", "minLength": 1 },
+        "provider_id": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string", "minLength": 1 },
+        "revised_prompt": { "type": "string" },
+        "size": { "type": "string", "minLength": 1 },
+        "quality": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string", "const": "image/png" },
+        "asset": { "$ref": "#/definitions/binary_asset" },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "binary_asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "uri",
+        "node_id",
+        "media_type",
+        "content_hash",
+        "size_bytes"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string", "minLength": 1 },
+        "node_id": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string", "const": "image/png" },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "size_bytes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

@@ -51,12 +51,89 @@ function GenericArtifactPreview({ preview }: { preview: ArtifactPreview }) {
   )
 }
 
+const SAFE_RASTER_MEDIA_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+])
+const MAX_INLINE_RASTER_BYTES = 20 * 1024 * 1024
+
+export function SafeRasterImagePreview({
+  downloadUrl,
+  expectedMediaType,
+  alt,
+}: {
+  downloadUrl: string
+  expectedMediaType: string
+  alt: string
+}) {
+  const [objectUrl, setObjectUrl] = useState<string>()
+  const [error, setError] = useState<string>()
+
+  useEffect(() => {
+    if (!SAFE_RASTER_MEDIA_TYPES.has(expectedMediaType)) return
+    const controller = new AbortController()
+    let allocatedUrl: string | undefined
+
+    void fetch(downloadUrl, {
+      credentials: "same-origin",
+      signal: controller.signal,
+      headers: { Accept: expectedMediaType },
+    }).then(async (response) => {
+      if (!response.ok) throw new Error("download_failed")
+      const blob = await response.blob()
+      if (blob.type !== expectedMediaType || !SAFE_RASTER_MEDIA_TYPES.has(blob.type)) {
+        throw new Error("media_type_mismatch")
+      }
+      if (blob.size > MAX_INLINE_RASTER_BYTES) throw new Error("image_too_large")
+      allocatedUrl = URL.createObjectURL(blob)
+      setObjectUrl(allocatedUrl)
+    }).catch((cause: unknown) => {
+      if (cause instanceof DOMException && cause.name === "AbortError") return
+      setError(
+        cause instanceof Error && cause.message === "media_type_mismatch"
+          ? "O arquivo retornado não corresponde ao tipo de imagem declarado."
+          : cause instanceof Error && cause.message === "image_too_large"
+            ? "A imagem excede o limite de 20 MB para preview inline."
+            : "Não foi possível carregar o preview seguro da imagem.",
+      )
+    })
+
+    return () => {
+      controller.abort()
+      if (allocatedUrl !== undefined) URL.revokeObjectURL(allocatedUrl)
+    }
+  }, [downloadUrl, expectedMediaType])
+
+  if (!SAFE_RASTER_MEDIA_TYPES.has(expectedMediaType)) return null
+  if (error !== undefined) {
+    return <p role="alert" className="rounded-lg border p-3 text-sm text-destructive">{error}</p>
+  }
+  if (objectUrl === undefined) return <PageLoading label="Carregando imagem para revisão" />
+  return (
+    <figure className="overflow-hidden rounded-xl border bg-muted/30 p-2">
+      <img
+        src={objectUrl}
+        alt={alt}
+        className="mx-auto max-h-[36rem] max-w-full rounded-lg object-contain"
+      />
+      <figcaption className="mt-2 px-1 text-xs text-muted-foreground">
+        Preview raster isolado em memória · {expectedMediaType}
+      </figcaption>
+    </figure>
+  )
+}
+
 function ArtifactPreviewBody({
   runId,
   handle,
+  name,
+  mediaType,
 }: {
   runId: string
   handle: string
+  name: string
+  mediaType: string
 }) {
   const preview = useQuery(artifactPreviewQuery(runId, handle))
   if (preview.isPending) return <PageLoading label="Inspecionando artifact" />
@@ -89,7 +166,15 @@ function ArtifactPreviewBody({
       </div>
       <SpecializedArtifactView
         preview={value}
-        genericFallback={<GenericArtifactPreview preview={value} />}
+        genericFallback={
+          value.kind === "binary" && SAFE_RASTER_MEDIA_TYPES.has(mediaType) ? (
+            <SafeRasterImagePreview
+              downloadUrl={studioApi.artifactDownloadUrl(runId, handle)}
+              expectedMediaType={mediaType}
+              alt={`Imagem gerada: ${name}`}
+            />
+          ) : <GenericArtifactPreview preview={value} />
+        }
       />
       <Alert variant="destructive">
         <ShieldAlertIcon aria-hidden="true" />
@@ -123,6 +208,23 @@ function ArtifactPreviewBody({
         />
       </div>
     </div>
+  )
+}
+
+export function InlineArtifactPreview({
+  runId,
+  artifact,
+}: {
+  runId: string
+  artifact: ArtifactSummary
+}) {
+  return (
+    <ArtifactPreviewBody
+      runId={runId}
+      handle={artifact.manifest_handle}
+      name={artifact.name}
+      mediaType={artifact.media_type}
+    />
   )
 }
 
@@ -318,6 +420,8 @@ export function ArtifactsPanel({
             <ArtifactPreviewBody
               runId={runId}
               handle={selectedArtifact.manifest_handle}
+              name={selectedArtifact.name}
+              mediaType={selectedArtifact.media_type}
             />
           ) : null}
         </CardContent>

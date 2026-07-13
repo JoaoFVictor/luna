@@ -28,6 +28,8 @@ import {
   interruptId,
   waitForHumanInput
 } from "./interrupts.js";
+import { resolveNodeInput } from "../../core/workflow/runner-input.js";
+import { runDurableLoop } from "./durable-loop.js";
 
 export type { WorkflowNodeRunUpdate } from "./node-output-finalizer.js";
 export { assertNodeOutputMatchesSchema } from "./node-output-validation.js";
@@ -122,37 +124,51 @@ async function runWorkflowNodeAttemptBody({
 }): Promise<WorkflowNodeAttemptOutcome> {
   input.signal?.throwIfAborted();
   const active = beginWorkflowNodeAttempt(state, node);
-  let output: JsonValue;
+  let output: unknown;
+  let haltWorkflow = false;
   try {
     await observeWorkflowNodeStarted({ input, node, active });
     if (node.kind === "interrupt") {
-      const waiting = await waitForHumanInput(input, active.state, node);
+      const reviewInput = await resolveNodeInput(node, active.state, runtimeContext, input);
+      assertCheckpointJsonValue(reviewInput);
+      const waiting = await waitForHumanInput(input, active.state, node, reviewInput);
       return {
         kind: "waiting_for_input",
         interrupt_id: interruptId(input.run.run_id, node.id),
         checkpoint_id: checkpointId(input.run.run_id, node.id),
         state: waiting
       };
-    }
-
-    const executed = await withWorkflowLocks({
-      decision,
-      lockManager: input.lockManager,
-      runtimeContext,
-      run: async () => {
-        input.signal?.throwIfAborted();
-        return await executeWorkflowNode(
-          input,
-          active.state,
-          runtimeContextSnapshot(runtimeContext),
-          node
-        );
+    } else if (node.kind === "loop") {
+      const loop = await withWorkflowLocks({
+        decision,
+        lockManager: input.lockManager,
+        runtimeContext,
+        run: async () => await runDurableLoop(input, active.state, runtimeContext, node)
+      });
+      if (loop.kind === "waiting_for_input") {
+        return loop;
       }
-    });
+      output = loop.output;
+      haltWorkflow = loop.halt_workflow;
+    } else {
+      output = await withWorkflowLocks({
+        decision,
+        lockManager: input.lockManager,
+        runtimeContext,
+        run: async () => {
+          input.signal?.throwIfAborted();
+          return await executeWorkflowNode(
+            input,
+            active.state,
+            runtimeContextSnapshot(runtimeContext),
+            node
+          );
+        }
+      });
+    }
     input.signal?.throwIfAborted();
-    assertNodeOutputMatchesSchema(node, executed);
-    assertCheckpointJsonValue(executed);
-    output = executed;
+    assertNodeOutputMatchesSchema(node, output);
+    assertCheckpointJsonValue(output);
     input.signal?.throwIfAborted();
     await saveNodeOutputWrite({ input, node, output });
     input.signal?.throwIfAborted();
@@ -166,7 +182,7 @@ async function runWorkflowNodeAttemptBody({
     });
   }
 
-  return await finalizePersistedWorkflowNodeOutput({
+  const completed = await finalizePersistedWorkflowNodeOutput({
     input,
     runtimeContext,
     node,
@@ -174,6 +190,7 @@ async function runWorkflowNodeAttemptBody({
     output,
     active
   });
+  return haltWorkflow ? { ...completed, halt_workflow: true } : completed;
 }
 
 /**

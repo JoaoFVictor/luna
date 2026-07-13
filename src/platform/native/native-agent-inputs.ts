@@ -1,14 +1,16 @@
 import { loadAgentDefinition } from "../../capabilities/agents/agent-loader.js";
 import {
-  gatedAgentGateKey,
-  gatedAgentWorkerKey
+  gatedAgentGateKey
 } from "../../capabilities/quality-gates/gated-agent-loop-keys.js";
+import { patternWorkerKey } from "../../capabilities/agents/pattern-agent-runner.js";
 import { loadMcpConfig } from "../../core/config/mcp.js";
 import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
 import type { RepositoryConfig } from "../../core/config/schemas.js";
 import { lunaToolCatalog } from "../../capabilities/repository/tool-catalog.js";
 import { resolveToolCatalog } from "../../core/tools/resolved-catalog.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
+import type { ParsedWorkflowNode } from "../../core/workflow/definition-types.js";
+import { workflowLoopBodyNodeKey } from "../../core/workflow/loop-identity.js";
 import type { WorkflowAgentInputMap } from "../../core/workflow/execution-contracts.js";
 import { nativeLunaPlatformRegistrations } from "./native-platform-registrations.js";
 import {
@@ -91,11 +93,27 @@ export async function buildNativeWorkflowAgentInputs({
 function workflowAgentSpecs(
   workflow: WorkflowDefinition
 ): { readonly key: string; readonly agentId: string }[] {
+  return workflowNodeAgentSpecs(workflow.graph.nodes);
+}
+
+function workflowNodeAgentSpecs(
+  nodes: readonly ParsedWorkflowNode[],
+  loopNodeId?: string
+): { readonly key: string; readonly agentId: string }[] {
   const specs: { readonly key: string; readonly agentId: string }[] = [];
 
-  for (const node of workflow.graph.nodes) {
+  for (const node of nodes) {
+    if (node.type === "loop") {
+      specs.push(...workflowNodeAgentSpecs(node.body.nodes, node.id));
+      continue;
+    }
     if (node.type === "agent") {
-      specs.push({ key: node.id, agentId: node.agent });
+      specs.push({
+        key: loopNodeId === undefined
+          ? node.id
+          : workflowLoopBodyNodeKey(loopNodeId, node.id),
+        agentId: node.agent
+      });
       continue;
     }
 
@@ -104,7 +122,7 @@ function workflowAgentSpecs(
     }
 
     if (node.worker !== undefined) {
-      specs.push({ key: gatedAgentWorkerKey(node.id), agentId: node.worker });
+      specs.push({ key: patternWorkerKey(node.id), agentId: node.worker });
     }
 
     for (const gate of node.gates ?? []) {

@@ -63,7 +63,7 @@ const childWorkflow: WorkflowSummary = {
   },
   output_schema_content: { type: "object", properties: { report: { type: "string" } } },
   synchronous_composition: "allowed",
-  node_counts: { built_in: 1, agent: 0, pattern: 0, human_gate: 0, workflow: 0 },
+  node_counts: { built_in: 1, agent: 0, pattern: 0, human_gate: 0, workflow: 0, loop: 0 },
   requires_repository: true,
   max_concurrency: 1,
 }

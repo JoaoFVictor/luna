@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
-import type { InterruptStore } from "../../../src/core/runtime/interrupts/contracts.js";
+import type { PagedInterruptStore } from "../../../src/core/runtime/interrupts/contracts.js";
 import { compileWorkflow } from "../../../src/core/workflow/compiler.js";
 import type { WorkflowDefinition } from "../../../src/core/workflow/definition-types.js";
 import {
@@ -47,7 +47,7 @@ describe("workflow run and resume lease", () => {
     const exactRunQueued = deferred();
     let leaseAttempts = 0;
     let leaseEntries = 0;
-    const interrupts: InterruptStore = {
+    const interrupts: PagedInterruptStore = {
       ...durableInterrupts,
       async withResumeLease(runId, operation) {
         leaseAttempts += 1;

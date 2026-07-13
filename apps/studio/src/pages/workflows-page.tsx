@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import { studioApi } from "@/api/client"
 import { draftsQuery, studioKeys, workflowsQuery } from "@/api/queries"
-import type { WorkflowDraftCreateSource } from "@/api/types"
+import type { WorkflowDraftCreateSource, WorkflowSummary } from "@/api/types"
 import { useStudioSession } from "@/app/studio-context"
 import { PageHeader } from "@/components/page-header"
 import { PageEmpty, PageError, PageLoading } from "@/components/page-state"
@@ -26,13 +26,8 @@ import { NewWorkflowDialog } from "@/features/workflows/new-workflow-dialog"
 import { humanizeWorkflowIdentifier } from "@/features/workflows/workflow-node-catalog"
 import { formatCount } from "@/lib/presentation"
 
-function nodeTotal(counts: {
-  built_in?: number
-  agent?: number
-  pattern?: number
-  human_gate?: number
-}) {
-  return (counts.built_in ?? 0) + (counts.agent ?? 0) + (counts.pattern ?? 0) + (counts.human_gate ?? 0)
+function nodeTotal(counts: WorkflowSummary["node_counts"]) {
+  return Object.values(counts).reduce((total, count) => total + count, 0)
 }
 
 export function WorkflowsPage() {

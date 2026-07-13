@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArtifactsPanel } from "@/features/runs/artifacts-panel"
 import { RunFailureCallout } from "@/features/runs/run-failure-callout"
 import { RunGraphPanel } from "@/features/runs/run-graph-panel"
+import { HitlReviewPanel } from "@/features/runs/hitl-review-panel"
 import { RunLogsPanel } from "@/features/runs/run-logs-panel"
 import { RunRecordDetails } from "@/features/runs/run-record-details"
 import { RunTimelinePanel } from "@/features/runs/run-timeline-panel"
@@ -78,6 +79,7 @@ export function RunDetailPage() {
       </header>
 
       <RunFailureCallout record={record} />
+      <HitlReviewPanel runId={runId} active={!terminal} terminalAt={record.finished_at} />
       {record.completeness !== "complete" && (
         <Alert><InfoIcon aria-hidden="true" /><AlertTitle>Histórico incompleto</AlertTitle><AlertDescription>Parte dos dados desta execução não foi registrada. A ausência de um passo ou evento nesta tela não confirma que ele não ocorreu.</AlertDescription></Alert>
       )}

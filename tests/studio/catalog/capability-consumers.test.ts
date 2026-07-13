@@ -58,7 +58,8 @@ function workflows(status: "complete" | "partial" = "complete"): StudioWorkflowC
         agent: 0,
         pattern: 0,
         human_gate: 0,
-        workflow: 0
+        workflow: 0,
+        loop: 0
       },
       requires_repository: false,
       max_concurrency: 1

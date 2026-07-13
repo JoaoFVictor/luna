@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source", "event", "payload"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "2026-06"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event": {
+      "type": "string",
+      "const": "social_post_brief"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "const": "workflow" },
+        "id": { "type": "string", "const": "social-post" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "const": "social_post" },
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "references": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic", "objective", "audience", "tone", "language"],
+      "properties": {
+        "topic": { "type": "string", "minLength": 1 },
+        "objective": { "type": "string", "minLength": 1 },
+        "audience": { "type": "string", "minLength": 1 },
+        "tone": { "type": "string", "minLength": 1 },
+        "language": { "type": "string", "minLength": 1 },
+        "key_points": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "call_to_action": { "type": "string", "minLength": 1 },
+        "link": { "type": "string", "format": "uri" },
+        "hashtags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "additional_constraints": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "review_feedback": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "maxItems": 100
+        },
+        "previous_draft": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

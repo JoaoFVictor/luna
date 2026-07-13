@@ -19,6 +19,15 @@ const app: AppConfig = {
   artifacts: { root: ".runs" }
 };
 
+const artifactPublisher = {
+  publish: vi.fn(async (input: { node_id: string; path: string }) => ({
+    id: input.path,
+    uri: `artifact://run-1/${input.path}`,
+    node_id: input.node_id
+  })),
+  read: vi.fn(async () => new Uint8Array())
+};
+
 describe("native workflow executors", () => {
   it("rejects native executor catalogs that do not cover declared executable capabilities", () => {
     const registry = createCapabilityRegistry([
@@ -89,6 +98,7 @@ describe("native workflow executors", () => {
         attempt: 1,
         started_at: "2026-06-27T00:00:00.000Z"
       },
+      artifactPublisher,
       changeRequestProviderFactories: [{
         provider_id: "example",
         createProvider: () => provider
@@ -190,6 +200,7 @@ describe("native workflow executors", () => {
         attempt: 1,
         started_at: "2026-06-27T00:00:00.000Z"
       },
+      artifactPublisher,
       pullRequestReviewProviderFactories: [{
         provider_id: "example",
         createProvider: () => provider

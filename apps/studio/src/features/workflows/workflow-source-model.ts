@@ -6,7 +6,7 @@ import type {
 export type WorkflowSourceNode = {
   index: number
   id: string
-  type: "built_in" | "agent" | "pattern" | "human_gate" | "workflow"
+  type: "built_in" | "agent" | "pattern" | "human_gate" | "workflow" | "loop"
   registrationId: string
   value: Record<string, JsonValue>
 }
@@ -25,9 +25,10 @@ export type WorkflowSourceOutlineEntry = {
 export type WorkflowSourceGraph = {
   readonly nodes: readonly {
     readonly id: string
-    readonly kind: "built_in" | "agent" | "pattern" | "interrupt" | "workflow"
+    readonly kind: "built_in" | "agent" | "pattern" | "interrupt" | "workflow" | "loop"
     readonly capability_id: string
     readonly can_create_pending_interrupt: boolean
+    readonly loop_body?: WorkflowSourceGraph["nodes"]
   }[]
   readonly edges: readonly {
     readonly from: string
@@ -43,7 +44,7 @@ function isRecord(value: JsonValue | undefined): value is Record<string, JsonVal
 }
 
 function nodeType(value: JsonValue | undefined): WorkflowSourceNode["type"] | undefined {
-  return value === "built_in" || value === "agent" || value === "pattern" || value === "human_gate" || value === "workflow"
+  return value === "built_in" || value === "agent" || value === "pattern" || value === "human_gate" || value === "workflow" || value === "loop"
     ? value
     : undefined
 }
@@ -57,7 +58,9 @@ export function workflowSourceNodes(source: JsonValue): WorkflowSourceNode[] {
       ? value.agent
       : type === "workflow"
         ? value.workflow
-        : value.uses
+        : type === "loop"
+          ? "workflow.loop"
+          : value.uses
     return type === undefined || typeof registrationId !== "string"
       ? []
       : [{ index, id: value.id, type, registrationId, value }]
@@ -88,6 +91,8 @@ export function workflowSourceOutlineEntries(
       ? value?.agent
       : type === "workflow"
         ? value?.workflow
+        : type === "loop"
+          ? "workflow.loop"
         : type === undefined
           ? value?.agent ?? value?.workflow ?? value?.uses
           : value?.uses
@@ -137,7 +142,10 @@ export function workflowSourceGraph(
       id: node.id,
       kind: node.type === "human_gate" ? "interrupt" : node.type,
       capability_id: node.type === "workflow" ? `workflow:${node.registrationId}` : node.registrationId,
-      can_create_pending_interrupt: node.type === "human_gate",
+      can_create_pending_interrupt: node.type === "human_gate" || node.type === "loop",
+      ...(node.type === "loop" ? {
+        loop_body: workflowSourceGraph(workflowSourceNodes(workflowNodeField(node, "body") ?? null)).nodes,
+      } : {}),
     })),
     edges: nodes.flatMap((node) => {
       const after = workflowNodeField(node, "after")
@@ -329,6 +337,6 @@ export function workflowDependencyWouldCycle(
   return false
 }
 
-export function nodeRegistrationField(type: WorkflowSourceNode["type"]): "agent" | "workflow" | "uses" {
-  return type === "agent" ? "agent" : type === "workflow" ? "workflow" : "uses"
+export function nodeRegistrationField(type: WorkflowSourceNode["type"]): "agent" | "workflow" | "uses" | undefined {
+  return type === "agent" ? "agent" : type === "workflow" ? "workflow" : type === "loop" ? undefined : "uses"
 }

@@ -78,6 +78,10 @@ export type ArtifactContentStore = {
     readonly uri: string;
     readonly content_hash?: string;
   }>;
+  read?(input: {
+    readonly run_id: string;
+    readonly artifact_path: string;
+  }): Promise<Uint8Array>;
 };
 
 export type ArtifactStepsPublisher = {

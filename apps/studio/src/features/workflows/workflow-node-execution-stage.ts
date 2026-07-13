@@ -3,7 +3,7 @@ import type { WorkflowCatalogNodeKind } from "@/features/workflows/workflow-node
 import type { WorkflowSourceNode } from "@/features/workflows/workflow-source-model"
 
 export type WorkflowNodeRegistrationReference = {
-  readonly kind: WorkflowCatalogNodeKind
+  readonly kind: WorkflowCatalogNodeKind | "loop"
   readonly registrationId: string
 }
 

@@ -31,6 +31,7 @@ export type WorkflowNodeRunUpdate = {
 export type CompletedWorkflowNodeAttempt = {
   readonly kind: "completed";
   readonly update: WorkflowNodeRunUpdate;
+  readonly halt_workflow?: true;
 };
 
 /**

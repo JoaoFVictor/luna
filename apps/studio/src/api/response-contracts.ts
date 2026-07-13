@@ -65,6 +65,10 @@ import {
   RunNodeOutputComparisonResponseSchema,
   RunNodeOutputResponseSchema,
 } from "../../../../src/studio/contracts/run-node-output.js"
+import {
+  StudioRunInterruptListSchema,
+  StudioRunInterruptResumeReceiptSchema,
+} from "../../../../src/studio/contracts/run-interrupts.js"
 
 export type StudioResponseContract<T> = {
   parse(value: unknown): T
@@ -112,6 +116,8 @@ export const studioResponseContracts = {
   runLogs: RunLogPageSchema,
   runPlan: StudioRunPlanSchema,
   runDispatchReceipt: StudioRunDispatchReceiptSchema,
+  runInterrupts: StudioRunInterruptListSchema,
+  runInterruptResumeReceipt: StudioRunInterruptResumeReceiptSchema,
   inputAdapters: StudioInputAdapterCatalogSchema,
   adapterPreview: StudioAdapterPreviewSchema,
   adapterRoutingPreview: StudioAdapterRoutingPreviewSchema,

@@ -53,4 +53,16 @@ describe("describeStudioError", () => {
       technicalMessage: "Git history requires an attached branch",
     })
   })
+
+  it("explains that a run pinned to an older capability catalog must be restarted", () => {
+    expect(describeStudioError(new StudioApiError({
+      status: 409,
+      code: "studio_run_resume_catalog_changed",
+      message: "The run cannot be resumed because the runtime capability catalog changed",
+    }))).toMatchObject({
+      title: "A execução usa outra versão do runtime",
+      message: expect.stringContaining("inicie uma nova execução"),
+      code: "studio_run_resume_catalog_changed",
+    })
+  })
 })

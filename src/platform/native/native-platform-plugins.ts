@@ -18,12 +18,16 @@ import type {
 import type { BuiltInStep } from "../../core/built-ins/types.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import type { PullRequestReviewProviderFactory } from "../../capabilities/pull-request-review/contracts.js";
+import type { SocialPostProviderFactory } from "../../capabilities/social-post/contracts.js";
+import type { ImageGenerationProviderFactory } from "../../capabilities/image-generation/contracts.js";
 import type { WebhookProviderAdapterFactory } from "../../webhooks/contracts.js";
 import { githubPrUrlAdapter } from "../../providers/github/input-adapter.js";
 import { githubWebhookAdapterFactory } from "../../providers/github/webhook-adapter.js";
 import { preflightBuiltIn } from "../../capabilities/runtime/built-ins.js";
 import { createGitHubChangeRequestProviderFactory } from "../../providers/github/change-request/factory.js";
 import { createGitHubPullRequestReviewProviderFactory } from "../../providers/github/pull-request-review/factory.js";
+import { createXSocialPostProviderFactory } from "../../providers/x/social-post/factory.js";
+import { createPiImagegenProviderFactory } from "../../agent-runtimes/pi/image-generation-extension.js";
 import { jiraTaskUrlAdapter } from "../../providers/jira/input-adapter.js";
 import {
   collectTaskContext as collectJiraTaskContext,
@@ -80,6 +84,8 @@ export type NativePlatformPlugin = {
   readonly patternExecutors?: Readonly<Record<string, WorkflowPatternExecutor>>;
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
   readonly pullRequestReviewProviderFactories?: readonly PullRequestReviewProviderFactory[];
+  readonly socialPostProviderFactories?: readonly SocialPostProviderFactory[];
+  readonly imageGenerationProviderFactories?: readonly ImageGenerationProviderFactory[];
   readonly webhookAdapterFactories?: readonly WebhookProviderAdapterFactory[];
   readonly providerHealthProbe?: ProviderHealthProbe;
 };
@@ -208,6 +214,12 @@ export function defineNativePlatformPlugins(
       ...(plugin.pullRequestReviewProviderFactories === undefined
         ? {}
         : { pullRequestReviewProviderFactories: plugin.pullRequestReviewProviderFactories }),
+      ...(plugin.socialPostProviderFactories === undefined
+        ? {}
+        : { socialPostProviderFactories: plugin.socialPostProviderFactories }),
+      ...(plugin.imageGenerationProviderFactories === undefined
+        ? {}
+        : { imageGenerationProviderFactories: plugin.imageGenerationProviderFactories }),
       ...(plugin.webhookAdapterFactories === undefined
         ? {}
         : { webhookAdapterFactories: plugin.webhookAdapterFactories }),
@@ -256,6 +268,7 @@ export const nativePlatformPluginDefinitions = [
     agentRuntimeFactories: {
       [piAgentRuntimeFactory.id]: piAgentRuntimeFactory
     },
+    imageGenerationProviderFactories: [createPiImagegenProviderFactory()],
     workflowRuntimeFactories: {
       [langGraphWorkflowRuntimeFactory.id]: langGraphWorkflowRuntimeFactory
     }
@@ -280,6 +293,10 @@ export const nativePlatformPluginDefinitions = [
       createGitHubPullRequestReviewProviderFactory({})
     ],
     webhookAdapterFactories: [githubWebhookAdapterFactory]
+  },
+  {
+    id: "x",
+    socialPostProviderFactories: [createXSocialPostProviderFactory()]
   },
   {
     id: "jira",

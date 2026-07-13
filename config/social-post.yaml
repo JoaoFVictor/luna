@@ -1,0 +1,7 @@
+image_generation:
+  provider: pi-imagegen
+  size: 1024x1024
+  quality: medium
+social_post:
+  provider: x
+  auth_instance: default

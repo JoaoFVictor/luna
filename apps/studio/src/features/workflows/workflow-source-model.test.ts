@@ -56,6 +56,43 @@ const source: JsonValue = {
 }
 
 describe("workflow source model", () => {
+  it("projects a durable loop and preserves its ordered body for presentation", () => {
+    const nodes = workflowSourceNodes({
+      nodes: [{
+        id: "editorial",
+        type: "loop",
+        body: {
+          nodes: [
+            { id: "draft", type: "agent", agent: "writer" },
+            { id: "review", type: "human_gate", uses: "hitl.approval", after: ["draft"] },
+          ],
+        },
+        repeat_when: { expression: "$.steps.review.action = 'request_changes'" },
+        result: { expression: "$.steps.draft" },
+      }],
+    })
+
+    expect(nodes).toEqual([expect.objectContaining({
+      id: "editorial",
+      type: "loop",
+      registrationId: "workflow.loop",
+    })])
+    expect(workflowSourceGraph(nodes).nodes).toEqual([expect.objectContaining({
+      id: "editorial",
+      kind: "loop",
+      capability_id: "workflow.loop",
+      can_create_pending_interrupt: true,
+      loop_body: [
+        expect.objectContaining({ id: "draft", kind: "agent" }),
+        expect.objectContaining({ id: "review", kind: "interrupt" }),
+      ],
+    })])
+    expect(workflowSourceOutlineEntries({ nodes: [nodes[0]!.value] })[0]).toMatchObject({
+      registrationLabel: "workflow.loop",
+      problems: [],
+    })
+  })
+
   it("projects a canonical workflow call without treating its child as a capability", () => {
     const nodes = workflowSourceNodes({
       nodes: [{ id: "review", type: "workflow", workflow: "review-child" }],
@@ -209,6 +246,28 @@ describe("workflow source model", () => {
       expect.stringContaining("Agent reviewer"),
     ]))
     expect(effects).not.toContainEqual(expect.objectContaining({ nodeId: "workflow" }))
+  })
+
+  it("projects side effects declared inside a loop body", () => {
+    const effects = workflowSideEffectPreview(
+      {
+        nodes: [{
+          id: "editorial",
+          type: "loop",
+          body: { nodes: [{ id: "draft", type: "agent", agent: "writer" }] },
+          repeat_when: { expression: "false" },
+          result: { expression: "$.steps.draft" },
+        }],
+      },
+      emptyLibrary,
+      [catalogAgent("writer", { mode: "trusted_local_write" })],
+      true,
+    )
+
+    expect(effects).toContainEqual(expect.objectContaining({
+      nodeId: "editorial.draft",
+      source: "agent_tools",
+    }))
   })
 
   it("never reports no effects when an agent reference or catalog is unresolved", () => {

@@ -49,6 +49,10 @@ import {
   type StudioRunControl
 } from "./routes/runs.js";
 import {
+  registerStudioRunInterruptRoutes,
+  type StudioRunInterruptControl
+} from "./routes/run-interrupts.js";
+import {
   registerStudioRunOutputFixtureRoutes,
   type StudioRunOutputFixtureControl
 } from "./routes/run-output-fixtures.js";
@@ -67,6 +71,7 @@ export type StudioControlApiOptions = {
   readonly expressions?: StudioExpressionControl;
   readonly schemas?: StudioSchemaControl;
   readonly runs?: StudioRunControl;
+  readonly runInterrupts?: StudioRunInterruptControl;
   readonly runLaunch?: StudioRunLaunchControl;
   readonly artifacts?: StudioArtifactControl;
   readonly runLogs?: StudioRunLogControl;
@@ -162,6 +167,14 @@ export async function registerStudioControlApi(
     await registerStudioRunRoutes(server, {
       apiPrefix: STUDIO_API_PREFIX,
       control: options.runs,
+      principalFor: requests.principalFor,
+      parseRequest: parseStudioRequest
+    });
+  }
+  if (options.runInterrupts !== undefined) {
+    await registerStudioRunInterruptRoutes(server, {
+      apiPrefix: STUDIO_API_PREFIX,
+      control: options.runInterrupts,
       principalFor: requests.principalFor,
       parseRequest: parseStudioRequest
     });

@@ -101,7 +101,7 @@ describe("workflow node capability projection", () => {
       input_schema_content: { type: "object" },
       output_schema_content: { type: "object" },
       synchronous_composition: "allowed",
-      node_counts: { built_in: 0, agent: 0, pattern: 0, human_gate: 0, workflow: 0 },
+      node_counts: { built_in: 0, agent: 0, pattern: 0, human_gate: 0, workflow: 0, loop: 0 },
       requires_repository: false,
       max_concurrency: 1,
     })

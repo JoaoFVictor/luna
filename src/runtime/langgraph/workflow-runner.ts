@@ -122,6 +122,18 @@ class WorkflowWaitingForInput extends Error {
   }
 }
 
+class WorkflowHalted extends Error {
+  readonly nodeId: string;
+  readonly update: WorkflowNodeRunUpdate;
+
+  constructor(nodeId: string, update: WorkflowNodeRunUpdate) {
+    super("Workflow completed early by loop control");
+    this.name = "WorkflowHalted";
+    this.nodeId = nodeId;
+    this.update = update;
+  }
+}
+
 export async function runCompiledWorkflow(
   input: RunCompiledWorkflowInput
 ): Promise<WorkflowRunResult> {
@@ -173,6 +185,13 @@ const runLangGraphWorkflowNodes: WorkflowNodeScheduler<RunCompiledWorkflowInput>
     });
     return result;
   } catch (cause) {
+    if (cause instanceof WorkflowHalted) {
+      return {
+        kind: "completed",
+        state: applyWorkflowGraphUpdate(reducedState, cause.update),
+        halted_node_id: cause.nodeId
+      };
+    }
     if (cause instanceof WorkflowWaitingForInput) {
       return nativeWaitingSchedulerResult(cause.result);
     }
@@ -298,6 +317,10 @@ async function runLangGraphNode({
     }
 
     throw new WorkflowWaitingForInput(waiting);
+  }
+
+  if (result.halt_workflow === true) {
+    throw new WorkflowHalted(node.id, result.update);
   }
 
   return result.update;

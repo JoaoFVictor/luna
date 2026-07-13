@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { NativeLunaPlatformRegistrations } from "../../../platform/native/native-platform-registrations.js";
+import type { NativeWorkflowResumeInput } from "../../../platform/native/native-workflow-runner.js";
+import type { WorkflowRunResult } from "../../../core/workflow/execution-contracts.js";
+import type { InterruptStore } from "../../../core/runtime/interrupts/contracts.js";
 import type { NativeWorkflowRunInput } from "../../../runtime/composition/target-executor.js";
 import {
   createProcessWarningRunDiagnosticSink,
@@ -40,6 +43,9 @@ import { NativeStudioRunDispatchAdoption } from "./run-dispatch-adoption.js";
 import { NativeStudioRunRecoverySupervisor } from "./run-recovery-supervisor.js";
 import { NativeStudioRunTerminalJobCleanup } from "./run-terminal-job-cleanup.js";
 import { createNativeStudioCapabilityCatalog } from "./capability-catalog.js";
+import { NativeStudioRunInterruptResumer } from "./run-interrupt-resumer.js";
+import type { StudioRunInterruptResumePort } from "../../application/runs/interrupt-service.js";
+import type { StudioRunInterruptResumeReceipt } from "../../contracts/run-interrupts.js";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const MAX_HEARTBEAT_INTERVAL_MS = 60_000;
@@ -52,6 +58,12 @@ type DispatcherPlatform = Pick<
   | "workflowBuiltIns"
   | "taskProviderBuiltIns"
 >;
+
+type ResumePlatform = Pick<NativeLunaPlatformRegistrations,
+  | "agentRuntimeFactories" | "workflowRuntimeFactories" | "workflowBuiltIns"
+  | "taskProviderBuiltIns" | "patternExecutors" | "changeRequestProviderFactories"
+  | "pullRequestReviewProviderFactories" | "socialPostProviderFactories"
+  | "imageGenerationProviderFactories" | "capabilityRegistry" | "capabilityManifests">;
 
 type RunWorkflow = (
   input: NativeWorkflowRunInput
@@ -68,6 +80,14 @@ export type NativeStudioRunDispatcherOptions = {
   readonly ledger: RunLedgerPort;
   readonly platform: DispatcherPlatform;
   readonly runWorkflow: RunWorkflow;
+  readonly resume?: {
+    readonly interrupts: Pick<InterruptStore, "get" | "beginResume" | "completeResume">;
+    readonly platform: ResumePlatform;
+    readonly runWorkflow?: (
+      input: NativeWorkflowResumeInput,
+      dependencies: { readonly platform: ResumePlatform }
+    ) => Promise<WorkflowRunResult>;
+  };
   readonly now?: () => number;
   readonly ownerId?: string;
   readonly heartbeatIntervalMs?: number;
@@ -89,6 +109,7 @@ export class NativeStudioRunDispatcher
   readonly #adoption: NativeStudioRunDispatchAdoption;
   readonly #terminalJobCleanup: NativeStudioRunTerminalJobCleanup;
   readonly #recoverySupervisor: NativeStudioRunRecoverySupervisor;
+  readonly #resumer: NativeStudioRunInterruptResumer | undefined;
   readonly #now: () => number;
   readonly #ownerId: string;
   readonly #heartbeatIntervalMs: number;
@@ -96,6 +117,7 @@ export class NativeStudioRunDispatcher
   readonly #runDiagnostics: StudioRunDiagnosticSink | undefined;
   readonly #onBackgroundError: ((cause: unknown) => void) | undefined;
   readonly #active = new Map<string, Promise<void>>();
+  readonly #activeResumes = new Map<string, Promise<void>>();
   #initialized = false;
   #closed = false;
 
@@ -167,6 +189,29 @@ export class NativeStudioRunDispatcher
     });
     this.#recoveryJournal = options.recoveryJournal ??
       new NativeStudioRunRecoveryJournal({ queueRoot });
+    this.#resumer = options.resume === undefined
+      ? undefined
+      : new NativeStudioRunInterruptResumer({
+          projectRoot,
+          configRoot,
+          ledger: this.#ledger,
+          interrupts: options.resume.interrupts,
+          queue: this.#queue,
+          graphStore: this.#graphStore,
+          finalizer,
+          platform: options.resume.platform,
+          schedule: (resumeId) => this.scheduleResume(resumeId),
+          onBackgroundError: (cause) => this.reportDiagnostic(
+            "dispatch_recovery_failed",
+            undefined,
+            cause
+          ),
+          ...(options.resume.runWorkflow === undefined
+            ? {}
+            : { resumeWorkflow: options.resume.runWorkflow }),
+          now: this.#now,
+          heartbeatIntervalMs: this.#heartbeatIntervalMs
+        });
     this.#executor = new NativeStudioRunExecutor({
       projectRoot,
       configRoot,
@@ -203,6 +248,9 @@ export class NativeStudioRunDispatcher
       orphanThresholdMs,
       recoveryIntervalMs,
       activeRunIds: () => new Set(this.#active.keys()),
+      ...(this.#resumer === undefined
+        ? {}
+        : { recoverQueuedResumes: () => this.#resumer!.recoverAvailableJobs() }),
       scheduleQueuedRun: (runId) => this.schedule(runId),
       scheduleRecoveryRun: (claim) => this.schedule(claim.run_id, claim),
       cleanup: this.#terminalJobCleanup,
@@ -293,10 +341,25 @@ export class NativeStudioRunDispatcher
     };
   }
 
+  async resume(
+    input: Parameters<StudioRunInterruptResumePort["resume"]>[0]
+  ): Promise<StudioRunInterruptResumeReceipt> {
+    if (!this.#initialized || this.#closed || this.#resumer === undefined) {
+      throw studioRunLaunchError(
+        "studio_run_interrupt_resume_unsupported",
+        "Native interrupt resume dispatcher is unavailable"
+      );
+    }
+    return await this.#resumer.resume(input);
+  }
+
   async close(): Promise<void> {
     this.#closed = true;
     await this.#recoverySupervisor.close();
-    await Promise.allSettled(this.#active.values());
+    await Promise.allSettled([
+      ...this.#active.values(),
+      ...this.#activeResumes.values()
+    ]);
   }
 
   private schedule(
@@ -317,6 +380,24 @@ export class NativeStudioRunDispatcher
           this.reportDiagnostic("dispatch_execution_failed", runId, cause);
         })
         .finally(() => this.#active.delete(runId));
+    });
+  }
+
+  private scheduleResume(resumeId: string): void {
+    if (this.#closed || this.#resumer === undefined || this.#activeResumes.has(resumeId)) {
+      return;
+    }
+    this.#scheduleTask(() => {
+      if (this.#closed || this.#resumer === undefined || this.#activeResumes.has(resumeId)) {
+        return;
+      }
+      const execution = this.#resumer.execute(resumeId);
+      this.#activeResumes.set(resumeId, execution);
+      void execution
+        .catch((cause) => {
+          this.reportDiagnostic("dispatch_execution_failed", undefined, cause);
+        })
+        .finally(() => this.#activeResumes.delete(resumeId));
     });
   }
 

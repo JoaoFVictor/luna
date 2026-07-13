@@ -94,7 +94,7 @@ function declaredEffects(
   const effects = new Map<string, StudioRunPotentialEffect>();
   for (const entry of composedWorkflowNodes(workflow)) {
     const { node, qualifiedNodeId: nodeId } = entry;
-    if (node.type === "human_gate" || node.type === "workflow") {
+    if (node.type === "human_gate" || node.type === "workflow" || node.type === "loop") {
       continue;
     }
     const registrationId = node.type === "agent" ? node.agent : node.uses;

@@ -109,7 +109,7 @@ export async function registerStudioArtifactRoutes(
     const download = await options.control.reader.openDownload(runId, handle);
     const filename = encodedFilename(download.metadata.name);
     reply
-      .type("application/octet-stream")
+      .type(download.metadata.media_type)
       .header("Content-Length", download.metadata.content_length)
       .header(
         "Content-Disposition",

@@ -21,6 +21,8 @@ import {
 import type { RuntimeCompositionConfig } from "../../runtime/composition/app-config.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import type { PullRequestReviewProviderFactory } from "../../capabilities/pull-request-review/contracts.js";
+import type { SocialPostProviderFactory } from "../../capabilities/social-post/contracts.js";
+import type { ImageGenerationProviderFactory } from "../../capabilities/image-generation/contracts.js";
 import type {
   ResumeWorkflowInput,
   RunWorkflowInput,
@@ -62,11 +64,15 @@ export type NativeWorkflowTargetDependencies = {
     | "patternExecutors"
     | "changeRequestProviderFactories"
     | "pullRequestReviewProviderFactories"
+    | "socialPostProviderFactories"
+    | "imageGenerationProviderFactories"
     | "capabilityRegistry"
     | "capabilityManifests"
   >;
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
   readonly pullRequestReviewProviderFactories?: readonly PullRequestReviewProviderFactory[];
+  readonly socialPostProviderFactories?: readonly SocialPostProviderFactory[];
+  readonly imageGenerationProviderFactories?: readonly ImageGenerationProviderFactory[];
 };
 
 type NativeWorkflowExecutionControls = Pick<
@@ -81,6 +87,7 @@ type NativeWorkflowExecutionControls = Pick<
 export type NativeWorkflowResumeInput = NativeWorkflowExecutionControls & {
   readonly projectRoot: string;
   readonly configRoot: string;
+  readonly definitionRoots?: NativeWorkflowRunInput["definitionRoots"];
   readonly target: RouteTarget;
   readonly thread_id: string;
   readonly checkpoint_id: string;
@@ -182,14 +189,16 @@ export async function resumeNativeWorkflowTarget(
   dependencies: NativeWorkflowTargetDependencies = {}
 ): Promise<WorkflowRunResult> {
   const platform = dependencies.platform ?? nativeLunaPlatformRegistrations;
-  const app = await loadYamlFile(path.join(input.configRoot, "app.yaml"), AppConfigSchema);
+  const definitionProjectRoot = input.definitionRoots?.projectRoot ?? input.projectRoot;
+  const definitionConfigRoot = input.definitionRoots?.configRoot ?? input.configRoot;
+  const app = await loadYamlFile(path.join(definitionConfigRoot, "app.yaml"), AppConfigSchema);
   const repositories = await loadYamlFile(
-    path.join(input.configRoot, "repositories.yaml"),
+    path.join(definitionConfigRoot, "repositories.yaml"),
     RepositoriesConfigSchema
   );
-  const agentsRoot = path.join(input.projectRoot, "agents");
+  const agentsRoot = path.join(definitionProjectRoot, "agents");
   const definition = await loadNativeWorkflowDefinition({
-    projectRoot: input.projectRoot,
+    projectRoot: definitionProjectRoot,
     workflowId: input.target.id,
     platform
   });
@@ -226,7 +235,7 @@ export async function resumeNativeWorkflowTarget(
     platform,
     dependencies,
     projectRoot: input.projectRoot,
-    configRoot: input.configRoot,
+    configRoot: definitionConfigRoot,
     app,
     agentsRoot,
     workflow: definition,
@@ -235,6 +244,7 @@ export async function resumeNativeWorkflowTarget(
     run: resumeContext.run,
     runtimeConfig,
     signal: input.signal,
+    definitionRoots: input.definitionRoots,
     composition
   });
   const workflowRuntimeInput = {
@@ -313,6 +323,7 @@ async function prepareNativeWorkflowExecution({
     options: runtimeConfig.agent_runtime.options,
     hasAgents: workflowUsesAgents(workflow)
   });
+  const artifactPublisher = composition.artifactPublisherForRun(run);
   const executors = buildNativeWorkflowExecutors({
     app,
     projectRoot,
@@ -323,6 +334,13 @@ async function prepareNativeWorkflowExecution({
     pullRequestReviewProviderFactories:
       dependencies.pullRequestReviewProviderFactories ??
       platform.pullRequestReviewProviderFactories,
+    socialPostProviderFactories:
+      dependencies.socialPostProviderFactories ??
+      platform.socialPostProviderFactories,
+    imageGenerationProviderFactories:
+      dependencies.imageGenerationProviderFactories ??
+      platform.imageGenerationProviderFactories,
+    artifactPublisher,
     workflowBuiltIns: platform.workflowBuiltIns,
     taskProviderBuiltIns: platform.taskProviderBuiltIns,
     patternExecutors: platform.patternExecutors,
@@ -351,7 +369,7 @@ async function prepareNativeWorkflowExecution({
         run,
         workflow: nativeWorkflow.workflow
       }),
-      artifactPublisher: composition.artifactPublisherForRun(run),
+      artifactPublisher,
       agentInputs: await buildNativeWorkflowAgentInputs({
         workflow: nativeWorkflow.workflow,
         agentsRoot,

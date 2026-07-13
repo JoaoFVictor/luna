@@ -101,7 +101,7 @@ LUNA_CONFIG_ROOT=config npm run dev -- resume \
   --thread <run-id> \
   --checkpoint <checkpoint-id> \
   --interrupt <interrupt-id> \
-  --decision '{"approved":true}'
+  --decision '{"action":"approve"}'
 ```
 
 Repeating the same decision is idempotent. Changing a recorded decision is

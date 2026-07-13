@@ -152,13 +152,40 @@ function childWorkflow(id: string, requiresRepository = false): WorkflowSummary 
       properties: { report: { type: "string" } },
     },
     synchronous_composition: "allowed",
-    node_counts: { built_in: 1, agent: 0, pattern: 0, human_gate: 0, workflow: 0 },
+    node_counts: { built_in: 1, agent: 0, pattern: 0, human_gate: 0, workflow: 0, loop: 0 },
     requires_repository: requiresRepository,
     max_concurrency: 1,
   }
 }
 
 describe("WorkflowNodeInspector registration changes", () => {
+  it("renders a loop body and conditions as a read-only advanced unit", () => {
+    renderInspector({
+      nodes: [{
+        id: "editorial",
+        type: "loop",
+        body: {
+          nodes: [
+            { id: "draft", type: "agent", agent: "writer" },
+            { id: "image", type: "built_in", uses: "image-generation.generate", after: ["draft"] },
+            { id: "review", type: "human_gate", uses: "hitl.approval", after: ["image"] },
+          ],
+        },
+        repeat_when: { expression: "$.steps.review.action = 'request_changes'" },
+        result: { expression: "$.steps.draft" },
+        halt_when: { expression: "$.result.action = 'reject'" },
+      }],
+    }, library([]))
+
+    expect(screen.getByText("Loop durável")).toBeTruthy()
+    expect(screen.getByText("3 etapas internas")).toBeTruthy()
+    expect(screen.getByText("image-generation.generate")).toBeTruthy()
+    expect(screen.getByText("Depois de: image")).toBeTruthy()
+    expect(screen.getByText("$.steps.review.action = 'request_changes'")).toBeTruthy()
+    expect(screen.getByText(/não oferece controles visuais parciais/u)).toBeTruthy()
+    expect(screen.queryByLabelText("Registration / capability")).toBeNull()
+  })
+
   it("shows child workflow contracts and changes only the canonical workflow field", () => {
     const source: JsonValue = {
       mode: "read_only",

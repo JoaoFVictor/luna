@@ -28,7 +28,8 @@ export function createBuiltInStepCatalog<
       state,
       input,
       dependencies = {},
-      observability
+      observability,
+      node
     }: RunBuiltInStepOptions): Promise<unknown> {
       const builtIn = registry.require(uses);
 
@@ -36,7 +37,8 @@ export function createBuiltInStepCatalog<
         state,
         input,
         dependencies,
-        observability
+        observability,
+        node
       });
     }
   });

@@ -120,8 +120,8 @@ docker compose up --build
 This starts Redis, `webhook-server`, `webhook-worker`, and `studio`. The
 containers use
 `REDIS_URL=redis://redis:6379`, keep Redis on the internal Compose network,
-expose the HTTP server on host port `4012`, mount `./dist` and `./config`
-read-only, mount
+expose the HTTP server on host port `4012`, use the compiled application
+artifacts built into the image, mount `./config` read-only, mount
 `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth`, and write run
 artifacts to `./.runs`. The auth root is writable because the Pi runtime can
 refresh OAuth credentials. Luna services run as the required host
@@ -431,7 +431,7 @@ npm run dev -- resume \
   --thread <run-id> \
   --checkpoint <checkpoint-id> \
   --interrupt <interrupt-id> \
-  --decision '{"approved":true}'
+  --decision '{"action":"approve"}'
 ```
 
 The native runner reloads app/repository config, reloads and recompiles the

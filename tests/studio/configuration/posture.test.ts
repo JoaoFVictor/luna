@@ -151,7 +151,8 @@ describe("Studio configuration posture", () => {
               agent: 1,
               pattern: 0,
               human_gate: 0,
-              workflow: 0
+              workflow: 0,
+              loop: 0
             },
             requires_repository: true,
             max_concurrency: 1

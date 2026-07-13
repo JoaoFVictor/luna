@@ -23,6 +23,13 @@ import {
 const NODE_COMPLETION_SCHEMA_VERSION = 2;
 const NODE_COMPLETION_CHANNEL = "node_completion";
 
+export type NodeDurabilityLocation = {
+  readonly thread_id: string;
+  readonly checkpoint_ns: string;
+  readonly checkpoint_id: string;
+  readonly task_id: string;
+};
+
 export type PersistedNodeDurability =
   | { readonly kind: "none" }
   | {
@@ -45,17 +52,25 @@ export async function saveNodeOutputWrite({
   readonly node: CompiledWorkflowNode;
   readonly output: JsonValue;
 }): Promise<void> {
+  await saveNodeOutputAt({
+    input,
+    location: nodeDurabilityLocation(input, node),
+    output
+  });
+}
+
+export async function saveNodeOutputAt({
+  input,
+  location,
+  output
+}: {
+  readonly input: RunWorkflowInput;
+  readonly location: NodeDurabilityLocation;
+  readonly output: JsonValue;
+}): Promise<void> {
   assertCheckpointJsonValue(output);
   await saveCheckpointWriteExactly(input, {
-    thread_id: input.run.run_id,
-    checkpoint_ns: "",
-    checkpoint_id: nodeOutputCheckpointId(
-      input.run.run_id,
-      input.compiled.workflow_id,
-      input.compiled.workflow_revision,
-      node.id
-    ),
-    task_id: node.id,
+    ...location,
     index: 0,
     channel: "steps",
     value: output
@@ -88,7 +103,41 @@ export async function saveNodeCompletionWrite({
   readonly artifactRefs: LunaRuntimeState["artifact_refs"];
   readonly interruptRefs: LunaRuntimeState["interrupt_refs"];
 }): Promise<void> {
+  await saveNodeCompletionAt({
+    input,
+    location: nodeDurabilityLocation(input, node),
+    output,
+    artifactRefs,
+    interruptRefs
+  });
+}
+
+export async function saveNodeCompletionAt({
+  input,
+  location,
+  output,
+  artifactRefs,
+  interruptRefs
+}: {
+  readonly input: RunWorkflowInput;
+  readonly location: NodeDurabilityLocation;
+  readonly output: JsonValue;
+  readonly artifactRefs: LunaRuntimeState["artifact_refs"];
+  readonly interruptRefs: LunaRuntimeState["interrupt_refs"];
+}): Promise<void> {
   await saveCheckpointWriteExactly(input, {
+    ...location,
+    index: 1,
+    channel: NODE_COMPLETION_CHANNEL,
+    value: nodeCompletionMarker(output, artifactRefs, interruptRefs)
+  });
+}
+
+function nodeDurabilityLocation(
+  input: RunWorkflowInput,
+  node: CompiledWorkflowNode
+): NodeDurabilityLocation {
+  return {
     thread_id: input.run.run_id,
     checkpoint_ns: "",
     checkpoint_id: nodeOutputCheckpointId(
@@ -97,11 +146,8 @@ export async function saveNodeCompletionWrite({
       input.compiled.workflow_revision,
       node.id
     ),
-    task_id: node.id,
-    index: 1,
-    channel: NODE_COMPLETION_CHANNEL,
-    value: nodeCompletionMarker(output, artifactRefs, interruptRefs)
-  });
+    task_id: node.id
+  };
 }
 
 export function persistedNodeDurability({

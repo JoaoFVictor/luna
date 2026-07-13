@@ -273,6 +273,46 @@ Fields:
 Jira credentials are stored in `.luna/auth/luna.auth.json` under the Luna auth
 root.
 
+## `social-post.yaml`
+
+Selects the social publishing provider and the named auth instance used by the
+`social-post` workflow:
+
+```yaml
+image_generation:
+  provider: pi-imagegen
+  size: 1024x1024
+  quality: medium
+social_post:
+  provider: x
+  auth_instance: default
+```
+
+Each requested change durably preserves the previous version, regenerates only
+the selected targets, and creates a new human review round. The workflow has no
+configured revision cap; every human-triggered iteration has its own checkpoint,
+interrupt identity, and artifact namespace.
+
+Image generation reuses the Pi `openai-codex` OAuth credential in
+`.luna/auth/pi-ai/auth.json`. Only the X OAuth user access token belongs in
+`.luna/auth/luna.auth.json`; neither credential belongs in workflow config:
+
+```json
+{
+  "providers": {
+    "x": {
+      "default": {
+        "auth_type": "oauth2_user_access_token",
+        "access_token": "<user-access-token>"
+      }
+    }
+  }
+}
+```
+
+The token must represent the user that will publish the post and must have
+write permission.
+
 ## `plane.yaml`
 
 Declares Plane instances by id.

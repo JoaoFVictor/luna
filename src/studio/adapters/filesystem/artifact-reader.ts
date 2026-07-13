@@ -343,6 +343,35 @@ export function createFilesystemArtifactReader(
       return { run_id: runId, items, redaction: "best_effort_on_preview" };
     },
 
+    async resolveReferences(rawRunId, references) {
+      const runId = safeRunId(rawRunId);
+      if (references.length === 0) {
+        return { matches: [] };
+      }
+      const manifests = await manifestsForRun(runId);
+      const matches = references.map((reference) => {
+        const candidates = manifests.filter((candidate) =>
+          candidate.id === reference.id &&
+          candidate.uri === reference.uri &&
+          candidate.source_node_id === reference.node_id
+        );
+        if (candidates.length > 1) {
+          throw artifactReaderError(
+            "artifact_catalog_corrupt",
+            "Artifact reference resolves to multiple manifests"
+          );
+        }
+        const manifest = candidates[0];
+        return manifest === undefined
+          ? { status: "unresolved" as const }
+          : {
+              status: "resolved" as const,
+              artifact: projectArtifactSummary(manifest, runId, backendId, handles)
+            };
+      });
+      return { matches };
+    },
+
     async metadata(rawRunId, rawHandle): Promise<ArtifactMetadata> {
       const resolved = await resolveArtifact(rawRunId, rawHandle);
       const opened = await openArtifact(resolved);

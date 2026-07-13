@@ -38,6 +38,7 @@ import type {
   ParsedPatternNode,
   WorkflowDefinition
 } from "./definition-types.js";
+import { validateLoopStructure } from "./loop-definition-validation.js";
 import { MAX_WORKFLOW_REPAIR_ATTEMPTS } from "./repair-attempts.js";
 import { isReservedWorkflowNodeId } from "./node-id.js";
 
@@ -63,7 +64,8 @@ export function validateNodesAgainstCapabilities(
   nodes: readonly ParsedWorkflowNode[],
   declaredCapabilities: readonly string[],
   nodeIds: ReadonlySet<string>,
-  registry: CapabilityRegistry | undefined
+  registry: CapabilityRegistry | undefined,
+  allowLoopWhen = false
 ): void {
   const seen = new Set<string>();
   nodes.forEach((node, index) => {
@@ -84,6 +86,25 @@ export function validateNodesAgainstCapabilities(
     seen.add(node.id);
 
     walkNoStringExpressions(node, `$.nodes[${index}]`);
+    if (
+      node.type !== "human_gate" &&
+      "when" in node &&
+      node.when !== undefined
+    ) {
+      if (!allowLoopWhen) {
+        throw new WorkflowDefinitionError(
+          "workflow_schema_invalid",
+          "Node when is only supported inside a workflow loop body.",
+          { path: `$.nodes[${index}].when` }
+        );
+      }
+      validateExpressionBearingValue(
+        node.when,
+        `$.nodes[${index}].when`,
+        "workflow.loop",
+        nodeIds
+      );
+    }
     validatePolicies(node, index, declaredCapabilities, nodeIds, registry);
     validateArtifacts(node, index, declaredCapabilities, nodeIds, registry);
 
@@ -131,42 +152,93 @@ export function validateNodesAgainstCapabilities(
         registry,
         `$.nodes[${index}].uses`
       ) as GateRegistration | undefined;
-      if (gate && node.decision !== undefined) {
-        validateJsonSchema(gate.decision_schema, node.decision, {
-          path: `$.nodes[${index}].decision`,
-          capability: gate.id
-        });
-      }
-    } else {
+      validateExpressionBearingValue(
+        node.input ?? {},
+        `$.nodes[${index}].input`,
+        gate?.id ?? node.uses,
+        nodeIds
+      );
+    } else if (node.type === "workflow") {
       validateExpressionBearingValue(
         node.input ?? {},
         `$.nodes[${index}].input`,
         `workflow:${node.workflow}`,
         nodeIds
       );
+    } else {
+      validateLoopNode(
+        node,
+        index,
+        declaredCapabilities,
+        registry
+      );
     }
   });
 }
 
+function validateLoopNode(
+  node: Extract<ParsedWorkflowNode, { readonly type: "loop" }>,
+  index: number,
+  declaredCapabilities: readonly string[],
+  registry: CapabilityRegistry | undefined
+): void {
+  const path = `$.nodes[${index}]`;
+  const body = node.body.nodes;
+  validateLoopStructure(node, path);
+  const bodyIds = new Set(body.map((candidate) => candidate.id));
+  validateNodesAgainstCapabilities(body, declaredCapabilities, bodyIds, registry, true);
+  validateExpressionBearingValue(
+    node.repeat_when,
+    `${path}.repeat_when`,
+    "workflow.loop",
+    bodyIds
+  );
+  validateExpressionBearingValue(
+    node.result,
+    `${path}.result`,
+    "workflow.loop",
+    bodyIds
+  );
+  if (node.halt_when !== undefined) {
+    validateExpressionBearingValue(
+      node.halt_when,
+      `${path}.halt_when`,
+      "workflow.loop",
+      new Set(),
+      ["result"]
+    );
+  }
+}
+
 export function validateWorkflowCallInputs(
   nodes: readonly ParsedWorkflowNode[],
-  compositions: Readonly<Record<string, WorkflowDefinition>>
+  compositions: Readonly<Record<string, WorkflowDefinition>>,
+  nodesPath = "$.nodes"
 ): void {
   nodes.forEach((node, index) => {
+    const nodePath = `${nodesPath}[${index}]`;
+    if (node.type === "loop") {
+      validateWorkflowCallInputs(
+        node.body.nodes,
+        compositions,
+        `${nodePath}.body.nodes`
+      );
+      return;
+    }
     if (node.type !== "workflow") return;
     const child = compositions[node.workflow];
     if (child === undefined) {
       throw new WorkflowDefinitionError(
         "workflow_external_definition_missing",
         `Composed workflow ${node.workflow} was not resolved.`,
-        { path: `$.nodes[${index}].workflow`, nodeId: node.id }
+        { path: `${nodePath}.workflow`, nodeId: node.id }
       );
     }
     validateJsonSchema(
       child.input_schema_content as JsonSchemaLike,
       node.input ?? {},
       {
-        path: `$.nodes[${index}].input`,
+        path: `${nodePath}.input`,
         capability: `workflow:${child.id}`
       }
     );

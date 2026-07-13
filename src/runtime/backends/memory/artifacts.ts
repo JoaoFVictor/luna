@@ -132,6 +132,15 @@ export function createMemoryArtifactContentStore(): ArtifactContentStore {
         uri: `artifact://${input.run_id}/${input.artifact_path}`,
         content_hash: input.content_hash
       };
+    },
+    async read(input) {
+      const stored = committed.get(`${input.run_id}/${input.artifact_path}`);
+      if (stored === undefined) {
+        throw new Error(`Artifact content is unavailable: ${input.artifact_path}`);
+      }
+      return typeof stored.content === "string"
+        ? Buffer.from(stored.content, "utf8")
+        : new Uint8Array(stored.content);
     }
   };
 }

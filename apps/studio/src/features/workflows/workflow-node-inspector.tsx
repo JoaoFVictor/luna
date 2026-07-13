@@ -25,6 +25,7 @@ import {
 } from "@/features/workflows/workflow-node-catalog"
 import { WorkflowNodeContractSummary } from "@/features/workflows/workflow-node-contract-summary"
 import { WorkflowNodeNoteEditor } from "@/features/workflows/workflow-node-note-editor"
+import { WorkflowLoopInspector } from "@/features/workflows/workflow-loop-inspector"
 import { WorkflowNodeDataPanel } from "@/features/workflows/workflow-node-data-panel"
 import { WorkflowInspectorDiagnosticField } from "@/features/workflows/workflow-inspector-diagnostic-field"
 import {
@@ -84,7 +85,9 @@ export function WorkflowNodeInspector({
 }) {
   const focusedField = workflowInspectorField(focusedFieldPath)
   const registrations = useMemo(
-    () => workflowNodeRegistrations(library.registrations, selected.type),
+    () => selected.type === "loop"
+      ? []
+      : workflowNodeRegistrations(library.registrations, selected.type),
     [library, selected],
   )
   const selectedRegistration = library.registrations.find(
@@ -128,6 +131,10 @@ export function WorkflowNodeInspector({
     [nodes, selected],
   )
   const outputFields = availableSourceFields.get(selected.id) ?? []
+
+  if (selected.type === "loop") {
+    return <WorkflowLoopInspector selected={selected} section={section} />
+  }
 
   const changeRegistration = (registrationId: string) => {
     if (selected.type === "agent") {

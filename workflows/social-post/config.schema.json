@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["image_generation", "social_post"],
+  "properties": {
+    "image_generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "size", "quality"],
+      "properties": {
+        "provider": { "type": "string", "const": "pi-imagegen" },
+        "size": {
+          "type": "string",
+          "enum": ["1024x1024", "1024x1536", "1536x1024", "auto"]
+        },
+        "quality": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "auto"]
+        }
+      }
+    },
+    "social_post": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "auth_instance"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "const": "x"
+        },
+        "auth_instance": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

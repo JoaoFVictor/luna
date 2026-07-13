@@ -194,7 +194,7 @@ function securityHeaders(request: FastifyRequest, reply: FastifyReply): void {
     "font-src 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    "img-src 'self' data:",
+    "img-src 'self' data: blob:",
     "manifest-src 'self'",
     "object-src 'none'",
     "script-src 'self'",

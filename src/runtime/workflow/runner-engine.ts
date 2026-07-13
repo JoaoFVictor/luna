@@ -75,6 +75,7 @@ import {
   mergePrecompletedStepsWithRecovery,
   validatePrecompletedSteps
 } from "./precompleted-steps.js";
+import { shouldHaltLoop } from "./durable-loop.js";
 
 export type { WorkflowNodeAttemptOutcome } from "./node-runner.js";
 
@@ -95,6 +96,7 @@ export type WorkflowNodeSchedulerResult =
   | {
       readonly kind: "completed";
       readonly state: LunaRuntimeState;
+      readonly halted_node_id?: string;
     }
   | {
       readonly kind: "waiting_for_input";
@@ -471,30 +473,53 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
       currentState: LunaRuntimeState
     ): Promise<WorkflowNodeAttemptOutcome> => {
         const decision = executionPolicyDecisionForCompiledNode(input, node);
+        let outcome: WorkflowNodeAttemptOutcome;
         if (nodeRecovery?.completedNodeIds.has(node.id) === true) {
-          return skipPersistedCompletedWorkflowNode({
+          outcome = skipPersistedCompletedWorkflowNode({
             state: currentState,
             node
           });
+        } else {
+          const pendingOutput = nodeRecovery?.outputPendingByNode.get(node.id);
+          outcome = pendingOutput === undefined
+            ? await runWorkflowNodeAttempt({
+                input,
+                state: currentState,
+                runtimeContext,
+                node,
+                decision
+              })
+            : await recoverPersistedWorkflowNodeAttempt({
+                input,
+                state: currentState,
+                runtimeContext,
+                node,
+                decision,
+                output: pendingOutput
+              });
         }
-        const pendingOutput = nodeRecovery?.outputPendingByNode.get(node.id);
-        if (pendingOutput !== undefined) {
-          return await recoverPersistedWorkflowNodeAttempt({
-            input,
-            state: currentState,
-            runtimeContext,
-            node,
-            decision,
-            output: pendingOutput
+        if (
+          outcome.kind !== "completed" ||
+          outcome.halt_workflow === true ||
+          node.kind !== "loop"
+        ) {
+          return outcome;
+        }
+        const output = outcome.update.steps[node.id] ?? currentState.steps[node.id];
+        if (output === undefined) {
+          throw runtimeError("Completed loop is missing its output", "runtime_state_invalid", {
+            details: { node_id: node.id }
           });
         }
-        return await runWorkflowNodeAttempt({
+        return await shouldHaltLoop(
           input,
-          state: currentState,
+          currentState,
           runtimeContext,
           node,
-          decision
-        });
+          output
+        )
+          ? { ...outcome, halt_workflow: true }
+          : outcome;
       };
     const result: WorkflowNodeSchedulerResult = nodes.length === 0
       ? { kind: "completed", state: initialState }
@@ -518,7 +543,9 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
     state = result.state;
     exactStateAvailable = true;
 
-    const output = assertFinalWorkflowOutput(input, state, deferredFinalReportIds);
+    const output = result.halted_node_id === undefined
+      ? assertFinalWorkflowOutput(input, state, deferredFinalReportIds)
+      : assertHaltedWorkflowOutput(input, state, result.halted_node_id);
     input.signal?.throwIfAborted();
 
     state = { ...state, run_status: "succeeded" };
@@ -565,6 +592,28 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
       caught
     });
   }
+}
+
+function assertHaltedWorkflowOutput(
+  input: RunWorkflowInput,
+  state: LunaRuntimeState,
+  nodeId: string
+): JsonValue {
+  const output = state.steps[nodeId];
+  if (output === undefined) {
+    throw runtimeError("Halted workflow is missing its loop result", "runtime_state_invalid", {
+      details: { node_id: nodeId }
+    });
+  }
+  if (
+    (input.executionScope === undefined || input.executionScope.kind === "workflow") &&
+    !matchesJsonSchema(input.workflow.output_schema_content as JsonSchemaLike, output)
+  ) {
+    throw runtimeError("Halted workflow output failed schema validation", "runtime_node_output_schema_invalid", {
+      details: { workflow_id: input.workflow.id, node_id: nodeId }
+    });
+  }
+  return output;
 }
 
 type SuccessTerminalizationPhase =

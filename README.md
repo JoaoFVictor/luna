@@ -66,6 +66,8 @@ Workflows:
 - `implementation`: trusted local write implementation loop for Jira/Plane
   tasks, with validation, reviews, commit, push, and optional
   change-request creation.
+- `social-post`: generates X/Twitter text and a PNG, supports conversational
+  human revisions in Studio, and publishes the approved pair to X.
 - `example-minimal-agent`: smallest runnable agent workflow.
 - `example-complete-agent`: fuller authoring example with context, artifacts,
   retry, and gated loop usage.
@@ -79,12 +81,13 @@ Common public ids include:
   `validation.run_commands`, `findings.validate_evidence`,
   `reports.final_report`, `git.status`, `git.commit`, `git.push_branch`,
   `change-request.create`, `pull-request-review.publish`,
+  `image-generation.generate`, `social-post.publish`,
   `local-exec.command.read`, `local-exec.command.write`, and the
   `repository-change.*` lifecycle built-ins.
-- Pattern: `quality-gates.gated_agent_loop`.
+- Patterns: `quality-gates.gated_agent_loop`.
 - Gates: `quality-gates.validation_commands`,
   `quality-gates.agent_review`, `quality-gates.non_empty_diff`,
-  `hitl.approval`.
+  `hitl.approval`, `hitl.review`.
 - Local tools: repository tools such as `repository.status`,
   `repository.diff-summary`, `repository.read-file`,
   `repository.write-file`, and `repository.delete-file`.
@@ -192,7 +195,7 @@ publication idempotency; a later run can still publish a new review.
 Resume a human interrupt:
 
 ```bash
-LUNA_CONFIG_ROOT=config npm run dev -- resume --target workflow:implementation --thread <run-id> --checkpoint <checkpoint-id> --interrupt <interrupt-id> --decision '{"approved":true}'
+LUNA_CONFIG_ROOT=config npm run dev -- resume --target workflow:example-complete-agent --thread <run-id> --checkpoint <checkpoint-id> --interrupt <interrupt-id> --decision '{"action":"approve"}'
 ```
 
 Run webhook ingress locally:
@@ -247,7 +250,8 @@ repository directories are never re-owned by Compose. They must exist and be
 writable by that host identity before startup. A read-only preflight verifies
 that `.runs/` and `.luna/studio/` are owned by `HOST_UID` with mode `0700` and
 fails instead of repairing them as root. The webhook server and worker keep
-their existing read-only `dist/` and `config/` mounts.
+their compiled artifacts inside the image and keep the existing read-only
+`config/` mount.
 
 The Compose setup mounts `${LUNA_AUTH_ROOT:-./.luna/auth}` at
 `/app/.luna/auth` and `${LUNA_REPOSITORIES_ROOT:-./repositories}` at

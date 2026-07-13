@@ -413,6 +413,7 @@ describe("Studio Control API", () => {
     const csp = response.headers["content-security-policy"];
 
     expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("img-src 'self' data: blob:");
     expect(csp).toContain("style-src-elem 'self'");
     expect(csp).toContain("style-src-attr 'unsafe-inline'");
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");

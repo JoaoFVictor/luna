@@ -67,6 +67,8 @@ all resolve the owner through the registry instead of assuming a capability id.
 | `repository-workspace` | Read-only repository workspace capture. |
 | `git` | Git status, commit, and push built-ins. |
 | `change-request` | Change-request creation built-in and provider port. |
+| `image-generation` | Provider-neutral raster image generation. |
+| `social-post` | Provider-neutral social post publication. |
 | `repository-write` | Bundle/re-export for trusted repository write capabilities. |
 
 ## Built-Ins
@@ -83,6 +85,8 @@ Runtime, context, and reports:
 - `findings.validate_evidence`
 - `reports.final_report`
 - `pull-request-review.publish`
+- `image-generation.generate`
+- `social-post.publish`
 - `task-context.collect`
 - `task-context.final_report`
 
@@ -170,6 +174,26 @@ as regular review comments. The capability also applies provider-neutral
 comment noise control before the selected provider calls the external PR review
 API.
 
+`image-generation.generate` persists the PNG immediately and returns an opaque,
+content-addressed asset reference plus render-safe metadata. Binary bytes never
+enter workflow state or checkpoints.
+The bundled `pi-imagegen` integration loads the Pi extension, reuses Luna's
+`openai-codex` OAuth credential, and executes its registered `imagegen` tool
+with the extension-owned `gpt-image-2` model. No public OpenAI API key or Luna
+OpenAI provider is involved.
+
+Durable editorial revisions use the generic workflow `loop` node. Conditional
+body nodes preserve unselected outputs exactly, and every iteration receives a
+unique checkpoint, interrupt, execution identity, and artifact namespace.
+
+`social-post.publish` is provider-neutral and accepts approved text plus an
+opaque PNG asset reference. The bundled `x` provider reads the asset only at
+the side-effect boundary, uploads it through `POST /2/media/upload`,
+and attaches its media id through `POST /2/tweets` with an OAuth user access
+token. Its write policy forbids
+automatic retry because a transport failure can leave publication outcome
+unknown and a replay could create a duplicate post.
+
 ## Pattern
 
 `quality-gates.gated_agent_loop`
@@ -187,12 +211,15 @@ Quality gates:
 - `quality-gates.agent_review`
 - `quality-gates.non_empty_diff`
 
-Human gate:
+Human gates:
 
 - `hitl.approval`
+- `hitl.review`
 
 Quality gates do not create runtime interrupts. `hitl.approval` creates a
-required interrupt and must be resumed with a decision.
+required binary approval interrupt (`approve` or `reject`). `hitl.review`
+creates a required editorial review interrupt that additionally accepts a
+targeted `request_changes` decision for durable review loops.
 
 `quality-gates.agent_review` accepts an optional collected `input.context`.
 Context-dependent reviewers require the same explicit collector, dependency,
@@ -211,6 +238,8 @@ Side-effect policies:
 - `git.push_branch_side_effect`
 - `change-request.create_side_effect`
 - `pull-request-review.publish_side_effect`
+- `image-generation.generate_side_effect`
+- `social-post.publish_side_effect`
 
 Workflow nodes that use side-effecting built-ins must declare the matching
 policy with `operation_id`.
@@ -286,6 +315,8 @@ Provider publishing port:
 
 - `change-request.provider`
 - `pull-request-review.provider`
+- `image-generation.provider`
+- `social-post.provider`
 
 Ports are selected in runtime composition or native executor wiring, not in
 agent prompts.

@@ -280,7 +280,11 @@ export function createFilesystemArtifactContentStore({
         throw invalidPendingContent(input.artifact_id);
       }
 
-      if (existingHash !== undefined && input.overwrite_policy === "forbid") {
+      if (
+        existingHash !== undefined &&
+        existingHash !== input.content_hash &&
+        input.overwrite_policy === "forbid"
+      ) {
         const error = new Error(
           `Artifact ${input.artifact_id} already exists with different content.`
         ) as Error & {
@@ -295,6 +299,9 @@ export function createFilesystemArtifactContentStore({
         uri: `artifact://${input.run_id}/${input.artifact_path}`,
         content_hash: input.content_hash
       };
+    },
+    async read(input) {
+      return new Uint8Array(await readFile(await committedPath(input)));
     }
   };
 }
