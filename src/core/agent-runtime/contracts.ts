@@ -170,8 +170,10 @@ export const GatedAgentLoopAttemptSchema = z
       .strict()
       .optional(),
     validation: ValidationResultSchema.optional(),
+    validated_snapshot: z.unknown().optional(),
     gate_results: z.array(GateResultSchema).optional(),
     diff_summary: z.unknown().optional(),
+    evidence: z.record(z.string(), z.unknown()).optional(),
     duration_ms: z.number().int().nonnegative().optional(),
     truncated: z.boolean().optional()
   })
@@ -188,7 +190,8 @@ export const GatedAgentLoopResultSchema = z
     gates: z.array(GateResultSchema),
     result: z
       .object({
-        status: NonEmptyStringSchema
+        status: NonEmptyStringSchema,
+        validated_snapshot: z.unknown().optional()
       })
       .passthrough()
   })

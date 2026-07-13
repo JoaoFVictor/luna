@@ -94,6 +94,89 @@ describe("gated agent loop runner", () => {
     expect(collectDiffSummary).toHaveBeenCalledTimes(2);
   });
 
+  it("returns acceptance feedback to the worker until a later attempt is accepted", async () => {
+    const runWorker = vi
+      .fn()
+      .mockResolvedValueOnce({ summary: "initial implementation" })
+      .mockResolvedValueOnce({ summary: "acceptance repair" });
+    const runValidation = vi.fn(async () => passedValidation);
+    const collectDiffSummary = vi
+      .fn()
+      .mockResolvedValueOnce({ files: ["src/initial.ts"] })
+      .mockResolvedValueOnce({ files: ["src/repaired.ts"] });
+    const rejectedAcceptance = {
+      id: "acceptance",
+      type: "quality-gates.agent_review",
+      passed: false,
+      feedback: "Preserve the touch-device submit control.",
+      output: {
+        status: "rejected",
+        summary: "The desktop rule also hides the control on hybrid devices.",
+        blocking_reasons: ["Hybrid touch devices still need the submit control."],
+        recommended_action: "repair"
+      }
+    };
+    const acceptedAcceptance = {
+      id: "acceptance",
+      type: "quality-gates.agent_review",
+      passed: true,
+      output: {
+        status: "accepted",
+        summary: "Desktop and hybrid-device behavior now match the task.",
+        blocking_reasons: [],
+        recommended_action: "continue"
+      }
+    };
+    const runGates = vi
+      .fn()
+      .mockResolvedValueOnce({
+        passed: false,
+        results: [rejectedAcceptance],
+        outputs: { acceptance: rejectedAcceptance.output }
+      })
+      .mockResolvedValueOnce({
+        passed: true,
+        results: [acceptedAcceptance],
+        outputs: { acceptance: acceptedAcceptance.output }
+      });
+
+    const output = await runGatedAgentLoopStateMachine({
+      cwd,
+      prompt,
+      repairAttempts: 5,
+      dependencies: {
+        runWorker,
+        runValidation,
+        collectDiffSummary,
+        runGates
+      }
+    });
+
+    expect(output).toMatchObject({
+      status: "passed",
+      attempts_exhausted: false,
+      attempts: [
+        { attempt: 1, phase: "initial", gate_results: [rejectedAcceptance] },
+        { attempt: 2, phase: "repair", gate_results: [acceptedAcceptance] }
+      ],
+      result: {
+        status: "passed",
+        acceptance: acceptedAcceptance.output
+      }
+    });
+    expect(runWorker).toHaveBeenNthCalledWith(2, {
+      cwd,
+      prompt,
+      attempt: 2,
+      phase: "repair",
+      previousValidation: passedValidation,
+      previousError: undefined,
+      previousGates: [rejectedAcceptance],
+      diffSummary: { files: ["src/initial.ts"] }
+    });
+    expect(runGates).toHaveBeenCalledTimes(2);
+  });
+
   it("records an agent error and uses it for the repair attempt", async () => {
     const runWorker = vi
       .fn()
@@ -141,6 +224,106 @@ describe("gated agent loop runner", () => {
       previousError: { message: "agent crashed" },
       previousGates: undefined,
       diffSummary: { files: [] }
+    });
+  });
+
+  it("persists attempt evidence returned by the gate phase", async () => {
+    const events: string[] = [];
+    const runWorker = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        events.push("worker:1");
+        return { summary: "first" };
+      })
+      .mockImplementationOnce(async () => {
+        events.push("worker:2");
+        return { summary: "repaired" };
+      });
+    const runValidation = vi.fn(async () => passedValidation);
+    const collectDiffSummary = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        events.push("diff:1");
+        return { files: ["src/first.ts"] };
+      })
+      .mockImplementationOnce(async () => {
+        events.push("diff:2");
+        return { files: ["src/repaired.ts"] };
+      });
+    const runGates = vi
+      .fn()
+      .mockImplementationOnce(async (input) => {
+        events.push("gates:1");
+        return {
+          passed: false,
+          results: [],
+          evidence: {
+            repository_context: {
+              attempt: input.attempt,
+              diff: input.diffSummary
+            }
+          }
+        };
+      })
+      .mockImplementationOnce(async (input) => {
+        events.push("gates:2");
+        return {
+          passed: true,
+          results: [],
+          evidence: {
+            repository_context: {
+              attempt: input.attempt,
+              diff: input.diffSummary
+            }
+          }
+        };
+      });
+
+    const output = await runGatedAgentLoopStateMachine({
+      cwd,
+      prompt,
+      repairAttempts: 1,
+      dependencies: {
+        runWorker,
+        runValidation,
+        collectDiffSummary,
+        runGates
+      }
+    });
+
+    expect(events).toEqual([
+      "worker:1",
+      "diff:1",
+      "gates:1",
+      "worker:2",
+      "diff:2",
+      "gates:2"
+    ]);
+    expect(output.attempts).toMatchObject([
+      {
+        attempt: 1,
+        evidence: {
+          repository_context: {
+            attempt: 1,
+            diff: { files: ["src/first.ts"] }
+          }
+        }
+      },
+      {
+        attempt: 2,
+        evidence: {
+          repository_context: {
+            attempt: 2,
+            diff: { files: ["src/repaired.ts"] }
+          }
+        }
+      }
+    ]);
+    expect(output.result.evidence).toEqual({
+      repository_context: {
+        attempt: 2,
+        diff: { files: ["src/repaired.ts"] }
+      }
     });
   });
 

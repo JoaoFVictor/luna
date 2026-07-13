@@ -27,10 +27,6 @@ import {
   type NativeStudioQueuedRunMaterial
 } from "./run-dispatch-contracts.js";
 import {
-  type NativeStudioQueuedResume,
-  type NativeStudioQueuedResumeMaterial
-} from "./run-resume-contracts.js";
-import {
   MAX_JOB_FILE_BYTES,
   PRIVATE_DIRECTORY_MODE,
   ensurePrivateDirectory,
@@ -42,7 +38,6 @@ import {
   syncDirectoryTree,
   writeDurableFile
 } from "./run-queue-filesystem.js";
-import { NativeStudioRunResumeQueue } from "./run-resume-queue.js";
 
 export { isNativeStudioRunDispatchQueueCorruption } from "./run-queue-filesystem.js";
 
@@ -77,66 +72,17 @@ export type NativeStudioRunDispatchQueueOptions = {
 export class NativeStudioRunDispatchQueue {
   readonly #root: string;
   readonly #jobsRoot: string;
-  readonly #resumes: NativeStudioRunResumeQueue;
   #scanOffset = 0;
 
   constructor(options: NativeStudioRunDispatchQueueOptions) {
     this.#root = path.resolve(options.root);
     this.#jobsRoot = path.join(this.#root, "jobs");
-    this.#resumes = new NativeStudioRunResumeQueue(this.#root);
   }
 
   async initialize(): Promise<void> {
     await ensurePrivateDirectory(this.#root);
     await ensurePrivateDirectory(this.#jobsRoot);
-    await this.#resumes.initializeDirectories();
     await this.removeAbandonedStagingDirectories();
-    await this.#resumes.removeAbandonedStagingFiles();
-  }
-
-  async acceptResume(
-    material: NativeStudioQueuedResumeMaterial
-  ): Promise<{ readonly job: NativeStudioQueuedResume; readonly created: boolean }> {
-    return await this.#resumes.accept(material);
-  }
-
-  async readResume(resumeId: string): Promise<NativeStudioQueuedResume> {
-    return await this.#resumes.read(resumeId);
-  }
-
-  async readResumeIdentity(resumeId: string) {
-    return await this.#resumes.readIdentity(resumeId);
-  }
-
-  async inspectResumeCommand(resumeId: string) {
-    return await this.#resumes.inspectCommand(resumeId);
-  }
-
-  async initializeResumeStage(job: NativeStudioQueuedResume): Promise<void> {
-    await this.#resumes.initializeStage(job);
-  }
-
-  async readResumeStage(job: NativeStudioQueuedResume) {
-    return await this.#resumes.readStage(job);
-  }
-
-  async markResumeEffectMayHaveOccurred(
-    job: NativeStudioQueuedResume,
-    nodeId: string
-  ): Promise<void> {
-    await this.#resumes.markEffectMayHaveOccurred(job, nodeId);
-  }
-
-  async listResumeIds(): Promise<readonly string[]> {
-    return await this.#resumes.listIds();
-  }
-
-  async removeResume(resumeId: string): Promise<void> {
-    await this.#resumes.remove(resumeId);
-  }
-
-  async quarantineResume(resumeId: string): Promise<boolean> {
-    return await this.#resumes.quarantine(resumeId);
   }
 
   async accept(

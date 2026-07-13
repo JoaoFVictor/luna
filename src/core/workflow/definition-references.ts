@@ -102,13 +102,18 @@ export function collectWorkflowRegistrationReferences(
     ) {
       references.add(node.output_schema);
     }
-    for (const policy of node.policies ?? []) {
-      references.add(policy.uses);
+    if ("policies" in node) {
+      for (const policy of node.policies ?? []) {
+        references.add(policy.uses);
+      }
     }
     for (const artifact of node.artifacts ?? []) {
       references.add(artifact.publisher);
     }
     if (node.type === "pattern") {
+      for (const evidence of node.evidence ?? []) {
+        references.add(evidence.uses);
+      }
       for (const gate of node.gates ?? []) {
         references.add(gate.type);
       }

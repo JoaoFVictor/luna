@@ -46,7 +46,10 @@ import {
   recordPushLifecycleBuiltIn
 } from "../../capabilities/repository-change/push-built-ins.js";
 import { recordImplementationValidationBuiltIn } from "../../capabilities/repository-change/validation-built-in.js";
-import { runValidationCommandsBuiltIn } from "../../capabilities/validation/built-ins.js";
+import {
+  repositoryValidationConfigurationBuiltIn,
+  runValidationCommandsBuiltIn
+} from "../../capabilities/validation/built-ins.js";
 import { collectContextBuiltIn } from "../../capabilities/context/built-ins.js";
 import {
   mergeFindingsBuiltIn,
@@ -192,6 +195,7 @@ export function createNativeProviderBuiltIns({
       imageGenerateBuiltIn,
       prepareImplementationWorktreeBuiltIn,
       collectTaskContext,
+      repositoryValidationConfigurationBuiltIn,
       runValidationCommandsBuiltIn,
       recordImplementationValidationBuiltIn,
       collectWorktreeDiffBuiltIn,

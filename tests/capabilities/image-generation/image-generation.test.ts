@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createImageGenerateBuiltIn } from "../../../src/capabilities/image-generation/built-ins.js";
 import type { ImageGenerationProviderPort } from "../../../src/capabilities/image-generation/contracts.js";
+import { unwrapNodeOutputWithBinaryAssets } from "../../../src/core/runtime/artifacts/binary-asset.js";
 
 const state = {
   invocation: {},
@@ -50,7 +51,7 @@ describe("image-generation capability", () => {
       artifacts
     });
 
-    const result = await builtIn.run({
+    const executionResult = await builtIn.run({
       state,
       signal: controller.signal,
       node: { id: "image", capability_id: "image-generation.generate" },
@@ -61,6 +62,8 @@ describe("image-generation capability", () => {
         quality: "medium"
       }
     });
+    const { output: result, binary_assets: binaryAssets } =
+      unwrapNodeOutputWithBinaryAssets(executionResult);
 
     expect(result).toMatchObject({
       provider: "pi-imagegen",
@@ -73,6 +76,10 @@ describe("image-generation capability", () => {
     expect(result).not.toHaveProperty("image_base64");
     expect(result).not.toHaveProperty("metadata.generator");
     expect(JSON.stringify(result)).not.toContain(imageBase64);
+    expect(binaryAssets).toMatchObject({
+      produced: [{ node_id: "image" }],
+      forwarded: []
+    });
     expect(artifacts.publish).toHaveBeenCalledWith(expect.objectContaining({
       node_id: "image",
       format: "png",

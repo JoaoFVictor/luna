@@ -112,6 +112,36 @@ function runInput({
 }
 
 describe("runtime-neutral workflow runner engine", () => {
+  it("treats the control-plane waiting hook as a durability boundary", async () => {
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState
+    }) => ({
+      kind: "waiting_for_input",
+      interrupt_id: "interrupt-waiting-boundary",
+      checkpoint_id: "checkpoint-waiting-boundary",
+      state: { ...initialState, run_status: "waiting_for_input" }
+    });
+    const failedState = vi.fn();
+    const boundary = vi.fn(async () => {
+      throw new Error("control plane unavailable");
+    });
+
+    await expect(runCompiledWorkflowWithScheduler({
+      ...runInput({ runId: "engine-waiting-boundary" }),
+      onWaitingState: boundary,
+      onFailedState: failedState
+    }, scheduler)).rejects.toMatchObject({
+      code: "runtime_durability_recovery_required",
+      details: {
+        interrupt_id: "interrupt-waiting-boundary",
+        checkpoint_id: "checkpoint-waiting-boundary"
+      }
+    });
+
+    expect(boundary).toHaveBeenCalledOnce();
+    expect(failedState).not.toHaveBeenCalled();
+  });
+
   it("substitutes precompleted nodes using the canonical effective DAG", async () => {
     const cutpointWorkflow = definition([
       { id: "shared", type: "built_in", uses: "runtime.noop" },

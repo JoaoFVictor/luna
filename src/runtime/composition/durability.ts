@@ -89,7 +89,13 @@ function addNodeRequirements(
     requirements.add("human_gate");
   }
 
-  if (node.type !== "workflow") {
+  if (node.type === "loop") {
+    for (const bodyNode of node.body.nodes) {
+      addNodeRequirements(bodyNode, registry, requirements);
+    }
+  }
+
+  if ("policies" in node) {
     for (const policy of node.policies ?? []) {
       if (isWritePolicy(policy.uses, registry)) {
         requirements.add("write_side_effect");

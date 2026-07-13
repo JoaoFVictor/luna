@@ -59,6 +59,28 @@ describe("fingerprintNativeStudioRepository", () => {
       .resolves.not.toBe(first);
   });
 
+  it("pins the selected repository validation contract", async () => {
+    repository = {
+      ...repository,
+      validation: {
+        commands: [{ cmd: "./scripts/validate" }],
+        env_allowlist: []
+      }
+    };
+    const first = await fingerprintNativeStudioRepository(repository);
+
+    repository = {
+      ...repository,
+      validation: {
+        commands: [{ cmd: "./scripts/verify" }],
+        env_allowlist: []
+      }
+    };
+
+    await expect(fingerprintNativeStudioRepository(repository))
+      .resolves.not.toBe(first);
+  });
+
   it.skipIf(process.platform === "win32")(
     "never opens an untracked FIFO omitted by Git's untracked-file list",
     async () => {

@@ -19,6 +19,14 @@ reverse references, tests, configs, docs, or similar existing abstractions. Trea
 signals; a truncated graph should narrow confidence or ask reviewers to inspect
 the affected area carefully.
 
+If the initial graph is insufficient for a concrete planning question, use
+`repository_context_query` with narrower text, paths, or symbols. This tool
+queries the same canonical repository index; treat each result as additive
+evidence. The runtime pins calls to the supplied snapshot and rejects drift;
+compare the returned snapshot with the initial graph. Repeat only when the
+next query resolves a named evidence gap. Do not replace the initial graph,
+crawl the repository, or use broad exploratory queries.
+
 Return only structured output matching the configured schema:
 
 - `summary`: a concise summary of what appears to be changing.

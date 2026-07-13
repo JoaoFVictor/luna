@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -14,6 +14,10 @@ import { createMemoryCheckpointStore } from "../../../src/runtime/backends/memor
 import { createMemoryEventStore } from "../../../src/runtime/backends/memory/events.js";
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
+import { createSqliteCheckpointStore } from "../../../src/runtime/backends/sqlite/checkpoints.js";
+import { RuntimeDurabilityRecoveryRequiredError } from "../../../src/core/runtime/errors.js";
+import type { CheckpointStore } from "../../../src/core/runtime/backends/contracts.js";
+import { patternStageOccurrenceNodeId } from "../../../src/core/workflow/loop-identity.js";
 import {
   gatedAgentGateKey,
   gatedAgentWorkerKey
@@ -27,8 +31,9 @@ import {
 } from "../../../src/runtime/langgraph/workflow-runner.js";
 
 const execFileAsync = promisify(execFile);
+const runValidationCommandsSpy = vi.fn(runValidationCommands);
 const qualityGatePatternExecutors = createQualityGatePatternExecutors({
-  runValidationCommands,
+  runValidationCommands: runValidationCommandsSpy,
   collectDiffSummary: collectWorktreeDiff
 });
 
@@ -181,6 +186,11 @@ function sequentialAgentRuntime(
 async function emptyGitWorkspace(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "luna-runner-git-"));
   await execFileAsync("git", ["init"], { cwd: directory });
+  await execFileAsync("git", [
+    "-c", "user.name=Luna Test",
+    "-c", "user.email=luna@example.invalid",
+    "commit", "--allow-empty", "-m", "Initial"
+  ], { cwd: directory });
 
   return directory;
 }
@@ -220,7 +230,32 @@ describe("gated agent loop LangGraph executor", () => {
           prompt: "implement the change",
           context: { expression: "$.steps.context" }
         },
+        evidence: [
+          {
+            id: "repository_context",
+            uses: "quality-gates.test_context",
+            input: {
+              attempt: { expression: "$.gate.attempt" },
+              diff_summary: { expression: "$.gate.diff_summary" }
+            }
+          }
+        ],
         gates: [
+          {
+            id: "validation",
+            type: "quality-gates.validation_commands",
+            input: {
+              commands: {
+                expression: "$.repository.validation.commands"
+              },
+              env_allowlist: {
+                expression: "$.repository.validation.env_allowlist"
+              },
+              max_output_bytes: {
+                expression: "$.config.implementation.validation.max_output_bytes"
+              }
+            }
+          },
           {
             id: "review",
             type: "quality-gates.agent_review",
@@ -249,22 +284,42 @@ describe("gated agent loop LangGraph executor", () => {
       }
     ]);
     const runtimeBackends = backends();
+    const testContextBuiltIn = vi.fn(async ({ node, input }: {
+      node: { readonly id: string };
+      input: unknown;
+    }) => node.id.includes(":evidence:")
+      ? { resolved_input: input }
+      : reviewerContext);
 
     const result = await runCompiledWorkflow({
       compiled: compileWorkflow({ workflow: definition, registry }),
       workflow: definition,
       invocation: {},
-      config: {},
+      config: {
+        implementation: {
+          validation: {
+            max_output_bytes: 4096
+          }
+        }
+      },
       run: {
         run_id: "run-gated-loop",
         workflow_id: "runner-test",
         attempt: 1,
         started_at: "2026-06-25T00:00:00.000Z"
       },
-      runtimeContext: { workspace: { path: workspacePath } },
+      runtimeContext: {
+        workspace: { path: workspacePath },
+        repository: {
+          validation: {
+            commands: [{ cmd: "git", args: ["status", "--short"] }],
+            env_allowlist: ["ALLOWED_TOKEN"]
+          }
+        }
+      },
       backends: runtimeBackends,
       builtIns: {
-        "quality-gates.test_context": async () => reviewerContext
+        "quality-gates.test_context": testContextBuiltIn
       },
       patternExecutors: qualityGatePatternExecutors,
       agentRuntime: runtime,
@@ -313,6 +368,14 @@ describe("gated agent loop LangGraph executor", () => {
           }),
           subject: expect.objectContaining({
             output: { files_changed: ["src/example.ts"] },
+            evidence: {
+              repository_context: {
+                resolved_input: {
+                  attempt: 1,
+                  diff_summary: expect.any(Object)
+                }
+              }
+            },
             outputs: {}
           })
         })
@@ -333,6 +396,445 @@ describe("gated agent loop LangGraph executor", () => {
         })
       })
     );
+    expect(runValidationCommandsSpy).toHaveBeenCalledWith({
+      cwd: workspacePath,
+      commands: [{ cmd: "git", args: ["status", "--short"] }],
+      envAllowlist: ["ALLOWED_TOKEN"],
+      maxOutputBytes: 4096
+    });
+    expect(result.state.steps.implementation).toMatchObject({
+      attempts: [{
+        validated_snapshot: expect.objectContaining({ kind: "git_worktree_tree.v1" }),
+        evidence: { repository_context: expect.any(Object) }
+      }],
+      result: {
+        validated_snapshot: expect.objectContaining({ kind: "git_worktree_tree.v1" }),
+        evidence: { repository_context: expect.any(Object) }
+      }
+    });
+  });
+
+  it("rejects a worktree mutation between durable validation and diff collection", async () => {
+    const workspacePath = await emptyGitWorkspace();
+    const changedPath = path.join(workspacePath, "change.txt");
+    await writeFile(changedPath, "validated\n", "utf8");
+    const runtime = sequentialAgentRuntime([{ output: { summary: "implemented" } }]);
+    const definition = workflow([{
+      id: "implementation",
+      type: "pattern",
+      uses: "quality-gates.gated_agent_loop",
+      worker: "code-implementer",
+      input: { prompt: "implement the change" },
+      repair: { attempts: 0 }
+    }]);
+    const mutatingPatternExecutors = createQualityGatePatternExecutors({
+      runValidationCommands: runValidationCommandsSpy,
+      collectDiffSummary: async (input) => {
+        await writeFile(changedPath, "mutated after validation\n", "utf8");
+        return await collectWorktreeDiff(input);
+      }
+    });
+
+    await expect(runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-validation-diff-mutation",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      runtimeContext: { workspace: { path: workspacePath } },
+      backends: backends(),
+      builtIns: {},
+      patternExecutors: mutatingPatternExecutors,
+      agentRuntime: runtime,
+      agentInputs: {
+        [gatedAgentWorkerKey("implementation")]: {
+          ...agentDefaults("code-implementer"),
+          cwd: workspacePath,
+          output_schema: { type: "object", additionalProperties: true }
+        }
+      }
+    })).rejects.toMatchObject({
+      code: "runtime_state_invalid",
+      message: "Worktree changed between validation and diff collection"
+    });
+  });
+
+  it("rejects validation commands that mutate the worktree", async () => {
+    const workspacePath = await emptyGitWorkspace();
+    const runtime = sequentialAgentRuntime([{ output: { summary: "implemented" } }]);
+    const definition = workflow([{
+      id: "implementation",
+      type: "pattern",
+      uses: "quality-gates.gated_agent_loop",
+      worker: "code-implementer",
+      input: { prompt: "implement the change" },
+      gates: [{
+        id: "validation",
+        type: "quality-gates.validation_commands",
+        input: {
+          commands: [{
+            cmd: "sh",
+            args: ["-c", "printf mutation > validation-side-effect.txt"]
+          }],
+          env_allowlist: [],
+          max_output_bytes: 4096
+        }
+      }],
+      repair: { attempts: 0 }
+    }]);
+    const collectDiffSummary = vi.fn(collectWorktreeDiff);
+
+    await expect(runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-validation-side-effect",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      runtimeContext: { workspace: { path: workspacePath } },
+      backends: backends(),
+      builtIns: {},
+      patternExecutors: createQualityGatePatternExecutors({
+        runValidationCommands: runValidationCommandsSpy,
+        collectDiffSummary
+      }),
+      agentRuntime: runtime,
+      agentInputs: {
+        [gatedAgentWorkerKey("implementation")]: {
+          ...agentDefaults("code-implementer"),
+          cwd: workspacePath,
+          output_schema: { type: "object", additionalProperties: true }
+        }
+      }
+    })).rejects.toMatchObject({
+      code: "runtime_state_invalid",
+      message: "Validation commands changed the worktree; validation must be read-only"
+    });
+    expect(collectDiffSummary).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["after worker output", "worker"],
+    ["after evidence output", "evidence:repository_context"],
+    ["between reviewers", "reviewer:review"]
+  ] as const)("recovers %s without replaying output-pending pattern stages", async (
+    _label,
+    crashAfterOutputStage
+  ) => {
+    const result = await crashAndRecoverPattern({ crashAfterOutputStage });
+
+    expect(result.workerCalls).toBe(1);
+    expect(result.evidenceCalls).toBe(1);
+    expect(result.agentIds).toEqual([
+      "code-implementer",
+      "change-reviewer",
+      "change-acceptance-reviewer"
+    ]);
+    expect(result.output.status).toBe("succeeded");
+  });
+
+  it("crosses the authoritative pre-execution barrier before the worker", async () => {
+    const result = await crashAndRecoverPattern({
+      crashBeforeStage: "worker"
+    });
+
+    // The explicitly authorized second invocation is the only model call.
+    // The first invocation stopped at the durable barrier before the worker.
+    expect(result.workerCalls).toBe(1);
+    expect(result.agentIds[0]).toBe("code-implementer");
+    expect(result.output.status).toBe("succeeded");
+  });
+
+  it("recovers completed stages after reopening the SQLite checkpoint store", async () => {
+    const checkpointRoot = await mkdtemp(path.join(tmpdir(), "luna-pattern-sqlite-"));
+    const result = await crashAndRecoverPattern({
+      crashAfterOutputStage: "reviewer:review",
+      checkpointFile: path.join(checkpointRoot, "checkpoints.sqlite")
+    });
+
+    expect(result.workerCalls).toBe(1);
+    expect(result.evidenceCalls).toBe(1);
+    expect(result.agentIds).toEqual([
+      "code-implementer",
+      "change-reviewer",
+      "change-acceptance-reviewer"
+    ]);
+    expect(result.output.status).toBe("succeeded");
+  });
+
+  it.each([
+    { failedGate: "validation", commands: [{ cmd: "quality-check" }] },
+    { failedGate: "diff", commands: [] }
+  ])("does not collect evidence when the $failedGate gate fails", async ({
+    failedGate,
+    commands
+  }) => {
+    const workspacePath = await emptyGitWorkspace();
+    const runtime = sequentialAgentRuntime([{
+      output: { files_changed: [] }
+    }]);
+    const evidenceBuiltIn = vi.fn(async () => ({ repository: "context" }));
+    const definition = workflow([{
+      id: "implementation",
+      type: "pattern",
+      uses: "quality-gates.gated_agent_loop",
+      worker: "code-implementer",
+      evidence: [{
+        id: "repository_context",
+        uses: "quality-gates.test_context"
+      }],
+      gates: [
+        {
+          id: "validation",
+          type: "quality-gates.validation_commands",
+          input: {
+            commands,
+            env_allowlist: [],
+            max_output_bytes: 4096
+          }
+        },
+        {
+          id: "diff",
+          type: "quality-gates.non_empty_diff",
+          input: {}
+        },
+        {
+          id: "review",
+          type: "quality-gates.agent_review",
+          input: {
+            review_agent: "change-reviewer",
+            subject: { expression: "$.gate" }
+          },
+          block_when: { expression: "$.gate.decision = 'fail'" }
+        }
+      ],
+      repair: { attempts: 0 }
+    }]);
+    if (failedGate === "validation") {
+      runValidationCommandsSpy.mockResolvedValueOnce({
+        passed: false,
+        commands: [{
+          cmd: "quality-check",
+          exit_code: 1,
+          stdout: "",
+          stderr: "quality check failed",
+          stdout_truncated: false,
+          stderr_truncated: false,
+          duration_ms: 1,
+          timed_out: false
+        }]
+      });
+    }
+
+    const result = await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: `run-gated-loop-${failedGate}`,
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      runtimeContext: {
+        workspace: { path: workspacePath }
+      },
+      backends: backends(),
+      builtIns: {
+        "quality-gates.test_context": evidenceBuiltIn
+      },
+      patternExecutors: qualityGatePatternExecutors,
+      agentRuntime: runtime,
+      agentInputs: {
+        [gatedAgentWorkerKey("implementation")]: {
+          ...agentDefaults("code-implementer"),
+          cwd: workspacePath,
+          output_schema: { type: "object", additionalProperties: true }
+        },
+        [gatedAgentGateKey("implementation", "review")]: {
+          ...agentDefaults("change-reviewer"),
+          output_schema: { type: "object", additionalProperties: true }
+        }
+      }
+    });
+
+    expect(evidenceBuiltIn).not.toHaveBeenCalled();
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+    expect(result.state.steps.implementation).toMatchObject({
+      status: "failed",
+      result: { status: "failed" }
+    });
+    expect(result.state.steps.implementation).toHaveProperty(
+      "attempts.0.gate_results",
+      expect.arrayContaining([
+        expect.objectContaining({ id: failedGate, passed: false })
+      ])
+    );
+    expect(result.state.steps.implementation).not.toHaveProperty("result.evidence");
   });
 
 });
+
+async function crashAndRecoverPattern({
+  crashBeforeStage,
+  crashAfterOutputStage,
+  checkpointFile
+}: {
+  readonly crashBeforeStage?: string;
+  readonly crashAfterOutputStage?: string;
+  readonly checkpointFile?: string;
+}) {
+  if ((crashBeforeStage === undefined) === (crashAfterOutputStage === undefined)) {
+    throw new Error("Select exactly one pattern crash boundary");
+  }
+  const workspacePath = await emptyGitWorkspace();
+  const definition = workflow([{
+    id: "implementation",
+    type: "pattern",
+    uses: "quality-gates.gated_agent_loop",
+    worker: "code-implementer",
+    evidence: [{
+      id: "repository_context",
+      uses: "quality-gates.test_context",
+      input: { attempt: { expression: "$.gate.attempt" } }
+    }],
+    gates: [{
+      id: "review",
+      type: "quality-gates.agent_review",
+      input: {
+        review_agent: "change-reviewer",
+        subject: { expression: "$.gate" }
+      },
+      block_when: { expression: "$.gate.decision = 'fail'" }
+    }, {
+      id: "acceptance",
+      type: "quality-gates.agent_review",
+      input: {
+        review_agent: "change-acceptance-reviewer",
+        subject: { expression: "$.gate" }
+      },
+      block_when: { expression: "$.gate.status != 'accepted'" }
+    }],
+    repair: { attempts: 0 }
+  }]);
+  const compiled = compileWorkflow({ workflow: definition, registry });
+  const runtime = sequentialAgentRuntime([{
+    output: { files_changed: ["src/example.ts"] }
+  }, {
+    output: { decision: "pass" }
+  }, {
+    output: { status: "accepted", summary: "ok" }
+  }]);
+  let evidenceCalls = 0;
+  const builtIns = {
+    "quality-gates.test_context": async () => {
+      evidenceCalls += 1;
+      return { repository: "context" };
+    }
+  };
+  const durableCheckpointStore = checkpointFile === undefined
+    ? createMemoryCheckpointStore()
+    : createSqliteCheckpointStore({ filePath: checkpointFile });
+  const crashStage = crashBeforeStage ?? crashAfterOutputStage!;
+  const targetNodeId = patternStageOccurrenceNodeId({
+    pattern_node_id: "implementation",
+    attempt: 1,
+    stage_id: crashStage
+  });
+  let crashed = false;
+  const checkpointStore: CheckpointStore = crashAfterOutputStage === undefined
+    ? durableCheckpointStore
+    : {
+        ...durableCheckpointStore,
+        async saveWrites(writes) {
+          const isTargetCompletion = writes.some(
+            (write) => write.task_id === targetNodeId &&
+              write.channel === "node_completion"
+          );
+          if (!crashed && isTargetCompletion) {
+            crashed = true;
+            throw new RuntimeDurabilityRecoveryRequiredError(
+              "simulated process loss after durable pattern output"
+            );
+          }
+          await durableCheckpointStore.saveWrites(writes);
+        }
+      };
+  const firstBackends = { ...backends(), checkpoints: checkpointStore };
+  const run = {
+    run_id: `run-pattern-recovery-${crashStage.replace(/[^a-z]+/gu, "-")}`,
+    workflow_id: definition.id,
+    attempt: 1,
+    started_at: "2026-07-13T00:00:00.000Z"
+  } as const;
+  const agentInputs = {
+    [gatedAgentWorkerKey("implementation")]: {
+      ...agentDefaults("code-implementer"),
+      output_schema: { type: "object", additionalProperties: true }
+    },
+    [gatedAgentGateKey("implementation", "review")]: {
+      ...agentDefaults("change-reviewer"),
+      output_schema: { type: "object", additionalProperties: true }
+    },
+    [gatedAgentGateKey("implementation", "acceptance")]: {
+      ...agentDefaults("change-acceptance-reviewer"),
+      output_schema: { type: "object", additionalProperties: true }
+    }
+  };
+  const common = {
+    compiled,
+    workflow: definition,
+    invocation: {},
+    config: {},
+    run,
+    runtimeContext: { workspace: { path: workspacePath } },
+    builtIns,
+    patternExecutors: qualityGatePatternExecutors,
+    agentRuntime: runtime,
+    agentInputs
+  } as const;
+
+  await expect(runCompiledWorkflow({
+    ...common,
+    backends: firstBackends,
+    onBeforeNodeExecution: async ({ node_id }) => {
+      if (
+        crashBeforeStage !== undefined &&
+        !crashed &&
+        node_id === targetNodeId
+      ) {
+        crashed = true;
+        throw new RuntimeDurabilityRecoveryRequiredError(
+          "simulated process loss between durable pattern stages"
+        );
+      }
+    }
+  })).rejects.toBeInstanceOf(RuntimeDurabilityRecoveryRequiredError);
+
+  const secondBackends = checkpointFile === undefined
+    ? firstBackends
+    : { ...backends(), checkpoints: createSqliteCheckpointStore({ filePath: checkpointFile }) };
+  const output = await runCompiledWorkflow({
+    ...common,
+    backends: secondBackends
+  });
+  const agentIds = (runtime.runAgent as ReturnType<typeof vi.fn>).mock.calls.map(
+    ([input]) => (input as { agent_id: string }).agent_id
+  );
+  return {
+    output,
+    agentIds,
+    evidenceCalls,
+    workerCalls: agentIds.filter((id) => id === "code-implementer").length
+  };
+}

@@ -79,6 +79,7 @@ export const manifest = capabilityManifest({
         properties: {
           validation: {},
           acceptance: {},
+          approved_snapshot: {},
           diff: {},
           message: { type: "string" }
         }

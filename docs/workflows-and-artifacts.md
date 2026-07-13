@@ -169,9 +169,11 @@ graph, and a logical multi-reviewer fan-out with deterministic fan-in:
 2. `repository-context.related_context` builds a bounded, auditable graph around
    changed files: changed nodes, import/include dependencies, reverse
    references, tests, configs, docs, nearby files, and similar abstractions.
-   The graph currently has deterministic JS/TS/PHP-friendly heuristics,
-   including `paths`, `baseUrl`, common root aliases, and Composer PSR-4, and
-   records budgets/truncation so incomplete context is visible.
+   The graph uses TypeScript's official module resolver for repository-declared
+   `paths`/`baseUrl`, Composer PSR-4 metadata for PHP, parser-backed symbols
+   where available, and a generic lexical fallback for bounded UTF-8 text. It
+   records coverage, budgets, exclusions, and truncation so incomplete context
+   remains visible.
 3. `review-planner` narrows the review scope from invocation, repository diff
    context, coverage, and related context.
 4. `change-reviewer`, `security-reviewer`, and `architecture-reviewer` run from
@@ -241,6 +243,17 @@ At runtime, the scheduler:
 implementation workflow. It runs a writer agent, deterministic validation,
 optional diff checks, optional review agents, and repair attempts.
 
+The implementation pattern declares read-only `evidence` that runs after each
+attempt's validation and diff collection and before model review gates. Its
+`repository_context` evidence calls the same
+`repository-context.related_context` built-in as code review, seeded by the
+current worktree diff and task text. Both technical and acceptance reviewers
+receive that attempt-scoped graph through
+`$.gate.evidence.repository_context`; they do not rediscover the repository
+with ad-hoc listing or text-search tools. Planner, writer, and reviewer agents
+may refine a named evidence gap through `repository-context.query`; every
+refinement is an additive, bounded view over that same snapshot-aware index.
+
 Current quality-gate ids:
 
 - `quality-gates.validation_commands`
@@ -275,7 +288,8 @@ or after every other node in the workflow graph.
 
 ## Durable Human Review Loops
 
-A `loop` body is a single sequential chain ending in exactly one `human_gate`.
+A `loop` body is a sequential list ending in exactly one `human_gate`; array
+order is the execution contract, so body nodes do not repeat it with `after`.
 Its `repeat_when` expression decides whether the human response starts another
 iteration; no implicit iteration limit exists. `when` on body agents and
 built-ins supports selective regeneration and retains the previous output when

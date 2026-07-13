@@ -108,6 +108,7 @@ export async function createNativeStudioRunSubsystem(
       platform: options.platform,
       resume: {
         interrupts: interruptStore,
+        journal: store.resumes,
         platform: options.platform
       },
       runDiagnostics: options.diagnostics,

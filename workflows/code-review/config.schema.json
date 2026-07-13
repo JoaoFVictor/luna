@@ -24,21 +24,19 @@
             "max_related_files": {
               "type": "integer",
               "minimum": 1,
+              "maximum": 100,
               "x-luna-studio": { "exposure": "editable" }
             },
-            "max_scan_files": {
+            "max_seed_files": {
               "type": "integer",
               "minimum": 1,
-              "x-luna-studio": { "exposure": "editable" }
-            },
-            "max_file_bytes": {
-              "type": "integer",
-              "minimum": 1,
+              "maximum": 100,
               "x-luna-studio": { "exposure": "editable" }
             },
             "max_excerpt_bytes": {
               "type": "integer",
               "minimum": 1,
+              "maximum": 16384,
               "x-luna-studio": { "exposure": "editable" }
             },
             "include_tests": {

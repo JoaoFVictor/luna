@@ -91,7 +91,7 @@ const INDEX_SCHEMA_TAMPERING = [
   ]
 ] as const;
 
-async function initializeVersionOneDatabase(filePath: string): Promise<void> {
+async function initializeCurrentDatabase(filePath: string): Promise<void> {
   const store = await createSqliteRunStore({ filePath });
   store.close();
 }
@@ -162,7 +162,7 @@ describe("SQLite run store migrations", () => {
           const journal = database.prepare("PRAGMA journal_mode").get() as {
             journal_mode: string;
           };
-          expect(version.user_version).toBe(1);
+          expect(version.user_version).toBe(2);
           expect(journal.journal_mode).toBe("wal");
         } finally {
           database.close();
@@ -172,6 +172,43 @@ describe("SQLite run store migrations", () => {
         }
       } finally {
         reopened.close();
+      }
+    });
+  });
+
+  it("migrates the exact v1 schema to the transactional resume journal", async () => {
+    await withDatabasePath(async ({ filePath }) => {
+      await initializeCurrentDatabase(filePath);
+      const legacy = new DatabaseSync(filePath);
+      try {
+        legacy.exec(`
+          DROP INDEX studio_run_resumes_accepted;
+          DROP TABLE studio_run_resumes;
+          DELETE FROM studio_run_schema_migrations WHERE version = 2;
+          PRAGMA user_version = 1;
+        `);
+      } finally {
+        legacy.close();
+      }
+
+      const migrated = await createSqliteRunStore({ filePath });
+      try {
+        const database = new DatabaseSync(filePath, { readOnly: true });
+        try {
+          const version = database.prepare("PRAGMA user_version").get() as {
+            user_version: number;
+          };
+          const resumeTable = database.prepare(`
+            SELECT name FROM sqlite_schema
+            WHERE type = 'table' AND name = 'studio_run_resumes'
+          `).get();
+          expect(version.user_version).toBe(2);
+          expect(resumeTable).toEqual({ name: "studio_run_resumes" });
+        } finally {
+          database.close();
+        }
+      } finally {
+        migrated.close();
       }
     });
   });
@@ -201,7 +238,7 @@ describe("SQLite run store migrations", () => {
       database.close();
       await expect(createSqliteRunStore({ filePath })).rejects.toMatchObject({
         code: "run_store_schema_unsupported",
-        details: { schema_version: 999, supported_version: 1 }
+        details: { schema_version: 999, supported_version: 2 }
       });
     });
   });
@@ -210,7 +247,7 @@ describe("SQLite run store migrations", () => {
     "rejects a falsely versioned schema with an altered %s contract",
     async (_contract, objectName, expectedFragment, replacementFragment) => {
       await withDatabasePath(async ({ filePath }) => {
-        await initializeVersionOneDatabase(filePath);
+        await initializeCurrentDatabase(filePath);
         rewriteSchemaObject(filePath, objectName, expectedFragment, replacementFragment);
         await expectCorruptSchema(filePath);
       });
@@ -221,7 +258,7 @@ describe("SQLite run store migrations", () => {
     "rejects a falsely versioned schema with altered index %s",
     async (_contract, tamperingSql) => {
       await withDatabasePath(async ({ filePath }) => {
-        await initializeVersionOneDatabase(filePath);
+        await initializeCurrentDatabase(filePath);
         const database = new DatabaseSync(filePath);
         try {
           database.exec(tamperingSql);

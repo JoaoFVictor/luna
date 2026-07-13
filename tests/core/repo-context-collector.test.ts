@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { githubPullRequestContextFrom } from "../../src/providers/github/pull-request-context.js";
 import { collectRepoContext } from "../../src/capabilities/git/diff/repo-context.js";
-import { gitInvocation, gitRepository } from "../fixtures/git-repo.js";
+import { gitRepository } from "../fixtures/git-repo.js";
 
 type FakeGitCall = {
   cwd: string;
   args: readonly string[];
 };
 
-const pullRequest = githubPullRequestContextFrom(gitInvocation);
-const baseSha = pullRequest.references.base_sha;
-const headSha = pullRequest.references.head_sha;
+const baseSha = "a".repeat(40);
+const headSha = "b".repeat(40);
 const tabbedPath = "src/tab\tpath.ts";
 function nul(...fields: string[]): string {
   return `${fields.join("\0")}\0`;
@@ -160,8 +158,11 @@ describe("repo context collector", () => {
     expect(context.file_excerpts_truncated).toEqual(["src/alpha.ts", "src/large.ts"]);
     expect(context.git).toEqual({
       merge_base: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      status_short: [" M local-change.ts", "?? scratch.txt"]
+      status_short: [" M local-change.ts", "?? scratch.txt"],
+      status_short_omitted_count: 0,
+      status_short_truncated_count: 0
     });
+    expect(context.changed_files_omitted_count).toBe(1);
 
     expect(context.files.map((file) => file.path)).toEqual([
       "src/alpha.ts",

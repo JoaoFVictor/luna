@@ -1,5 +1,4 @@
 import { WorkflowDefinitionError } from "./definition-errors.js";
-import { analyzeWorkflowGraph } from "./graph-analysis.js";
 import type { ParsedLoopNode } from "./definition-types.js";
 
 export function validateLoopStructure(node: ParsedLoopNode, path: string): void {
@@ -32,19 +31,11 @@ export function validateLoopStructure(node: ParsedLoopNode, path: string): void 
     );
   }
 
-  analyzeWorkflowGraph({ nodes: body });
   body.forEach((candidate, index) => {
-    const expected = index === 0 ? [] : [body[index - 1]!.id];
-    const actual = candidate.after ?? [];
-    if (
-      actual.length !== expected.length ||
-      actual.some((dependency, dependencyIndex) =>
-        dependency !== expected[dependencyIndex]
-      )
-    ) {
+    if (candidate.after !== undefined) {
       throw new WorkflowDefinitionError(
         "workflow_schema_invalid",
-        "Workflow loop body must be a single sequential chain.",
+        "Workflow loop body order is defined by the nodes array; after is not allowed.",
         { path: `${path}.body.nodes[${index}].after` }
       );
     }

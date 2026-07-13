@@ -1,11 +1,8 @@
 import type { RunLedgerPort } from "../../application/runs/ports.js";
+import type { StudioRunResumeRecord } from "../../application/runs/resume-journal.js";
 import { StudioRunResumeError } from "../../application/runs/resume-errors.js";
 import type { RunRecord } from "../../contracts/runs.js";
-import {
-  isNativeStudioRunDispatchQueueCorruption,
-  type NativeStudioRunDispatchQueue
-} from "../filesystem/run-dispatch-queue.js";
-import type { NativeStudioQueuedResume } from "../filesystem/run-resume-contracts.js";
+import type { NativeStudioRunDispatchQueue } from "../filesystem/run-dispatch-queue.js";
 import type { NativeStudioRunLease } from "./run-dispatch-lease.js";
 import { nativeStudioActiveResumeReplayIsSafe } from "./run-recovery-safety.js";
 
@@ -14,22 +11,22 @@ type RunningResumeRecoveryDependencies = {
   readonly ledger: RunLedgerPort;
   readonly now: () => number;
   readonly orphanThresholdMs: number;
-  readonly onBackgroundError: (cause: unknown) => void;
+  readonly waitingBoundaryDurable: boolean;
   readonly createRecoveryLease: (
-    job: NativeStudioQueuedResume
+    job: StudioRunResumeRecord
   ) => NativeStudioRunLease;
   readonly assertCompatible: (
-    job: NativeStudioQueuedResume,
+    job: StudioRunResumeRecord,
     record: RunRecord,
     sourceJob: Awaited<ReturnType<NativeStudioRunDispatchQueue["read"]>>
   ) => void;
   readonly cancelClaimed: (
-    job: NativeStudioQueuedResume,
+    job: StudioRunResumeRecord,
     lease: NativeStudioRunLease,
     cause: unknown
   ) => Promise<void>;
   readonly markUnknown: (
-    job: NativeStudioQueuedResume,
+    job: StudioRunResumeRecord,
     lease: NativeStudioRunLease,
     code: string,
     message: string
@@ -71,7 +68,7 @@ function classifyRunningResumeOwnership(
  * replay after checking only one of them.
  */
 export async function recoverNativeStudioRunningResume(
-  job: NativeStudioQueuedResume,
+  job: StudioRunResumeRecord,
   record: RunRecord,
   dependencies: RunningResumeRecoveryDependencies
 ): Promise<string | undefined> {
@@ -85,23 +82,14 @@ export async function recoverNativeStudioRunningResume(
   }
 
   const sourceJob = await dependencies.queue.read(job.run_id);
-  let resumeStage: Awaited<
-    ReturnType<NativeStudioRunDispatchQueue["readResumeStage"]>
-  > = undefined;
-  try {
-    resumeStage = await dependencies.queue.readResumeStage(job);
-  } catch (cause) {
-    if (!isNativeStudioRunDispatchQueueCorruption(cause)) throw cause;
-    // Integrity loss can never authorize replay. Preserve the immutable
-    // command as identity and converge the run to action-required below.
-    dependencies.onBackgroundError(cause);
-  }
-  const replaySafe = resumeStage?.stage === "pre_execution" &&
+  const replaySafe = dependencies.waitingBoundaryDurable || (
+    job.stage.kind === "pre_execution" &&
     nativeStudioActiveResumeReplayIsSafe({
       sideEffects: record.side_effects,
       activeNodeIds: record.active_node_ids,
       lifecycleProjection: record.lifecycle_projection
-    });
+    })
+  );
   const recoveryLease = dependencies.createRecoveryLease(job);
   try {
     await recoveryLease.claimRecovery({
@@ -119,7 +107,9 @@ export async function recoverNativeStudioRunningResume(
   }
 
   try {
-    dependencies.assertCompatible(job, record, sourceJob);
+    if (!dependencies.waitingBoundaryDurable) {
+      dependencies.assertCompatible(job, record, sourceJob);
+    }
   } catch (cause) {
     if (!(cause instanceof StudioRunResumeError)) throw cause;
     if (replaySafe) {

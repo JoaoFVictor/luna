@@ -94,6 +94,7 @@ Runtime, context, and reports:
 
 Validation and HITL:
 
+- `validation.repository_configuration`
 - `validation.run_commands`
 - `hitl.require_approval`
 
@@ -124,23 +125,60 @@ inside provider/native composition; it does not add separate public built-in ids
 for each provider.
 
 `repository-context.related_context` is provider-neutral and read-only. It
-receives `repo_context` plus optional budgets and returns
-`luna.related_context.v1`: a small impact graph with `nodes`, `edges`,
-ranked `files`, `budgets`, `truncation`, and `audit` metadata. The built-in is
-language agnostic by contract, but uses stronger engines when they are
-available. Internally it produces one Luna symbol graph shape inspired by SCIP:
+receives exactly one source (`repo_context`, task text, or an attempt-scoped
+worktree diff) plus optional output budgets and returns
+`luna.repository_context.v2`: an impact graph with `source`, `snapshot`,
+`coverage`, `nodes`, `edges`, ranked `files`, `budgets`, `truncation`, and
+`audit` metadata. The built-in is language agnostic by contract, but uses
+stronger engines when they are available. Internally it produces one Luna
+symbol graph shape inspired by SCIP:
+
+Pull-request provenance is fail-closed. `base_sha`, `head_sha`, `merge_base`,
+and every `allowed_checkout_shas` entry must be a full 40- or 64-character Git
+object id. The indexed checkout must equal `head_sha` by default. A verified
+capture may explicitly authorize another checkout through
+`allowed_checkout_shas`; `base_sha` and `merge_base` describe comparison and
+merge ancestry only and never implicitly authorize indexing that revision.
+
+`repository-context.query` is the capability-owned local refinement tool for
+read-only and trusted-write agents. It returns the strict
+`luna.repository_context_query.v1` view without accepting or emitting provider
+repository identity, base SHA, or head SHA claims. The tool reuses the bound
+workspace, canonical index, ranking, graph, resource admission, cancellation,
+coverage, and truncation contracts; it is not a raw list-files/search-text
+fallback. Agent-runtime handlers automatically bind a query to the repository
+context snapshot in that invocation and fail closed if the workspace snapshot
+drifts. Direct callers may provide the same `expected_snapshot_id` explicitly;
+it cannot override a snapshot already bound to the agent.
+
+Migration note (`repository-context` capability `2026.07.13`): consumers of the
+older related-context payload must accept `luna.repository_context.v2`, the
+strict task/worktree input schemas, centrally bounded output arrays, and the
+`truncation.omitted_edges_count`/`truncated_edge_text_count` audit fields. These
+are intentional contract changes; catalog snapshots should use the capability
+version instead of assuming the previous shape.
 occurrences use Luna symbol strings, SCIP-compatible `symbol_roles` bitsets,
 typed UTF-16 ranges, and document-local symbol metadata. JS/TS uses TypeScript,
 Vue uses Luna-owned
 `@vue/compiler-sfc` plus TypeScript for SFC script/template blocks, and PHP uses
-`nikic/php-parser` through the target repository's PHP autoload. After import
+Luna-owned `nikic/php-parser` from the runtime image. Target-repository
+dependencies never provide the parser. After import
 resolution, Luna links references back to resolved definition symbols before
-ranking reverse references. Missing parser support falls back to deterministic
+ranking reverse references. Lexical retrieval normalizes Unicode and identifier
+case/separators, applies conservative morphology and one-edit matching for
+non-trivial terms, then scores path, symbol, and content fields with deterministic
+BM25/IDF weighting. Pure lexical additions are labeled `query_match` with node
+source `lexical_retrieval`; stronger test, config/docs, import, or reverse-reference
+evidence retains its structural relation. Seeds expand through import/include and
+linked-symbol adjacency for at most three hops with deterministic decay and hub
+penalties. Direct graph neighbors of the strongest seeds precede pure lexical
+matches when they fit the configured budget; later hops compete by their decayed
+score. Emitted edges connect selected endpoints only. Missing parser support falls back to deterministic
 heuristics and is visible in `audit.warnings`; the actual engines are listed in
-`audit.symbol_engines`. It skips dependency/build output and
-local agent/editor tool directories, centers changed-file excerpts on diff
-hunks, and resolves TypeScript/JavaScript
-`paths` aliases and `baseUrl`, common root aliases such as `@/` and `~/`, PHP
+`audit.symbol_engines`. Its inventory is the Git-tracked files plus non-ignored
+untracked files; it centers changed-file excerpts on diff hunks and resolves
+TypeScript/JavaScript
+`paths` aliases and `baseUrl` only when declared by repository configuration, PHP
 `require`/`include`, Composer PSR-4 namespaces, reverse references, tests,
 configs, docs, same-directory files, and similar abstraction names. Docs/config
 edges are specific to matching changed seeds instead of being global edges to
@@ -150,6 +188,75 @@ the full excluded count, so a clean-looking graph can still expose budget
 pressure without flooding agents. It is review context, not publication
 evidence; inline PR comments still come from
 validated findings whose evidence maps to captured PR diff lines.
+
+Output limits are enforced centrally: at most `100` related files, `100` seeds
+(never more than the related-file budget), and `16384` excerpt bytes per selected
+file. A compact lexical corpus, import-resolution scopes, and graph topology are
+built once with the immutable canonical index and included in its retained-byte
+budget; query-specific scores are not retained. Query terms are capped at `256`;
+edges are evidence-ranked and capped at `1000`, with omitted edges and truncated
+edge text reported under `truncation`. Fuzzy lexical retrieval uses a bounded
+build-time trigram index; per-query candidate and bucket cutoffs are reported as
+`fuzzy_candidates_considered` and `fuzzy_candidates_omitted`. Query execution
+also bounds posting visits and materialized scoring documents; pressure is
+reported through `posting_documents_considered`, `posting_documents_omitted`,
+and `query_documents_omitted`. Graph traversal likewise bounds visited edges,
+materialized matches, and frontier growth. Expansion is deterministic
+round-robin by hop depth and seed rank, so one high-fanout seed cannot consume
+the whole edge budget before another seed receives service. Its
+visited/omitted counters are reported under `truncation`;
+`graph_edges_omitted_lower_bound` is `true` when the omitted-edge count includes
+only the materialized remainder and further undiscovered fanout may exist.
+
+The canonical index excludes instruction metadata under `.agents`, `.claude`,
+`.codex`, and `.cursor` path segments, known instruction basenames such as
+`AGENTS.md` and `CLAUDE.md`, `*.instructions.md`, environment-secret files,
+private-key material, common credential stores such as `.aws/credentials`, and
+operator-declared `repository_context.exclude_globs`, while retaining ordinary
+repository configuration such as `.github`. Path policy is case-insensitive;
+captured content is also checked for deterministic private-key, cloud-key, and
+structured client-secret signatures before it can reach a model. Coverage
+reports these as `sensitive_excluded_files`. This exclusion applies only to
+repository-context retrieval; explicit `context.collect_context` inputs remain
+available. Extensions are metadata rather than an eligibility allowlist: every
+remaining regular file is classified from its immutable captured bytes. Valid
+UTF-8 without NUL bytes is indexed even for unfamiliar languages or
+extensionless build files; invalid UTF-8 and NUL-bearing content is classified
+as binary. Oversized files are classified from a bounded prefix before textual
+byte accounting: binary files are excluded and audited, while eligible text
+still fails closed with `repository_index_capacity_exceeded`. Coverage reports
+binary, sensitive, non-regular, policy, and generic-text counts
+separately, so `complete` means every eligible text file was indexed rather
+than silently omitting unknown extensions. It preflights the complete eligible Git
+inventory by bytes and builds under fixed process safety budgets with bounded,
+adaptive read concurrency. Capacity is fail-closed: the index is never silently
+prefix-truncated, and an oversized file, aggregate source set, Git inventory, or
+retained graph raises `repository_index_capacity_exceeded` with structured
+diagnostics. The current process policy allows 4 MiB per eligible file, 96 MiB
+of eligible source, 192 MiB of retained index data, 200,000 inventory entries or
+64 MiB of inventory output, 8 MiB in flight across at most eight readers, two
+concurrent discovery/build operations, a queue of 32 distinct roots, and a 256
+MiB LRU cache. Admission also applies a global 512 MiB weighted accounting
+budget across active operations and retained cache. Index builds reserve an
+estimated 256 MiB and queries reserve an estimated 32 MiB; settled cache entries
+use their measured retained-byte estimate. Cache is evicted before new work is
+queued for byte pressure, and fitting waiters are admitted in FIFO order subject
+to the operation and byte budgets. This is a deterministic resource-accounting
+bound, not a guarantee that total process RSS cannot exceed 512 MiB: V8, parser,
+native-library, and other runtime allocations are outside these declared
+estimates. Concurrent requests for the same normalized root share one
+snapshot/build flight; each caller can cancel independently, and the underlying
+flight is cancelled only after its final consumer detaches. Clean tracked and
+staged files are read from their stage-0 Git blob OIDs in bounded `cat-file`
+batches, while unstaged and untracked files are fingerprinted and read through
+fd-relative, no-symlink traversal beneath the repository root. Therefore warm
+cache identity checks do not reread all clean source bytes, and transient
+worktree ABA content cannot enter a clean snapshot. `retained_index_bytes` is a
+conservative, cycle-safe retention estimate that includes candidate fields,
+the compact lexical corpus, and graph topology; transient build structures have
+a separate 256 MiB working budget. This bounded in-memory design avoids hidden
+partial context and reduces memory-pressure risk; repositories beyond these limits require a future persistent,
+incremental index rather than a workflow-specific scan override.
 
 `review.coverage_plan`, `review.coverage_check`, and `review.quality_check` are
 provider-neutral review hardening built-ins. `coverage_plan` derives expected

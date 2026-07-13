@@ -7,6 +7,11 @@ import {
   resolvedInput
 } from "../../core/built-ins/state.js";
 import { recordImplementationValidationMetadata } from "./metadata.js";
+import { WorktreeDiffSchema } from "../git/diff/worktree-diff.js";
+import {
+  ApprovedWorktreeSnapshotSchema,
+  worktreeSnapshotsEqual
+} from "../git/worktree-snapshot.js";
 
 function fallbackRejectedAcceptance(implementation: {
   readonly result: unknown;
@@ -48,10 +53,31 @@ export const recordImplementationValidationBuiltIn = defineBuiltInStep({
       implementation.result.acceptance === undefined
         ? fallbackRejectedAcceptance(implementation)
         : AcceptanceDecisionSchema.parse(implementation.result.acceptance);
+    const diffSummary = WorktreeDiffSchema.safeParse(implementation.result.diff_summary);
+    const validatedSnapshot = ApprovedWorktreeSnapshotSchema.safeParse(
+      implementation.result.validated_snapshot
+    );
+    const approvedSnapshot = validatedSnapshot.success
+      ? validatedSnapshot.data
+      : undefined;
+    if (
+      implementation.status === "passed" &&
+      (
+        approvedSnapshot === undefined ||
+        !diffSummary.success ||
+        diffSummary.data.approved_snapshot === undefined ||
+        !worktreeSnapshotsEqual(diffSummary.data.approved_snapshot, approvedSnapshot)
+      )
+    ) {
+      throw new Error(
+        "Passed implementation lacks one exact Git tree shared by validation and diff review."
+      );
+    }
 
     return {
       validation: implementation.final_validation,
-      acceptance
+      acceptance,
+      ...(approvedSnapshot === undefined ? {} : { approved_snapshot: approvedSnapshot })
     };
   }
 });

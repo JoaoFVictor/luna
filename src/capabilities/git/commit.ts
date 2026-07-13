@@ -15,6 +15,10 @@ import {
   resolvePorts,
   workspaceFrom
 } from "./shared.js";
+import {
+  ApprovedWorktreeSnapshotSchema,
+  type ApprovedWorktreeSnapshot
+} from "./worktree-snapshot.js";
 
 type GitCommitBuiltInInput = {
   readonly operation_id: "git.commit";
@@ -22,6 +26,7 @@ type GitCommitBuiltInInput = {
   readonly paths?: readonly string[];
   readonly expected_branch?: string;
   readonly expected_base_sha?: string;
+  readonly expected_snapshot?: ApprovedWorktreeSnapshot;
   readonly remote?: string;
   readonly expected_remote_urls?: readonly string[];
 };
@@ -76,6 +81,12 @@ function commitInputFrom(
   if (input?.remote !== undefined && typeof input.remote !== "string") {
     throw gitError("Git commit remote must be a string.", "git_input_invalid");
   }
+  const expectedSnapshot = input?.expected_snapshot === undefined
+    ? undefined
+    : ApprovedWorktreeSnapshotSchema.safeParse(input.expected_snapshot);
+  if (expectedSnapshot?.success === false) {
+    throw gitError("Git commit expected_snapshot is invalid.", "git_input_invalid");
+  }
   if (
     input?.expected_remote_urls !== undefined &&
     (!Array.isArray(input.expected_remote_urls) ||
@@ -97,6 +108,9 @@ function commitInputFrom(
     ...(input?.expected_base_sha === undefined
       ? {}
       : { expected_base_sha: input.expected_base_sha }),
+    ...(expectedSnapshot?.data === undefined
+      ? {}
+      : { expected_snapshot: expectedSnapshot.data }),
     ...(input?.remote === undefined ? {} : { remote: input.remote }),
     ...(input?.expected_remote_urls === undefined
       ? {}
@@ -159,6 +173,14 @@ function compatibleCommit(
     existing.branch !== input.expected_branch ||
     !matchesExpectedHead(existing, input) ||
     existing.message !== input.message
+  ) {
+    return undefined;
+  }
+
+  if (
+    input.expected_snapshot !== undefined &&
+    (existing.tree_oid !== input.expected_snapshot.tree_oid ||
+      existing.head_sha !== input.expected_snapshot.head_sha)
   ) {
     return undefined;
   }

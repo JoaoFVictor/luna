@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { prepareImplementationWorktreeBuiltIn } from "../../src/capabilities/repository-change/prepare-worktree-built-in.js";
 import { recordImplementationValidationBuiltIn } from "../../src/capabilities/repository-change/validation-built-in.js";
+import { prepareCommitBuiltIn } from "../../src/capabilities/repository-change/commit-built-ins.js";
+import type { ApprovedWorktreeSnapshot } from "../../src/capabilities/git/worktree-snapshot.js";
 import type { Invocation } from "../../src/core/router/invocation.js";
 import type { WorkspaceRecord } from "../../src/capabilities/repository-change/types.js";
 import type { RepositoryConfig } from "../../src/core/config/schemas.js";
@@ -87,20 +89,50 @@ const implementationConfig: ImplementationConfig["implementation"] = {
     base_ref: "main"
   },
   sandbox: {
-    type: "trusted_host_local",
-    env_allowlist: []
+    type: "trusted_host_local"
   },
   validation: {
     repair_attempts: 1,
-    max_output_bytes: 1000,
-    commands: [
-      {
-        cmd: "npm",
-        args: ["test"]
-      }
-    ]
+    max_output_bytes: 1000
   }
 };
+
+const approvedSnapshot: ApprovedWorktreeSnapshot = {
+  kind: "git_worktree_tree.v1",
+  head_sha: "a".repeat(40),
+  tree_oid: "b".repeat(40),
+  changed_paths: ["src/checkout.ts"]
+};
+
+function worktreeDiff(snapshot: ApprovedWorktreeSnapshot = approvedSnapshot) {
+  return {
+    files: [{
+      path: "src/checkout.ts",
+      status: "modified",
+      index_status: " ",
+      worktree_status: "M"
+    }],
+    untracked_files: [],
+    untracked_summaries: [],
+    staged_diff: "",
+    unstaged_diff: "diff --git a/src/checkout.ts b/src/checkout.ts\n",
+    staged_diff_truncated: false,
+    unstaged_diff_truncated: false,
+    max_diff_bytes: 65_536,
+    status_files_omitted_count: 0,
+    untracked_files_omitted_count: 0,
+    untracked_summary_bytes: 0,
+    max_untracked_summary_bytes: 65_536,
+    approved_snapshot: snapshot
+  } as const;
+}
+
+const accepted = {
+  status: "accepted",
+  summary: "Task satisfied.",
+  blocking_reasons: [],
+  recommended_action: "continue"
+} as const;
 
 function implementationState(overrides: Partial<WorkflowState> = {}): WorkflowState {
   return {
@@ -199,6 +231,86 @@ describe("implementation built-ins", () => {
         recommended_action: "stop"
       }
     });
+  });
+
+  it("persists the exact post-validation snapshot only when reviewed diff matches it", async () => {
+    const implementation = {
+      status: "passed",
+      attempts_exhausted: false,
+      attempts: [{
+        attempt: 1,
+        phase: "initial",
+        validation: { passed: true },
+        validated_snapshot: approvedSnapshot,
+        gate_results: [],
+        diff_summary: worktreeDiff()
+      }],
+      validation: { passed: true },
+      final_validation: { passed: true },
+      gates: [],
+      result: {
+        status: "passed",
+        validated_snapshot: approvedSnapshot,
+        diff_summary: worktreeDiff(),
+        acceptance: accepted
+      }
+    };
+
+    await expect(runBuiltIn(recordImplementationValidationBuiltIn, {
+      state: implementationState(),
+      input: { implementation }
+    })).resolves.toEqual({
+      validation: { passed: true },
+      acceptance: accepted,
+      approved_snapshot: approvedSnapshot
+    });
+
+    await expect(runBuiltIn(recordImplementationValidationBuiltIn, {
+      state: implementationState(),
+      input: {
+        implementation: {
+          ...implementation,
+          result: {
+            ...implementation.result,
+            diff_summary: worktreeDiff({
+              ...approvedSnapshot,
+              tree_oid: "c".repeat(40)
+            })
+          }
+        }
+      }
+    })).rejects.toThrow(
+      "Passed implementation lacks one exact Git tree shared by validation and diff review."
+    );
+  });
+
+  it("prepares a commit only for the exact validation-approved diff snapshot", async () => {
+    const state = implementationState();
+    await expect(runBuiltIn(prepareCommitBuiltIn, {
+      state,
+      input: {
+        validation: { passed: true },
+        acceptance: accepted,
+        approved_snapshot: approvedSnapshot,
+        diff: worktreeDiff(),
+        message: "Fix checkout validation"
+      }
+    })).resolves.toMatchObject({
+      operation_id: "git.commit",
+      paths: ["src/checkout.ts"],
+      expected_snapshot: approvedSnapshot
+    });
+
+    await expect(runBuiltIn(prepareCommitBuiltIn, {
+      state,
+      input: {
+        validation: { passed: true },
+        acceptance: accepted,
+        approved_snapshot: approvedSnapshot,
+        diff: worktreeDiff({ ...approvedSnapshot, tree_oid: "c".repeat(40) }),
+        message: "Fix checkout validation"
+      }
+    })).rejects.toMatchObject({ code: "built_in_lifecycle_contract_invalid" });
   });
 
 });

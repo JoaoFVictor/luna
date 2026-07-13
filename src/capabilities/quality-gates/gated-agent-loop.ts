@@ -1,6 +1,7 @@
 import type { GatedAgentLoopAttempt } from "../../core/agent-runtime/contracts.js";
 import type { ValidationResult } from "../../core/validation/types.js";
 import { MAX_WORKFLOW_ATTEMPTS } from "../../core/workflow/repair-attempts.js";
+import { runtimeDurabilityRecoveryRequiredFrom } from "../../core/runtime/errors.js";
 
 export type GatedAgentLoopPhase = "initial" | "repair";
 
@@ -34,19 +35,36 @@ export type RunGatesInput = {
   workerOutput: unknown;
   validation: ValidationResult;
   diffSummary: unknown;
+  evidence?: Record<string, unknown>;
 };
+
+export type CollectEvidenceInput = Omit<RunGatesInput, "evidence">;
 
 export type RunGatesOutput = {
   passed: boolean;
   results: GateResult[];
   outputs?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
 };
 
 export type RunGatedAgentLoopDependencies = {
   runWorker: (input: RunGatedWorkerInput) => Promise<unknown>;
-  runValidation: () => Promise<ValidationResult>;
-  collectDiffSummary: () => Promise<unknown>;
+  runValidation: (input: {
+    readonly attempt: number;
+    readonly phase: GatedAgentLoopPhase;
+  }) => Promise<ValidationResult | {
+    readonly validation: ValidationResult;
+    readonly validatedSnapshot?: unknown;
+  }>;
+  collectDiffSummary: (input: {
+    readonly attempt: number;
+    readonly phase: GatedAgentLoopPhase;
+    readonly validatedSnapshot?: unknown;
+  }) => Promise<unknown>;
   runGates: (input: RunGatesInput) => Promise<RunGatesOutput>;
+  persistAttempt?: (
+    attempt: GatedAgentLoopAttempt
+  ) => Promise<GatedAgentLoopAttempt>;
 };
 
 export type RunGatedAgentLoopInput = {
@@ -68,6 +86,8 @@ export type GatedAgentLoopOutput = {
     agent_output?: unknown;
     agent_error?: GatedAgentError;
     diff_summary?: unknown;
+    validated_snapshot?: unknown;
+    evidence?: Record<string, unknown>;
   } & Record<string, unknown>;
 };
 
@@ -75,8 +95,24 @@ const RESERVED_RESULT_KEYS = new Set([
   "status",
   "agent_output",
   "agent_error",
-  "diff_summary"
+  "diff_summary",
+  "validated_snapshot",
+  "evidence"
 ]);
+
+function normalizeValidationOutput(
+  output: ValidationResult | {
+    readonly validation: ValidationResult;
+    readonly validatedSnapshot?: unknown;
+  }
+): {
+  readonly validation: ValidationResult;
+  readonly validatedSnapshot?: unknown;
+} {
+  return "validation" in output
+    ? output
+    : { validation: output };
+}
 
 function codedError(message: string, code: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string };
@@ -170,6 +206,8 @@ export async function runGatedAgentLoopStateMachine({
   let finalValidation: ValidationResult = { passed: false };
   let finalAgentOutput: unknown;
   let finalDiffSummary: unknown;
+  let finalValidatedSnapshot: unknown;
+  let finalEvidence: Record<string, unknown> | undefined;
   let finalGateResults: GateResult[] = [];
   let finalGateOutputs: Record<string, unknown> = {};
 
@@ -192,15 +230,21 @@ export async function runGatedAgentLoopStateMachine({
         diffSummary: previousDiffSummary
       });
     } catch (error) {
+      const durabilityFailure = runtimeDurabilityRecoveryRequiredFrom(error);
+      if (durabilityFailure !== undefined) throw durabilityFailure;
       const agentError = normalizeAgentError(error);
-      const diffSummary = await dependencies.collectDiffSummary();
+      const diffSummary = await dependencies.collectDiffSummary({
+        attempt: attemptNumber,
+        phase
+      });
 
-      attempts.push({
+      const attempt = await persistAttempt(dependencies, {
         attempt: attemptNumber,
         phase,
         agent_error: agentError,
         diff_summary: diffSummary
       });
+      attempts.push(attempt);
 
       if (attemptNumber >= maxAttempts) {
         return {
@@ -225,8 +269,16 @@ export async function runGatedAgentLoopStateMachine({
       continue;
     }
 
-    const validation = await dependencies.runValidation();
-    const diffSummary = await dependencies.collectDiffSummary();
+    const validationOutput = await dependencies.runValidation({
+      attempt: attemptNumber,
+      phase
+    });
+    const { validation, validatedSnapshot } = normalizeValidationOutput(validationOutput);
+    const diffSummary = await dependencies.collectDiffSummary({
+      attempt: attemptNumber,
+      phase,
+      ...(validatedSnapshot === undefined ? {} : { validatedSnapshot })
+    });
     const gates = await dependencies.runGates({
       attempt: attemptNumber,
       phase,
@@ -234,19 +286,25 @@ export async function runGatedAgentLoopStateMachine({
       validation,
       diffSummary
     });
+    const evidence = gates.evidence;
 
-    attempts.push({
+    const attempt = await persistAttempt(dependencies, {
       attempt: attemptNumber,
       phase,
       agent_output: agentOutput,
       validation,
+      ...(validatedSnapshot === undefined ? {} : { validated_snapshot: validatedSnapshot }),
       gate_results: gates.results,
-      diff_summary: diffSummary
+      diff_summary: diffSummary,
+      ...(evidence === undefined ? {} : { evidence })
     });
+    attempts.push(attempt);
 
     finalAgentOutput = agentOutput;
     finalValidation = validation;
     finalDiffSummary = diffSummary;
+    finalValidatedSnapshot = validatedSnapshot;
+    finalEvidence = evidence;
     finalGateResults = gates.results;
     finalGateOutputs = gateOutputsOrEmpty(gates.outputs);
     previousValidation = validation;
@@ -266,6 +324,8 @@ export async function runGatedAgentLoopStateMachine({
           status: "passed",
           agent_output: agentOutput,
           diff_summary: diffSummary,
+          ...(validatedSnapshot === undefined ? {} : { validated_snapshot: validatedSnapshot }),
+          ...(evidence === undefined ? {} : { evidence }),
           ...finalGateOutputs
         }
       };
@@ -283,7 +343,20 @@ export async function runGatedAgentLoopStateMachine({
       status: "failed",
       ...(finalAgentOutput === undefined ? {} : { agent_output: finalAgentOutput }),
       ...(finalDiffSummary === undefined ? {} : { diff_summary: finalDiffSummary }),
+      ...(finalValidatedSnapshot === undefined
+        ? {}
+        : { validated_snapshot: finalValidatedSnapshot }),
+      ...(finalEvidence === undefined ? {} : { evidence: finalEvidence }),
       ...finalGateOutputs
     }
   };
+}
+
+async function persistAttempt(
+  dependencies: RunGatedAgentLoopDependencies,
+  attempt: GatedAgentLoopAttempt
+): Promise<GatedAgentLoopAttempt> {
+  return dependencies.persistAttempt === undefined
+    ? attempt
+    : await dependencies.persistAttempt(attempt);
 }

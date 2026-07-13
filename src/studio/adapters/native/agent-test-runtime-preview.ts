@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { LoadedAgentDefinition } from "../../../capabilities/agents/agent-definition.js";
 import { loadAgentDefinition } from "../../../capabilities/agents/agent-loader.js";
-import { lunaToolCatalog } from "../../../capabilities/repository/tool-catalog.js";
+import { nativeLocalToolCatalog } from "../../../platform/native/native-local-tool-catalog.js";
 import type {
   AgentRuntimeDescriptor,
   AgentRuntimePort,
@@ -389,7 +389,7 @@ function resolveCatalog(
   try {
     return resolveToolCatalog({
       registry: platform.capabilityRegistry,
-      local_tools: lunaToolCatalog,
+      local_tools: nativeLocalToolCatalog,
       requested_local_tool_ids: definition.tools ?? [],
       requested_mcp_server_ids: definition.mcp_servers ?? [],
       agent_mode: definition.mode,

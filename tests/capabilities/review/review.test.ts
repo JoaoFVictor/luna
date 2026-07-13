@@ -4,7 +4,10 @@ import {
   coveragePlanBuiltIn,
   qualityCheckBuiltIn
 } from "../../../src/capabilities/review/built-ins.js";
-import type { RepoContext } from "../../../src/capabilities/git/diff/types.js";
+import {
+  RepoContextSchema,
+  type RepoContext
+} from "../../../src/capabilities/git/diff/types.js";
 import type { WorkflowState } from "../../../src/core/workflow/state.js";
 
 const state: WorkflowState = {
@@ -15,38 +18,58 @@ const state: WorkflowState = {
 };
 
 function repoContext(overrides: Partial<RepoContext> = {}): RepoContext {
-  return {
+  const defaultFiles: RepoContext["files"] = [
+    {
+      path: "src/app.ts",
+      status: "modified",
+      additions: 2,
+      deletions: 1,
+      patch: [
+        "diff --git a/src/app.ts b/src/app.ts",
+        "@@ -8,3 +10,4 @@ export function app() {",
+        " context",
+        "-old",
+        "+new",
+        "+added",
+        " tail"
+      ].join("\n"),
+      excerpt: {
+        start_line: 1,
+        end_line: 40,
+        content: "content"
+      }
+    }
+  ];
+  const files = overrides.files ?? defaultFiles;
+  const totalChangedFiles = overrides.total_changed_files ?? files.length;
+  const changedFileLimit = overrides.changed_file_limit ?? Math.max(1, files.length);
+  const omittedFiles = Math.max(0, totalChangedFiles - files.length);
+  const mergeBase = overrides.merge_base ?? "c".repeat(40);
+  return RepoContextSchema.parse({
     repository: {
       owner: "octo-org",
       name: "hello-world",
       full_name: "octo-org/hello-world"
     },
-    base_sha: "base",
-    head_sha: "head",
-    files: [
-      {
-        path: "src/app.ts",
-        status: "modified",
-        additions: 2,
-        deletions: 1,
-        patch: [
-          "diff --git a/src/app.ts b/src/app.ts",
-          "@@ -8,3 +10,4 @@ export function app() {",
-          " context",
-          "-old",
-          "+new",
-          "+added",
-          " tail"
-        ].join("\n"),
-        excerpt: {
-          start_line: 1,
-          end_line: 40,
-          content: "content"
-        }
-      }
-    ],
-    ...overrides
-  };
+    base_sha: "a".repeat(40),
+    head_sha: "b".repeat(40),
+    ...overrides,
+    merge_base: mergeBase,
+    files,
+    changed_files_truncated: overrides.changed_files_truncated ?? omittedFiles > 0,
+    total_changed_files: totalChangedFiles,
+    changed_file_limit: changedFileLimit,
+    changed_files_omitted_count: overrides.changed_files_omitted_count ?? omittedFiles,
+    file_excerpts_truncated: overrides.file_excerpts_truncated ?? files
+      .filter((file) => file.excerpt?.truncated === true)
+      .map((file) => file.path),
+    git: overrides.git ?? {
+      merge_base: mergeBase,
+      status_short: [],
+      status_short_omitted_count: 0,
+      status_short_truncated_count: 0
+    }
+  });
 }
 
 describe("review capability", () => {

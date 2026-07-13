@@ -10,6 +10,7 @@ import { createMemoryEventStore } from "../../../src/runtime/backends/memory/eve
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
+import { nodeOutputWithBinaryAssets } from "../../../src/core/runtime/artifacts/binary-asset.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -96,8 +97,7 @@ const workflow: WorkflowDefinition = {
                   { id: "image", label: "Image" }
                 ]
               }
-            },
-            after: ["draft"]
+            }
           }
         ]
       },
@@ -182,6 +182,7 @@ describe("durable workflow loop", () => {
     const compiled = compileWorkflow({ workflow, registry });
     const publishedPaths = new Set<string>();
     const publishedNodeIds = new Set<string>();
+    const publishedValues = new Map<string, unknown>();
     const executedNodeIds = new Set<string>();
     let executions = 0;
     let publishes = 0;
@@ -204,11 +205,16 @@ describe("durable workflow loop", () => {
         }
       },
       artifactPublisher: {
-        async publish({ node_id, path }: { node_id: string; path: string }) {
+        async publish({ node_id, path, value }: {
+          node_id: string;
+          path: string;
+          value: unknown;
+        }) {
           if (publishedPaths.has(path)) throw new Error(`duplicate path: ${path}`);
           if (publishedNodeIds.has(node_id)) throw new Error(`duplicate node id: ${node_id}`);
           publishedPaths.add(path);
           publishedNodeIds.add(node_id);
+          publishedValues.set(path, value);
           return { id: path, uri: `memory://${path}`, node_id };
         }
       },
@@ -262,6 +268,9 @@ describe("durable workflow loop", () => {
     expect(executedNodeIds).toHaveLength(13);
     expect([...executedNodeIds]).toContain("editorial:iteration-13:draft");
     expect([...publishedPaths]).toContain("loops/editorial/iterations/13/draft.json");
+    expect(publishedValues.get(
+      "loops/editorial/iterations/13/draft.json"
+    )).toEqual({ count: 13 });
     expect(publishes).toBe(1);
     expect(result.status).toBe("succeeded");
     expect(result.state.steps.editorial).toEqual({ action: "approve", count: 13 });
@@ -439,6 +448,15 @@ describe("durable workflow loop", () => {
     const compiled = compileWorkflow({ workflow, registry });
     let executions = 0;
     let artifactAttempts = 0;
+    let verificationAttempts = 0;
+    const producedAsset = {
+      id: "generated.png",
+      uri: "artifact://run-durable-loop-artifact-recovery/generated.png",
+      node_id: "editorial:iteration-1:draft",
+      media_type: "image/png",
+      content_hash: `sha256:${"b".repeat(64)}`,
+      size_bytes: 42
+    };
     const input = {
       compiled,
       workflow,
@@ -454,7 +472,11 @@ describe("durable workflow loop", () => {
       builtIns: {
         "test.revise": () => {
           executions += 1;
-          return { count: executions };
+          const output = { count: executions, asset: producedAsset };
+          return nodeOutputWithBinaryAssets(output, {
+            produced: [producedAsset],
+            forwarded: []
+          });
         },
         "test.publish": () => ({ published: true })
       },
@@ -465,6 +487,10 @@ describe("durable workflow loop", () => {
             throw new Error("artifact publisher failed after model execution");
           }
           return { id: path, uri: `memory://${path}`, node_id };
+        },
+        async verify() {
+          verificationAttempts += 1;
+          return true;
         }
       },
       agentRuntime
@@ -475,11 +501,13 @@ describe("durable workflow loop", () => {
     });
     expect(executions).toBe(1);
     expect(artifactAttempts).toBe(1);
+    expect(verificationAttempts).toBe(1);
 
     const recovered = await runCompiledWorkflow(input);
     expect(recovered.status).toBe("waiting_for_input");
     expect(executions).toBe(1);
     expect(artifactAttempts).toBe(2);
+    expect(verificationAttempts).toBe(2);
   });
 
   it("rejects a schema-shaped binary ref that the artifact authority cannot verify", async () => {
@@ -499,17 +527,23 @@ describe("durable workflow loop", () => {
       },
       backends,
       builtIns: {
-        "test.revise": ({ node }) => ({
-          count: 1,
-          asset: {
+        "test.revise": ({ node }) => {
+          const output = {
+            count: 1,
+            asset: {
             id: "forged.png",
             uri: "artifact://run-durable-loop-forged-asset/forged.png",
             node_id: node.id,
             media_type: "image/png",
             content_hash: `sha256:${"a".repeat(64)}`,
             size_bytes: 1
-          }
-        }),
+            }
+          };
+          return nodeOutputWithBinaryAssets(output, {
+            produced: [output.asset],
+            forwarded: []
+          });
+        },
         "test.publish": () => ({ published: true })
       },
       artifactPublisher: {

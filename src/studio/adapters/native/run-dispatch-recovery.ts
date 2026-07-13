@@ -11,6 +11,8 @@ import {
   type NativeStudioRunRecoveryClaim
 } from "./run-dispatch-lease.js";
 import { NativeStudioRunFinalizer } from "./run-finalizer.js";
+import { createNativeStudioRunRecoveryIntent } from "./run-recovery-intent.js";
+import type { InterruptRecord } from "../../../core/runtime/interrupts/contracts.js";
 
 const ORPHAN_BATCH_SIZE = 200;
 const MAX_ORPHAN_CANDIDATES_PER_SWEEP = 10_000;
@@ -41,6 +43,9 @@ export class NativeStudioRunRecovery {
     claim: NativeStudioRunRecoveryClaim
   ) => void;
   readonly #onBackgroundError: (cause: unknown) => void;
+  readonly #findDurableWaitingBoundary: (
+    runId: string
+  ) => Promise<InterruptRecord | undefined>;
 
   constructor(options: {
     readonly ledger: RunLedgerPort;
@@ -53,6 +58,9 @@ export class NativeStudioRunRecovery {
       claim: NativeStudioRunRecoveryClaim
     ) => void;
     readonly onBackgroundError: (cause: unknown) => void;
+    readonly findDurableWaitingBoundary?: (
+      runId: string
+    ) => Promise<InterruptRecord | undefined>;
   }) {
     this.#ledger = options.ledger;
     this.#now = options.now;
@@ -62,6 +70,8 @@ export class NativeStudioRunRecovery {
     this.#scheduleQueuedRun = options.scheduleQueuedRun;
     this.#scheduleRecoveryRun = options.scheduleRecoveryRun;
     this.#onBackgroundError = options.onBackgroundError;
+    this.#findDurableWaitingBoundary = options.findDurableWaitingBoundary ??
+      (async () => undefined);
   }
 
   async recoverJob(job: NativeStudioQueuedRun): Promise<void> {
@@ -294,11 +304,32 @@ export class NativeStudioRunRecovery {
           throw cause;
         }
         if (intent === undefined) {
-          await this.failStartedOrphan(
-            current,
-            "studio_runtime_replay_not_authorized"
-          );
-          return;
+          const executionSnapshotHash = current.execution_snapshot_hash;
+          const waitingBoundary = executionSnapshotHash === undefined
+            ? undefined
+            : await this.#findDurableWaitingBoundary(current.run_id);
+          if (
+            executionSnapshotHash !== undefined &&
+            waitingBoundary?.status === "pending" &&
+            waitingBoundary.run_id === current.run_id &&
+            waitingBoundary.thread_id === current.run_id &&
+            waitingBoundary.checkpoint_id !== undefined
+          ) {
+            intent = createNativeStudioRunRecoveryIntent({
+              runId: current.run_id,
+              executionSnapshotHash,
+              reason: "waiting_boundary_recovery_required",
+              interruptId: waitingBoundary.id,
+              checkpointId: waitingBoundary.checkpoint_id
+            });
+            await this.#recoveryJournal.write(intent);
+          } else {
+            await this.failStartedOrphan(
+              current,
+              "studio_runtime_replay_not_authorized"
+            );
+            return;
+          }
         }
         if (
           intent.run_id !== current.run_id ||

@@ -1,6 +1,10 @@
 import { partialArtifactPublishFailure } from "../../capabilities/artifacts/publisher.js";
-import { runtimeError } from "../../core/runtime/errors.js";
+import {
+  runtimeError,
+  RuntimeDurabilityRecoveryRequiredError
+} from "../../core/runtime/errors.js";
 import { assertCheckpointJsonValue, type JsonValue } from "../../core/runtime/json.js";
+import type { NodeBinaryAssetChannel } from "../../core/runtime/artifacts/binary-asset.js";
 import { succeedNode } from "../../core/runtime/lifecycle.js";
 import {
   publishNodeOutput,
@@ -20,6 +24,8 @@ import {
 } from "./node-attempt-lifecycle.js";
 import { saveNodeCompletionWrite } from "./node-durability.js";
 import { assertNodeOutputMatchesSchema } from "./node-output-validation.js";
+import { committedBinaryAssetRefs } from "./node-output-assets.js";
+import { mergeRuntimeReferences } from "./runtime-reference-codec.js";
 
 export type WorkflowNodeRunUpdate = {
   readonly node_statuses: LunaRuntimeState["node_statuses"];
@@ -32,6 +38,14 @@ export type CompletedWorkflowNodeAttempt = {
   readonly kind: "completed";
   readonly update: WorkflowNodeRunUpdate;
   readonly halt_workflow?: true;
+};
+
+export type WorkflowNodeExecutionProjection = {
+  /** State key used by expressions; physical execution identity remains node.id. */
+  readonly state_node_id: string;
+  readonly artifact_path_prefix?: string;
+  readonly replace_existing_state?: boolean;
+  readonly completion_failure?: "recover";
 };
 
 /**
@@ -48,7 +62,10 @@ export async function finalizePersistedWorkflowNodeOutput({
   node,
   decision,
   output,
-  active
+  active,
+  projection,
+  outputAssetRefs = [],
+  binaryAssets
 }: {
   readonly input: RunWorkflowInput;
   readonly runtimeContext: WorkflowRuntimeContext;
@@ -56,6 +73,11 @@ export async function finalizePersistedWorkflowNodeOutput({
   readonly decision: ExecutionPolicyDecision;
   readonly output: JsonValue;
   readonly active: ActiveWorkflowNodeAttempt;
+  readonly projection?: WorkflowNodeExecutionProjection;
+  readonly outputAssetRefs?: ReadonlyArray<
+    LunaRuntimeState["artifact_refs"][number]
+  >;
+  readonly binaryAssets?: NodeBinaryAssetChannel;
 }): Promise<CompletedWorkflowNodeAttempt> {
   let attemptState = active.state;
   try {
@@ -63,13 +85,15 @@ export async function finalizePersistedWorkflowNodeOutput({
     assertCheckpointJsonValue(output);
     input.signal?.throwIfAborted();
 
-    const projectedOutput = active.state.steps[node.id];
+    const stateNodeId = projection?.state_node_id ?? node.id;
+    const projectedOutput = active.state.steps[stateNodeId];
     const outputAlreadyProjected = Object.prototype.hasOwnProperty.call(
       active.state.steps,
-      node.id
+      stateNodeId
     );
     if (
       outputAlreadyProjected &&
+      projection?.replace_existing_state !== true &&
       sha256Digest(projectedOutput) !== sha256Digest(output)
     ) {
       throw runtimeError(
@@ -79,8 +103,13 @@ export async function finalizePersistedWorkflowNodeOutput({
       );
     }
     const withOutput = outputAlreadyProjected
-      ? active.state
-      : publishNodeOutput(active.state, node.id, output);
+      ? projection?.replace_existing_state === true
+        ? {
+            ...active.state,
+            steps: { ...active.state.steps, [stateNodeId]: output }
+          }
+        : active.state
+      : publishNodeOutput(active.state, stateNodeId, output);
     attemptState = withOutput;
 
     let artifactRefs: LunaRuntimeState["artifact_refs"];
@@ -89,7 +118,13 @@ export async function finalizePersistedWorkflowNodeOutput({
         input,
         node,
         output,
-        withOutput
+        withOutput,
+        projection?.artifact_path_prefix === undefined
+          ? undefined
+          : {
+              node_id: node.id,
+              path_prefix: projection.artifact_path_prefix
+            }
       );
     } catch (cause) {
       const partialFailure = partialArtifactPublishFailure(cause);
@@ -109,6 +144,21 @@ export async function finalizePersistedWorkflowNodeOutput({
       };
       throw partialFailure.runtimeCause;
     }
+    const binaryAssetRefs = await committedBinaryAssetRefs(
+      binaryAssets,
+      node.id,
+      mergeRuntimeReferences(
+        withOutput.artifact_refs,
+        artifactRefs,
+        outputAssetRefs
+      ),
+      input.artifactPublisher
+    );
+    artifactRefs = mergeRuntimeReferences(
+      artifactRefs,
+      outputAssetRefs,
+      binaryAssetRefs
+    );
 
     const withArtifacts = artifactRefs.length === 0
       ? withOutput
@@ -134,11 +184,23 @@ export async function finalizePersistedWorkflowNodeOutput({
       update: {
         node_statuses: { [node.id]: succeeded.node_statuses[node.id] },
         attempts: { [node.id]: succeeded.attempts[node.id] },
-        steps: { [node.id]: output },
+        steps: { [stateNodeId]: output },
         ...(artifactRefs.length === 0 ? {} : { artifact_refs: artifactRefs })
       }
     };
   } catch (cause) {
+    if (projection?.completion_failure === "recover") {
+      throw new RuntimeDurabilityRecoveryRequiredError(
+        "Node output is durable but completion requires recovery",
+        {
+          cause,
+          details: {
+            node_id: node.id,
+            artifact_count: attemptState.artifact_refs.length
+          }
+        }
+      );
+    }
     return await failObservedWorkflowNodeAttempt({
       input,
       node,

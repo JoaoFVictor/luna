@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  importTargets,
-  projectImportResolutionFrom,
   readCandidate
-} from "../../../src/capabilities/repository-context/file-analysis.js";
+} from "../../../src/capabilities/repository-context/candidate-reader.js";
+import {
+  importTargets,
+  projectImportResolutionFrom
+} from "../../../src/capabilities/repository-context/import-resolution.js";
 import {
   linkProjectSymbolReferences,
   primaryDefinitionSymbolsFromGraph,

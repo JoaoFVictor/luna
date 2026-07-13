@@ -78,7 +78,8 @@ Common public ids include:
 - Built-ins: `runtime.preflight`, `context.collect_context`,
   `repository-diff.collect_context`, `repository-workspace.capture`,
   `task-context.collect`, `task-context.final_report`,
-  `validation.run_commands`, `findings.validate_evidence`,
+  `validation.repository_configuration`, `validation.run_commands`,
+  `findings.validate_evidence`,
   `reports.final_report`, `git.status`, `git.commit`, `git.push_branch`,
   `change-request.create`, `pull-request-review.publish`,
   `image-generation.generate`, `social-post.apply_revision_scope`,
@@ -91,7 +92,8 @@ Common public ids include:
   `hitl.approval`, `hitl.review`.
 - Local tools: repository tools such as `repository.status`,
   `repository.diff-summary`, `repository.read-file`,
-  `repository.write-file`, and `repository.delete-file`.
+  `repository.write-file`, and `repository.delete-file`, plus the bounded
+  `repository-context.query` view over the canonical repository index.
 
 ## Run It
 

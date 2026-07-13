@@ -9,7 +9,8 @@ import {
 import type { RunHandle } from "../../core/runtime/run-handle.js";
 import {
   LUNA_RUNTIME_STATE_SCHEMA_VERSION,
-  type LunaRuntimeState
+  type LunaRuntimeState,
+  type RuntimeArtifactRef
 } from "../../core/runtime/state.js";
 import { markNodeWaitingForInput } from "../../core/runtime/lifecycle.js";
 import { createInterrupt } from "../../core/runtime/interrupts/resume.js";
@@ -33,7 +34,6 @@ import {
   interruptId,
   interruptIdMatches,
   parseInterruptWaitIntent,
-  waitCompletionWrite,
   waitIntentTaskId,
   waitIntentWrite,
   WAIT_INTENT_CHANNEL,
@@ -93,7 +93,6 @@ export async function waitForHumanInput(
         eventStore: input.backends.events
       }
     );
-    await saveCheckpointWriteExactly(input, waitCompletionWrite(intent));
   } catch (cause) {
     if (isRuntimeDurabilityRecoveryRequired(cause)) {
       throw cause;
@@ -425,24 +424,12 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
   const config = context.config;
   const run = context.run;
   const precompletedSteps = context.precompleted_steps;
-  const loopContinuation = context.loop_continuation;
+  const loopContinuation = parseLoopContinuation(context.loop_continuation);
   if (precompletedSteps !== undefined) {
     assertCheckpointJsonObject(
       precompletedSteps,
       "$.resume_context.precompleted_steps"
     );
-  }
-  if (
-    loopContinuation !== undefined &&
-    (!isCheckpointPlainObject(loopContinuation) ||
-      typeof loopContinuation.node_id !== "string" ||
-      !Number.isSafeInteger(loopContinuation.iteration) ||
-      typeof loopContinuation.steps !== "object" ||
-      loopContinuation.steps === null ||
-      Array.isArray(loopContinuation.steps) ||
-      !Array.isArray(loopContinuation.artifact_refs))
-  ) {
-    throw runtimeError("Checkpoint loop continuation is invalid", "runtime_checkpoint_schema_mismatch");
   }
   assertCheckpointJsonObject(run, "$.resume_context.run");
   if (
@@ -469,6 +456,61 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
       : { precompleted_steps: precompletedSteps }),
     ...(loopContinuation === undefined
       ? {}
-      : { loop_continuation: loopContinuation as unknown as RunWorkflowInput["loop_continuation"] })
+      : { loop_continuation: loopContinuation })
+  };
+}
+
+function parseLoopContinuation(
+  value: JsonValue | undefined
+): RunWorkflowInput["loop_continuation"] | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !isCheckpointPlainObject(value) ||
+    typeof value.node_id !== "string" ||
+    value.node_id === "" ||
+    !Number.isSafeInteger(value.iteration) ||
+    (value.iteration as number) < 1 ||
+    !isCheckpointPlainObject(value.steps) ||
+    !isCheckpointPlainObject(value.artifacts_by_node)
+  ) {
+    throw runtimeError(
+      "Checkpoint loop continuation is invalid",
+      "runtime_checkpoint_schema_mismatch"
+    );
+  }
+  const artifactsByNode: Record<string, RuntimeArtifactRef[]> = {};
+  for (const [nodeId, refs] of Object.entries(value.artifacts_by_node)) {
+    if (!Array.isArray(refs)) {
+      throw runtimeError(
+        "Checkpoint loop continuation contains invalid artifact references",
+        "runtime_checkpoint_schema_mismatch"
+      );
+    }
+    const parsedRefs: RuntimeArtifactRef[] = [];
+    for (const ref of refs) {
+      if (
+        !isCheckpointPlainObject(ref) ||
+        typeof ref.id !== "string" ||
+        typeof ref.uri !== "string" ||
+        (ref.node_id !== undefined && typeof ref.node_id !== "string")
+      ) {
+        throw runtimeError(
+          "Checkpoint loop continuation contains invalid artifact references",
+          "runtime_checkpoint_schema_mismatch"
+        );
+      }
+      parsedRefs.push({
+        id: ref.id,
+        uri: ref.uri,
+        ...(ref.node_id === undefined ? {} : { node_id: ref.node_id })
+      });
+    }
+    artifactsByNode[nodeId] = parsedRefs;
+  }
+  return {
+    node_id: value.node_id,
+    iteration: value.iteration as number,
+    steps: value.steps,
+    artifacts_by_node: artifactsByNode
   };
 }

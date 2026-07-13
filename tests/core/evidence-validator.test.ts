@@ -9,8 +9,9 @@ const repoContext: RepoContext = {
     name: "hello-world",
     full_name: "octo-org/hello-world"
   },
-  base_sha: "abc123",
-  head_sha: "def456",
+  base_sha: "a".repeat(40),
+  head_sha: "b".repeat(40),
+  merge_base: "c".repeat(40),
   files: [
     {
       path: "src/auth.ts",
@@ -24,7 +25,18 @@ const repoContext: RepoContext = {
         content: "10 const user = getUser();\n11 updateUser(request.body);\n12 return user;"
       }
     }
-  ]
+  ],
+  changed_files_truncated: false,
+  total_changed_files: 1,
+  changed_file_limit: 1,
+  changed_files_omitted_count: 0,
+  file_excerpts_truncated: [],
+  git: {
+    merge_base: "c".repeat(40),
+    status_short: [],
+    status_short_omitted_count: 0,
+    status_short_truncated_count: 0
+  }
 };
 
 function finding(overrides: Partial<Finding> = {}): Finding {

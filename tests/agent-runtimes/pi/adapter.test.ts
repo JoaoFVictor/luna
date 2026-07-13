@@ -203,6 +203,8 @@ describe("Pi agent runtime adapter", () => {
     );
     const getModel = vi.fn(() => fakeModel);
     const handler = vi.fn(async () => " M src/index.ts\n");
+    const createHandler = vi.fn(() => handler);
+    const controller = new AbortController();
     const tools: ResolvedToolCatalog = {
       tools: [
         {
@@ -224,7 +226,7 @@ describe("Pi agent runtime adapter", () => {
             },
             modes: ["read_only", "trusted_local_write"],
             runtime_requirements: ["tool_calling"],
-            createHandler: () => handler
+            createHandler
           }
         }
       ],
@@ -239,10 +241,16 @@ describe("Pi agent runtime adapter", () => {
         input({
           tools,
           runtime_requirements: ["tool_calling"],
-          cwd: "/tmp/repo"
+          cwd: "/tmp/repo",
+          signal: controller.signal
         })
       )
     ).resolves.toMatchObject({ output: { summary: "clean" } });
+    expect(createHandler).toHaveBeenCalledWith({
+      cwd: "/tmp/repo",
+      agentInput: expect.any(Object),
+      signal: controller.signal
+    });
     expect(handler).toHaveBeenCalledWith({});
     expect(complete).toHaveBeenCalledTimes(2);
     const secondContext = complete.mock.calls[1]?.[1];

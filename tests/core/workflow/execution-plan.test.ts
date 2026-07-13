@@ -83,6 +83,7 @@ function patternNode(
     capability_id: `patterns.${id}`,
     output_schema: {},
     can_create_pending_interrupt: false,
+    evidence: [],
     ...(executionPolicy === undefined
       ? {}
       : { execution_policy: executionPolicy }),

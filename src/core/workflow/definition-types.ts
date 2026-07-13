@@ -109,6 +109,12 @@ export type ParsedCapabilityGate = {
 
 export type ParsedWorkflowGate = ParsedCapabilityGate;
 
+export type ParsedPatternEvidence = {
+  id: string;
+  uses: string;
+  input?: Record<string, unknown>;
+};
+
 export type ParsedBuiltInNode = Omit<WorkflowBuiltInNode, "artifacts"> & {
   artifacts?: ParsedArtifactWritePlan[];
   policies?: ParsedWorkflowPolicy[];
@@ -125,6 +131,7 @@ export type ParsedPatternNode = {
   uses: string;
   worker?: string;
   input?: Record<string, unknown>;
+  evidence?: ParsedPatternEvidence[];
   gates?: ParsedWorkflowGate[];
   repair?: Record<string, unknown>;
   artifacts?: ParsedArtifactWritePlan[];
@@ -139,7 +146,6 @@ export type ParsedHumanGateNode = {
   input?: Record<string, unknown>;
   after?: string[];
   artifacts?: ParsedArtifactWritePlan[];
-  policies?: ParsedWorkflowPolicy[];
 };
 
 /** A synchronous call to another installed workflow definition. */
@@ -160,8 +166,6 @@ export type ParsedLoopNode = {
   result: WorkflowExpression;
   halt_when?: WorkflowExpression;
   after?: string[];
-  artifacts?: ParsedArtifactWritePlan[];
-  policies?: ParsedWorkflowPolicy[];
 };
 
 export type ParsedWorkflowNode =

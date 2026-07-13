@@ -16,6 +16,11 @@ import type {
 } from "./types.js";
 
 const PHP_BRIDGE_TIMEOUT_MS = 10_000;
+const PHP_BRIDGE_MAX_BATCH_FILES = 128;
+const PHP_BRIDGE_MAX_BATCH_SOURCE_BYTES = 8 * 1024 * 1024;
+const PHP_BRIDGE_MAX_INPUT_BYTES = 32 * 1024 * 1024;
+const PHP_BRIDGE_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+const PHP_BRIDGE_MAX_STDERR_BYTES = 64 * 1024;
 
 type BridgeFile = {
   readonly path?: unknown;
@@ -29,8 +34,8 @@ type BridgeResult = {
 };
 
 export async function enrichPhpCandidatesWithNikic(
-  root: string,
-  candidates: readonly Candidate[]
+  candidates: readonly Candidate[],
+  signal?: AbortSignal
 ): Promise<{
   readonly candidates: readonly Candidate[];
   readonly warnings: readonly string[];
@@ -40,41 +45,93 @@ export async function enrichPhpCandidatesWithNikic(
     return { candidates, warnings: [] };
   }
 
-  try {
-    const result = await runPhpBridge(root, phpCandidates.map((candidate) => candidate.path));
-    const byPath = new Map(result.files.map((file) => [file.path, file.graph]));
-    return {
-      candidates: candidates.map((candidate) => {
-        const graph = byPath.get(candidate.path);
-        if (graph === undefined) {
-          return candidate;
-        }
-
-        return {
-          ...candidate,
-          symbol_graph: graph,
-          symbols: symbolNamesFromGraph(graph),
-          imports: importValuesFromGraph(graph)
-        };
-      }),
-      warnings: result.warnings
-    };
-  } catch (error) {
-    return {
-      candidates,
-      warnings: [`PHP symbol graph bridge unavailable: ${error instanceof Error ? error.message : String(error)}`]
-    };
+  const files: { readonly path: string; readonly graph: FileSymbolGraph }[] = [];
+  const warnings: string[] = [];
+  const failures: string[] = [];
+  for (const batch of phpBatches(phpCandidates)) {
+    signal?.throwIfAborted();
+    try {
+      const result = await runPhpBridge(batch, signal);
+      files.push(...result.files);
+      warnings.push(...result.warnings);
+    } catch (error) {
+      signal?.throwIfAborted();
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
   }
+
+  const byPath = new Map(files.map((file) => [file.path, file.graph]));
+  const missingPaths = phpCandidates
+    .map((candidate) => candidate.path)
+    .filter((filePath) => !byPath.has(filePath));
+  const failureSummary = [...new Set(failures)].slice(0, 3).join("; ");
+  return {
+    candidates: candidates.map((candidate) => {
+      const graph = byPath.get(candidate.path);
+      if (graph === undefined) {
+        return candidate;
+      }
+
+      return {
+        ...candidate,
+        symbol_graph: graph,
+        symbols: symbolNamesFromGraph(graph),
+        imports: importValuesFromGraph(graph)
+      };
+    }),
+    warnings: [
+      ...warnings,
+      ...(missingPaths.length === 0
+        ? []
+        : [
+            `PHP structural coverage unavailable for ${missingPaths.length === phpCandidates.length ? `all ${phpCandidates.length}` : `${missingPaths.length}/${phpCandidates.length}`} indexed files: ${missingPaths.slice(0, 10).join(", ")}${failureSummary === "" ? "" : `. ${failureSummary}`}`
+          ])
+    ]
+  };
+}
+
+function phpBatches(candidates: readonly Candidate[]): readonly (readonly Candidate[])[] {
+  const batches: Candidate[][] = [];
+  let batch: Candidate[] = [];
+  let batchBytes = 0;
+  for (const candidate of candidates) {
+    const bytes = Buffer.byteLength(candidate.content, "utf8");
+    if (
+      batch.length > 0 &&
+      (batch.length >= PHP_BRIDGE_MAX_BATCH_FILES ||
+        batchBytes + bytes > PHP_BRIDGE_MAX_BATCH_SOURCE_BYTES)
+    ) {
+      batches.push(batch);
+      batch = [];
+      batchBytes = 0;
+    }
+    batch.push(candidate);
+    batchBytes += bytes;
+  }
+  if (batch.length > 0) {
+    batches.push(batch);
+  }
+  return batches;
 }
 
 async function runPhpBridge(
-  root: string,
-  files: readonly string[]
+  candidates: readonly Candidate[],
+  signal?: AbortSignal
 ): Promise<{
   readonly files: readonly { readonly path: string; readonly graph: FileSymbolGraph }[];
   readonly warnings: readonly string[];
 }> {
-  const stdout = await spawnPhpBridge(JSON.stringify({ root, files }));
+  const input = JSON.stringify({
+    files: candidates.map((candidate) => ({
+      path: candidate.path,
+      content: candidate.content
+    }))
+  });
+  const inputBytes = Buffer.byteLength(input, "utf8");
+  if (inputBytes > PHP_BRIDGE_MAX_INPUT_BYTES) {
+    throw new Error(`PHP symbol graph bridge input exceeded ${PHP_BRIDGE_MAX_INPUT_BYTES} bytes.`);
+  }
+  const stdout = await spawnPhpBridge(input, signal);
   const parsed = JSON.parse(stdout) as BridgeResult;
   const warnings = arrayOfStrings(parsed.warnings);
   const filesResult = Array.isArray(parsed.files)
@@ -84,7 +141,8 @@ async function runPhpBridge(
   return { files: filesResult, warnings };
 }
 
-async function spawnPhpBridge(input: string): Promise<string> {
+async function spawnPhpBridge(input: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   return await new Promise((resolve, reject) => {
     const child = spawn("php", ["-r", PHP_SYMBOL_GRAPH_SCRIPT], {
       stdio: ["pipe", "pipe", "pipe"]
@@ -93,17 +151,46 @@ async function spawnPhpBridge(input: string): Promise<string> {
       child.kill("SIGTERM");
       reject(new Error("PHP symbol graph bridge timed out."));
     }, PHP_BRIDGE_TIMEOUT_MS);
+    const abort = () => {
+      child.kill("SIGTERM");
+      reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted === true) {
+      abort();
+    }
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let stdoutBytes = 0;
+    let outputExceeded = false;
 
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (outputExceeded) {
+        return;
+      }
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > PHP_BRIDGE_MAX_OUTPUT_BYTES) {
+        outputExceeded = true;
+        child.kill("SIGTERM");
+        reject(new Error(`PHP symbol graph bridge output exceeded ${PHP_BRIDGE_MAX_OUTPUT_BYTES} bytes.`));
+        return;
+      }
+      stdout.push(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      const captured = stderr.reduce((total, buffered) => total + buffered.length, 0);
+      if (captured < PHP_BRIDGE_MAX_STDERR_BYTES) {
+        stderr.push(chunk.subarray(0, PHP_BRIDGE_MAX_STDERR_BYTES - captured));
+      }
+    });
     child.on("error", (error) => {
       clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
       reject(error);
     });
     child.on("close", (code) => {
       clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
       if (code === 0) {
         resolve(Buffer.concat(stdout).toString("utf8"));
         return;

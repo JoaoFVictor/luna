@@ -223,7 +223,11 @@ function piTools(input: RunAgentInput): {
         );
       }
 
-      const handler = tool.local.createHandler({ cwd: input.cwd });
+      const handler = tool.local.createHandler({
+        cwd: input.cwd,
+        agentInput: input.input,
+        ...(input.signal === undefined ? {} : { signal: input.signal })
+      });
       originalToolIds.set(name, tool.id);
       handlers.set(name, async (args) => {
         if (!matchesJsonSchema(tool.input_schema, args)) {

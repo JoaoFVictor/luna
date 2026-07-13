@@ -1,35 +1,41 @@
 import type { JsonValue } from "../../../core/runtime/json.js";
 import { stableJson } from "../../../core/runtime/json.js";
 import type {
+  InterruptRecord,
   InterruptResumeClaim,
   InterruptStore
 } from "../../../core/runtime/interrupts/contracts.js";
-import type { LunaRuntimeState } from "../../../core/runtime/state.js";
-import type { WorkflowRunResult } from "../../../core/workflow/execution-contracts.js";
 import { sha256Digest } from "../../../core/workflow/definition-digests.js";
-import { resumeNativeWorkflowTarget, type NativeWorkflowResumeInput } from "../../../platform/native/native-workflow-runner.js";
-import type { NativeLunaPlatformRegistrations } from "../../../platform/native/native-platform-registrations.js";
-import { projectStoredRunGraphOutcome, type RunGraphSnapshotStorePort, type StoredRunGraphSnapshot } from "../../application/runs/graph-snapshot.js";
+import type { RunGraphSnapshotStorePort } from "../../application/runs/graph-snapshot.js";
 import type { StudioRunInterruptResumePort } from "../../application/runs/interrupt-service.js";
 import { runStoreError } from "../../application/runs/errors.js";
 import type { RunLedgerPort } from "../../application/runs/ports.js";
+import type {
+  RunResumeJournalPort,
+  StudioRunResumeRecord
+} from "../../application/runs/resume-journal.js";
 import {
   StudioRunResumeError,
   studioRunResumeCatalogChanged
 } from "../../application/runs/resume-errors.js";
 import type { StudioRunInterruptResumeReceipt } from "../../contracts/run-interrupts.js";
-import { RunTerminalStatusSchema } from "../../contracts/runs.js";
+import {
+  RunTerminalStatusSchema,
+  type RunRecord
+} from "../../contracts/runs.js";
 import {
   isNativeStudioRunDispatchQueueCorruption,
   type NativeStudioRunDispatchQueue
 } from "../filesystem/run-dispatch-queue.js";
-import type { NativeStudioQueuedResume } from "../filesystem/run-resume-contracts.js";
+import {
+  ClaimedResumeExecutor,
+  isNativeStudioRunConcurrencyLoss,
+  type ClaimedResumePlatform as ResumePlatform,
+  type ClaimedResumeWorkflow as ResumeWorkflow,
+  type ClaimedWaitingWorkflow as RecoverWaitingWorkflow
+} from "./claimed-resume-executor.js";
 import { NativeStudioRunFinalizer } from "./run-finalizer.js";
 import { NativeStudioRunLease } from "./run-dispatch-lease.js";
-import {
-  nativeStudioFailedTerminalIsSafeForRuntimeState,
-  nativeStudioResumeNodeReplayIsSafe
-} from "./run-recovery-safety.js";
 import { createNativeStudioRunTerminalIntent } from "./run-terminal-intent.js";
 import { createNativeStudioCapabilityCatalog } from "./capability-catalog.js";
 import { assertNativeStudioResumeMaterialCompatible } from "./run-resume-compatibility.js";
@@ -38,34 +44,20 @@ import {
   assertNativeStudioResolvedResumeMatchesJob,
   ensureNativeStudioResumeInterruptClaim
 } from "./run-resume-interrupt-claim.js";
-import { recoverNativeStudioCorruptResume } from "./run-resume-corruption-recovery.js";
 
-type ResumePlatform = Pick<NativeLunaPlatformRegistrations,
-  | "agentRuntimeFactories" | "workflowRuntimeFactories" | "workflowBuiltIns"
-  | "taskProviderBuiltIns" | "patternExecutors" | "changeRequestProviderFactories"
-  | "pullRequestReviewProviderFactories" | "socialPostProviderFactories"
-  | "imageGenerationProviderFactories"
-  | "capabilityRegistry" | "capabilityManifests">;
-
-type ResumeWorkflow = (
-  input: NativeWorkflowResumeInput,
-  dependencies: { readonly platform: ResumePlatform }
-) => Promise<WorkflowRunResult>;
-
-function isConcurrencyLoss(cause: unknown): boolean {
-  const code = (cause as { readonly code?: unknown })?.code;
-  return code === "run_revision_conflict" ||
-    code === "run_transition_invalid" ||
-    code === "run_owner_conflict";
-}
+type DurablePendingInterrupt = InterruptRecord & {
+  readonly thread_id: string;
+  readonly checkpoint_id: string;
+};
 
 export class NativeStudioRunInterruptResumer implements StudioRunInterruptResumePort {
-  readonly #projectRoot: string;
-  readonly #configRoot: string;
   readonly #ledger: RunLedgerPort;
-  readonly #interrupts: Pick<InterruptStore, "get" | "beginResume" | "completeResume">;
+  readonly #interrupts: Pick<
+    InterruptStore,
+    "get" | "findFirst" | "beginResume" | "completeResume"
+  >;
+  readonly #resumes: RunResumeJournalPort;
   readonly #queue: NativeStudioRunDispatchQueue;
-  readonly #graphStore: RunGraphSnapshotStorePort;
   readonly #finalizer: NativeStudioRunFinalizer;
   readonly #platform: ResumePlatform;
   readonly #ownerId: string;
@@ -74,13 +66,17 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
   readonly #orphanThresholdMs: number;
   readonly #schedule: (resumeId: string) => void;
   readonly #onBackgroundError: (cause: unknown) => void;
-  readonly #resumeWorkflow: ResumeWorkflow;
+  readonly #claimedResumeExecutor: ClaimedResumeExecutor;
 
   constructor(options: {
     readonly projectRoot: string;
     readonly configRoot: string;
     readonly ledger: RunLedgerPort;
-    readonly interrupts: Pick<InterruptStore, "get" | "beginResume" | "completeResume">;
+    readonly interrupts: Pick<
+      InterruptStore,
+      "get" | "findFirst" | "beginResume" | "completeResume"
+    >;
+    readonly resumes: RunResumeJournalPort;
     readonly queue: NativeStudioRunDispatchQueue;
     readonly graphStore: RunGraphSnapshotStorePort;
     readonly finalizer: NativeStudioRunFinalizer;
@@ -90,24 +86,42 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
     readonly schedule: (resumeId: string) => void;
     readonly onBackgroundError: (cause: unknown) => void;
     readonly resumeWorkflow?: ResumeWorkflow;
+    readonly recoverWaitingWorkflow?: RecoverWaitingWorkflow;
     readonly now?: () => number;
     readonly heartbeatIntervalMs?: number;
   }) {
-    this.#projectRoot = options.projectRoot;
-    this.#configRoot = options.configRoot;
     this.#ledger = options.ledger;
     this.#interrupts = options.interrupts;
+    this.#resumes = options.resumes;
     this.#queue = options.queue;
-    this.#graphStore = options.graphStore;
     this.#finalizer = options.finalizer;
     this.#platform = options.platform;
     this.#ownerId = options.ownerId;
     this.#schedule = options.schedule;
     this.#onBackgroundError = options.onBackgroundError;
-    this.#resumeWorkflow = options.resumeWorkflow ?? resumeNativeWorkflowTarget;
     this.#now = options.now ?? Date.now;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs ?? 10_000;
     this.#orphanThresholdMs = options.orphanThresholdMs;
+    this.#claimedResumeExecutor = new ClaimedResumeExecutor({
+      projectRoot: options.projectRoot,
+      configRoot: options.configRoot,
+      ledger: options.ledger,
+      resumes: options.resumes,
+      queue: options.queue,
+      graphStore: options.graphStore,
+      finalizer: options.finalizer,
+      platform: options.platform,
+      createLease: (job, onHeartbeatError, ownerId) =>
+        this.lease(job, onHeartbeatError, ownerId),
+      cancelInterruptClaim: async (job) =>
+        await this.cancelInterruptClaim(job),
+      ...(options.resumeWorkflow === undefined
+        ? {}
+        : { resumeWorkflow: options.resumeWorkflow }),
+      ...(options.recoverWaitingWorkflow === undefined
+        ? {}
+        : { recoverWaitingWorkflow: options.recoverWaitingWorkflow })
+    });
   }
 
   async resume(input: Parameters<StudioRunInterruptResumePort["resume"]>[0]): Promise<StudioRunInterruptResumeReceipt> {
@@ -154,7 +168,7 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
     })}`;
     let accepted;
     try {
-      accepted = await this.#queue.acceptResume({
+      accepted = await this.#resumes.accept({
         schema_version: 1,
         resume_id: resumeId,
         run_id: input.runId,
@@ -169,21 +183,23 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
         accepted_at: new Date(this.#now()).toISOString()
       });
     } catch (cause) {
-      const queued = await this.#queue.readResume(resumeId).catch(() => undefined);
+      const queued = await this.#resumes.get(resumeId).catch(() => undefined);
       if (queued !== undefined && stableJson(queued.decision) !== stableJson(desiredDecision)) {
         throw runStoreError("run_idempotency_conflict", "The interrupt was queued with a different decision");
       }
       throw cause;
     }
-    await this.#queue.initializeResumeStage(accepted.job);
-    await this.claimInterrupt(accepted.job);
+    if (accepted.record.stage.kind === "completed") {
+      return await this.existingReceipt(input.runId, input.interrupt.id);
+    }
+    await this.claimInterrupt(accepted.record);
 
     if (record.run_status === "waiting_for_input") {
-      const lease = this.lease(accepted.job);
+      const lease = this.lease(accepted.record);
       try {
         await lease.prepareResume();
       } catch (cause) {
-        if (!isConcurrencyLoss(cause)) throw cause;
+        if (!isNativeStudioRunConcurrencyLoss(cause)) throw cause;
       }
     }
     this.#schedule(resumeId);
@@ -196,89 +212,38 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
     };
   }
 
-  private async claimInterrupt(job: NativeStudioQueuedResume): Promise<void> {
+  private async claimInterrupt(job: StudioRunResumeRecord): Promise<void> {
     await ensureNativeStudioResumeInterruptClaim(this.#interrupts, job);
   }
 
   async recoverAvailableJobs(): Promise<ReadonlySet<string>> {
     const protectedRunIds = new Set<string>();
-    for (const resumeId of await this.#queue.listResumeIds()) {
+    for (const job of await this.#resumes.list()) {
       try {
-        const protectedRunId = await this.recoverAvailableJob(resumeId);
+        const protectedRunId = await this.recoverAvailableJob(job);
         if (protectedRunId !== undefined) {
           protectedRunIds.add(protectedRunId);
         }
       } catch (cause) {
-        const identity = await this.#queue.readResumeIdentity(resumeId)
-          .catch(() => undefined);
-        if (identity !== undefined) {
-          protectedRunIds.add(identity.run_id);
-          let commandInspection: Awaited<
-            ReturnType<NativeStudioRunDispatchQueue["inspectResumeCommand"]>
-          >;
-          try {
-            commandInspection = await this.#queue.inspectResumeCommand(resumeId);
-          } catch (inspectionCause) {
-            this.#onBackgroundError(inspectionCause);
-            this.#onBackgroundError(cause);
-            continue;
-          }
-          if (commandInspection === "valid") {
-            // Ledger, interrupt, source-job, and ownership failures are not
-            // evidence that the immutable resume command is corrupt. The
-            // sidecar keeps the run protected while the complete operation is
-            // retried without any terminal mutation.
-            this.#onBackgroundError(cause);
-            continue;
-          }
-          try {
-            if (commandInspection === "corrupt") {
-              await this.#queue.quarantineResume(resumeId);
-            }
-            await recoverNativeStudioCorruptResume(identity, cause, {
-              ledger: this.#ledger,
-              interrupts: this.#interrupts,
-              queue: this.#queue,
-              finalizer: this.#finalizer,
-              now: this.#now,
-              ownerId: this.#ownerId,
-              heartbeatIntervalMs: this.#heartbeatIntervalMs,
-              orphanThresholdMs: this.#orphanThresholdMs,
-              onBackgroundError: this.#onBackgroundError
-            });
-          } catch (quarantineCause) {
-            this.#onBackgroundError(quarantineCause);
-            continue;
-          }
-        } else if (isNativeStudioRunDispatchQueueCorruption(cause)) {
-          try {
-            await this.#queue.quarantineResume(resumeId);
-          } catch (quarantineCause) {
-            this.#onBackgroundError(quarantineCause);
-            continue;
-          }
-        } else {
-          // A readable durable resume remains the recovery authority even if
-          // its reconciliation hit a transient failure. Never let generic
-          // initial-run recovery adopt the same run in that window.
-          const queued = await this.#queue.readResume(resumeId)
-            .catch(() => undefined);
-          if (queued !== undefined) protectedRunIds.add(queued.run_id);
-        }
+        // A valid journal row remains authoritative after transient failures.
+        protectedRunIds.add(job.run_id);
         this.#onBackgroundError(cause);
       }
     }
     return protectedRunIds;
   }
 
-  private async recoverAvailableJob(resumeId: string): Promise<string | undefined> {
-    const job = await this.#queue.readResume(resumeId);
+  private async recoverAvailableJob(job: StudioRunResumeRecord): Promise<string | undefined> {
     const [record, interrupt] = await Promise.all([
       this.#ledger.get(job.run_id),
       this.#interrupts.get(job.interrupt_id)
     ]);
-    if (record === undefined || interrupt === undefined) {
-      await this.#queue.removeResume(resumeId);
+    if (record === undefined) {
+      await this.completeResumeJob(job);
+      return undefined;
+    }
+    if (interrupt === undefined) {
+      await this.convergeMissingResumeDependency(job, record, "interrupt");
       return undefined;
     }
     if (
@@ -286,7 +251,7 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
       RunTerminalStatusSchema.safeParse(record.run_status).success
     ) {
       await this.cancelInterruptClaim(job);
-      await this.#queue.removeResume(resumeId);
+      await this.completeResumeJob(job);
       return undefined;
     }
     if (interrupt.status === "cancelled") {
@@ -294,7 +259,7 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
         "The accepted interrupt decision was cancelled before runtime resume"
       ));
       if (await this.resumeStillNeedsRecovery(job)) return job.run_id;
-      await this.#queue.removeResume(resumeId);
+      await this.completeResumeJob(job);
       return undefined;
     }
     if (interrupt.resume !== undefined) {
@@ -305,7 +270,7 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
       ) {
         // A later wait barrier is already durable. The old resume command has
         // converged and must not be replayed over the next interrupt.
-        await this.#queue.removeResume(resumeId);
+        await this.completeResumeJob(job);
         return undefined;
       }
     }
@@ -315,13 +280,16 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
     // execution. claimInterrupt is idempotent for the same resume command and
     // fails closed for every conflicting attempt.
     await this.claimInterrupt(job);
+    const sourceJob = await this.readResumeSourceOrConverge(job, record);
+    if (sourceJob === undefined) return undefined;
     if (record.run_status === "running") {
+      const waitingBoundary = await this.pendingInterruptAfterResume(job);
       return await recoverNativeStudioRunningResume(job, record, {
         queue: this.#queue,
         ledger: this.#ledger,
         now: this.#now,
         orphanThresholdMs: this.#orphanThresholdMs,
-        onBackgroundError: this.#onBackgroundError,
+        waitingBoundaryDurable: waitingBoundary !== undefined,
         createRecoveryLease: (candidate) =>
           this.lease(candidate, undefined, this.#ownerId),
         assertCompatible: (candidate, candidateRecord, sourceJob) =>
@@ -339,7 +307,6 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
       });
     }
     if (record.run_status === "waiting_for_input" || record.run_status === "resuming") {
-      const sourceJob = await this.#queue.read(job.run_id);
       try {
         this.assertResumeCompatible(job, record, sourceJob);
       } catch (cause) {
@@ -347,21 +314,41 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
         await this.convergeCatalogDrift(job);
         return await this.resumeStillNeedsRecovery(job) ? job.run_id : undefined;
       }
-      this.#schedule(resumeId);
+      this.#schedule(job.resume_id);
       return job.run_id;
     }
     return undefined;
   }
 
   async execute(resumeId: string): Promise<void> {
-    const job = await this.#queue.readResume(resumeId);
-    const [record, interrupt, sourceJob] = await Promise.all([
+    const candidate = await this.#resumes.get(resumeId);
+    if (candidate === undefined || candidate.stage.kind === "completed") return;
+    const job = await this.#resumes.get(resumeId);
+    if (
+      job === undefined ||
+      job.stage.kind === "completed" ||
+      job.command_hash !== candidate.command_hash
+    ) return;
+
+    // The workflow runtime is the sole owner of the per-run resume lease.
+    // Holding that same filesystem lease in Studio while invoking the runtime
+    // deadlocks the non-reentrant lock until its acquisition timeout. Studio
+    // already serializes scheduled resume jobs by resume id, while the journal,
+    // interrupt claim, and ledger CAS provide durable cross-process authority.
+    await this.executeClaimed(job);
+  }
+
+  private async executeClaimed(job: StudioRunResumeRecord): Promise<void> {
+    const [record, interrupt] = await Promise.all([
       this.#ledger.get(job.run_id),
-      this.#interrupts.get(job.interrupt_id),
-      this.#queue.read(job.run_id)
+      this.#interrupts.get(job.interrupt_id)
     ]);
-    if (record === undefined || interrupt === undefined) {
-      await this.#queue.removeResume(resumeId);
+    if (record === undefined) {
+      await this.completeResumeJob(job);
+      return;
+    }
+    if (interrupt === undefined) {
+      await this.convergeMissingResumeDependency(job, record, "interrupt");
       return;
     }
     if (interrupt.resume !== undefined) {
@@ -370,7 +357,7 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
         record.run_status !== "running" &&
         record.run_status !== "resuming"
       ) {
-        await this.#queue.removeResume(resumeId);
+        await this.completeResumeJob(job);
         return;
       }
     }
@@ -379,107 +366,31 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
     // This closes the accepted+staged crash window before any ledger
     // transition or workflow code can run.
     await this.claimInterrupt(job);
+    const sourceJob = await this.readResumeSourceOrConverge(job, record);
+    if (sourceJob === undefined) return;
+    const waitingBoundary = record.run_status === "running"
+      ? await this.pendingInterruptAfterResume(job)
+      : undefined;
     try {
-      this.assertResumeCompatible(job, record, sourceJob);
+      if (waitingBoundary === undefined) {
+        this.assertResumeCompatible(job, record, sourceJob);
+      }
     } catch (cause) {
       if (!(cause instanceof StudioRunResumeError)) throw cause;
       await this.convergeCatalogDrift(job);
       return;
     }
 
-    const graph = await this.readGraph(record.graph_snapshot_handle);
-    const controller = new AbortController();
-    const recoveringRunningResume = record.run_status === "running";
-    const lease = this.lease(
+    await this.#claimedResumeExecutor.execute({
       job,
-      (cause) => controller.abort(cause),
-      recoveringRunningResume ? record.owner_id : undefined
-    );
-    try {
-      if (record.run_status === "waiting_for_input") await lease.prepareResume();
-      const current = await this.#ledger.get(job.run_id);
-      if (recoveringRunningResume) {
-        if (
-          current?.run_status !== "running" ||
-          current.owner_id !== record.owner_id
-        ) return;
-        lease.startHeartbeat();
-      } else {
-        if (current?.run_status !== "resuming") return;
-        await lease.startResume();
-      }
-    } catch (cause) {
-      if (isConcurrencyLoss(cause)) return;
-      throw cause;
-    }
-
-    let failedState: LunaRuntimeState | undefined;
-    let waitBarrierCrossed = false;
-    let successBarrierAttempted = false;
-    let successFinalized = false;
-    try {
-      const result = await this.#resumeWorkflow({
-        projectRoot: this.#projectRoot,
-        configRoot: this.#configRoot,
-        definitionRoots: this.#queue.snapshotRootsFor(job.run_id),
-        target: { type: "workflow", id: job.workflow_id },
-        thread_id: job.thread_id,
-        checkpoint_id: job.checkpoint_id,
-        interrupt_id: job.interrupt_id,
-        decision: job.decision,
-        signal: controller.signal,
-        onFailedState: (state) => { failedState ??= state; },
-        onBeforeNodeExecution: async ({ node_id: nodeId }) => {
-          if (!nativeStudioResumeNodeReplayIsSafe(record.side_effects, nodeId)) {
-            await this.#queue.markResumeEffectMayHaveOccurred(job, nodeId);
-          }
-        },
-        onLifecycleEvent: async (event) => {
-          await lease.observeNode(event);
-        },
-        onSucceededState: async (state) => {
-          if (successBarrierAttempted) {
-            throw runStoreError("run_store_corrupt", "The runtime invoked its success durability barrier more than once");
-          }
-          successBarrierAttempted = true;
-          await this.finalize(lease, graph, { status: "succeeded", state }, true);
-          successFinalized = true;
-        }
-      }, { platform: this.#platform });
-      if (lease.hasHeartbeatFailure()) throw lease.heartbeatFailure();
-      waitBarrierCrossed = result.status === "waiting_for_input";
-      if (result.status === "waiting_for_input") {
-        await lease.waitForInput(result.state);
-      } else if (!successFinalized) {
-        throw runStoreError("run_store_corrupt", "The runtime skipped its success durability barrier");
-      }
-      await this.#queue.removeResume(resumeId);
-    } catch (cause) {
-      if (successFinalized) {
-        await this.#queue.removeResume(resumeId);
-        return;
-      }
-      if (successBarrierAttempted || waitBarrierCrossed) {
-        // The runtime already crossed a durable checkpoint/terminal boundary.
-        // Preserve the queued command for journal/orphan recovery instead of
-        // manufacturing a contradictory failure.
-        throw cause;
-      }
-      if (
-        record.side_effects.length > 0 &&
-        (failedState === undefined ||
-          !nativeStudioFailedTerminalIsSafeForRuntimeState(record.side_effects, failedState))
-      ) {
-        await lease.markOutcomeUnknown({ code: "studio_runtime_write_outcome_unknown", message: "A resumed write-capable run ended without proof of its external outcome" });
-      } else {
-        await this.finalize(lease, graph, { status: "failed", ...(failedState === undefined ? {} : { state: failedState }), cause }, true);
-      }
-      await this.#queue.removeResume(resumeId);
-    }
+      record,
+      workflowMode: sourceJob.execution_snapshot.mode,
+      ...(waitingBoundary === undefined ? {} : { waitingBoundary })
+    });
   }
 
   private assertResumeCompatible(
-    job: NativeStudioQueuedResume,
+    job: StudioRunResumeRecord,
     record: NonNullable<Awaited<ReturnType<RunLedgerPort["get"]>>>,
     sourceJob: Awaited<ReturnType<NativeStudioRunDispatchQueue["read"]>>
   ): void {
@@ -493,16 +404,16 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
     });
   }
 
-  private async convergeCatalogDrift(job: NativeStudioQueuedResume): Promise<void> {
+  private async convergeCatalogDrift(job: StudioRunResumeRecord): Promise<void> {
     await this.cancelRunBeforeResume(job, studioRunResumeCatalogChanged());
     if (!await this.resumeStillNeedsRecovery(job)) {
       await this.cancelInterruptClaim(job);
-      await this.#queue.removeResume(job.resume_id);
+      await this.completeResumeJob(job);
     }
   }
 
   private async cancelClaimedRunningResume(
-    job: NativeStudioQueuedResume,
+    job: StudioRunResumeRecord,
     lease: NativeStudioRunLease,
     cause: unknown
   ): Promise<void> {
@@ -517,22 +428,22 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
       }
     );
     await this.cancelInterruptClaim(job);
-    await this.#queue.removeResume(job.resume_id);
+    await this.completeResumeJob(job);
   }
 
   private async markClaimedRunningResumeUnknown(
-    job: NativeStudioQueuedResume,
+    job: StudioRunResumeRecord,
     lease: NativeStudioRunLease,
     code: string,
     message: string
   ): Promise<void> {
     await lease.markOutcomeUnknown({ code, message });
     await this.cancelInterruptClaim(job);
-    await this.#queue.removeResume(job.resume_id);
+    await this.completeResumeJob(job);
   }
 
   private async cancelRunBeforeResume(
-    job: NativeStudioQueuedResume,
+    job: StudioRunResumeRecord,
     cause: unknown
   ): Promise<void> {
     // A terminal outbox may already be durable from an earlier process that
@@ -569,13 +480,13 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
     );
   }
 
-  private async resumeStillNeedsRecovery(job: NativeStudioQueuedResume): Promise<boolean> {
+  private async resumeStillNeedsRecovery(job: StudioRunResumeRecord): Promise<boolean> {
     const record = await this.#ledger.get(job.run_id);
     return record !== undefined &&
       (record.run_status === "waiting_for_input" || record.run_status === "resuming");
   }
 
-  private async cancelInterruptClaim(job: NativeStudioQueuedResume): Promise<void> {
+  private async cancelInterruptClaim(job: StudioRunResumeRecord): Promise<void> {
     let interrupt = await this.#interrupts.get(job.interrupt_id);
     if (interrupt === undefined || interrupt.status === "cancelled") return;
     if (interrupt.status === "resolved") {
@@ -627,7 +538,7 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
   }
 
   private lease(
-    job: NativeStudioQueuedResume,
+    job: StudioRunResumeRecord,
     onHeartbeatError?: (cause: unknown) => void,
     ownerId = job.owner_id
   ): NativeStudioRunLease {
@@ -656,30 +567,93 @@ export class NativeStudioRunInterruptResumer implements StudioRunInterruptResume
     };
   }
 
-  private async readGraph(handle: string | undefined): Promise<StoredRunGraphSnapshot> {
-    if (handle === undefined) throw runStoreError("run_store_corrupt", "The run graph snapshot is unavailable");
-    const graph = await this.#graphStore.readGraph(handle);
-    if (graph.kind !== "available") throw runStoreError("run_store_corrupt", "The run graph snapshot is unavailable");
-    return graph.value;
-  }
-
-  private async finalize(
-    lease: NativeStudioRunLease,
-    graph: StoredRunGraphSnapshot,
-    terminal: Parameters<NativeStudioRunLease["commitTerminal"]>[0],
-    lifecycleProjectionComplete: boolean
-  ): Promise<void> {
-    await lease.commitTerminal(terminal, {
-      completeness: lifecycleProjectionComplete ? "complete" : "partial",
-      ...(terminal.state === undefined ? {} : {
-        createOutcome: (recordRevision: number) => projectStoredRunGraphOutcome({ graphSnapshot: graph, recordRevision, state: terminal.state! })
-      })
-    }, async (preparation) => {
-      await this.#finalizer.commitDurableIntent(createNativeStudioRunTerminalIntent({
-        runId: preparation.projectedRecord.run_id,
-        command: preparation.command,
-        ...(preparation.outcome === undefined ? {} : { outcome: preparation.outcome })
-      }));
+  private async completeResumeJob(job: StudioRunResumeRecord): Promise<void> {
+    await this.#resumes.complete({
+      resume_id: job.resume_id,
+      command_hash: job.command_hash
     });
   }
+
+  private async readResumeSourceOrConverge(
+    job: StudioRunResumeRecord,
+    record: RunRecord
+  ): Promise<Awaited<ReturnType<NativeStudioRunDispatchQueue["read"]>> | undefined> {
+    try {
+      return await this.#queue.read(job.run_id);
+    } catch (cause) {
+      if (!isNativeStudioRunDispatchQueueCorruption(cause)) throw cause;
+      await this.convergeMissingResumeDependency(job, record, "source_job");
+      return undefined;
+    }
+  }
+
+  private async convergeMissingResumeDependency(
+    job: StudioRunResumeRecord,
+    record: RunRecord,
+    dependency: "interrupt" | "source_job"
+  ): Promise<void> {
+    if (
+      record.run_status !== undefined &&
+      RunTerminalStatusSchema.safeParse(record.run_status).success
+    ) {
+      await this.cancelInterruptClaim(job);
+      await this.completeResumeJob(job);
+      return;
+    }
+
+    const cause = runStoreError(
+      "run_store_corrupt",
+      dependency === "interrupt"
+        ? "The accepted resume interrupt is unavailable"
+        : "The accepted resume source job is unavailable"
+    );
+    const safeToCancel = job.stage.kind === "pre_execution" &&
+      (record.run_status === "waiting_for_input" ||
+        record.run_status === "resuming");
+    if (safeToCancel) {
+      await this.cancelRunBeforeResume(job, cause);
+    } else {
+      const lease = this.lease(
+        job,
+        undefined,
+        record.owner_id ?? job.owner_id
+      );
+      await lease.markOutcomeUnknown({
+        code: dependency === "interrupt"
+          ? "studio_runtime_resume_interrupt_missing"
+          : "studio_runtime_resume_source_invalid",
+        message: dependency === "interrupt"
+          ? "A resumed run lost its durable interrupt identity"
+          : "A resumed run lost its immutable source material"
+      });
+    }
+    await this.cancelInterruptClaim(job);
+    await this.completeResumeJob(job);
+  }
+
+  private async pendingInterruptAfterResume(
+    job: StudioRunResumeRecord
+  ): Promise<DurablePendingInterrupt | undefined> {
+    const interrupt = await this.#interrupts.findFirst(job.run_id, {
+      exclude_id: job.interrupt_id,
+      thread_id: job.thread_id,
+      statuses: ["pending"]
+    });
+    if (interrupt === undefined) return undefined;
+    if (
+      interrupt.thread_id !== job.thread_id ||
+      interrupt.checkpoint_id === undefined
+    ) {
+      throw runStoreError(
+        "run_store_corrupt",
+        "Pending interrupt is missing its durable waiting identity"
+      );
+    }
+    return {
+      ...interrupt,
+      thread_id: interrupt.thread_id,
+      checkpoint_id: interrupt.checkpoint_id
+    };
+  }
+
 }

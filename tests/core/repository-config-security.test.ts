@@ -43,4 +43,52 @@ describe("repository remote credential boundaries", () => {
   ])("allows credential-free remote %s", (remote) => {
     expect(RepositoryConfigSchema.safeParse(repository(remote)).success).toBe(true);
   });
+
+  it("accepts an operator-owned, stack-agnostic validation contract", () => {
+    expect(RepositoryConfigSchema.parse({
+      ...repository("origin"),
+      validation: {
+        commands: [{ cmd: "./scripts/validate", timeout_ms: 600000 }],
+        env_allowlist: []
+      }
+    }).validation).toEqual({
+      commands: [{ cmd: "./scripts/validate", timeout_ms: 600000 }],
+      env_allowlist: []
+    });
+  });
+
+  it("rejects empty or incomplete repository validation policy", () => {
+    expect(RepositoryConfigSchema.safeParse({
+      ...repository("origin"),
+      validation: { commands: [], env_allowlist: [] }
+    }).success).toBe(false);
+    expect(RepositoryConfigSchema.safeParse({
+      ...repository("origin"),
+      validation: { commands: [{ cmd: "./scripts/validate" }] }
+    }).success).toBe(false);
+  });
+
+  it("rejects unknown repository validation fields", () => {
+    expect(RepositoryConfigSchema.safeParse({
+      ...repository("origin"),
+      validation: {
+        commands: [{ cmd: "./scripts/validate" }],
+        env_allowlist: [],
+        language: "inferred"
+      }
+    }).success).toBe(false);
+  });
+
+  it("accepts bounded repository-context excludes and rejects traversal", () => {
+    expect(RepositoryConfigSchema.parse({
+      ...repository("origin"),
+      repository_context: { exclude_globs: ["generated/**", "**/*.fixture"] }
+    }).repository_context).toEqual({
+      exclude_globs: ["generated/**", "**/*.fixture"]
+    });
+    expect(RepositoryConfigSchema.safeParse({
+      ...repository("origin"),
+      repository_context: { exclude_globs: ["../outside/**"] }
+    }).success).toBe(false);
+  });
 });

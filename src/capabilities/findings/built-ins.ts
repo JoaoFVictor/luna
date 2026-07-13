@@ -3,7 +3,7 @@ import {
   findingFingerprint,
   primaryEvidenceKey
 } from "./fingerprint.js";
-import type { RepoContext } from "../git/diff/types.js";
+import { RepoContextSchema, type RepoContext } from "../git/diff/types.js";
 import { builtInError } from "../../core/built-ins/errors.js";
 import type {
   Finding,
@@ -262,10 +262,18 @@ export const validateFindingEvidenceBuiltIn = defineBuiltInStep<
     const validateFindingEvidence =
       dependencies.validateFindingEvidence ?? defaultValidateFindingEvidence;
     const resolved = resolvedInput(input, state);
-    const repoContext = requiredInput(
-      resolved.repo_context as RepoContext | undefined,
+    const unresolvedRepoContext = requiredInput(
+      resolved.repo_context,
       "repo_context"
     );
+    const parsedRepoContext = RepoContextSchema.safeParse(unresolvedRepoContext);
+    if (!parsedRepoContext.success) {
+      throw builtInError(
+        "findings.validate_evidence repo_context must match the repository context schema.",
+        "built_in_input_invalid"
+      );
+    }
+    const repoContext = parsedRepoContext.data;
     const findingsPayload = requiredInput(resolved.findings, "findings");
     const findings = findingsFrom(findingsPayload);
     const validatedFindings = await validateFindingEvidence(repoContext, findings);

@@ -1,5 +1,3 @@
-import { readdir } from "node:fs/promises";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InterruptRecord } from "../../../src/core/runtime/interrupts/contracts.js";
 import { officialCapabilityManifests } from "../../../src/capabilities/registry.js";
@@ -53,6 +51,7 @@ describe("native Studio resume catalog drift", () => {
       runWorkflow: waitingResult,
       resume: {
         interrupts: interruptPort(interrupts),
+        journal: store.resumes,
         platform: driftedPlatform,
         runWorkflow: async () => { throw new Error("Unsafe resume must not execute"); }
       }
@@ -130,6 +129,7 @@ describe("native Studio resume catalog drift", () => {
             throw new Error("simulated crash before interrupt cancellation");
           }
         },
+        journal: store.resumes,
         platform: switchingPlatform,
         runWorkflow: async () => {
           resumeExecutions += 1;
@@ -179,7 +179,7 @@ describe("native Studio resume catalog drift", () => {
         failure: { code: "studio_run_resume_catalog_changed" }
       });
       expect(interrupts.get(interrupt.id)).toMatchObject({ status: "resuming" });
-      expect(await readdir(path.join(fixture.queueRoot, "resumes"))).toHaveLength(1);
+      expect(await store.resumes.list()).toHaveLength(1);
     } finally {
       await dispatcher.close();
     }
@@ -198,6 +198,7 @@ describe("native Studio resume catalog drift", () => {
       runWorkflow: async () => { throw new Error("Initial run must not replay"); },
       resume: {
         interrupts: durableInterruptPort,
+        journal: store.resumes,
         platform: driftedPlatform,
         runWorkflow: async () => {
           resumeExecutions += 1;
@@ -217,7 +218,7 @@ describe("native Studio resume catalog drift", () => {
         status: "cancelled",
         resume_attempt: expect.stringMatching(/^resume-/)
       });
-      expect(await readdir(path.join(fixture.queueRoot, "resumes"))).toHaveLength(0);
+      expect(await store.resumes.list()).toHaveLength(0);
     } finally {
       await recovered.close();
       store.close();
@@ -245,6 +246,7 @@ describe("native Studio resume catalog drift", () => {
       runWorkflow: waitingResult,
       resume: {
         interrupts: durableInterrupts,
+        journal: store.resumes,
         platform: nativeLunaPlatformRegistrations
       }
     });
@@ -307,6 +309,7 @@ describe("native Studio resume catalog drift", () => {
       },
       resume: {
         interrupts: durableInterrupts,
+        journal: store.resumes,
         platform: driftedCapabilityPlatform(),
         runWorkflow: async () => {
           executions += 1;
@@ -325,7 +328,7 @@ describe("native Studio resume catalog drift", () => {
         failure: { code: "studio_run_resume_catalog_changed" }
       });
       expect(interrupts.get("interrupt-1")).toMatchObject({ status: "cancelled" });
-      expect(await readdir(path.join(fixture.queueRoot, "resumes"))).toHaveLength(0);
+      expect(await store.resumes.list()).toHaveLength(0);
     } finally {
       await recovered.close();
       store.close();

@@ -1,4 +1,4 @@
-import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineInputAdapters } from "../../../src/adapters/registry.js";
@@ -670,6 +670,46 @@ describe("native Studio run planning", () => {
       expect(dispatches).toBe(0);
     }
   );
+
+  it("rejects a plan when a pinned external agent skill changes", async () => {
+    const fixture = await writeFixture();
+    const skillPath = path.join(
+      fixture.projectRoot,
+      "skills",
+      "pinned-safe",
+      "SKILL.md"
+    );
+    await mkdir(path.dirname(skillPath), { recursive: true });
+    await writeFile(skillPath, [
+      "---",
+      "name: pinned-safe",
+      "description: Pinned safety guidance.",
+      "---",
+      "",
+      "Keep the original guidance.",
+      ""
+    ].join("\n"));
+    await appendFile(
+      path.join(fixture.projectRoot, "agents", "pinned-agent", "agent.yaml"),
+      "skills:\n  - ../../skills/pinned-safe/SKILL.md\n"
+    );
+    let dispatches = 0;
+    const service = launchService(fixture, {
+      dispatch: async () => {
+        dispatches += 1;
+        throw new Error("stale plans must not reach dispatch");
+      }
+    });
+    const plan = await service.plan(request, launchContext);
+    await appendFile(skillPath, "\nChanged after planning.\n");
+
+    await expect(service.execute(
+      plan.plan_id,
+      executeRequest(plan.confirmation_token),
+      launchContext
+    )).rejects.toMatchObject({ code: "studio_run_plan_stale" });
+    expect(dispatches).toBe(0);
+  });
 
   it("resolves a registered adapter and real installed config without exposing private input", async () => {
     const fixture = await writeFixture();

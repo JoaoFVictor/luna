@@ -5,7 +5,11 @@ export const repositoryEmptyInputSchema = {
 
 export const repositoryTextOutputSchema = { type: "string" } as const;
 
-export const repositoryFilePathSchema = { type: "string", minLength: 1 } as const;
+export const repositoryFilePathSchema = {
+  type: "string",
+  minLength: 1,
+  maxLength: 4_096
+} as const;
 
 export const repositoryReadFileInputSchema = {
   type: "object",
@@ -13,7 +17,11 @@ export const repositoryReadFileInputSchema = {
   required: ["path"],
   properties: {
     path: repositoryFilePathSchema,
-    max_bytes: { type: "number", minimum: 1 }
+    max_bytes: {
+      type: "integer",
+      minimum: 1,
+      maximum: 1_048_576
+    }
   }
 } as const;
 

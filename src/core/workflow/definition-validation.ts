@@ -35,6 +35,7 @@ import type {
   ParsedWorkflowGate,
   ParsedWorkflowNode,
   ParsedAgentNode,
+  ParsedPatternEvidence,
   ParsedPatternNode,
   WorkflowDefinition
 } from "./definition-types.js";
@@ -329,7 +330,7 @@ function validatePolicies(
   nodeIds: ReadonlySet<string>,
   registry: CapabilityRegistry | undefined
 ): void {
-  if (node.type === "workflow") {
+  if (!("policies" in node)) {
     return;
   }
   (node.policies ?? []).forEach((policy, policyIndex) => {
@@ -418,6 +419,73 @@ function validatePatternNode(
       declaredCapabilities,
       nodeIds,
       registry
+    });
+  });
+
+  validatePatternEvidence(
+    node.evidence ?? [],
+    index,
+    declaredCapabilities,
+    nodeIds,
+    registry,
+    pattern?.local_context_roots
+  );
+}
+
+function validatePatternEvidence(
+  evidenceEntries: readonly ParsedPatternEvidence[],
+  nodeIndex: number,
+  declaredCapabilities: readonly string[],
+  nodeIds: ReadonlySet<string>,
+  registry: CapabilityRegistry | undefined,
+  localRoots?: readonly string[]
+): void {
+  const seenIds = new Set<string>();
+  evidenceEntries.forEach((evidence, evidenceIndex) => {
+    const evidencePath = `$.nodes[${nodeIndex}].evidence[${evidenceIndex}]`;
+    if (!/^[A-Za-z0-9_-]+$/.test(evidence.id)) {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_invalid",
+        `Invalid pattern evidence id: ${evidence.id}`,
+        { path: `${evidencePath}.id` }
+      );
+    }
+    if (seenIds.has(evidence.id)) {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_invalid",
+        `Duplicate pattern evidence id: ${evidence.id}`,
+        { path: `${evidencePath}.id` }
+      );
+    }
+    seenIds.add(evidence.id);
+
+    const registration = requireRegistration(
+      evidence.uses,
+      "built_ins",
+      declaredCapabilities,
+      registry,
+      `${evidencePath}.uses`
+    ) as BuiltInRegistration | undefined;
+    if (registration === undefined) {
+      return;
+    }
+    if (registration.side_effect_policy !== undefined) {
+      throw new WorkflowDefinitionError(
+        "workflow_side_effect_policy_invalid",
+        `Pattern evidence built-in ${registration.id} must be read-only and replay-safe.`,
+        { path: `${evidencePath}.uses`, capability: registration.id }
+      );
+    }
+    validateExpressionBearingValue(
+      evidence.input ?? {},
+      `${evidencePath}.input`,
+      registration.id,
+      nodeIds,
+      localRoots
+    );
+    validateJsonSchema(registration.input_schema, evidence.input ?? {}, {
+      path: `${evidencePath}.input`,
+      capability: registration.id
     });
   });
 }
@@ -538,6 +606,9 @@ function validateArtifacts(
   nodeIds: ReadonlySet<string>,
   registry: CapabilityRegistry | undefined
 ): void {
+  if (!("artifacts" in node)) {
+    return;
+  }
   (node.artifacts ?? []).forEach((artifact, artifactIndex) => {
     const artifactPath = `$.nodes[${nodeIndex}].artifacts[${artifactIndex}]`;
     const publisher = artifact.publisher;
@@ -868,6 +939,14 @@ function patternAuthoringConfigFor(
 ): Record<string, unknown> {
   return {
     worker: node.worker,
+    ...(node.evidence === undefined
+      ? {}
+      : {
+          evidence: node.evidence.map((evidence) => ({
+            id: evidence.id,
+            uses: evidence.uses
+          }))
+        }),
     gates: (node.gates ?? []).map((gate) => ({
       id: gate.id,
       type: gate.type

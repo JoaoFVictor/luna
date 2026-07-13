@@ -9,6 +9,10 @@ import {
   nativeStudioCheckpointReplayIsSafe,
   nativeStudioFailedTerminalIsSafeForRuntimeState
 } from "../../../src/studio/adapters/native/run-recovery-safety.js";
+import {
+  patternStageOccurrenceNodeId,
+  workflowPatternStageEffectNodeId
+} from "../../../src/core/workflow/loop-identity.js";
 
 function jobWithSideEffects(
   sideEffects: NativeStudioQueuedRun["preallocation"]["side_effects"]
@@ -141,6 +145,39 @@ describe("native Studio active resume replay safety", () => {
     expect(nativeStudioActiveResumeReplayIsSafe({
       sideEffects: [publishEffect],
       activeNodeIds: ["review_loop:iteration-12:publish_post"],
+      lifecycleProjection: "exact"
+    })).toBe(true);
+  });
+
+  it("fails closed for an active unsafe pattern worker occurrence", () => {
+    expect(nativeStudioActiveResumeReplayIsSafe({
+      sideEffects: [{
+        ...imageGenerationEffect,
+        node_id: workflowPatternStageEffectNodeId("implementation", "worker")
+      }],
+      activeNodeIds: [patternStageOccurrenceNodeId({
+        pattern_node_id: "implementation",
+        attempt: 7,
+        stage_id: "worker"
+      })],
+      lifecycleProjection: "exact"
+    })).toBe(false);
+  });
+
+  it("does not confuse completed and active reviewer stages", () => {
+    expect(nativeStudioActiveResumeReplayIsSafe({
+      sideEffects: [{
+        ...imageGenerationEffect,
+        node_id: workflowPatternStageEffectNodeId(
+          "implementation",
+          "reviewer:review"
+        )
+      }],
+      activeNodeIds: [patternStageOccurrenceNodeId({
+        pattern_node_id: "implementation",
+        attempt: 3,
+        stage_id: "reviewer:acceptance"
+      })],
       lifecycleProjection: "exact"
     })).toBe(true);
   });

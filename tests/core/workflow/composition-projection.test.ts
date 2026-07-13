@@ -62,8 +62,7 @@ describe("composition-tree projection", () => {
           {
             id: "review",
             type: "human_gate",
-            uses: "hitl.review",
-            after: ["draft/image"]
+            uses: "hitl.review"
           }
         ]
       },
@@ -123,8 +122,7 @@ describe("composition-tree projection", () => {
           {
             id: "review",
             type: "human_gate" as const,
-            uses: "hitl.approval",
-            after: ["call"]
+            uses: "hitl.approval"
           }
         ]
       },

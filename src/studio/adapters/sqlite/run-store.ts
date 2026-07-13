@@ -6,6 +6,7 @@ import type {
   RunReconcilerPort
 } from "../../application/runs/ports.js";
 import { runStoreError } from "../../application/runs/errors.js";
+import type { RunResumeJournalPort } from "../../application/runs/resume-journal.js";
 import { SqliteRunCatalog } from "./run-catalog.js";
 import {
   closeSqliteRunDatabase,
@@ -13,6 +14,7 @@ import {
 } from "./run-database.js";
 import { SqliteRunEventLedger } from "./run-events.js";
 import { SqliteRunLedger } from "./run-ledger.js";
+import { SqliteRunResumeJournal } from "./run-resume-journal.js";
 import type { SqliteRunStoreContext } from "./run-store-context.js";
 
 export type SqliteRunStoreOptions = {
@@ -33,6 +35,7 @@ export type SqliteRunStore = {
   readonly catalog: RunCatalogPort;
   readonly projector: RunCatalogProjectorPort;
   readonly reconciler: RunReconcilerPort;
+  readonly resumes: RunResumeJournalPort;
   close(): void;
 };
 
@@ -111,6 +114,7 @@ export async function createSqliteRunStore(
   const ledger = new SqliteRunLedger(context);
   const events = new SqliteRunEventLedger(context);
   const catalog = new SqliteRunCatalog(context);
+  const resumes = new SqliteRunResumeJournal(context);
 
   return {
     ledger,
@@ -118,6 +122,7 @@ export async function createSqliteRunStore(
     catalog,
     projector: catalog,
     reconciler: ledger,
+    resumes,
     close() {
       if (context.closed) {
         return;

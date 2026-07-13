@@ -1,8 +1,13 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { NativeLunaPlatformRegistrations } from "../../../platform/native/native-platform-registrations.js";
-import type { NativeWorkflowResumeInput } from "../../../platform/native/native-workflow-runner.js";
+import {
+  recoverNativeWorkflowWaitingTarget,
+  type NativeWorkflowResumeInput,
+  type NativeWorkflowWaitingRecoveryInput
+} from "../../../platform/native/native-workflow-runner.js";
 import type { WorkflowRunResult } from "../../../core/workflow/execution-contracts.js";
+import { runtimeError } from "../../../core/runtime/errors.js";
 import type { InterruptStore } from "../../../core/runtime/interrupts/contracts.js";
 import type { NativeWorkflowRunInput } from "../../../runtime/composition/target-executor.js";
 import {
@@ -18,6 +23,7 @@ import type {
   StudioRunDispatcherPort
 } from "../../application/runs/launch-ports.js";
 import type { RunLedgerPort } from "../../application/runs/ports.js";
+import type { RunResumeJournalPort } from "../../application/runs/resume-journal.js";
 import type { StudioRunDispatchReceipt } from "../../contracts/run-launch.js";
 import { FilesystemRunGraphStore } from "../filesystem/run-graph-store.js";
 import { NativeStudioRunDispatchQueue } from "../filesystem/run-dispatch-queue.js";
@@ -38,6 +44,7 @@ import {
 import { buildNativeStudioQueuedRunMaterial } from "./run-dispatch-material.js";
 import { nativeStudioRunDispatchIdentity } from "./run-dispatch-material.js";
 import type { NativeStudioRunDispatchPayload } from "./run-snapshot-contracts.js";
+import type { NativeStudioQueuedRun } from "../filesystem/run-dispatch-contracts.js";
 import { nativeStudioCheckpointReplayIsSafe } from "./run-recovery-safety.js";
 import { NativeStudioRunDispatchAdoption } from "./run-dispatch-adoption.js";
 import { NativeStudioRunRecoverySupervisor } from "./run-recovery-supervisor.js";
@@ -46,6 +53,9 @@ import { createNativeStudioCapabilityCatalog } from "./capability-catalog.js";
 import { NativeStudioRunInterruptResumer } from "./run-interrupt-resumer.js";
 import type { StudioRunInterruptResumePort } from "../../application/runs/interrupt-service.js";
 import type { StudioRunInterruptResumeReceipt } from "../../contracts/run-interrupts.js";
+import { nativeStudioWaitingWorkflowIdentity } from "./run-waiting-recovery.js";
+import type { RunRecord } from "../../contracts/runs.js";
+import type { NativeStudioRunRecoveryIntent } from "./run-recovery-intent.js";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const MAX_HEARTBEAT_INTERVAL_MS = 60_000;
@@ -69,6 +79,11 @@ type RunWorkflow = (
   input: NativeWorkflowRunInput
 ) => Promise<unknown>;
 
+type RecoverWaitingWorkflow = (
+  input: NativeWorkflowWaitingRecoveryInput,
+  dependencies: { readonly platform: ResumePlatform }
+) => Promise<WorkflowRunResult>;
+
 export type NativeStudioRunDispatcherOptions = {
   readonly projectRoot: string;
   readonly configRoot: string;
@@ -81,12 +96,17 @@ export type NativeStudioRunDispatcherOptions = {
   readonly platform: DispatcherPlatform;
   readonly runWorkflow: RunWorkflow;
   readonly resume?: {
-    readonly interrupts: Pick<InterruptStore, "get" | "beginResume" | "completeResume">;
+    readonly interrupts: Pick<
+      InterruptStore,
+      "get" | "findFirst" | "beginResume" | "completeResume"
+    >;
+    readonly journal: RunResumeJournalPort;
     readonly platform: ResumePlatform;
     readonly runWorkflow?: (
       input: NativeWorkflowResumeInput,
       dependencies: { readonly platform: ResumePlatform }
     ) => Promise<WorkflowRunResult>;
+    readonly recoverWaitingWorkflow?: RecoverWaitingWorkflow;
   };
   readonly now?: () => number;
   readonly ownerId?: string;
@@ -110,6 +130,12 @@ export class NativeStudioRunDispatcher
   readonly #terminalJobCleanup: NativeStudioRunTerminalJobCleanup;
   readonly #recoverySupervisor: NativeStudioRunRecoverySupervisor;
   readonly #resumer: NativeStudioRunInterruptResumer | undefined;
+  readonly #waitingRecovery: {
+    readonly projectRoot: string;
+    readonly configRoot: string;
+    readonly platform: ResumePlatform;
+    readonly recover: RecoverWaitingWorkflow;
+  } | undefined;
   readonly #now: () => number;
   readonly #ownerId: string;
   readonly #heartbeatIntervalMs: number;
@@ -196,6 +222,7 @@ export class NativeStudioRunDispatcher
           configRoot,
           ledger: this.#ledger,
           interrupts: options.resume.interrupts,
+          resumes: options.resume.journal,
           queue: this.#queue,
           graphStore: this.#graphStore,
           finalizer,
@@ -211,9 +238,24 @@ export class NativeStudioRunDispatcher
           ...(options.resume.runWorkflow === undefined
             ? {}
             : { resumeWorkflow: options.resume.runWorkflow }),
+          ...(options.resume.recoverWaitingWorkflow === undefined
+            ? {}
+            : {
+                recoverWaitingWorkflow:
+                  options.resume.recoverWaitingWorkflow
+              }),
           now: this.#now,
           heartbeatIntervalMs: this.#heartbeatIntervalMs
         });
+    this.#waitingRecovery = options.resume === undefined
+      ? undefined
+      : {
+          projectRoot,
+          configRoot,
+          platform: options.resume.platform,
+          recover: options.resume.recoverWaitingWorkflow ??
+            recoverNativeWorkflowWaitingTarget
+        };
     this.#executor = new NativeStudioRunExecutor({
       projectRoot,
       configRoot,
@@ -255,6 +297,15 @@ export class NativeStudioRunDispatcher
         : { recoverQueuedResumes: () => this.#resumer!.recoverAvailableJobs() }),
       scheduleQueuedRun: (runId) => this.schedule(runId),
       scheduleRecoveryRun: (claim) => this.schedule(claim.run_id, claim),
+      ...(options.resume === undefined
+        ? {}
+        : {
+            findDurableWaitingBoundary: async (runId: string) =>
+              await options.resume!.interrupts.findFirst(runId, {
+                thread_id: runId,
+                statuses: ["pending"]
+              })
+          }),
       cleanup: this.#terminalJobCleanup,
       reportDiagnostic
     });
@@ -440,14 +491,23 @@ export class NativeStudioRunDispatcher
         "Native run job no longer matches its ledger execution snapshot"
       );
     }
+    let waitingBoundaryRecovery:
+      | Extract<
+          NativeStudioRunRecoveryIntent,
+          { readonly reason: "waiting_boundary_recovery_required" }
+        >
+      | undefined;
     if (recoveryClaim !== undefined) {
       const intent = await this.#recoveryJournal.read(runId);
+      waitingBoundaryRecovery = intent?.reason ===
+        "waiting_boundary_recovery_required" ? intent : undefined;
       if (
         intent === undefined ||
         intent.run_id !== job.run_id ||
         intent.execution_snapshot_hash !== job.execution_snapshot_hash ||
         intent.intent_hash !== recoveryClaim.recovery_intent_hash ||
-        !nativeStudioCheckpointReplayIsSafe(job)
+        (waitingBoundaryRecovery === undefined &&
+          !nativeStudioCheckpointReplayIsSafe(job))
       ) {
         throw studioRunLaunchError(
           "studio_run_dispatch_failed",
@@ -472,14 +532,132 @@ export class NativeStudioRunDispatcher
       : await lease.claimRecovery(recoveryClaim);
     lease.startHeartbeat();
     try {
-      await this.#executor.execute(
-        job,
-        preparingRecord,
-        lease,
-        controller.signal
-      );
+      if (waitingBoundaryRecovery === undefined) {
+        await this.#executor.execute(
+          job,
+          preparingRecord,
+          lease,
+          controller.signal
+        );
+      } else {
+        await this.recoverWaitingBoundary(
+          job,
+          preparingRecord,
+          waitingBoundaryRecovery,
+          lease,
+          controller.signal
+        );
+      }
     } finally {
       await this.#terminalJobCleanup.removeIfSafe(runId);
+    }
+  }
+
+  private async recoverWaitingBoundary(
+    job: NativeStudioQueuedRun,
+    record: RunRecord,
+    intent: Extract<
+      NativeStudioRunRecoveryIntent,
+      { readonly reason: "waiting_boundary_recovery_required" }
+    >,
+    lease: NativeStudioRunLease,
+    signal: AbortSignal
+  ): Promise<void> {
+    const recovery = this.#waitingRecovery;
+    if (recovery === undefined || record.graph_snapshot_handle === undefined) {
+      await lease.markOutcomeUnknown({
+        code: "studio_runtime_waiting_recovery_unavailable",
+        message: "Durable waiting recovery metadata is unavailable"
+      });
+      return;
+    }
+    let graphResult: Awaited<
+      ReturnType<RunGraphSnapshotStorePort["readGraph"]>
+    >;
+    try {
+      graphResult = await this.#graphStore.readGraph(record.graph_snapshot_handle);
+    } catch (cause) {
+      await lease.releaseForRecovery();
+      throw cause;
+    }
+    if (graphResult.kind === "unavailable") {
+      await lease.releaseForRecovery();
+      throw studioRunLaunchError(
+        "studio_run_dispatch_failed",
+        "Durable waiting recovery graph store is unavailable"
+      );
+    }
+    if (
+      graphResult.kind !== "available" ||
+      graphResult.value.identity.run_id !== record.run_id ||
+      graphResult.value.identity.workflow_id !== record.workflow_id ||
+      graphResult.value.identity.workflow_revision !== record.workflow_revision ||
+      graphResult.value.identity.execution_snapshot_hash !==
+        record.execution_snapshot_hash
+    ) {
+      await lease.markOutcomeUnknown({
+        code: "studio_runtime_waiting_graph_invalid",
+        message: "Durable waiting recovery graph identity is invalid"
+      });
+      return;
+    }
+    let projected = false;
+    try {
+      const result = await recovery.recover({
+        projectRoot: recovery.projectRoot,
+        configRoot: recovery.configRoot,
+        definitionRoots: this.#queue.snapshotRootsFor(job.run_id),
+        workflow: nativeStudioWaitingWorkflowIdentity(
+          graphResult.value,
+          job.execution_snapshot.mode
+        ),
+        thread_id: job.run.run_id,
+        checkpoint_id: intent.checkpoint_id,
+        interrupt_id: intent.interrupt_id,
+        signal,
+        onWaitingState: async (waiting) => {
+          if (
+            projected ||
+            waiting.interrupt_id !== intent.interrupt_id ||
+            waiting.checkpoint_id !== intent.checkpoint_id
+          ) {
+            throw runtimeError(
+              "Durable waiting recovery returned a different boundary",
+              "runtime_state_invalid"
+            );
+          }
+          projected = true;
+          await lease.waitForInput(waiting.state);
+        }
+      }, { platform: recovery.platform });
+      if (
+        !projected ||
+        result.status !== "waiting_for_input" ||
+        result.interrupt_id !== intent.interrupt_id ||
+        result.checkpoint_id !== intent.checkpoint_id
+      ) {
+        if (!projected) {
+          await lease.markOutcomeUnknown({
+            code: "studio_runtime_waiting_boundary_invalid",
+            message: "Durable waiting recovery returned a different boundary"
+          });
+          return;
+        }
+        throw studioRunLaunchError(
+          "studio_run_dispatch_failed",
+          "Durable waiting recovery returned after a conflicting projection"
+        );
+      }
+    } catch (cause) {
+      if (!projected && isInvalidWaitingRecovery(cause)) {
+        await lease.markOutcomeUnknown({
+          code: "studio_runtime_waiting_boundary_invalid",
+          message: "Durable waiting recovery identity failed validation"
+        });
+        return;
+      }
+      if (!projected) await lease.releaseForRecovery();
+      throw cause;
     }
   }
 
@@ -500,6 +678,14 @@ export class NativeStudioRunDispatcher
       // Test-only observation must not change dispatcher semantics.
     }
   }
+}
+
+function isInvalidWaitingRecovery(cause: unknown): boolean {
+  const code = (cause as { readonly code?: unknown })?.code;
+  return code === "runtime_checkpoint_schema_mismatch" ||
+    code === "runtime_interrupt_not_found" ||
+    code === "interrupt_stale" ||
+    code === "runtime_state_invalid";
 }
 
 function diagnosticTimestamp(now: () => number): string {

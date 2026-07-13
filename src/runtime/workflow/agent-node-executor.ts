@@ -5,6 +5,7 @@ import { runAgentNode } from "../../capabilities/agents/agent-node.js";
 import {
   requireAgentProjection,
   resolveAgentSkills,
+  workspacePath,
   type AgentSkillSources
 } from "../../capabilities/agents/agent-envelope.js";
 import type { AgentDefinitionProjection } from "../../capabilities/agents/agent-definition.js";
@@ -48,6 +49,7 @@ export async function executeAgentNode({
 
   const defaults = requireAgentDefaults(input, node);
   const requirements = runtimeRequirementsForNode(node, defaults);
+  const cwd = workspacePath(runtimeContext.workspace) ?? defaults.cwd;
   const result = await runAgentNode({
     runtime: input.agentRuntime,
     run: input.run,
@@ -70,7 +72,7 @@ export async function executeAgentNode({
       skillSources: defaults.skill_sources,
       workspace: runtimeContext.workspace
     }),
-    ...(defaults.cwd === undefined ? {} : { cwd: defaults.cwd }),
+    ...(cwd === undefined ? {} : { cwd }),
     runtime_requirements: requirements,
     signal: defaults.signal,
     events: defaults.events,

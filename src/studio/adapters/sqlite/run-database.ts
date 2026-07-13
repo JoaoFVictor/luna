@@ -5,7 +5,7 @@ import path from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { RunStoreError, runStoreError } from "../../application/runs/errors.js";
 
-const RUN_STORE_SCHEMA_VERSION = 1;
+const RUN_STORE_SCHEMA_VERSION = 2;
 
 export type SqliteRunDatabaseOptions = {
   readonly filePath: string;
@@ -210,6 +210,52 @@ const VERSION_ONE_SCHEMA = [
   }
 ] as const satisfies readonly SchemaObjectContract[];
 
+const VERSION_TWO_ADDITIONS = [
+  {
+    type: "table",
+    name: "studio_run_resumes",
+    tableName: "studio_run_resumes",
+    sql: `CREATE TABLE studio_run_resumes (
+      resume_id TEXT PRIMARY KEY,
+      schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+      run_id TEXT NOT NULL REFERENCES studio_runs(run_id) ON DELETE RESTRICT,
+      interrupt_id TEXT NOT NULL,
+      command_hash TEXT NOT NULL,
+      stage TEXT NOT NULL CHECK (
+        stage IN ('pre_execution', 'effect_may_have_occurred', 'completed')
+      ),
+      effect_node_id TEXT,
+      accepted_at TEXT NOT NULL,
+      accepted_at_ms INTEGER NOT NULL,
+      completed_at TEXT,
+      completed_at_ms INTEGER,
+      record_json TEXT NOT NULL,
+      UNIQUE (run_id, interrupt_id),
+      CHECK (
+        (stage = 'pre_execution' AND effect_node_id IS NULL AND
+          completed_at IS NULL AND completed_at_ms IS NULL) OR
+        (stage = 'effect_may_have_occurred' AND effect_node_id IS NOT NULL AND
+          completed_at IS NULL AND completed_at_ms IS NULL) OR
+        (stage = 'completed' AND completed_at IS NOT NULL AND
+          completed_at_ms IS NOT NULL AND completed_at_ms >= accepted_at_ms)
+      )
+    ) STRICT`
+  },
+  {
+    type: "index",
+    name: "studio_run_resumes_accepted",
+    tableName: "studio_run_resumes",
+    sql: `CREATE INDEX studio_run_resumes_accepted
+      ON studio_run_resumes(accepted_at_ms, resume_id)
+      WHERE stage != 'completed'`
+  }
+] as const satisfies readonly SchemaObjectContract[];
+
+const VERSION_TWO_SCHEMA = [
+  ...VERSION_ONE_SCHEMA,
+  ...VERSION_TWO_ADDITIONS
+] as const satisfies readonly SchemaObjectContract[];
+
 function safeDatabaseError(cause: unknown): RunStoreError {
   if (cause instanceof RunStoreError) {
     return cause;
@@ -309,7 +355,16 @@ function migrateToVersionOne(database: DatabaseSync): void {
     INSERT INTO studio_run_schema_migrations (version, applied_at)
     VALUES (1, ?)
   `).run(new Date().toISOString());
-  database.exec(`PRAGMA user_version = ${RUN_STORE_SCHEMA_VERSION}`);
+  database.exec("PRAGMA user_version = 1");
+}
+
+function migrateToVersionTwo(database: DatabaseSync): void {
+  database.exec(VERSION_TWO_ADDITIONS.map(({ sql }) => `${sql};`).join("\n"));
+  runStatement(database, `
+    INSERT INTO studio_run_schema_migrations (version, applied_at)
+    VALUES (2, ?)
+  `).run(new Date().toISOString());
+  database.exec("PRAGMA user_version = 2");
 }
 
 type SchemaObjectRow = {
@@ -323,7 +378,16 @@ function normalizeSchemaSql(sql: string): string {
   return sql.trim().replace(/;$/u, "").replace(/\s+/gu, " ").toLowerCase();
 }
 
-function validateSchemaObjects(database: DatabaseSync): void {
+function isCanonicalTimestamp(value: string): boolean {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+function validateSchemaObjects(
+  database: DatabaseSync,
+  expectedSchema: readonly SchemaObjectContract[],
+  schemaVersion: number
+): void {
   const rows = runStatement(database, `
     SELECT type, name, tbl_name, sql
     FROM sqlite_schema
@@ -334,14 +398,14 @@ function validateSchemaObjects(database: DatabaseSync): void {
       )
   `).all() as SchemaObjectRow[];
   const expectedByName = new Map<string, SchemaObjectContract>();
-  for (const object of VERSION_ONE_SCHEMA) {
+  for (const object of expectedSchema) {
     expectedByName.set(object.name, object);
   }
-  if (rows.length !== VERSION_ONE_SCHEMA.length) {
+  if (rows.length !== expectedSchema.length) {
     throw runStoreError(
       "run_store_corrupt",
       "Run store schema does not match its declared version",
-      { schema_version: RUN_STORE_SCHEMA_VERSION }
+      { schema_version: schemaVersion }
     );
   }
   for (const row of rows) {
@@ -352,17 +416,40 @@ function validateSchemaObjects(database: DatabaseSync): void {
       throw runStoreError(
         "run_store_corrupt",
         "Run store schema does not match its declared version",
-        { schema_version: RUN_STORE_SCHEMA_VERSION }
+        { schema_version: schemaVersion }
       );
     }
   }
 }
 
-function validateVersionOne(database: DatabaseSync): void {
-  validateSchemaObjects(database);
-  const migration = runStatement(database, `
-    SELECT version FROM studio_run_schema_migrations WHERE version = 1
-  `).get() as { version: number } | undefined;
+function validateMigrations(
+  database: DatabaseSync,
+  expectedVersions: readonly number[],
+  schemaVersion: number
+): void {
+  const migrations = runStatement(database, `
+    SELECT version, applied_at
+    FROM studio_run_schema_migrations
+    ORDER BY version ASC
+  `).all() as { version: number; applied_at: string }[];
+  if (
+    migrations.length !== expectedVersions.length ||
+    migrations.some((migration, index) =>
+      migration.version !== expectedVersions[index] ||
+      !isCanonicalTimestamp(migration.applied_at))
+  ) {
+    throw runStoreError(
+      "run_store_corrupt",
+      "Run store migration history is invalid",
+      { schema_version: schemaVersion }
+    );
+  }
+}
+
+function validateMetadataAndIntegrity(
+  database: DatabaseSync,
+  schemaVersion: number
+): void {
   const metadata = runStatement(database, `
     SELECT cursor_secret, catalog_generation, catalog_epoch
     FROM studio_run_metadata WHERE singleton = 1
@@ -371,14 +458,14 @@ function validateVersionOne(database: DatabaseSync): void {
     catalog_generation: string;
     catalog_epoch: number;
   } | undefined;
-  if (migration === undefined || metadata === undefined ||
+  if (metadata === undefined ||
     !/^[a-f0-9]{64}$/.test(metadata.cursor_secret) ||
     !/^[A-Za-z0-9_-]{24}$/.test(metadata.catalog_generation) ||
     !Number.isSafeInteger(metadata.catalog_epoch) || metadata.catalog_epoch < 0) {
     throw runStoreError(
       "run_store_corrupt",
       "Run store metadata is invalid",
-      { schema_version: RUN_STORE_SCHEMA_VERSION }
+      { schema_version: schemaVersion }
     );
   }
   const integrity = runStatement(database, "PRAGMA integrity_check(1)").get() as {
@@ -387,14 +474,42 @@ function validateVersionOne(database: DatabaseSync): void {
   const foreignKeyFailure = runStatement(database, "PRAGMA foreign_key_check").get();
   if (integrity.integrity_check !== "ok" || foreignKeyFailure !== undefined) {
     throw runStoreError("run_store_corrupt", "Run store integrity check failed", {
-      schema_version: RUN_STORE_SCHEMA_VERSION
+      schema_version: schemaVersion
     });
   }
 }
 
+function validateVersionOne(database: DatabaseSync): void {
+  const version = userVersion(database);
+  if (version !== 1) {
+    throw runStoreError(
+      "run_store_corrupt",
+      "Run store schema version changed unexpectedly",
+      { schema_version: version }
+    );
+  }
+  validateSchemaObjects(database, VERSION_ONE_SCHEMA, 1);
+  validateMigrations(database, [1], 1);
+  validateMetadataAndIntegrity(database, 1);
+}
+
+function validateVersionTwo(database: DatabaseSync): void {
+  const version = userVersion(database);
+  if (version !== 2) {
+    throw runStoreError(
+      "run_store_corrupt",
+      "Run store schema version changed unexpectedly",
+      { schema_version: version }
+    );
+  }
+  validateSchemaObjects(database, VERSION_TWO_SCHEMA, 2);
+  validateMigrations(database, [1, 2], 2);
+  validateMetadataAndIntegrity(database, 2);
+}
+
 function migrate(database: DatabaseSync): void {
   withImmediateTransaction(database, () => {
-    const version = userVersion(database);
+    let version = userVersion(database);
     if (version > RUN_STORE_SCHEMA_VERSION) {
       throw runStoreError(
         "run_store_schema_unsupported",
@@ -410,9 +525,17 @@ function migrate(database: DatabaseSync): void {
         );
       }
       migrateToVersionOne(database);
+      version = 1;
+    }
+    if (version === 1) {
+      validateVersionOne(database);
+      migrateToVersionTwo(database);
+      version = 2;
+    }
+    if (version === 2) {
+      validateVersionTwo(database);
     }
   });
-  validateVersionOne(database);
 }
 
 async function secureDatabaseLeaf(filePath: string): Promise<FileHandle> {

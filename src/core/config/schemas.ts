@@ -2,6 +2,7 @@ import { z } from "zod";
 import { assertJsonValue, type JsonValue } from "../json/value.js";
 import { SkillPathSchema } from "../skills/schemas.js";
 import { remoteUrlContainsCredentials } from "../security/url-credentials.js";
+import { ValidationCommandSchema } from "../validation/types.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -26,6 +27,30 @@ export const ContextConfigSchema = z
   .strict();
 export type ContextConfig = z.infer<typeof ContextConfigSchema>;
 
+export const RepositoryValidationConfigSchema = z
+  .object({
+    commands: z.array(ValidationCommandSchema).min(1),
+    env_allowlist: z.array(NonEmptyStringSchema)
+  })
+  .strict();
+export type RepositoryValidationConfig = z.infer<
+  typeof RepositoryValidationConfigSchema
+>;
+
+const RepositoryContextExcludeGlobSchema = z.string().min(1).max(256)
+  .refine((value) => !value.includes("\0"), "exclude glob must not contain NUL")
+  .refine((value) => !value.startsWith("/") && !value.startsWith("\\"),
+    "exclude glob must be repository-relative")
+  .refine((value) => !value.replaceAll("\\", "/").split("/").includes(".."),
+    "exclude glob must not traverse outside the repository");
+
+export const RepositoryContextPolicyConfigSchema = z.object({
+  exclude_globs: z.array(RepositoryContextExcludeGlobSchema).max(128).optional()
+}).strict();
+export type RepositoryContextPolicyConfig = z.infer<
+  typeof RepositoryContextPolicyConfigSchema
+>;
+
 export const RepositoryConfigSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -36,7 +61,9 @@ export const RepositoryConfigSchema = z
     remote: NonEmptyStringSchema,
     expected_remote_urls: z.array(NonEmptyStringSchema).optional(),
     skills: z.array(SkillPathSchema).optional(),
-    context: ContextConfigSchema.optional()
+    context: ContextConfigSchema.optional(),
+    repository_context: RepositoryContextPolicyConfigSchema.optional(),
+    validation: RepositoryValidationConfigSchema.optional()
   })
   .strict()
   .superRefine((repository, context) => {

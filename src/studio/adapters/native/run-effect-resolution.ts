@@ -1,10 +1,11 @@
 import { loadAgentDefinition } from "../../../capabilities/agents/agent-loader.js";
-import { lunaToolCatalog } from "../../../capabilities/repository/tool-catalog.js";
+import { nativeLocalToolCatalog } from "../../../platform/native/native-local-tool-catalog.js";
 import type { CapabilityRegistry } from "../../../core/capabilities/registry.js";
 import type { AnyLunaToolDefinition } from "../../../core/tools/contracts.js";
 import { collectWorkflowAgentReferences } from "../../../core/workflow/definition-references.js";
 import type { WorkflowDefinition } from "../../../core/workflow/definition-types.js";
 import { composedWorkflowNodes } from "../../../core/workflow/composition.js";
+import { workflowPatternStageEffectNodeId } from "../../../core/workflow/loop-identity.js";
 import { studioRunValueDigest } from "../../application/runs/launch-digests.js";
 import type {
   StudioRunEffectCategory,
@@ -22,7 +23,7 @@ export type NativeStudioRunEffects = {
 };
 
 const nativeLocalTools: Readonly<Record<string, AnyLunaToolDefinition>> =
-  lunaToolCatalog;
+  nativeLocalToolCatalog;
 
 function effectId(
   kind: "effect" | "uncertainty" | "resolved",
@@ -182,26 +183,42 @@ async function agentEffects(
     qualifiedNodeId: sourceNodeId,
     executionBoundaryNodeId: nodeId
   } of entries) {
-    const agentIds = node.type === "agent"
-      ? [node.agent]
+    const agentStages = node.type === "agent"
+      ? [{ agentId: node.agent }]
       : node.type === "pattern"
         ? [
-            ...(node.worker === undefined ? [] : [node.worker]),
+            ...(node.worker === undefined
+              ? []
+              : [{ agentId: node.worker, stageId: "worker" }]),
             ...(node.gates ?? []).flatMap((gate) => {
               const reviewAgent = gate.input?.review_agent;
-              return typeof reviewAgent === "string" ? [reviewAgent] : [];
+              return typeof reviewAgent === "string"
+                ? [{ agentId: reviewAgent, stageId: `reviewer:${gate.id}` }]
+                : [];
             })
           ]
         : [];
-    for (const agentId of [...new Set(agentIds)]) {
+    const uniqueStages = new Map(
+      agentStages.map((entry) => [
+        `${entry.agentId}:${"stageId" in entry ? entry.stageId : "node"}`,
+        entry
+      ])
+    );
+    for (const { agentId, ...stage } of uniqueStages.values()) {
       const agent = agents.get(agentId);
       if (agent === undefined) {
         continue;
       }
+      const effectNodeId = "stageId" in stage &&
+        typeof stage.stageId === "string" &&
+        sourceNodeId === nodeId
+        ? workflowPatternStageEffectNodeId(nodeId, stage.stageId)
+        : nodeId;
       effects.push({
         effect_id: effectId("effect", {
           source_node_id: sourceNodeId,
           agent_id: agentId,
+          ...(effectNodeId === nodeId ? {} : { effect_node_id: effectNodeId }),
           kind: "model"
         }),
         category: "model_call",
@@ -210,18 +227,19 @@ async function agentEffects(
         retry_semantics: "retry_forbidden",
         idempotency_scope: "attempt",
         registration_id: agentId,
-        node_id: nodeId
+        node_id: effectNodeId
       });
       uncertainties.push({
         uncertainty_id: effectId("uncertainty", {
           source_node_id: sourceNodeId,
           agent_id: agentId,
+          ...(effectNodeId === nodeId ? {} : { effect_node_id: effectNodeId }),
           kind: "dynamic_agent_tools"
         }),
         kind: "dynamic_agent_tools",
         description: `Agent ${agentId} at node ${sourceNodeId} can choose among its declared local and MCP runtime tools dynamically.`,
         may_include_unlisted_write: agentMayIncludeUnlistedWrite(agent),
-        node_id: nodeId
+        node_id: effectNodeId
       });
     }
   }

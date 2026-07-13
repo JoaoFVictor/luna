@@ -2,38 +2,47 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "additionalProperties": false,
-  "required": ["summary", "steps", "risks"],
+  "required": ["summary", "steps", "files", "risks"],
   "properties": {
     "summary": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 8192
     },
     "steps": {
       "type": "array",
+      "maxItems": 100,
       "items": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "maxLength": 4096
       }
     },
     "files": {
       "type": "array",
+      "maxItems": 100,
       "items": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "maxLength": 4096
       }
     },
     "validation": {
       "type": "array",
+      "maxItems": 100,
       "items": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "maxLength": 4096
       }
     },
     "risks": {
       "type": "array",
+      "maxItems": 100,
       "items": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "maxLength": 4096
       }
     }
   }

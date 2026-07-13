@@ -1,9 +1,6 @@
-import { readdir } from "node:fs/promises";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InterruptRecord } from "../../../src/core/runtime/interrupts/contracts.js";
 import { nativeLunaPlatformRegistrations } from "../../../src/platform/native/native-platform-registrations.js";
-import { NativeStudioRunDispatchQueue } from "../../../src/studio/adapters/filesystem/run-dispatch-queue.js";
 import { NativeStudioRunDispatcher } from "../../../src/studio/adapters/native/run-dispatcher.js";
 import { createSqliteRunStore } from "../../../src/studio/adapters/sqlite/run-store.js";
 import {
@@ -24,7 +21,7 @@ afterEach(async () => {
 });
 
 describe("native Studio resume effect recovery", () => {
-  it("treats a loop image effect's pre-node resume journal as an authoritative barrier", async () => {
+  it("uses an intact pre-execution journal as proof that no loop image effect started", async () => {
     const fixture = await writeFixture();
     const { command } = await captureCommand(fixture);
     const imagePotential = {
@@ -63,9 +60,9 @@ describe("native Studio resume effect recovery", () => {
     const scheduled: Array<() => void> = [];
     let unsafeExecutions = 0;
     const markBarrier = vi.spyOn(
-      NativeStudioRunDispatchQueue.prototype,
-      "markResumeEffectMayHaveOccurred"
-    ).mockRejectedValue(new Error("simulated resume-stage fsync failure"));
+      store.resumes,
+      "markEffectMayHaveOccurred"
+    ).mockRejectedValue(new Error("simulated resume journal failure"));
     const dispatcher = new NativeStudioRunDispatcher({
       projectRoot: fixture.projectRoot,
       configRoot: fixture.configRoot,
@@ -78,6 +75,7 @@ describe("native Studio resume effect recovery", () => {
       runWorkflow: waitingResult,
       resume: {
         interrupts: interruptPort(interrupts),
+        journal: store.resumes,
         platform: nativeLunaPlatformRegistrations,
         runWorkflow: async (input) => {
           await input.onBeforeNodeExecution?.({
@@ -109,16 +107,17 @@ describe("native Studio resume effect recovery", () => {
 
       await vi.waitFor(async () => {
         expect(await store.ledger.get(launch.run_id)).toMatchObject({
-          run_status: "outcome_unknown",
-          failure: { code: "studio_runtime_write_outcome_unknown" }
+          run_status: "failed",
+          completeness: "partial",
+          failure: { code: "studio_native_run_failed" }
         });
       });
       expect(markBarrier).toHaveBeenCalledTimes(1);
       expect(unsafeExecutions).toBe(0);
-      await vi.waitFor(async () => {
-        expect(await readdir(path.join(fixture.queueRoot, "resumes"))).toHaveLength(0);
-        expect(await readdir(path.join(fixture.queueRoot, "resume-stages"))).toHaveLength(0);
+      expect(interrupts.get("interrupt-1")).toMatchObject({
+        status: "cancelled"
       });
+      expect(await store.resumes.list()).toHaveLength(0);
     } finally {
       markBarrier.mockRestore();
       await dispatcher.close();
@@ -183,6 +182,7 @@ describe("native Studio resume effect recovery", () => {
       runWorkflow: waitingResult,
       resume: {
         interrupts: durableInterrupts,
+        journal: store.resumes,
         platform: nativeLunaPlatformRegistrations
       }
     });
@@ -240,15 +240,13 @@ describe("native Studio resume effect recovery", () => {
           }
         }
       });
-      const queue = new NativeStudioRunDispatchQueue({ root: fixture.queueRoot });
-      const queuedResumeIds = await queue.listResumeIds();
-      const queuedResumeId = queuedResumeIds[0];
-      if (queuedResumeId === undefined) throw new Error("Expected queued resume");
-      const queuedResume = await queue.readResume(queuedResumeId);
-      await queue.markResumeEffectMayHaveOccurred(
-        queuedResume,
-        "publish_post"
-      );
+      const queuedResume = (await store.resumes.list())[0];
+      if (queuedResume === undefined) throw new Error("Expected queued resume");
+      await store.resumes.markEffectMayHaveOccurred({
+        resume_id: queuedResume.resume_id,
+        command_hash: queuedResume.command_hash,
+        node_id: "publish_post"
+      });
       const claimed = interrupts.get(interrupt.id);
       if (
         claimed?.resume_attempt === undefined ||
@@ -295,6 +293,7 @@ describe("native Studio resume effect recovery", () => {
       },
       resume: {
         interrupts: durableInterrupts,
+        journal: store.resumes,
         platform: catalogDrifted
           ? driftedCapabilityPlatform()
           : nativeLunaPlatformRegistrations,
@@ -321,7 +320,7 @@ describe("native Studio resume effect recovery", () => {
         status: "resolved",
         resume: { decision: { action: "approve" } }
       });
-      expect(await readdir(path.join(fixture.queueRoot, "resumes"))).toHaveLength(0);
+      expect(await store.resumes.list()).toHaveLength(0);
     } finally {
       await recovered.close();
       store.close();

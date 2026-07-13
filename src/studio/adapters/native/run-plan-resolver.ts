@@ -109,8 +109,7 @@ function assertManualTestNodeIsSubstitutable(
       ...(builtInPolicy === undefined ? [] : [builtInPolicy]),
       ...(source.type === "built_in" ||
       source.type === "agent" ||
-      source.type === "pattern" ||
-      source.type === "human_gate"
+      source.type === "pattern"
         ? (source.policies ?? []).map((candidate) => candidate.uses)
         : [])
     ];

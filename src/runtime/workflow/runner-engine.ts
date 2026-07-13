@@ -13,19 +13,10 @@ import {
   createInitialRuntimeState,
   type LunaRuntimeState
 } from "../../core/runtime/state.js";
-import {
-  selectReadyBatchWithPolicy,
-  type ExecutionPolicyDecision
-} from "../../core/workflow/execution-policy.js";
-import {
-  workflowExecutionPlanPolicyNode,
-  type WorkflowExecutionPlanPolicyNode
-} from "../../core/workflow/execution-plan.js";
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import { planPrecompletedWorkflowExecution } from "../../core/workflow/precompleted-execution.js";
 import { finalWorkflowOutput } from "../../core/workflow/runner-output.js";
 import { writeTraceSummaryBestEffort } from "../../core/observability/summary.js";
-import type { BuiltInStepMetadata } from "../../core/built-ins/types.js";
 import {
   runWorkflowNodeAttempt,
   recoverPersistedWorkflowNodeAttempt,
@@ -76,6 +67,7 @@ import {
   validatePrecompletedSteps
 } from "./precompleted-steps.js";
 import { shouldHaltLoop } from "./durable-loop.js";
+import { executionPolicyDecisionForNode } from "./node-execution-policy.js";
 
 export type { WorkflowNodeAttemptOutcome } from "./node-runner.js";
 
@@ -460,7 +452,7 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
       )
     ),
     runtimeContext,
-    decisionForNode: (node) => executionPolicyDecisionForCompiledNode(input, node)
+    decisionForNode: (node) => executionPolicyDecisionForNode(input, node)
   });
   const nodes = selectedNodes ?? input.compiled.nodes.slice(startIndex);
   const deferredFinalReportIds = deferredFinalReportNodeIds(input, nodes);
@@ -472,7 +464,7 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
       node: CompiledWorkflowNode,
       currentState: LunaRuntimeState
     ): Promise<WorkflowNodeAttemptOutcome> => {
-        const decision = executionPolicyDecisionForCompiledNode(input, node);
+        const decision = executionPolicyDecisionForNode(input, node);
         let outcome: WorkflowNodeAttemptOutcome;
         if (nodeRecovery?.completedNodeIds.has(node.id) === true) {
           outcome = skipPersistedCompletedWorkflowNode({
@@ -480,8 +472,8 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
             node
           });
         } else {
-          const pendingOutput = nodeRecovery?.outputPendingByNode.get(node.id);
-          outcome = pendingOutput === undefined
+          const pending = nodeRecovery?.outputPendingByNode.get(node.id);
+          outcome = pending === undefined
             ? await runWorkflowNodeAttempt({
                 input,
                 state: currentState,
@@ -495,7 +487,8 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
                 runtimeContext,
                 node,
                 decision,
-                output: pendingOutput
+                output: pending.output,
+                binaryAssets: pending.binaryAssets
               });
         }
         if (
@@ -533,12 +526,32 @@ async function runFromNodeIndex<TInput extends RunWorkflowInput>(
           runNode
         });
     if (result.kind === "waiting_for_input") {
-      return {
+      const waiting = {
         status: "waiting_for_input",
         interrupt_id: result.interrupt_id,
         checkpoint_id: result.checkpoint_id,
         state: result.state
-      };
+      } as const;
+      if (input.onWaitingState !== undefined) {
+        terminalizationPhase = "control_plane_waiting_pending";
+        try {
+          await input.onWaitingState(waiting);
+        } catch (cause) {
+          throw new RuntimeDurabilityRecoveryRequiredError(
+            "Workflow wait is durable but its control-plane projection requires recovery",
+            {
+              cause,
+              details: {
+                run_id: input.run.run_id,
+                interrupt_id: result.interrupt_id,
+                checkpoint_id: result.checkpoint_id
+              }
+            }
+          );
+        }
+        terminalizationPhase = "committed";
+      }
+      return waiting;
     }
     state = result.state;
     exactStateAvailable = true;
@@ -620,6 +633,7 @@ type SuccessTerminalizationPhase =
   | "open"
   | "runtime_checkpoint_pending"
   | "control_plane_pending"
+  | "control_plane_waiting_pending"
   | "committed";
 
 async function saveSecondarySuccessCheckpointBestEffort(
@@ -716,22 +730,4 @@ async function failWorkflowExecution({
     observeFailedState(input, failedState);
   }
   throw runtimeCause;
-}
-
-function executionPolicyDecisionForCompiledNode(
-  input: RunWorkflowInput,
-  node: CompiledWorkflowNode
-): ExecutionPolicyDecision {
-  return selectReadyBatchWithPolicy({
-    ready: [workflowExecutionPlanPolicyNode(node)],
-    maxConcurrency: 1,
-    builtInMetadata: (candidate) => builtInMetadataForPolicyNode(input, candidate)
-  }).items[0].decision;
-}
-
-function builtInMetadataForPolicyNode(
-  input: RunWorkflowInput,
-  node: WorkflowExecutionPlanPolicyNode
-): BuiltInStepMetadata {
-  return input.builtInMetadata?.(node.compiled) ?? {};
 }

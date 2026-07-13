@@ -15,6 +15,7 @@ import { runtimeError } from "../../core/runtime/errors.js";
 import { listCheckpointWritesForRecovery } from "./checkpoint-io.js";
 import { resumeContextFromMetadata } from "./interrupts.js";
 import { loadPersistedWorkflowNodeRecovery } from "./persisted-node-recovery.js";
+import type { PersistedPendingNodeOutput } from "./persisted-node-recovery.js";
 import {
   encodeRuntimeReference,
   parseRuntimeReference
@@ -31,7 +32,7 @@ export type ResumeWrites = {
   readonly resumeCheckpointWrites: readonly CheckpointWriteRecord[];
   readonly stepWrites: readonly CheckpointWriteRecord[];
   readonly completedNodeIds: ReadonlySet<string>;
-  readonly outputPendingByNode: ReadonlyMap<string, JsonValue>;
+  readonly outputPendingByNode: ReadonlyMap<string, PersistedPendingNodeOutput>;
   readonly completedArtifactRefs: LunaRuntimeState["artifact_refs"];
   readonly completedInterruptRefs: LunaRuntimeState["interrupt_refs"];
 };

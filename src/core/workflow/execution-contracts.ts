@@ -65,8 +65,16 @@ export type WorkflowPatternExecutor = (input: {
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
+  readonly runOccurrence: WorkflowPatternOccurrenceExecutor;
   readonly observability?: WorkflowObservability;
 }) => Promise<unknown> | unknown;
+
+export type WorkflowPatternOccurrenceExecutor = (input: {
+  readonly attempt: number;
+  readonly stage_id: string;
+  readonly output_schema: unknown;
+  readonly execute: () => Promise<JsonValue>;
+}) => Promise<JsonValue>;
 
 export type WorkflowCompositionExecutor = (input: {
   readonly workflowInput: RunWorkflowInput;
@@ -113,7 +121,7 @@ export type RunWorkflowInput = {
     readonly node_id: string;
     readonly iteration: number;
     readonly steps: Record<string, JsonValue>;
-    readonly artifact_refs: RuntimeArtifactRef[];
+    readonly artifacts_by_node: Record<string, RuntimeArtifactRef[]>;
     readonly decision: JsonValue;
   };
   /** Internal continuation persisted when a loop reaches its human gate. */
@@ -121,7 +129,7 @@ export type RunWorkflowInput = {
     readonly node_id: string;
     readonly iteration: number;
     readonly steps: Record<string, JsonValue>;
-    readonly artifact_refs: RuntimeArtifactRef[];
+    readonly artifacts_by_node: Record<string, RuntimeArtifactRef[]>;
   };
   readonly signal?: AbortSignal;
   readonly runtimeContext?: WorkflowRuntimeContext;
@@ -142,6 +150,15 @@ export type RunWorkflowInput = {
    * authority and resolves before the runtime may continue.
    */
   readonly onSucceededState?: (state: LunaRuntimeState) => Promise<void>;
+  /**
+   * Control-plane durability barrier for an already durable runtime wait.
+   * Rejection requires recovery and must never manufacture a failed run.
+   */
+  readonly onWaitingState?: (waiting: {
+    readonly state: LunaRuntimeState;
+    readonly interrupt_id: string;
+    readonly checkpoint_id: string;
+  }) => Promise<void>;
   /**
    * Internal, best-effort observation of an exact failed runtime state.
    * The observer is deliberately synchronous and cannot change runtime failure
@@ -182,6 +199,7 @@ export type ResumeWorkflowInput = {
   readonly artifactPublisher?: WorkflowArtifactPublisherPort;
   readonly observability?: WorkflowObservability;
   readonly onSucceededState?: RunWorkflowInput["onSucceededState"];
+  readonly onWaitingState?: RunWorkflowInput["onWaitingState"];
   readonly onFailedState?: RunWorkflowInput["onFailedState"];
   readonly onBeforeNodeExecution?: RunWorkflowInput["onBeforeNodeExecution"];
   readonly onLifecycleEvent?: RunWorkflowInput["onLifecycleEvent"];

@@ -16,6 +16,7 @@ import { resumeContextFromMetadata } from "../../runtime/workflow/interrupts.js"
 import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 import type { RunHandle } from "../../core/runtime/run-handle.js";
 import {
+  createRuntimeBackendComposition,
   createRuntimeCompositionForWorkflow
 } from "../../runtime/composition/runtime-composition.js";
 import type { RuntimeCompositionConfig } from "../../runtime/composition/app-config.js";
@@ -50,6 +51,10 @@ import {
 } from "./native-platform-registrations.js";
 import { selectEffectivePrecompletedSteps } from "../../runtime/workflow/precompleted-steps.js";
 import { createNativeWorkflowCompositionExecutor } from "./native-workflow-composition.js";
+import {
+  recoverPersistedWaitingBoundaryByIdentity,
+  type WaitingBoundaryWorkflowIdentity
+} from "../../runtime/workflow/resume-origin.js";
 
 export { compileNativeWorkflow } from "./native-run-context.js";
 export type { NativeCompiledWorkflow } from "./native-run-context.js";
@@ -79,6 +84,7 @@ type NativeWorkflowExecutionControls = Pick<
   NativeWorkflowRunInput,
   | "signal"
   | "onSucceededState"
+  | "onWaitingState"
   | "onFailedState"
   | "onBeforeNodeExecution"
   | "onLifecycleEvent"
@@ -94,6 +100,19 @@ export type NativeWorkflowResumeInput = NativeWorkflowExecutionControls & {
   readonly checkpoint_id: string;
   readonly interrupt_id: string;
   readonly decision: JsonValue;
+};
+
+export type NativeWorkflowWaitingRecoveryInput = Pick<
+  NativeWorkflowExecutionControls,
+  "signal" | "onWaitingState"
+> & {
+  readonly projectRoot: string;
+  readonly configRoot: string;
+  readonly definitionRoots?: NativeWorkflowRunInput["definitionRoots"];
+  readonly workflow: WaitingBoundaryWorkflowIdentity;
+  readonly thread_id: string;
+  readonly checkpoint_id: string;
+  readonly interrupt_id: string;
 };
 
 export async function runNativeWorkflowTarget(
@@ -164,6 +183,7 @@ function nativeWorkflowExecutionControls(
   RunWorkflowInput,
   | "signal"
   | "onSucceededState"
+  | "onWaitingState"
   | "onFailedState"
   | "onBeforeNodeExecution"
   | "onLifecycleEvent"
@@ -177,6 +197,9 @@ function nativeWorkflowExecutionControls(
     ...(input.onSucceededState === undefined
       ? {}
       : { onSucceededState: input.onSucceededState }),
+    ...(input.onWaitingState === undefined
+      ? {}
+      : { onWaitingState: input.onWaitingState }),
     ...(input.onBeforeNodeExecution === undefined
       ? {}
       : { onBeforeNodeExecution: input.onBeforeNodeExecution }),
@@ -264,6 +287,33 @@ export async function resumeNativeWorkflowTarget(
   } satisfies ResumeWorkflowInput;
 
   return await execution.composition.workflowRuntime.resume(workflowRuntimeInput);
+}
+
+/** Reprojects an already durable wait without applying an old decision. */
+export async function recoverNativeWorkflowWaitingTarget(
+  input: NativeWorkflowWaitingRecoveryInput,
+  _dependencies: NativeWorkflowTargetDependencies = {}
+): Promise<WorkflowRunResult> {
+  input.signal?.throwIfAborted();
+  const definitionConfigRoot = input.definitionRoots?.configRoot ??
+    input.configRoot;
+  const app = await loadYamlFile(
+    path.join(definitionConfigRoot, "app.yaml"),
+    AppConfigSchema
+  );
+  const composition = createRuntimeBackendComposition(
+    runtimeCompositionConfig(app, input.projectRoot)
+  );
+  const waiting = await recoverPersistedWaitingBoundaryByIdentity({
+    workflow: input.workflow,
+    backends: composition.backends,
+    thread_id: input.thread_id,
+    checkpoint_id: input.checkpoint_id,
+    interrupt_id: input.interrupt_id
+  });
+  input.signal?.throwIfAborted();
+  await input.onWaitingState?.(waiting);
+  return waiting;
 }
 
 async function prepareNativeWorkflowExecution({

@@ -26,12 +26,25 @@ If `review_dimensions` includes `reuse_existing_components`, check whether the
 change duplicates an existing component, composable, helper, service, schema, or
 capability instead of reusing the established abstraction.
 
-If the workflow provides `related_context`, use it to understand impact beyond
-the raw diff: imported dependencies, reverse references, tests, configs, docs,
-and similar existing abstractions. Use it to decide what risk to inspect and to
-avoid missing reuse opportunities. For publishable findings, keep the primary
-evidence on changed PR diff lines from `repo_context` whenever possible; mention
-related files in the description only when they explain the impact.
+For pull-request review, the workflow may provide the canonical graph as
+`related_context`. For implementation review, read the attempt-scoped canonical
+graph only from `gate.evidence.repository_context`; it is refreshed from the
+current attempt diff before this review. Use that graph to understand impact
+beyond the raw diff: imported dependencies, reverse references, tests, configs,
+docs, and similar existing abstractions. Use it to decide what risk to inspect
+and to avoid missing reuse opportunities. For publishable pull-request
+findings, keep the primary evidence on changed PR diff lines from `repo_context`
+whenever possible; mention related files in the description only when they
+explain the impact. Use `coverage` and `snapshot` to distinguish complete
+indexed evidence from an incomplete or stale view.
+
+If a concrete dependency, caller, test, or existing-abstraction question is not
+answered by the supplied graph, use `repository_context_query` with a narrow
+text, path, or symbol query. It uses the same canonical index. Merge the result
+with the supplied graph. The runtime pins calls to the supplied snapshot and
+rejects drift; compare snapshot ids and repeat only to close a named
+evidence gap; never turn it into an independent repository crawl. A query result
+does not replace changed-line evidence required for a publishable PR finding.
 
 Each finding must include:
 

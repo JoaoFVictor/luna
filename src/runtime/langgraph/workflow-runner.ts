@@ -1,17 +1,12 @@
-import { randomUUID } from "node:crypto";
 import type { JsonObject } from "../../core/runtime/backends/contracts.js";
-import { interrupt as langGraphInterrupt } from "@langchain/langgraph";
 import {
   runtimeDurabilityRecoveryRequiredFrom,
   runtimeError
 } from "../../core/runtime/errors.js";
 import type {
   WorkflowRuntimeFactory,
-  WorkflowRuntimeFactoryContext,
   WorkflowRuntimeRunner
 } from "../../core/workflow/runner-port.js";
-import { sqliteCheckpointBackendRegistration } from "../backends/sqlite/checkpoints.js";
-import { LunaLangGraphCheckpointer } from "../backends/sqlite/langgraph-checkpointer.js";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import { applyWorkflowGraphUpdate } from "./workflow-state.js";
@@ -73,7 +68,7 @@ export function createLangGraphWorkflowRuntimeRunner(): WorkflowRuntimeRunner<
 
 export const langGraphWorkflowRuntimeFactory = {
   id: "langgraph",
-  create(options: JsonObject, context: WorkflowRuntimeFactoryContext) {
+  create(options: JsonObject) {
     if (Object.keys(options).length > 0) {
       throw runtimeError(
         "LangGraph workflow runtime options are not supported",
@@ -85,10 +80,10 @@ export const langGraphWorkflowRuntimeFactory = {
     const runner = createLangGraphWorkflowRuntimeRunner();
     return {
       run(input: RunWorkflowInput) {
-        return runner.run(withLangGraphRuntimeExtensions(input, context));
+        return runner.run(input);
       },
       resume(input: ResumeWorkflowInput) {
-        return runner.resume(withLangGraphRuntimeExtensions(input, context));
+        return runner.resume(input);
       }
     };
   }
@@ -97,20 +92,6 @@ export const langGraphWorkflowRuntimeFactory = {
   ResumeWorkflowInput,
   WorkflowRunResult
 >;
-
-function withLangGraphRuntimeExtensions<TInput extends RunWorkflowInput | ResumeWorkflowInput>(
-  input: TInput,
-  context: WorkflowRuntimeFactoryContext
-): TInput & { readonly langGraphCheckpointer?: RunCompiledWorkflowInput["langGraphCheckpointer"] } {
-  if (context.checkpoints.backendId !== sqliteCheckpointBackendRegistration.id) {
-    return input;
-  }
-
-  return {
-    ...input,
-    langGraphCheckpointer: new LunaLangGraphCheckpointer(context.checkpoints.store)
-  };
-}
 
 class WorkflowWaitingForInput extends Error {
   readonly result: WaitingForInputResult;
@@ -154,7 +135,6 @@ const runLangGraphWorkflowNodes: WorkflowNodeScheduler<RunCompiledWorkflowInput>
   deferredFinalReportIds,
   runNode
 }) => {
-  let pendingNativeInterrupt: WaitingForInputResult | undefined;
   let reducedState = initialState;
   const graph = compileLangGraphWorkflow({
     input,
@@ -165,11 +145,7 @@ const runLangGraphWorkflowNodes: WorkflowNodeScheduler<RunCompiledWorkflowInput>
       const update = await runLangGraphNode({
         state: state as LunaRuntimeState,
         node,
-        useNativeInterrupt: input.langGraphCheckpointer !== undefined,
-        runNode,
-        onNativeInterrupt: (result) => {
-          pendingNativeInterrupt = result;
-        }
+        runNode
       });
       reducedState = applyWorkflowGraphUpdate(reducedState, update);
       return update;
@@ -180,8 +156,7 @@ const runLangGraphWorkflowNodes: WorkflowNodeScheduler<RunCompiledWorkflowInput>
     const result = await streamLangGraphWorkflow({
       graph,
       input,
-      initialState,
-      pendingNativeInterrupt: () => pendingNativeInterrupt
+      initialState
     });
     return result;
   } catch (cause) {
@@ -194,13 +169,6 @@ const runLangGraphWorkflowNodes: WorkflowNodeScheduler<RunCompiledWorkflowInput>
     }
     if (cause instanceof WorkflowWaitingForInput) {
       return nativeWaitingSchedulerResult(cause.result);
-    }
-    if (pendingNativeInterrupt !== undefined) {
-      // Luna's wait protocol has already durably committed the waiting
-      // checkpoint, interrupt, and completion marker before it asks
-      // LangGraph to suspend. A later LangGraph stream/checkpointer failure
-      // cannot contradict that authoritative, resumable outcome.
-      return nativeWaitingSchedulerResult(pendingNativeInterrupt);
     }
     const durabilityFailure = runtimeDurabilityRecoveryRequiredFrom(cause);
     if (durabilityFailure !== undefined) {
@@ -232,71 +200,43 @@ function nativeWaitingSchedulerResult(
 async function streamLangGraphWorkflow({
   graph,
   input,
-  initialState,
-  pendingNativeInterrupt
+  initialState
 }: {
   readonly graph: ReturnType<typeof compileLangGraphWorkflow>;
   readonly input: RunCompiledWorkflowInput;
   readonly initialState: LunaRuntimeState;
-  readonly pendingNativeInterrupt: () => WaitingForInputResult | undefined;
 }): Promise<WorkflowNodeSchedulerResult> {
-  const checkpointThreadId = input.langGraphCheckpointer === undefined
-    ? input.run.run_id
-    : schedulerCheckpointThreadId();
-  try {
-    const stream = await graph.streamEvents(initialState, {
-      configurable: { thread_id: checkpointThreadId },
-      version: "v3",
-      streamMode: ["updates", "values", "checkpoints", "tasks"],
-      ...(input.langGraphCheckpointer === undefined ? {} : { durability: "sync" })
-    });
+  const stream = await graph.streamEvents(initialState, {
+    configurable: { thread_id: input.run.run_id },
+    version: "v3",
+    streamMode: ["updates", "values", "checkpoints", "tasks"]
+  });
 
-    for await (const chunk of stream) {
-      const parsed = projectLangGraphProtocolEvent(chunk);
-      if (parsed.event !== undefined) {
-        await appendWorkflowRuntimeStreamLog(input, parsed.event);
-      }
+  for await (const chunk of stream) {
+    const parsed = projectLangGraphProtocolEvent(chunk);
+    if (parsed.event !== undefined) {
+      await appendWorkflowRuntimeStreamLog(input, parsed.event);
     }
+  }
 
-    if (stream.interrupted) {
-      const waiting = pendingNativeInterrupt();
-      if (waiting !== undefined) {
-        return nativeWaitingSchedulerResult(waiting);
-      }
-
+  if (stream.interrupted) {
       throw runtimeError("LangGraph workflow stream interrupted without a Luna interrupt", "runtime_state_invalid", {
         details: { workflow_id: input.workflow.id, interrupt_count: stream.interrupts.length }
       });
-    }
-
-    const state = assertLangGraphOutputState(await stream.output);
-    return { kind: "completed", state };
-  } finally {
-    if (input.langGraphCheckpointer !== undefined) {
-      await input.langGraphCheckpointer.deleteThread(checkpointThreadId).catch(() => {
-        // Scheduler checkpoints are isolated, disposable implementation
-        // detail. Cleanup must not overwrite Luna's canonical run outcome.
-      });
-    }
   }
-}
 
-function schedulerCheckpointThreadId(): string {
-  return `luna_scheduler_${randomUUID()}`;
+  const state = assertLangGraphOutputState(await stream.output);
+  return { kind: "completed", state };
 }
 
 async function runLangGraphNode({
   state,
   node,
-  useNativeInterrupt,
-  runNode,
-  onNativeInterrupt
+  runNode
 }: {
   readonly state: LunaRuntimeState;
   readonly node: CompiledWorkflowNode;
-  readonly useNativeInterrupt: boolean;
   readonly runNode: LangGraphRunNode;
-  readonly onNativeInterrupt: (result: WaitingForInputResult) => void;
 }): Promise<WorkflowNodeRunUpdate> {
   const result = await runNode(node, state);
   if (result.kind === "waiting_for_input") {
@@ -306,16 +246,6 @@ async function runLangGraphNode({
       checkpoint_id: result.checkpoint_id,
       state: result.state
     } satisfies WaitingForInputResult;
-    if (node.kind === "interrupt" && useNativeInterrupt) {
-      onNativeInterrupt(waiting);
-      langGraphInterrupt({
-        interrupt_id: result.interrupt_id,
-        checkpoint_id: result.checkpoint_id,
-        node_id: node.id,
-        source: "luna"
-      });
-    }
-
     throw new WorkflowWaitingForInput(waiting);
   }
 

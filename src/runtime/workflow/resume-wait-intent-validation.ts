@@ -20,6 +20,7 @@ import type {
 } from "../../core/workflow/execution-contracts.js";
 import { listCheckpointWritesForRecovery } from "./checkpoint-io.js";
 import {
+  checkpointIdCandidates as waitingCheckpointIdCandidates,
   interruptIdMatches as waitingInterruptIdMatches,
   parseInterruptWaitIntent,
   waitIntentTaskId,
@@ -38,6 +39,16 @@ type ResumeContext = {
   readonly precompleted_steps?: WorkflowPrecompletedSteps;
   readonly loop_continuation?: RunWorkflowInput["loop_continuation"];
 };
+
+type ResumeWaitInput = Pick<
+  ResumeWorkflowInput,
+  "backends" | "thread_id" | "checkpoint_id" | "interrupt_id"
+>;
+
+type ResumeWaitIdentity = Pick<
+  ResumeWaitInput,
+  "thread_id" | "checkpoint_id" | "interrupt_id"
+>;
 
 export async function validateResumeWaitIntent({
   input,
@@ -61,6 +72,42 @@ export async function validateResumeWaitIntent({
   const expectedCapabilityId = resumeNode.kind === "loop"
     ? loopGateCapability(input, resumeNode)
     : resumeNode.capability_id;
+  await validatePersistedWaitIntent({
+    input,
+    workflowRevision: input.workflow.revision,
+    resumeNodeId: resumeNode.id,
+    expectedCapabilityId,
+    occurrence,
+    checkpoint,
+    resumeContext,
+    interrupt
+  });
+}
+
+/**
+ * Validates the durable wait protocol using only pinned execution identity.
+ * This is intentionally independent of workflow compilation and capability
+ * catalog loading so Studio recovery can prove an existing wait offline.
+ */
+export async function validatePersistedWaitIntent({
+  input,
+  workflowRevision,
+  resumeNodeId,
+  expectedCapabilityId,
+  occurrence,
+  checkpoint,
+  resumeContext,
+  interrupt
+}: {
+  readonly input: ResumeWaitInput;
+  readonly workflowRevision: string;
+  readonly resumeNodeId: string;
+  readonly expectedCapabilityId: string;
+  readonly occurrence?: string;
+  readonly checkpoint: CheckpointRecord;
+  readonly resumeContext: ResumeContext;
+  readonly interrupt: InterruptRecord;
+}): Promise<void> {
   const writes = await listCheckpointWritesForRecovery({
     input,
     threadId: input.thread_id,
@@ -68,7 +115,7 @@ export async function validateResumeWaitIntent({
     checkpointId: input.checkpoint_id,
     operation: "validate_interrupt_wait_intent"
   });
-  const taskId = waitIntentTaskId(resumeNode.id);
+  const taskId = waitIntentTaskId(resumeNodeId);
   const intentWrites = writes.filter(
     (write) => write.task_id === taskId || write.channel === WAIT_INTENT_CHANNEL
   );
@@ -114,24 +161,29 @@ export async function validateResumeWaitIntent({
     intent.interrupt_refs,
     [{
       id: intent.interrupt_id,
-      uri: `interrupt://${input.thread_id}/${resumeNode.id}${
+      uri: `interrupt://${input.thread_id}/${resumeNodeId}${
         occurrence === undefined ? "" : `/${occurrence}`
       }`,
-      node_id: resumeNode.id
+      node_id: resumeNodeId
     }]
   );
   const payload = interrupt.payload;
   if (
     intent.run_id !== input.thread_id ||
-    intent.workflow_revision !== input.workflow.revision ||
-    intent.node_id !== resumeNode.id ||
+    intent.workflow_revision !== workflowRevision ||
+    intent.node_id !== resumeNodeId ||
     intent.capability_id !== expectedCapabilityId ||
     intent.checkpoint_id !== input.checkpoint_id ||
+    !waitingCheckpointIdCandidates(
+      input.thread_id,
+      resumeNodeId,
+      occurrence
+    ).includes(intent.checkpoint_id) ||
     intent.interrupt_id !== input.interrupt_id ||
     !waitingInterruptIdMatches(
       intent.interrupt_id,
       input.thread_id,
-      resumeNode.id,
+      resumeNodeId,
       occurrence
     ) ||
     intent.created_at !== checkpoint.created_at ||
@@ -149,13 +201,13 @@ export async function validateResumeWaitIntent({
       Object.keys(expectedContext).sort().join("\u0000") ||
     stableJson(intent.resume_context) !== stableJson(metadataContext) ||
     stableJson(intent.resume_context) !== stableJson(expectedContext) ||
-    (payload !== undefined &&
-      (payload.interrupt_id !== intent.interrupt_id ||
-        payload.checkpoint_id !== intent.checkpoint_id ||
-        payload.node_id !== intent.node_id ||
-        payload.kind !== intent.capability_id ||
-        payload.created_at !== intent.created_at ||
-        stableJson(payload.run) !== stableJson(resumeContext.run)))
+    payload === undefined ||
+    payload.interrupt_id !== intent.interrupt_id ||
+    payload.checkpoint_id !== intent.checkpoint_id ||
+    payload.node_id !== intent.node_id ||
+    payload.kind !== intent.capability_id ||
+    payload.created_at !== intent.created_at ||
+    stableJson(payload.run) !== stableJson(resumeContext.run)
   ) {
     throw invalidResumeWaitIntent(input, "wait_intent_conflict");
   }
@@ -180,9 +232,9 @@ function loopOccurrence(
 
 function loopGateCapability(
   input: ResumeWorkflowInput,
-  node: CompiledWorkflowNode
+  node: Extract<CompiledWorkflowNode, { readonly kind: "loop" }>
 ): string {
-  const gate = node.loop_body?.at(-1);
+  const gate = node.loop_body.at(-1);
   if (gate?.kind !== "interrupt") {
     throw invalidResumeWaitIntent(input, "loop_gate_invalid");
   }
@@ -191,7 +243,7 @@ function loopGateCapability(
 
 function parseArtifactReferences(
   value: JsonValue | undefined,
-  input: ResumeWorkflowInput
+  input: ResumeWaitIdentity
 ): RuntimeArtifactRef[] {
   if (!Array.isArray(value)) {
     throw invalidResumeWaitIntent(input, "artifact_refs_invalid");
@@ -207,7 +259,7 @@ function parseArtifactReferences(
 
 function parseInterruptReferences(
   value: JsonValue | undefined,
-  input: ResumeWorkflowInput
+  input: ResumeWaitIdentity
 ): RuntimeInterruptRef[] {
   if (!Array.isArray(value)) {
     throw invalidResumeWaitIntent(input, "interrupt_refs_invalid");
@@ -222,7 +274,7 @@ function parseInterruptReferences(
 }
 
 function invalidResumeWaitIntent(
-  input: Pick<ResumeWorkflowInput, "thread_id" | "checkpoint_id" | "interrupt_id">,
+  input: ResumeWaitIdentity,
   reason: string,
   details: Record<string, unknown> = {}
 ): Error {

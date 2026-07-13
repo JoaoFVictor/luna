@@ -21,17 +21,21 @@ implementation:
   sandbox:
     # Current write sandbox type. Only trusted_host_local is supported.
     type: trusted_host_local
-    # Environment variable names allowed through to validation commands.
-    env_allowlist: []
   validation:
-    # Number of repair attempts after validation failures.
-    repair_attempts: 1
+    # Number of repair attempts after validation or review-gate failures.
+    # Validation, technical review, and acceptance all consume the same repair
+    # budget. Keep enough attempts for a transient setup failure and subsequent
+    # reviewer feedback without publishing a rejected implementation.
+    repair_attempts: 5
     # Maximum captured stdout/stderr bytes per validation command.
     max_output_bytes: 200000
-    # Optional validation commands run after implementation.
-    commands: []
-    # commands:
-    #   - cmd: npm
-    #     args:
-    #       - test
-    #     timeout_ms: 120000
+  repository_context:
+    # Canonical deterministic impact graph shared with code review. The task
+    # text seeds relevance; repository indexing owns discovery and coverage.
+    enabled: true
+    max_related_files: 20
+    max_seed_files: 5
+    max_excerpt_bytes: 4000
+    include_tests: true
+    include_docs: true
+    include_configs: true

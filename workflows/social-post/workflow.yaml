@@ -59,7 +59,6 @@ nodes:
               source:
                 expression: "$.steps.draft.text"
               format: markdown
-          after: [proposal]
 
         - id: image
           type: built_in
@@ -86,7 +85,6 @@ nodes:
               source:
                 expression: "$.steps.image.metadata"
               format: json
-          after: [draft]
 
         - id: prepare
           type: built_in
@@ -98,7 +96,6 @@ nodes:
               expression: "$.steps.draft.text"
             image_asset:
               expression: "$.steps.image.asset"
-          after: [image]
 
         - id: review
           type: human_gate
@@ -117,7 +114,6 @@ nodes:
                   label: Texto
                 - id: image
                   label: Imagem
-          after: [prepare]
     repeat_when:
       expression: "$.steps.review.action = 'request_changes'"
     result:

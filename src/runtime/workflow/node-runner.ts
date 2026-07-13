@@ -4,7 +4,14 @@ import {
 } from "../../core/runtime/json.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import { succeedNode } from "../../core/runtime/lifecycle.js";
-import type { LunaRuntimeState } from "../../core/runtime/state.js";
+import type {
+  LunaRuntimeState,
+  RuntimeArtifactRef
+} from "../../core/runtime/state.js";
+import {
+  unwrapNodeOutputWithBinaryAssets,
+  type NodeBinaryAssetChannel
+} from "../../core/runtime/artifacts/binary-asset.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
 import type { ExecutionPolicyDecision } from "../../core/workflow/execution-policy.js";
@@ -20,7 +27,8 @@ import {
 import { saveNodeOutputWrite } from "./node-durability.js";
 import {
   finalizePersistedWorkflowNodeOutput,
-  type CompletedWorkflowNodeAttempt
+  type CompletedWorkflowNodeAttempt,
+  type WorkflowNodeExecutionProjection
 } from "./node-output-finalizer.js";
 import { assertNodeOutputMatchesSchema } from "./node-output-validation.js";
 import {
@@ -30,6 +38,7 @@ import {
 } from "./interrupts.js";
 import { resolveNodeInput } from "../../core/workflow/runner-input.js";
 import { runDurableLoop } from "./durable-loop.js";
+import { committedBinaryAssetRefs } from "./node-output-assets.js";
 
 export type { WorkflowNodeRunUpdate } from "./node-output-finalizer.js";
 export { assertNodeOutputMatchesSchema } from "./node-output-validation.js";
@@ -48,13 +57,15 @@ export async function runWorkflowNodeAttempt({
   state,
   runtimeContext,
   node,
-  decision
+  decision,
+  projection
 }: {
   readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
   readonly decision: ExecutionPolicyDecision;
+  readonly projection?: WorkflowNodeExecutionProjection;
 }): Promise<WorkflowNodeAttemptOutcome> {
   if (input.observability !== undefined) {
     let committedOutcome: WorkflowNodeAttemptOutcome | undefined;
@@ -79,7 +90,8 @@ export async function runWorkflowNodeAttempt({
             state,
             runtimeContext,
             node,
-            decision
+            decision,
+            projection
           });
           committedOutcome = outcome;
           if (outcome.kind === "waiting_for_input") {
@@ -105,7 +117,8 @@ export async function runWorkflowNodeAttempt({
     state,
     runtimeContext,
     node,
-    decision
+    decision,
+    projection
   });
 }
 
@@ -114,17 +127,21 @@ async function runWorkflowNodeAttemptBody({
   state,
   runtimeContext,
   node,
-  decision
+  decision,
+  projection
 }: {
   readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly node: CompiledWorkflowNode;
   readonly decision: ExecutionPolicyDecision;
+  readonly projection?: WorkflowNodeExecutionProjection;
 }): Promise<WorkflowNodeAttemptOutcome> {
   input.signal?.throwIfAborted();
   const active = beginWorkflowNodeAttempt(state, node);
   let output: unknown;
+  let outputAssetRefs: RuntimeArtifactRef[] = [];
+  let binaryAssets: NodeBinaryAssetChannel | undefined;
   let haltWorkflow = false;
   try {
     await observeWorkflowNodeStarted({ input, node, active });
@@ -172,10 +189,19 @@ async function runWorkflowNodeAttemptBody({
       });
     }
     input.signal?.throwIfAborted();
+    const executionOutput = unwrapNodeOutputWithBinaryAssets(output);
+    output = executionOutput.output;
+    binaryAssets = executionOutput.binary_assets;
     assertNodeOutputMatchesSchema(node, output);
     assertCheckpointJsonValue(output);
+    outputAssetRefs = await committedBinaryAssetRefs(
+      binaryAssets,
+      node.id,
+      active.state.artifact_refs,
+      input.artifactPublisher
+    );
     input.signal?.throwIfAborted();
-    await saveNodeOutputWrite({ input, node, output });
+    await saveNodeOutputWrite({ input, node, output, binaryAssets });
     input.signal?.throwIfAborted();
   } catch (cause) {
     return await failObservedWorkflowNodeAttempt({
@@ -193,7 +219,10 @@ async function runWorkflowNodeAttemptBody({
     node,
     decision,
     output,
-    active
+    active,
+    projection,
+    outputAssetRefs,
+    binaryAssets
   });
   return haltWorkflow ? { ...completed, halt_workflow: true } : completed;
 }
@@ -209,7 +238,9 @@ export async function recoverPersistedWorkflowNodeAttempt({
   runtimeContext,
   node,
   decision,
-  output
+  output,
+  projection,
+  binaryAssets
 }: {
   readonly input: RunWorkflowInput;
   readonly state: LunaRuntimeState;
@@ -217,6 +248,8 @@ export async function recoverPersistedWorkflowNodeAttempt({
   readonly node: CompiledWorkflowNode;
   readonly decision: ExecutionPolicyDecision;
   readonly output: JsonValue;
+  readonly projection?: WorkflowNodeExecutionProjection;
+  readonly binaryAssets?: NodeBinaryAssetChannel;
 }): Promise<WorkflowNodeAttemptOutcome> {
   input.signal?.throwIfAborted();
   const active = beginWorkflowNodeAttempt(state, node);
@@ -232,7 +265,9 @@ export async function recoverPersistedWorkflowNodeAttempt({
     node,
     decision,
     output,
-    active
+    active,
+    projection,
+    binaryAssets
   });
 }
 

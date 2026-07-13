@@ -1,5 +1,6 @@
 import type { RunLedgerPort } from "../../application/runs/ports.js";
 import type { RunRecord } from "../../contracts/runs.js";
+import type { InterruptRecord } from "../../../core/runtime/interrupts/contracts.js";
 import {
   isNativeStudioRunDispatchQueueCorruption,
   type NativeStudioRunDispatchQueue
@@ -51,6 +52,9 @@ export class NativeStudioRunRecoverySupervisor {
     ) => void;
     readonly cleanup: NativeStudioRunTerminalJobCleanup;
     readonly reportDiagnostic: NativeStudioRunBackgroundDiagnostic;
+    readonly findDurableWaitingBoundary?: (
+      runId: string
+    ) => Promise<InterruptRecord | undefined>;
   }) {
     this.#queue = options.queue;
     this.#ledger = options.ledger;
@@ -68,6 +72,9 @@ export class NativeStudioRunRecoverySupervisor {
       recoveryJournal: options.recoveryJournal,
       scheduleQueuedRun: options.scheduleQueuedRun,
       scheduleRecoveryRun: options.scheduleRecoveryRun,
+      ...(options.findDurableWaitingBoundary === undefined
+        ? {}
+        : { findDurableWaitingBoundary: options.findDurableWaitingBoundary }),
       onBackgroundError: (cause) => {
         options.reportDiagnostic("dispatch_recovery_failed", undefined, cause);
       }

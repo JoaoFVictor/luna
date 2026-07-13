@@ -53,6 +53,7 @@ import {
   resumeCompletionTaskId,
   type DurableResumeCompletion
 } from "./resume-recovery-codec.js";
+import type { PersistedPendingNodeOutput } from "./persisted-node-recovery.js";
 
 export {
   preflightWorkflowResume
@@ -61,7 +62,7 @@ export type { ValidatedResumeCheckpoint } from "./resume-origin.js";
 
 export type WorkflowResumeNodeRecovery = {
   readonly completedNodeIds: ReadonlySet<string>;
-  readonly outputPendingByNode: ReadonlyMap<string, JsonValue>;
+  readonly outputPendingByNode: ReadonlyMap<string, PersistedPendingNodeOutput>;
 };
 
 export type WorkflowResumeApplication<TInput extends ResumeWorkflowInput> = {
@@ -113,7 +114,7 @@ export async function applyWorkflowResume<TInput extends ResumeWorkflowInput>(
 
   const resumeNode = input.compiled.nodes[resumeIndex];
   const decisionNode = resumeNode.kind === "loop"
-    ? resumeNode.loop_body?.at(-1)
+    ? resumeNode.loop_body.at(-1)
     : resumeNode;
   if (decisionNode === undefined || decisionNode.kind !== "interrupt") {
     throw runtimeError(

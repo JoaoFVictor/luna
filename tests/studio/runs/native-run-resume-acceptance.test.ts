@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InterruptRecord } from "../../../src/core/runtime/interrupts/contracts.js";
@@ -6,9 +6,9 @@ import type { LunaRuntimeState } from "../../../src/core/runtime/state.js";
 import { sha256Digest } from "../../../src/core/workflow/definition-digests.js";
 import { nativeLunaPlatformRegistrations } from "../../../src/platform/native/native-platform-registrations.js";
 import { RunGraphService } from "../../../src/studio/application/runs/graph-service.js";
+import { studioRunResumeCommandMaterial } from "../../../src/studio/application/runs/resume-journal.js";
 import { FilesystemRunGraphStore } from "../../../src/studio/adapters/filesystem/run-graph-store.js";
 import { NativeStudioRunDispatcher } from "../../../src/studio/adapters/native/run-dispatcher.js";
-import { NativeStudioRunDispatchQueue } from "../../../src/studio/adapters/filesystem/run-dispatch-queue.js";
 import { createSqliteRunStore } from "../../../src/studio/adapters/sqlite/run-store.js";
 import {
   BASE_TIME,
@@ -29,40 +29,115 @@ afterEach(async () => {
 });
 
 describe("native Studio resume acceptance and observability", () => {
-  it("converges concurrent exact accepts with different clocks on the first audit timestamp", async () => {
+  it("lets the workflow runtime exclusively own the non-reentrant resume lease", async () => {
     const fixture = await writeFixture();
-    const queue = new NativeStudioRunDispatchQueue({ root: fixture.queueRoot });
-    await queue.initialize();
-    const decision = { action: "approve" };
-    const base = {
-      schema_version: 1 as const,
-      resume_id: "resume-concurrent-clock",
-      run_id: "run-concurrent-clock",
-      interrupt_id: "interrupt-concurrent-clock",
-      thread_id: "thread-concurrent-clock",
-      checkpoint_id: "checkpoint-concurrent-clock",
-      workflow_id: "pinned-workflow",
-      owner_id: "concurrent-owner",
-      execution_snapshot_hash: sha256Digest({ snapshot: true }),
-      decision,
-      decision_hash: sha256Digest(decision)
+    const { command } = await captureCommand(fixture);
+    const store = await createSqliteRunStore({ filePath: fixture.databasePath });
+    const scheduled: Array<() => void> = [];
+    const interrupts = new Map<string, InterruptRecord>();
+    const baseInterrupts = interruptPort(interrupts);
+    const leasedRunIds = new Set<string>();
+    let runtimeLeaseAcquisitions = 0;
+    const durableInterrupts = {
+      ...baseInterrupts,
+      withResumeLease: async <T>(runId: string, operation: () => Promise<T>) => {
+        if (leasedRunIds.has(runId)) {
+          throw new Error("non-reentrant resume lease acquired twice");
+        }
+        leasedRunIds.add(runId);
+        runtimeLeaseAcquisitions += 1;
+        try {
+          return await operation();
+        } finally {
+          leasedRunIds.delete(runId);
+        }
+      }
     };
-    const times = [
-      "2026-07-12T00:00:01.000Z",
-      "2026-07-12T00:00:09.000Z"
-    ] as const;
-    const accepted = await Promise.all(times.map(async (accepted_at) =>
-      await queue.acceptResume({ ...base, accepted_at })
-    ));
-
-    expect(accepted.filter((result) => result.created)).toHaveLength(1);
-    expect(new Set(accepted.map((result) => result.job.command_hash))).toHaveLength(1);
-    expect(new Set(accepted.map((result) => result.job.accepted_at))).toHaveLength(1);
-    expect(times).toContain(accepted[0]!.job.accepted_at as typeof times[number]);
-    expect(await queue.readResumeIdentity(base.resume_id)).toMatchObject({
-      accepted_at: accepted[0]!.job.accepted_at,
-      command_hash: accepted[0]!.job.command_hash
+    let waitingState: LunaRuntimeState | undefined;
+    const dispatcher = new NativeStudioRunDispatcher({
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      queueRoot: fixture.queueRoot,
+      ledger: store.ledger,
+      platform: nativeLunaPlatformRegistrations,
+      now: () => BASE_TIME + 20_000,
+      ownerId: "runtime-resume-lease-owner",
+      schedule: (task) => scheduled.push(task),
+      runWorkflow: async (input) => {
+        const result = await waitingResult(input);
+        waitingState = result.state;
+        return result;
+      },
+      resume: {
+        interrupts: durableInterrupts,
+        journal: store.resumes,
+        platform: nativeLunaPlatformRegistrations,
+        runWorkflow: async (input) => await durableInterrupts.withResumeLease(
+          input.thread_id,
+          async () => {
+            const current = interrupts.get(input.interrupt_id);
+            if (
+              current?.resume_attempt === undefined ||
+              current.resume_input === undefined
+            ) {
+              throw new Error("Expected the durable Studio interrupt claim");
+            }
+            await durableInterrupts.completeResume(
+              current.id,
+              { resume_attempt: current.resume_attempt },
+              "resolved",
+              {
+                interrupt_id: current.id,
+                resume_id: current.resume_attempt,
+                input: current.resume_input,
+                decision: input.decision,
+                created_at: new Date(BASE_TIME + 30_000).toISOString()
+              }
+            );
+            const state = succeededResumeState(waitingState!);
+            await input.onSucceededState?.(state);
+            return { status: "succeeded", output: {}, state };
+          }
+        )
+      }
     });
+    try {
+      await dispatcher.initialize();
+      const launch = await dispatcher.dispatch(command);
+      scheduled.shift()?.();
+      await waitForRun(store.ledger, launch.run_id, "waiting_for_input");
+      const original = interruptRecord(launch.run_id);
+      const interrupt = {
+        ...original,
+        thread_id: launch.run_id,
+        payload: {
+          ...original.payload!,
+          run: {
+            ...original.payload!.run,
+            run_id: launch.run_id
+          }
+        }
+      } satisfies InterruptRecord;
+      interrupts.set(interrupt.id, interrupt);
+
+      await dispatcher.resume({
+        runId: launch.run_id,
+        interrupt,
+        decision: { action: "approve" }
+      });
+      scheduled.splice(0).forEach((task) => task());
+      await waitForRun(store.ledger, launch.run_id, "succeeded");
+
+      expect(runtimeLeaseAcquisitions).toBe(1);
+      expect(leasedRunIds).toEqual(new Set());
+      expect(interrupts.get(interrupt.id)).toMatchObject({
+        status: "resolved",
+        resume: { decision: { action: "approve" } }
+      });
+    } finally {
+      await dispatcher.close();
+      store.close();
+    }
   });
 
   it("keeps the live graph observable when a later resume reuses the runtime attempt number", async () => {
@@ -103,17 +178,18 @@ describe("native Studio resume acceptance and observability", () => {
       },
       resume: {
         interrupts: interruptPort(interrupts),
+        journal: store.resumes,
         platform: nativeLunaPlatformRegistrations,
         runWorkflow: async (input) => {
           await input.onLifecycleEvent?.(
             lifecycleEvent("2026-07-11T12:00:30.000Z")
           ).catch(() => undefined);
-          return {
-            status: "waiting_for_input",
+          await input.onWaitingState?.({
+            state: waitingState!,
             interrupt_id: "interrupt-2",
-            checkpoint_id: "checkpoint-2",
-            state: waitingState!
-          };
+            checkpoint_id: "checkpoint-2"
+          });
+          throw new Error("simulated crash after durable waiting projection");
         }
       }
     });
@@ -167,6 +243,10 @@ describe("native Studio resume acceptance and observability", () => {
         limit: 10
       });
       expect(lifecycle.items).toHaveLength(2);
+      expect(interrupts.get(interrupt.id)).toMatchObject({
+        status: "cancelled"
+      });
+      expect(await store.resumes.list()).toHaveLength(0);
     } finally {
       await dispatcher.close();
       store.close();
@@ -198,6 +278,7 @@ describe("native Studio resume acceptance and observability", () => {
       },
       resume: {
         interrupts: interruptPort(interrupts),
+        journal: store.resumes,
         platform: nativeLunaPlatformRegistrations,
         runWorkflow: async (input) => {
           resumeExecutions += 1;
@@ -248,20 +329,13 @@ describe("native Studio resume acceptance and observability", () => {
 
       const decision = { action: "approve" as const };
       const first = await dispatcher.resume({ runId: launch.run_id, interrupt, decision });
-      const resumeFiles = await readdir(path.join(fixture.queueRoot, "resumes"));
-      expect(resumeFiles).toHaveLength(1);
-      expect(JSON.parse(await readFile(
-        path.join(fixture.queueRoot, "resumes", resumeFiles[0]!),
-        "utf8"
-      ))).toMatchObject({
+      const acceptedResume = (await store.resumes.list())[0];
+      expect(acceptedResume).toMatchObject({
         accepted_at: new Date(BASE_TIME + 20_000).toISOString()
       });
       now = BASE_TIME + 90_000;
       const duplicate = await dispatcher.resume({ runId: launch.run_id, interrupt, decision });
-      expect(JSON.parse(await readFile(
-        path.join(fixture.queueRoot, "resumes", resumeFiles[0]!),
-        "utf8"
-      ))).toMatchObject({
+      expect((await store.resumes.list())[0]).toMatchObject({
         accepted_at: new Date(BASE_TIME + 20_000).toISOString()
       });
       await expect(dispatcher.resume({
@@ -282,9 +356,280 @@ describe("native Studio resume acceptance and observability", () => {
       scheduled.splice(0).forEach((task) => task());
       await waitForRun(store.ledger, launch.run_id, "succeeded");
       expect(resumeExecutions).toBe(1);
+      const completed = await store.resumes.get(acceptedResume!.resume_id);
+      expect(completed?.stage.kind).toBe("completed");
+      const completedRetry = await store.resumes.accept(
+        studioRunResumeCommandMaterial(completed!)
+      );
+      expect(completedRetry).toMatchObject({
+        created: false,
+        record: { stage: { kind: "completed" } }
+      });
+      const conflictingDecision = { action: "reject" };
+      await expect(store.resumes.accept({
+        ...studioRunResumeCommandMaterial(completed!),
+        decision: conflictingDecision,
+        decision_hash: sha256Digest(conflictingDecision)
+      })).rejects.toMatchObject({ code: "run_idempotency_conflict" });
     } finally {
       await dispatcher.close();
       store.close();
     }
   });
+
+  it.each(["missing", "corrupt", "identity_mismatch"] as const)(
+    "tombstones a resume whose durable graph is %s without invoking runtime",
+    async (graphFailure) => {
+      const fixture = await writeFixture();
+      const { command } = await captureCommand(fixture);
+      const store = await createSqliteRunStore({ filePath: fixture.databasePath });
+      const graphStore = new FilesystemRunGraphStore({
+        root: path.join(fixture.root, `resume-${graphFailure}-graphs`)
+      });
+      const scheduled: Array<() => void> = [];
+      const interrupts = new Map<string, InterruptRecord>();
+      let resumeExecutions = 0;
+      const dispatcher = new NativeStudioRunDispatcher({
+        projectRoot: fixture.projectRoot,
+        configRoot: fixture.configRoot,
+        queueRoot: fixture.queueRoot,
+        ledger: store.ledger,
+        graphStore,
+        platform: nativeLunaPlatformRegistrations,
+        now: () => BASE_TIME + 20_000,
+        ownerId: `resume-${graphFailure}-worker`,
+        schedule: (task) => scheduled.push(task),
+        runWorkflow: waitingResult,
+        resume: {
+          interrupts: interruptPort(interrupts),
+          journal: store.resumes,
+          platform: nativeLunaPlatformRegistrations,
+          runWorkflow: async () => {
+            resumeExecutions += 1;
+            throw new Error("Runtime must not execute without its durable graph");
+          }
+        }
+      });
+      try {
+        await dispatcher.initialize();
+        const launch = await dispatcher.dispatch(command);
+        scheduled.shift()?.();
+        await waitForRun(store.ledger, launch.run_id, "waiting_for_input");
+        const interrupt = interruptRecord(launch.run_id);
+        interrupts.set(interrupt.id, interrupt);
+        if (graphFailure === "identity_mismatch") {
+          const record = await store.ledger.get(launch.run_id);
+          const stored = await graphStore.readGraph(
+            record!.graph_snapshot_handle!
+          );
+          if (stored.kind !== "available") {
+            throw new Error("Expected the launched run graph");
+          }
+          vi.spyOn(graphStore, "readGraph").mockResolvedValue({
+            kind: "available",
+            value: {
+              ...stored.value,
+              identity: {
+                ...stored.value.identity,
+                run_id: "different-run"
+              }
+            }
+          });
+        } else {
+          vi.spyOn(graphStore, "readGraph").mockResolvedValue({
+            kind: graphFailure
+          });
+        }
+
+        await dispatcher.resume({
+          runId: launch.run_id,
+          interrupt,
+          decision: { action: "approve" }
+        });
+        const resume = (await store.resumes.list())[0];
+        if (graphFailure === "identity_mismatch") {
+          const claimed = interrupts.get(interrupt.id)!;
+          interrupts.set(interrupt.id, {
+            ...claimed,
+            status: "resolved",
+            resume_input: undefined,
+            resume: {
+              interrupt_id: interrupt.id,
+              resume_id: claimed.resume_attempt!,
+              input: claimed.resume_input!,
+              decision: claimed.resume_input!.decision,
+              created_at: new Date(BASE_TIME + 21_000).toISOString()
+            }
+          });
+        }
+        scheduled.splice(0).forEach((task) => task());
+        await waitForRun(store.ledger, launch.run_id, "outcome_unknown");
+
+        expect(resumeExecutions).toBe(0);
+        expect(await store.ledger.get(launch.run_id)).toMatchObject({
+          failure: { code: "studio_runtime_resume_graph_invalid" }
+        });
+        expect(interrupts.get(interrupt.id)).toMatchObject({
+          status: graphFailure === "identity_mismatch"
+            ? "resolved"
+            : "cancelled",
+          resume_attempt: resume!.resume_id,
+          resume_input: undefined
+        });
+        expect(await store.resumes.list()).toHaveLength(0);
+        expect(await store.resumes.get(resume!.resume_id)).toMatchObject({
+          stage: { kind: "completed" }
+        });
+      } finally {
+        await dispatcher.close();
+        store.close();
+      }
+    }
+  );
+
+  it.each([
+    [false, "cancelled", undefined],
+    [true, "outcome_unknown", "studio_runtime_resume_interrupt_missing"]
+  ] as const)(
+    "converges a missing interrupt (effect may have occurred: %s)",
+    async (effectMayHaveOccurred, expectedStatus, expectedCode) => {
+      const fixture = await writeFixture();
+      const { command } = await captureCommand(fixture);
+      const store = await createSqliteRunStore({ filePath: fixture.databasePath });
+      const scheduled: Array<() => void> = [];
+      const interrupts = new Map<string, InterruptRecord>();
+      let resumeExecutions = 0;
+      const dispatcher = new NativeStudioRunDispatcher({
+        projectRoot: fixture.projectRoot,
+        configRoot: fixture.configRoot,
+        queueRoot: fixture.queueRoot,
+        ledger: store.ledger,
+        platform: nativeLunaPlatformRegistrations,
+        now: () => BASE_TIME + 20_000,
+        ownerId: "missing-interrupt-worker",
+        schedule: (task) => scheduled.push(task),
+        runWorkflow: waitingResult,
+        resume: {
+          interrupts: interruptPort(interrupts),
+          journal: store.resumes,
+          platform: nativeLunaPlatformRegistrations,
+          runWorkflow: async () => {
+            resumeExecutions += 1;
+            throw new Error("Runtime must not execute without its interrupt");
+          }
+        }
+      });
+      try {
+        await dispatcher.initialize();
+        const launch = await dispatcher.dispatch(command);
+        scheduled.shift()?.();
+        await waitForRun(store.ledger, launch.run_id, "waiting_for_input");
+        const interrupt = interruptRecord(launch.run_id);
+        interrupts.set(interrupt.id, interrupt);
+        await dispatcher.resume({
+          runId: launch.run_id,
+          interrupt,
+          decision: { action: "approve" }
+        });
+        const resume = (await store.resumes.list())[0]!;
+        if (effectMayHaveOccurred) {
+          await store.resumes.markEffectMayHaveOccurred({
+            resume_id: resume.resume_id,
+            command_hash: resume.command_hash,
+            node_id: "effectful-node"
+          });
+        }
+        interrupts.delete(interrupt.id);
+        scheduled.splice(0).forEach((task) => task());
+        await waitForRun(store.ledger, launch.run_id, expectedStatus);
+
+        expect(resumeExecutions).toBe(0);
+        expect(await store.ledger.get(launch.run_id)).toMatchObject({
+          run_status: expectedStatus,
+          ...(expectedCode === undefined
+            ? {}
+            : { failure: { code: expectedCode } })
+        });
+        expect(await store.resumes.get(resume.resume_id)).toMatchObject({
+          stage: { kind: "completed" }
+        });
+      } finally {
+        await dispatcher.close();
+        store.close();
+      }
+    }
+  );
+
+  it.each(["missing", "corrupt"] as const)(
+    "cancels a pre-execution resume whose immutable source job is %s",
+    async (sourceFailure) => {
+      const fixture = await writeFixture();
+      const { command } = await captureCommand(fixture);
+      const store = await createSqliteRunStore({ filePath: fixture.databasePath });
+      const scheduled: Array<() => void> = [];
+      const interrupts = new Map<string, InterruptRecord>();
+      const backgroundErrors: unknown[] = [];
+      let resumeExecutions = 0;
+      const dispatcher = new NativeStudioRunDispatcher({
+        projectRoot: fixture.projectRoot,
+        configRoot: fixture.configRoot,
+        queueRoot: fixture.queueRoot,
+        ledger: store.ledger,
+        platform: nativeLunaPlatformRegistrations,
+        now: () => BASE_TIME + 20_000,
+        ownerId: `missing-source-${sourceFailure}-worker`,
+        schedule: (task) => scheduled.push(task),
+        onBackgroundError: (cause) => backgroundErrors.push(cause),
+        runWorkflow: waitingResult,
+        resume: {
+          interrupts: interruptPort(interrupts),
+          journal: store.resumes,
+          platform: nativeLunaPlatformRegistrations,
+          runWorkflow: async () => {
+            resumeExecutions += 1;
+            throw new Error("Runtime must not execute without its source job");
+          }
+        }
+      });
+      try {
+        await dispatcher.initialize();
+        const launch = await dispatcher.dispatch(command);
+        scheduled.shift()?.();
+        await waitForRun(store.ledger, launch.run_id, "waiting_for_input");
+        const interrupt = interruptRecord(launch.run_id);
+        interrupts.set(interrupt.id, interrupt);
+        await dispatcher.resume({
+          runId: launch.run_id,
+          interrupt,
+          decision: { action: "approve" }
+        });
+        const resume = (await store.resumes.list())[0]!;
+        const jobDirectory = path.join(
+          fixture.queueRoot,
+          "jobs",
+          launch.run_id
+        );
+        const jobFile = path.join(jobDirectory, "job.json");
+        if (sourceFailure === "missing") {
+          await rm(jobFile);
+        } else {
+          await writeFile(jobFile, "{invalid");
+        }
+        scheduled.splice(0).forEach((task) => task());
+        await waitForRun(store.ledger, launch.run_id, "cancelled");
+
+        expect(backgroundErrors).toEqual([]);
+        expect(resumeExecutions).toBe(0);
+        expect(interrupts.get(interrupt.id)).toMatchObject({
+          status: "cancelled"
+        });
+        expect(await store.resumes.get(resume.resume_id)).toMatchObject({
+          stage: { kind: "completed" }
+        });
+      } finally {
+        await dispatcher.close();
+        store.close();
+      }
+    }
+  );
 });

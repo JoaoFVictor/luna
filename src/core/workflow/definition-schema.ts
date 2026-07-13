@@ -5,6 +5,7 @@ import { assertExpressionObject } from "./expression.js";
 import { WorkflowDefinitionError } from "./definition-errors.js";
 import type {
   ParsedArtifactWritePlan,
+  ParsedPatternEvidence,
   ParsedWorkflowPolicy,
   ParsedWorkflowGate,
   ParsedWorkflowGraph,
@@ -30,7 +31,7 @@ const TOP_LEVEL_FIELDS = new Set([
 const NODE_FIELDS: Record<string, ReadonlySet<string>> = {
   built_in: new Set(["id", "type", "uses", "input", "artifacts", "after", "policies", "when"]),
   agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "runtime_requirements", "policies", "when"]),
-  pattern: new Set(["id", "type", "uses", "worker", "input", "gates", "repair", "artifacts", "after", "capabilities", "policies"]),
+  pattern: new Set(["id", "type", "uses", "worker", "input", "evidence", "gates", "repair", "artifacts", "after", "policies"]),
   human_gate: new Set(["id", "type", "uses", "after", "input", "artifacts"]),
   workflow: new Set(["id", "type", "workflow", "input", "artifacts", "after"]),
   loop: new Set(["id", "type", "body", "repeat_when", "result", "halt_when", "after"])
@@ -44,6 +45,8 @@ const GATE_FIELDS = new Set([
   "block_when",
   "feedback"
 ]);
+
+const EVIDENCE_FIELDS = new Set(["id", "uses", "input"]);
 
 const ARTIFACT_FIELDS = new Set([
   "path",
@@ -331,6 +334,9 @@ function readNode(
     ...(raw.worker === undefined
       ? {}
       : { worker: requireString(raw.worker, `${yamlPath}.worker`) }),
+    ...(raw.evidence === undefined
+      ? {}
+      : { evidence: readEvidence(raw.evidence, `${yamlPath}.evidence`) }),
     ...(raw.gates === undefined
       ? {}
       : { gates: readGates(raw.gates, `${yamlPath}.gates`) }),
@@ -338,6 +344,37 @@ function readNode(
       ? {}
       : { repair: assertObject(raw.repair, `${yamlPath}.repair`) })
   };
+}
+
+function readEvidence(value: unknown, yamlPath: string): ParsedPatternEvidence[] {
+  if (!Array.isArray(value)) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Pattern evidence must be an array.",
+      { path: yamlPath }
+    );
+  }
+
+  return value.map((entry, index) => {
+    const entryPath = `${yamlPath}[${index}]`;
+    const raw = assertObject(entry, entryPath);
+    assertKnownFields(raw, EVIDENCE_FIELDS, entryPath);
+    const id = requireString(raw.id, `${entryPath}.id`);
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_invalid",
+        "Pattern evidence id must contain only letters, numbers, underscores, or hyphens.",
+        { path: `${entryPath}.id` }
+      );
+    }
+    return {
+      id,
+      uses: requireString(raw.uses, `${entryPath}.uses`),
+      ...(raw.input === undefined
+        ? {}
+        : { input: assertObject(raw.input, `${entryPath}.input`) })
+    };
+  });
 }
 
 function readNodesAt(value: unknown, yamlPath: string): ParsedWorkflowNode[] {

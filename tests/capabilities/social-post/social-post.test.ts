@@ -13,8 +13,10 @@ import {
   SOCIAL_POST_HARD_MAX_IMAGE_BYTES,
   SOCIAL_POST_HARD_MAX_STRATEGY_LENGTH,
   SocialPostDraftSchema,
+  type SocialPostPreparedResult,
   type SocialPostProviderLimits,
-  type SocialPostProviderPort
+  type SocialPostProviderPort,
+  type SocialPostWorkflowInput
 } from "../../../src/capabilities/social-post/contracts.js";
 import { manifest as socialPostManifest } from "../../../src/capabilities/social-post/manifest.js";
 import { artifactContentReadLimitError } from "../../../src/core/runtime/artifacts/content-read-error.js";
@@ -64,6 +66,111 @@ const validateText = (text: string) => ({
   policy_revision: "v1",
   message: "Test text policy"
 });
+
+const sha256 = (value: string | Uint8Array): string =>
+  `sha256:${createHash("sha256").update(value).digest("hex")}`;
+
+function createValidPublishFixture(text = "Post aprovado") {
+  const limits = providerLimits();
+  const textPolicy = validateText(text);
+  if (!textPolicy.valid) {
+    throw new Error("The valid publish fixture requires provider-valid text.");
+  }
+  const imageContentHash = sha256(pngBytes);
+  const publishPost = vi.fn<SocialPostProviderPort["publishPost"]>(async (input) => ({
+    operation_id: "social-post.publish",
+    provider: "example",
+    provider_id: "example",
+    external_id: "post-1",
+    url: "https://example.test/post-1",
+    text: input.text,
+    media_id: "media-1"
+  }));
+  const provider: SocialPostProviderPort = {
+    provider_id: "example",
+    limits,
+    validateText,
+    publishPost
+  };
+  const input = {
+    operation_id: "social-post.publish",
+    provider_id: "example",
+    auth_instance: "default",
+    text,
+    image_asset: {
+      id: "generated-images/image.png",
+      uri: "artifact://run-1/generated-images/image.png",
+      node_id: "image",
+      media_type: "image/png",
+      content_hash: imageContentHash,
+      size_bytes: pngBytes.byteLength
+    },
+    preparation: {
+      provider_id: "example",
+      text_hash: sha256(text),
+      image_content_hash: imageContentHash,
+      validation: {
+        valid: true,
+        code: "ready",
+        message: "Imagem validada e pronta para publicação.",
+        image_size_bytes: pngBytes.byteLength,
+        image_max_bytes: limits.image.max_bytes,
+        image_media_type: "image/png",
+        image_width: 1,
+        image_height: 1,
+        text_weighted_length: textPolicy.weighted_length,
+        text_max_weighted_length: textPolicy.max_weighted_length,
+        text_policy_id: textPolicy.policy_id,
+        text_policy_revision: textPolicy.policy_revision
+      }
+    }
+  } satisfies SocialPostWorkflowInput;
+  const builtIn = createSocialPostPublishBuiltIn({
+    projectRoot: "/trusted/repo",
+    providers: { get: () => provider },
+    artifacts: {
+      read: vi.fn(async () => pngBytes),
+      verify: vi.fn(async () => true)
+    }
+  });
+
+  return { builtIn, input, publishPost };
+}
+
+type PreparationMutation = (
+  preparation: SocialPostPreparedResult
+) => SocialPostPreparedResult;
+
+const attestationMismatchCases: ReadonlyArray<readonly [string, PreparationMutation]> = [
+  ["text hash", (preparation) => ({
+    ...preparation,
+    text_hash: sha256("different text")
+  })],
+  ["image hash", (preparation) => ({
+    ...preparation,
+    image_content_hash: sha256(new Uint8Array([0]))
+  })],
+  ["text policy id", (preparation) => ({
+    ...preparation,
+    validation: { ...preparation.validation, text_policy_id: "different.policy" }
+  })],
+  ["text policy revision", (preparation) => ({
+    ...preparation,
+    validation: { ...preparation.validation, text_policy_revision: "v2" }
+  })],
+  ["text limit", (preparation) => ({
+    ...preparation,
+    validation: { ...preparation.validation, text_max_weighted_length: 281 }
+  })],
+  ["image limit", (preparation) => ({
+    ...preparation,
+    validation: { ...preparation.validation, image_max_bytes: 1024 }
+  })],
+  ["image dimensions", (preparation) => ({
+    ...preparation,
+    validation: { ...preparation.validation, image_width: 2 }
+  })]
+];
 
 describe("social-post capability", () => {
   it("bounds model-authored strategy and verification claims", () => {
@@ -169,78 +276,39 @@ describe("social-post capability", () => {
   });
 
   it("injects the trusted project root and delegates to the selected provider", async () => {
-    const provider: SocialPostProviderPort = {
-      provider_id: "example",
-      limits: providerLimits(),
-      validateText,
-      publishPost: vi.fn<SocialPostProviderPort["publishPost"]>(async (input) => ({
-        operation_id: "social-post.publish",
-        provider: "example",
-        provider_id: "example",
-        external_id: "post-1",
-        url: "https://example.test/post-1",
-        text: input.text,
-        media_id: "media-1"
-      }))
-    };
-    const imageBytes = pngBytes;
-    const contentHash = `sha256:${createHash("sha256").update(imageBytes).digest("hex")}`;
-    const textHash = `sha256:${createHash("sha256").update("Post aprovado", "utf8").digest("hex")}`;
-    const builtIn = createSocialPostPublishBuiltIn({
-      projectRoot: "/trusted/repo",
-      providers: { get: () => provider },
-      artifacts: {
-        read: vi.fn(async () => imageBytes),
-        verify: vi.fn(async () => true)
-      }
-    });
+    const fixture = createValidPublishFixture();
 
-    await expect(builtIn.run({
+    await expect(fixture.builtIn.run({
       state,
-      input: {
-        provider_id: "example",
-        auth_instance: "default",
-        text: "Post aprovado",
-        image_asset: {
-          id: "generated-images/image.png",
-          uri: "artifact://run-1/generated-images/image.png",
-          node_id: "image",
-          media_type: "image/png",
-          content_hash: contentHash,
-          size_bytes: imageBytes.byteLength
-        },
-        preparation: {
-          provider_id: "example",
-          text_hash: textHash,
-          image_content_hash: contentHash,
-          validation: {
-            valid: true,
-            code: "ready",
-            message: "Imagem validada e pronta para publicação.",
-            image_size_bytes: imageBytes.byteLength,
-            image_max_bytes: 5 * 1024 * 1024,
-            image_media_type: "image/png"
-            ,image_width: 1,
-            image_height: 1,
-            text_weighted_length: 13,
-            text_max_weighted_length: 280,
-            text_policy_id: "test.weighted",
-            text_policy_revision: "v1"
-          }
-        }
-      }
+      input: fixture.input
     })).resolves.toMatchObject({ external_id: "post-1" });
 
-    expect(provider.publishPost).toHaveBeenCalledWith({
+    expect(fixture.publishPost).toHaveBeenCalledWith({
       operation_id: "social-post.publish",
       provider_id: "example",
       auth_instance: "default",
       text: "Post aprovado",
-      image_base64: Buffer.from(imageBytes).toString("base64"),
+      image_base64: Buffer.from(pngBytes).toString("base64"),
       image_media_type: "image/png",
       project_root: "/trusted/repo"
     });
   });
+
+  it.each(attestationMismatchCases)(
+    "rejects a changed %s attestation before publishing",
+    async (_label, mutatePreparation) => {
+      const fixture = createValidPublishFixture();
+
+      await expect(fixture.builtIn.run({
+        state,
+        input: {
+          ...fixture.input,
+          preparation: mutatePreparation(fixture.input.preparation)
+        }
+      })).rejects.toMatchObject({ code: "social_post_preparation_mismatch" });
+      expect(fixture.publishPost).not.toHaveBeenCalled();
+    }
+  );
 
   it("validates an immutable image against provider limits before human review", async () => {
     const imageBytes = pngBytes;
@@ -493,27 +561,15 @@ describe("social-post capability", () => {
   });
 
   it("rejects posts longer than the configured platform limit", async () => {
-    const builtIn = createSocialPostPublishBuiltIn({
-      projectRoot: "/repo",
-      providers: { get: vi.fn() },
-      artifacts: { read: vi.fn(), verify: vi.fn() }
-    });
+    const fixture = createValidPublishFixture("a".repeat(280));
 
-    await expect(builtIn.run({
+    await expect(fixture.builtIn.run({
       state,
       input: {
-        provider_id: "x",
-        auth_instance: "default",
-        text: "a".repeat(281),
-        image_asset: {
-          id: "generated-images/image.png",
-          uri: "artifact://run-1/generated-images/image.png",
-          node_id: "image",
-          media_type: "image/png",
-          content_hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          size_bytes: 8
-        }
+        ...fixture.input,
+        text: `${fixture.input.text}a`
       }
-    })).rejects.toMatchObject({ code: "social_post_input_invalid" });
+    })).rejects.toMatchObject({ code: "social_post_preparation_invalid" });
+    expect(fixture.publishPost).not.toHaveBeenCalled();
   });
 });

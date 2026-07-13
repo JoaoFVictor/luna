@@ -1,32 +1,20 @@
 import type { JsonValue } from "../../core/runtime/json.js";
-import { BinaryAssetRefSchema } from "../../core/runtime/artifacts/binary-asset.js";
-import {
-  assertCheckpointJsonValue,
-  isCheckpointPlainObject
-} from "../../core/runtime/json.js";
+import { assertCheckpointJsonValue, isCheckpointPlainObject } from "../../core/runtime/json.js";
 import type { LunaRuntimeState, RuntimeArtifactRef } from "../../core/runtime/state.js";
-import {
-  runtimeError,
-  RuntimeDurabilityRecoveryRequiredError
-} from "../../core/runtime/errors.js";
+import { runtimeError } from "../../core/runtime/errors.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
 import type { WorkflowRuntimeContext } from "../../core/workflow/runtime-context.js";
 import { resolveNodeInput, resolveWorkflowRuntimeValue } from "../../core/workflow/runner-input.js";
-import { sha256Digest } from "../../core/workflow/definition-digests.js";
-import { workflowLoopBodyNodeKey } from "../../core/workflow/loop-identity.js";
-import { executeWorkflowNode } from "./node-executor.js";
-import { publishArtifactsForNode } from "./node-artifacts.js";
-import { assertNodeOutputMatchesSchema } from "./node-output-validation.js";
-import { listCheckpointWritesForRecovery } from "./checkpoint-io.js";
+import {
+  loopBodyOccurrenceNodeId,
+  workflowLoopBodyNodeKey
+} from "../../core/workflow/loop-identity.js";
 import { waitForHumanInput, checkpointId, interruptId } from "./interrupts.js";
 import {
-  persistedNodeDurability,
-  saveNodeCompletionAt,
-  saveNodeOutputAt,
-  type NodeDurabilityLocation,
-  type PersistedNodeDurability
-} from "./node-durability.js";
+  runDurableNodeOccurrence
+} from "./node-occurrence.js";
+import { mergeRuntimeReferences } from "./runtime-reference-codec.js";
 
 type LoopSource = Extract<CompiledWorkflowNode["source"], { readonly type: "loop" }>;
 
@@ -45,9 +33,14 @@ export type DurableLoopOutcome =
 
 export async function runDurableLoop(input: RunWorkflowInput, state: LunaRuntimeState,
   runtimeContext: WorkflowRuntimeContext, node: CompiledWorkflowNode): Promise<DurableLoopOutcome> {
+  if (node.kind !== "loop") {
+    throw runtimeError("Compiled workflow loop node is invalid", "runtime_state_invalid", {
+      details: { node_id: node.id }
+    });
+  }
   const source = loopSource(node);
   const body = node.loop_body;
-  if (body === undefined || body.length < 2) {
+  if (body.length < 2) {
     throw runtimeError("Compiled workflow loop body is invalid", "runtime_state_invalid", {
       details: { node_id: node.id }
     });
@@ -64,17 +57,21 @@ export async function runDurableLoop(input: RunWorkflowInput, state: LunaRuntime
     : undefined;
   let iteration = continuation?.iteration ?? 1;
   let bodySteps: Record<string, JsonValue> = { ...(continuation?.steps ?? {}) };
-  let iterationArtifactRefs: RuntimeArtifactRef[] = [
-    ...(continuation?.artifact_refs ?? [])
-  ];
-  let previousIterationArtifactRefs: RuntimeArtifactRef[] = [];
+  let artifactsByNode: Record<string, RuntimeArtifactRef[]> = {
+    ...(continuation?.artifacts_by_node ?? {})
+  };
+  let iterationArtifactRefs = mergeRuntimeReferences(
+    Object.values(artifactsByNode).flat()
+  );
+  let previousArtifactsByNode: Record<string, RuntimeArtifactRef[]> = {};
 
   if (continuation !== undefined) {
     bodySteps[gate.id] = continuation.decision;
     if (await repeatRequested(input, state, runtimeContext, node, source, bodySteps)) {
       iteration += 1;
       bodySteps = { ...bodySteps };
-      previousIterationArtifactRefs = iterationArtifactRefs;
+      previousArtifactsByNode = artifactsByNode;
+      artifactsByNode = {};
       iterationArtifactRefs = [];
     } else {
       const output = await loopResult(input, state, runtimeContext, node, source, bodySteps);
@@ -100,90 +97,48 @@ export async function runDurableLoop(input: RunWorkflowInput, state: LunaRuntime
           details: { loop_node_id: node.id, body_node_id: bodyNode.id, iteration }
         });
       }
-      iterationArtifactRefs = mergeRefs(
+      const reusedRefs = previousArtifactsByNode[bodyNode.id] ?? [];
+      artifactsByNode[bodyNode.id] = reusedRefs;
+      iterationArtifactRefs = mergeRuntimeReferences(
         iterationArtifactRefs,
-        refsForLoopBodyNode(
-          previousIterationArtifactRefs,
-          node.id,
-          bodyNode.id
-        )
+        reusedRefs
       );
       continue;
     }
-    const durability = await loadLoopNodeDurability(input, node, bodyNode, iteration);
-    let output: JsonValue;
-    let artifactRefs: RuntimeArtifactRef[] = [];
-    if (durability.kind === "completed") {
-      output = durability.output;
-      artifactRefs = durability.artifactRefs;
-    } else {
-      const executionNode = loopIterationExecutionNode(node, bodyNode, iteration);
-      if (durability.kind === "output_pending") {
-        output = durability.output;
-      } else {
-        const executionInput = loopIterationExecutionInput(
-          input,
-          node,
-          bodyNode,
-          executionNode
-        );
-        input.signal?.throwIfAborted();
-        await executionInput.onBeforeNodeExecution?.({
-          node_id: executionNode.id,
-          attempt: 1
-        });
-        input.signal?.throwIfAborted();
-        const raw = await executeWorkflowNode(
-          executionInput,
-          bodyState,
-          runtimeContext,
-          executionNode
-        );
-        assertNodeOutputMatchesSchema(executionNode, raw);
-        assertCheckpointJsonValue(raw);
-        output = raw;
-        await saveNodeOutputAt({
-          input,
-          location: loopNodeDurabilityLocation(input, node, bodyNode, iteration),
-          output
-        });
+    const executionNode = loopIterationExecutionNode(node, bodyNode, iteration);
+    const executionInput = loopIterationExecutionInput(
+      input,
+      node,
+      bodyNode,
+      executionNode
+    );
+    const occurrence = await runDurableNodeOccurrence({
+      input: executionInput,
+      state: bodyState,
+      runtimeContext,
+      node: executionNode,
+      projection: {
+        state_node_id: bodyNode.id,
+        artifact_path_prefix: `loops/${node.id}/iterations/${iteration}`,
+        replace_existing_state: true,
+        completion_failure: "recover"
       }
-      bodyState = { ...bodyState, steps: { ...bodyState.steps, [bodyNode.id]: output } };
-      try {
-        artifactRefs = await publishArtifactsForNode(
-          input,
-          bodyNode,
-          output,
-          bodyState,
-          loopIterationArtifactIdentity(node, bodyNode, iteration)
-        );
-        await saveNodeCompletionAt({
-          input,
-          location: loopNodeDurabilityLocation(input, node, bodyNode, iteration),
-          output,
-          artifactRefs,
-          interruptRefs: []
-        });
-      } catch (cause) {
-        throw new RuntimeDurabilityRecoveryRequiredError(
-          "Workflow loop body output is durable but completion requires recovery",
-          {
-            cause,
-            details: {
-              loop_node_id: node.id,
-              body_node_id: bodyNode.id,
-              iteration
-            }
-          }
-        );
-      }
-    }
+    });
+    const output = occurrence.output;
+    const artifactRefs = occurrence.artifact_refs;
     bodySteps[bodyNode.id] = output;
-    iterationArtifactRefs = mergeRefs(iterationArtifactRefs, artifactRefs);
+    artifactsByNode[bodyNode.id] = artifactRefs;
+    iterationArtifactRefs = mergeRuntimeReferences(
+      iterationArtifactRefs,
+      artifactRefs
+    );
     bodyState = {
       ...bodyState,
       steps: { ...state.steps, ...bodySteps },
-      artifact_refs: mergeRefs(bodyState.artifact_refs, artifactRefs)
+      artifact_refs: mergeRuntimeReferences(
+        bodyState.artifact_refs,
+        artifactRefs
+      )
     };
   }
 
@@ -192,16 +147,7 @@ export async function runDurableLoop(input: RunWorkflowInput, state: LunaRuntime
   // review occurrence.
   delete bodySteps[gate.id];
   bodyState = loopBodyState(state, bodySteps);
-  const reviewArtifactRefs = mergeRefs(
-    iterationArtifactRefs,
-    await verifiedBinaryAssetRefs({
-      input,
-      loop: node,
-      body,
-      bodySteps,
-      trustedRefs: iterationArtifactRefs
-    })
-  );
+  const reviewArtifactRefs = iterationArtifactRefs;
   const reviewInput = withReviewArtifacts(
     await resolveNodeInput(gate, bodyState, runtimeContext, input),
     reviewArtifactRefs
@@ -214,7 +160,7 @@ export async function runDurableLoop(input: RunWorkflowInput, state: LunaRuntime
       node_id: node.id,
       iteration,
       steps: bodySteps,
-      artifact_refs: reviewArtifactRefs
+      artifacts_by_node: artifactsByNode
     }
   };
   const waitNode = { ...node, capability_id: gate.capability_id };
@@ -222,7 +168,10 @@ export async function runDurableLoop(input: RunWorkflowInput, state: LunaRuntime
     waitingInput,
     {
       ...state,
-      artifact_refs: mergeRefs(state.artifact_refs, reviewArtifactRefs)
+      artifact_refs: mergeRuntimeReferences(
+        state.artifact_refs,
+        reviewArtifactRefs
+      )
     },
     waitNode,
     reviewInput,
@@ -261,17 +210,6 @@ export async function shouldHaltLoop(
   return value;
 }
 
-function loopIterationArtifactIdentity(
-  loop: CompiledWorkflowNode,
-  bodyNode: CompiledWorkflowNode,
-  iteration: number
-): { readonly node_id: string; readonly path_prefix: string } {
-  return {
-    node_id: `${loop.id}:iteration-${iteration}:${bodyNode.id}`,
-    path_prefix: `loops/${loop.id}/iterations/${iteration}`
-  };
-}
-
 function loopIterationExecutionNode(
   loop: CompiledWorkflowNode,
   bodyNode: CompiledWorkflowNode,
@@ -279,7 +217,11 @@ function loopIterationExecutionNode(
 ): CompiledWorkflowNode {
   return {
     ...bodyNode,
-    id: `${loop.id}:iteration-${iteration}:${bodyNode.id}`
+    id: loopBodyOccurrenceNodeId({
+      loop_node_id: loop.id,
+      body_node_id: bodyNode.id,
+      iteration
+    })
   };
 }
 
@@ -356,63 +298,6 @@ function runtimeRoot(input: RunWorkflowInput, state: LunaRuntimeState,
   };
 }
 
-function loopNodeCheckpointId(input: RunWorkflowInput, loop: CompiledWorkflowNode,
-  bodyNode: CompiledWorkflowNode, iteration: number): string {
-  const digest = sha256Digest({ workflow: input.compiled.workflow_revision, loop: loop.id })
-    .slice("sha256:".length, "sha256:".length + 16);
-  return `loop-node-v1-${input.run.run_id}-${digest}-${iteration}-${bodyNode.id}`;
-}
-
-function loopNodeDurabilityLocation(
-  input: RunWorkflowInput,
-  loop: CompiledWorkflowNode,
-  bodyNode: CompiledWorkflowNode,
-  iteration: number
-): NodeDurabilityLocation {
-  return {
-    thread_id: input.run.run_id,
-    checkpoint_ns: `loop/${loop.id}`,
-    checkpoint_id: loopNodeCheckpointId(input, loop, bodyNode, iteration),
-    task_id: loopIterationExecutionNode(loop, bodyNode, iteration).id
-  };
-}
-
-async function loadLoopNodeDurability(input: RunWorkflowInput, loop: CompiledWorkflowNode,
-  bodyNode: CompiledWorkflowNode, iteration: number): Promise<PersistedNodeDurability> {
-  const location = loopNodeDurabilityLocation(input, loop, bodyNode, iteration);
-  const writes = await listCheckpointWritesForRecovery({
-    input,
-    threadId: location.thread_id,
-    checkpointNs: location.checkpoint_ns,
-    checkpointId: location.checkpoint_id,
-    operation: "load_loop_node_output"
-  });
-  return persistedNodeDurability({
-    nodeId: location.task_id,
-    writes
-  });
-}
-
-function mergeRefs(current: RuntimeArtifactRef[], added: RuntimeArtifactRef[]): RuntimeArtifactRef[] {
-  const refs = new Map(current.map((ref) => [ref.id, ref]));
-  added.forEach((ref) => refs.set(ref.id, ref));
-  return [...refs.values()];
-}
-
-function refsForLoopBodyNode(
-  refs: RuntimeArtifactRef[],
-  loopNodeId: string,
-  bodyNodeId: string
-): RuntimeArtifactRef[] {
-  const physicalNodePrefix = `${loopNodeId}:iteration-`;
-  const physicalNodeSuffix = `:${bodyNodeId}`;
-  return refs.filter((ref) =>
-    typeof ref.node_id === "string" &&
-    ref.node_id.startsWith(physicalNodePrefix) &&
-    ref.node_id.endsWith(physicalNodeSuffix)
-  );
-}
-
 async function bodyNodeEnabled(input: RunWorkflowInput, state: LunaRuntimeState,
   runtimeContext: WorkflowRuntimeContext, node: CompiledWorkflowNode): Promise<boolean> {
   const source = node.source;
@@ -430,92 +315,6 @@ async function bodyNodeEnabled(input: RunWorkflowInput, state: LunaRuntimeState,
     });
   }
   return value;
-}
-
-async function verifiedBinaryAssetRefs({
-  input,
-  loop,
-  body,
-  bodySteps,
-  trustedRefs
-}: {
-  readonly input: RunWorkflowInput;
-  readonly loop: CompiledWorkflowNode;
-  readonly body: readonly CompiledWorkflowNode[];
-  readonly bodySteps: Readonly<Record<string, JsonValue>>;
-  readonly trustedRefs: readonly RuntimeArtifactRef[];
-}): Promise<RuntimeArtifactRef[]> {
-  const refs: RuntimeArtifactRef[] = [];
-  const trusted = new Set(
-    trustedRefs.map((ref) => `${ref.id}\u0000${ref.uri}\u0000${ref.node_id ?? ""}`)
-  );
-  const verify = input.artifactPublisher?.verify;
-
-  const visit = async (
-    candidate: JsonValue,
-    owner: CompiledWorkflowNode
-  ): Promise<void> => {
-    if (Array.isArray(candidate)) {
-      for (const nested of candidate) await visit(nested, owner);
-      return;
-    }
-    if (!isCheckpointPlainObject(candidate)) return;
-    const parsed = BinaryAssetRefSchema.safeParse(candidate);
-    if (parsed.success) {
-      const asset = parsed.data;
-      if (!isLoopBodyAssetOwner(asset.node_id, loop.id, owner.id)) {
-        throw runtimeError(
-          "Workflow loop binary asset reference has an invalid owner",
-          "runtime_state_invalid",
-          {
-            details: {
-              loop_node_id: loop.id,
-              body_node_id: owner.id,
-              asset_id: asset.id
-            }
-          }
-        );
-      }
-      const ref = { id: asset.id, uri: asset.uri, node_id: asset.node_id };
-      const trustKey = `${ref.id}\u0000${ref.uri}\u0000${ref.node_id}`;
-      if (!trusted.has(trustKey)) {
-        if (verify === undefined || !(await verify.call(input.artifactPublisher, asset))) {
-          throw runtimeError(
-            "Workflow loop binary asset reference is not a committed artifact",
-            "runtime_state_invalid",
-            {
-              details: {
-                loop_node_id: loop.id,
-                body_node_id: owner.id,
-                asset_id: asset.id
-              }
-            }
-          );
-        }
-      }
-      refs.push(ref);
-      return;
-    }
-    for (const nested of Object.values(candidate)) await visit(nested, owner);
-  };
-
-  for (const owner of body.slice(0, -1)) {
-    const output = bodySteps[owner.id];
-    if (output !== undefined) await visit(output, owner);
-  }
-  return refs;
-}
-
-function isLoopBodyAssetOwner(
-  nodeId: string,
-  loopNodeId: string,
-  bodyNodeId: string
-): boolean {
-  const prefix = `${loopNodeId}:iteration-`;
-  const suffix = `:${bodyNodeId}`;
-  if (!nodeId.startsWith(prefix) || !nodeId.endsWith(suffix)) return false;
-  const iteration = nodeId.slice(prefix.length, -suffix.length);
-  return /^[1-9][0-9]*$/u.test(iteration) && Number.isSafeInteger(Number(iteration));
 }
 
 function withReviewArtifacts(value: unknown, refs: RuntimeArtifactRef[]): unknown {

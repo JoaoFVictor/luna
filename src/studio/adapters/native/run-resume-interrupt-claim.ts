@@ -10,10 +10,10 @@ import {
   resumeInputsEqual
 } from "../../../core/runtime/interrupts/resume.js";
 import { runStoreError } from "../../application/runs/errors.js";
-import type { NativeStudioQueuedResume } from "../filesystem/run-resume-contracts.js";
+import type { StudioRunResumeRecord } from "../../application/runs/resume-journal.js";
 
 export function assertNativeStudioResolvedResumeMatchesJob(
-  job: NativeStudioQueuedResume,
+  job: StudioRunResumeRecord,
   resume: InterruptResumeRecord
 ): void {
   const expectedInput = normalizeResumeInput({
@@ -35,7 +35,7 @@ export function assertNativeStudioResolvedResumeMatchesJob(
 }
 
 function exactClaimAlreadyExists(
-  job: NativeStudioQueuedResume,
+  job: StudioRunResumeRecord,
   current: InterruptRecord,
   resumeInput: ResumeInput
 ): boolean {
@@ -69,7 +69,7 @@ function exactClaimAlreadyExists(
 /** Establishes or verifies the exact durable claim for one immutable job. */
 export async function ensureNativeStudioResumeInterruptClaim(
   interrupts: Pick<InterruptStore, "get" | "beginResume">,
-  job: NativeStudioQueuedResume
+  job: StudioRunResumeRecord
 ): Promise<void> {
   const resumeInput: ResumeInput = normalizeResumeInput({
     interrupt_id: job.interrupt_id,

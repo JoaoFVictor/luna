@@ -6,6 +6,7 @@ import {
 import type { JsonValue } from "../../../core/runtime/json.js";
 import type { LunaRuntimeState } from "../../../core/runtime/state.js";
 import type { NativeStudioQueuedRun } from "../filesystem/run-dispatch-contracts.js";
+import { workflowEffectNodeMatchesExecutionNode } from "../../../core/workflow/loop-identity.js";
 
 function stagedEffect(value: unknown): {
   readonly stage: unknown;
@@ -103,17 +104,7 @@ function effectNodeIsActive(
   effectNodeId: string
 ): boolean {
   for (const activeNodeId of activeNodeIds) {
-    if (activeNodeId === effectNodeId) return true;
-    // Durable loop executions have physical ids of the form
-    // `<loop>:iteration-<n>:<logical-body-node>`. Effect planning uses the
-    // composition projection `<loop>/<body-node>` so identically named body
-    // nodes in different loops cannot collide. Public ids cannot contain `:`.
-    const loopExecution = /^([^:]+):iteration-[1-9][0-9]*:([^:]+)$/u
-      .exec(activeNodeId);
-    if (loopExecution !== null && effectNodeId === [
-      encodeURIComponent(loopExecution[1]!),
-      encodeURIComponent(loopExecution[2]!)
-    ].join("/")) {
+    if (workflowEffectNodeMatchesExecutionNode(effectNodeId, activeNodeId)) {
       return true;
     }
   }

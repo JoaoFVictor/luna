@@ -5,6 +5,11 @@ import type {
   GitCommitSkippedResult
 } from "../git/contracts.js";
 import type { WorktreeDiff } from "../git/diff/worktree-diff.js";
+import { WorktreeDiffSchema } from "../git/diff/worktree-diff.js";
+import {
+  ApprovedWorktreeSnapshotSchema,
+  worktreeSnapshotsEqual
+} from "../git/worktree-snapshot.js";
 import { recordCommitLifecycleMetadata } from "./metadata.js";
 import { defineBuiltInStep } from "../../core/built-ins/registry.js";
 import {
@@ -60,7 +65,9 @@ export const prepareCommitBuiltIn = defineBuiltInStep({
       "acceptance",
       "acceptance"
     );
-    const diff = stepValue<WorktreeDiff>(state, resolved, "diff", "worktree_diff");
+    const diff = WorktreeDiffSchema.parse(
+      stepValue<WorktreeDiff>(state, resolved, "diff", "worktree_diff")
+    );
     const message = requiredInput(
       resolved.message as string | undefined,
       "message"
@@ -82,8 +89,24 @@ export const prepareCommitBuiltIn = defineBuiltInStep({
       return skipped(true, "empty_diff");
     }
 
+    const approvedSnapshot = ApprovedWorktreeSnapshotSchema.parse(
+      resolved.approved_snapshot ?? diff.approved_snapshot
+    );
+    if (
+      diff.approved_snapshot === undefined ||
+      !worktreeSnapshotsEqual(diff.approved_snapshot, approvedSnapshot)
+    ) {
+      throw lifecycleContractError(
+        "Commit preparation rejected worktree drift after validation and acceptance."
+      );
+    }
+
     const paths = stageablePaths(diff);
-    if (paths.length === 0) {
+    if (
+      paths.length === 0 ||
+      paths.length !== approvedSnapshot.changed_paths.length ||
+      !paths.every((filePath) => approvedSnapshot.changed_paths.includes(filePath))
+    ) {
       return skipped(true, "sensitive_untracked_files");
     }
 
@@ -93,6 +116,7 @@ export const prepareCommitBuiltIn = defineBuiltInStep({
       paths,
       expected_branch: workspace.branch,
       expected_base_sha: workspace.base_sha,
+      expected_snapshot: approvedSnapshot,
       remote: implementation.push.remote,
       expected_remote_urls: expectedRemoteUrlsFrom(repository)
     };

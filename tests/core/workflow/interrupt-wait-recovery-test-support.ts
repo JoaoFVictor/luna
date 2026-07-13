@@ -13,7 +13,6 @@ import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
 
 export const WAIT_INTENT_CHANNEL = "interrupt_wait_intent";
-export const WAIT_COMPLETION_CHANNEL = "interrupt_wait_completion";
 
 export const interruptWaitRecoveryRegistry = createCapabilityRegistry([
   capabilityManifest({

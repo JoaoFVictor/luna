@@ -63,6 +63,7 @@ describe("git repository runtime port", () => {
     const runGit = fakeRunGit({
       "branch --show-current": "feature/luna\n",
       "rev-parse HEAD": "commit123\n",
+      "rev-parse HEAD^{tree}": "tree123\n",
       "rev-list --parents -n 1 HEAD": "commit123 base123\n",
       "diff --name-only --cached": "",
       "diff --name-only": "",
@@ -87,6 +88,7 @@ describe("git repository runtime port", () => {
       branch: "feature/luna",
       head_sha: "base123",
       commit_sha: "commit123",
+      tree_oid: "tree123",
       message: "Implement thing",
       paths: ["src/a.ts", "src/b.ts"]
     });
@@ -102,7 +104,8 @@ describe("git repository runtime port", () => {
       "merge-base --is-ancestor root123 HEAD": "",
       "remote get-url origin": "git@github.com:octo-org/hello-world.git\n",
       "--literal-pathspecs add -A -- src/a.ts": "",
-      "commit -m Implement thing": ""
+      "-c core.hooksPath=/dev/null commit -m Implement thing": "",
+      "rev-parse HEAD^{tree}": "tree456\n"
     });
     const git = createGitRepositoryPorts({ runGit });
 
@@ -124,6 +127,7 @@ describe("git repository runtime port", () => {
       branch: "feature/luna",
       head_sha: "base123",
       commit_sha: "commit456",
+      tree_oid: "tree456",
       message: "Implement thing",
       paths: ["src/a.ts"],
       adopted: false

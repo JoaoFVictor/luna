@@ -1,10 +1,6 @@
-import { lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  analyzeFileSymbolGraph,
   heuristicSymbolNames,
-  importValuesFromGraph,
-  symbolNamesFromGraph,
   unique,
   type FileSymbolGraph
 } from "./symbol-analysis/index.js";
@@ -16,6 +12,7 @@ export type Candidate = {
   readonly path: string;
   readonly absolutePath: string;
   readonly content: string;
+  readonly content_digest?: string;
   readonly truncated: boolean;
   readonly language?: string;
   readonly kind: CandidateKind;
@@ -24,75 +21,74 @@ export type Candidate = {
   readonly imports: readonly string[];
 };
 
-export type ProjectImportResolution = {
-  readonly tsPathAliases: readonly TsPathAlias[];
-  readonly baseUrlDirectories: readonly string[];
-  readonly psr4Namespaces: readonly Psr4Namespace[];
-};
-
-type TsPathAlias = {
-  readonly prefix: string;
-  readonly suffix: string;
-  readonly targets: readonly string[];
-};
-
-type Psr4Namespace = {
-  readonly namespace: string;
-  readonly directory: string;
-};
-
-const IGNORED_DIRECTORIES = new Set([
-  ".agents",
-  ".claude",
-  ".codex",
-  ".cursor",
-  ".git",
-  ".hg",
-  ".idea",
-  ".svn",
-  "node_modules",
-  "vendor",
-  "dist",
-  "build",
-  "coverage",
-  ".next",
-  ".nuxt",
-  ".output",
-  "runtime",
-  "storage",
-  "tmp",
-  "temp"
-]);
-
 const SOURCE_EXTENSIONS = new Set([
+  ".astro",
+  ".bash",
+  ".c",
+  ".cc",
+  ".cpp",
+  ".cs",
+  ".css",
+  ".dart",
+  ".ex",
+  ".exs",
+  ".go",
+  ".h",
+  ".hpp",
+  ".html",
+  ".java",
   ".js",
   ".jsx",
+  ".kt",
+  ".kts",
+  ".less",
+  ".scala",
+  ".sc",
+  ".swift",
   ".ts",
   ".tsx",
   ".mjs",
   ".cjs",
+  ".py",
+  ".rb",
+  ".rs",
+  ".sass",
+  ".scss",
+  ".sh",
+  ".sql",
+  ".svelte",
   ".vue",
-  ".php"
+  ".php",
+  ".zig",
+  ".hcl",
+  ".tf",
+  ".tfvars"
+]);
+const SOURCE_BASENAMES = new Set([
+  "containerfile",
+  "dockerfile",
+  "jenkinsfile",
+  "makefile"
 ]);
 
-const CONFIG_FILES = new Set([
+const RESOLUTION_MANIFEST_FILES = new Set([
   "composer.json",
   "package.json",
   "tsconfig.json",
-  "jsconfig.json",
-  "vite.config.js",
-  "vite.config.ts",
-  "nuxt.config.js",
-  "nuxt.config.ts",
-  "next.config.js",
-  "webpack.config.js",
-  "phpunit.xml",
-  "phpstan.neon",
-  "psalm.xml"
+  "jsconfig.json"
 ]);
 
-const DOC_EXTENSIONS = new Set([".md", ".mdx", ".rst", ".txt"]);
-const CONFIG_EXTENSIONS = new Set([".json", ".yaml", ".yml", ".neon", ".xml"]);
+const DOC_EXTENSIONS = new Set([".adoc", ".md", ".mdx", ".rst", ".txt"]);
+const CONFIG_EXTENSIONS = new Set([
+  ".ini",
+  ".json",
+  ".neon",
+  ".properties",
+  ".toml",
+  ".xml",
+  ".yaml",
+  ".yml"
+]);
 const CONFIG_DIRECTORIES = [
   ".circleci",
   ".github",
@@ -100,22 +96,54 @@ const CONFIG_DIRECTORIES = [
   ".vscode",
   "config"
 ];
+const GENERIC_LANGUAGES: Readonly<Record<string, string>> = {
+  ".astro": "astro",
+  ".bash": "shell",
+  ".c": "c",
+  ".cc": "cpp",
+  ".cpp": "cpp",
+  ".cs": "csharp",
+  ".css": "css",
+  ".dart": "dart",
+  ".ex": "elixir",
+  ".exs": "elixir",
+  ".go": "go",
+  ".h": "c",
+  ".hpp": "cpp",
+  ".html": "html",
+  ".java": "java",
+  ".kt": "kotlin",
+  ".kts": "kotlin",
+  ".less": "less",
+  ".py": "python",
+  ".rb": "ruby",
+  ".rs": "rust",
+  ".sc": "scala",
+  ".scala": "scala",
+  ".sass": "sass",
+  ".scss": "scss",
+  ".sh": "shell",
+  ".sql": "sql",
+  ".svelte": "svelte",
+  ".swift": "swift",
+  ".hcl": "hcl",
+  ".tf": "hcl",
+  ".tfvars": "hcl",
+  ".zig": "zig"
+};
 
 function normalizePath(value: string): string {
   return value.split(path.sep).join("/");
 }
 
-function safeAbsolutePath(root: string, relativePath: string): string | undefined {
-  const absolutePath = path.resolve(root, relativePath);
-  const rootWithSeparator = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-  if (absolutePath !== root && !absolutePath.startsWith(rootWithSeparator)) {
-    return undefined;
+export function languageFor(filePath: string): string | undefined {
+  const basename = path.basename(filePath).toLowerCase();
+  if (basename === "dockerfile" || basename === "containerfile") {
+    return "dockerfile";
   }
-
-  return absolutePath;
-}
-
-function languageFor(filePath: string): string | undefined {
+  if (basename === "makefile") {
+    return "makefile";
+  }
   const extension = path.extname(filePath).toLowerCase();
   if (extension === ".php") {
     return "php";
@@ -128,6 +156,9 @@ function languageFor(filePath: string): string | undefined {
   }
   if (extension === ".vue") {
     return "vue";
+  }
+  if (GENERIC_LANGUAGES[extension] !== undefined) {
+    return GENERIC_LANGUAGES[extension];
   }
   if (extension === ".json") {
     return "json";
@@ -152,7 +183,7 @@ export function fileKind(filePath: string): CandidateKind {
   if (DOC_EXTENSIONS.has(extension)) {
     return "docs";
   }
-  if (SOURCE_EXTENSIONS.has(extension)) {
+  if (SOURCE_EXTENSIONS.has(extension) || SOURCE_BASENAMES.has(basename)) {
     return "source";
   }
 
@@ -160,7 +191,10 @@ export function fileKind(filePath: string): CandidateKind {
 }
 
 function isConfigPath(filePath: string, basename: string, extension: string): boolean {
-  if (CONFIG_FILES.has(basename)) {
+  if (
+    RESOLUTION_MANIFEST_FILES.has(basename) ||
+    /(?:^|[._-])config(?:[._-]|$)/u.test(basename)
+  ) {
     return true;
   }
 
@@ -212,45 +246,6 @@ export function extractSymbols(content: string, filePath: string): string[] {
   return heuristicSymbolNames(content, filePath);
 }
 
-export async function walkFiles(root: string, options: {
-  readonly maxScanFiles: number;
-}): Promise<{ readonly files: readonly string[]; readonly skipped: number }> {
-  const pending = [root];
-  const files: string[] = [];
-  let skipped = 0;
-
-  for (let index = 0; index < pending.length; index += 1) {
-    const current = pending[index] as string;
-    const entries = (await readdir(current, { withFileTypes: true }))
-      .sort((left, right) => left.name.localeCompare(right.name));
-
-    for (const entry of entries) {
-      const absolutePath = path.join(current, entry.name);
-      const relativePath = normalizePath(path.relative(root, absolutePath));
-
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) {
-          pending.push(absolutePath);
-        }
-        continue;
-      }
-
-      if (!entry.isFile() || !isSupportedFile(relativePath)) {
-        continue;
-      }
-
-      if (files.length >= options.maxScanFiles) {
-        skipped += 1;
-        continue;
-      }
-
-      files.push(relativePath);
-    }
-  }
-
-  return { files, skipped };
-}
-
 export function truncateUtf8(content: string, maxBytes: number): string {
   if (Buffer.byteLength(content, "utf8") <= maxBytes) {
     return content;
@@ -269,271 +264,28 @@ export function truncateUtf8(content: string, maxBytes: number): string {
   return truncated;
 }
 
-export async function readCandidate(
-  root: string,
-  relativePath: string,
-  maxFileBytes: number
-): Promise<Candidate | undefined> {
-  const absolutePath = safeAbsolutePath(root, relativePath);
-  if (absolutePath === undefined) {
-    return undefined;
-  }
-
-  const stat = await lstat(absolutePath).catch((error: unknown) => {
-    if (isMissingFileError(error)) {
-      return undefined;
-    }
-    throw error;
-  });
-  if (stat === undefined) {
-    return undefined;
-  }
-  if (!stat.isFile()) {
-    return undefined;
-  }
-
-  const raw = await readFile(absolutePath, "utf8");
-  const truncated = Buffer.byteLength(raw, "utf8") > maxFileBytes;
-  const content = truncated ? truncateUtf8(raw, maxFileBytes) : raw;
-  const symbolGraph = analyzeFileSymbolGraph(content, relativePath, { truncated });
-
-  return {
-    path: relativePath,
-    absolutePath,
-    content,
-    truncated,
-    language: languageFor(relativePath),
-    kind: fileKind(relativePath),
-    symbol_graph: symbolGraph,
-    symbols: symbolNamesFromGraph(symbolGraph),
-    imports: importValuesFromGraph(symbolGraph)
+export function sourcePathVariants(base: string): string[] {
+  const emittedExtensionVariants: Readonly<Record<string, readonly string[]>> = {
+    ".js": [".js", ".ts", ".tsx", ".d.ts", ".jsx"],
+    ".mjs": [".mjs", ".mts", ".d.mts"],
+    ".cjs": [".cjs", ".cts", ".d.cts"]
   };
-}
-
-export function projectImportResolutionFrom(
-  candidates: readonly Candidate[]
-): ProjectImportResolution {
-  return {
-    tsPathAliases: candidates.flatMap((candidate) =>
-      ["tsconfig.json", "jsconfig.json"].includes(candidate.path)
-        ? tsPathAliasesFrom(candidate.content)
-        : []
-    ),
-    baseUrlDirectories: candidates.flatMap((candidate) =>
-      ["tsconfig.json", "jsconfig.json"].includes(candidate.path)
-        ? baseUrlDirectoriesFrom(candidate.content)
-        : []
-    ),
-    psr4Namespaces: candidates.flatMap((candidate) =>
-      candidate.path === "composer.json"
-        ? psr4NamespacesFrom(candidate.content)
-        : []
-    )
-  };
-}
-
-function parseJsonObject(content: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(content);
-    return objectRecord(parsed);
-  } catch {
-    return undefined;
+  const extension = path.posix.extname(base);
+  const substitutions = emittedExtensionVariants[extension];
+  if (substitutions !== undefined) {
+    const stem = base.slice(0, -extension.length);
+    return substitutions.map((substitution) => `${stem}${substitution}`);
   }
-}
-
-function tsPathAliasesFrom(content: string): readonly TsPathAlias[] {
-  const parsed = parseJsonObject(content);
-  const compilerOptions = objectRecord(parsed?.compilerOptions);
-  if (compilerOptions === undefined) {
-    return [];
-  }
-
-  const paths = objectRecord(compilerOptions.paths);
-  if (paths === undefined) {
-    return [];
-  }
-
-  const aliases: TsPathAlias[] = [];
-  for (const [pattern, rawTargets] of Object.entries(paths)) {
-    if (!Array.isArray(rawTargets)) {
-      continue;
-    }
-
-    const starIndex = pattern.indexOf("*");
-    aliases.push({
-      prefix: starIndex === -1 ? pattern : pattern.slice(0, starIndex),
-      suffix: starIndex === -1 ? "" : pattern.slice(starIndex + 1),
-      targets: rawTargets.filter((target): target is string => typeof target === "string")
-    });
-  }
-
-  return aliases;
-}
-
-function baseUrlDirectoriesFrom(content: string): readonly string[] {
-  const parsed = parseJsonObject(content);
-  const compilerOptions = objectRecord(parsed?.compilerOptions);
-  if (compilerOptions === undefined) {
-    return [];
-  }
-
-  const baseUrl = compilerOptions.baseUrl;
-  return typeof baseUrl === "string" && baseUrl.trim() !== ""
-    ? [normalizePath(baseUrl).replace(/\/+$/u, "")]
-    : [];
-}
-
-function psr4NamespacesFrom(content: string): readonly Psr4Namespace[] {
-  const parsed = parseJsonObject(content);
-  const autoload = objectRecord(parsed?.autoload);
-  if (autoload === undefined) {
-    return [];
-  }
-
-  const psr4 = objectRecord(autoload["psr-4"]);
-  if (psr4 === undefined) {
-    return [];
-  }
-
-  return Object.entries(psr4)
-    .flatMap(([namespace, rawDirectory]) => {
-      const directories = Array.isArray(rawDirectory) ? rawDirectory : [rawDirectory];
-      return directories
-        .filter((directory): directory is string => typeof directory === "string")
-        .map((directory) => ({
-          namespace,
-          directory: normalizePath(directory).replace(/\/+$/u, "")
-        }));
-    });
-}
-
-export function importTargets(
-  importValue: string,
-  fromPath: string,
-  resolution: ProjectImportResolution = {
-    tsPathAliases: [],
-    baseUrlDirectories: [],
-    psr4Namespaces: []
-  }
-): string[] {
-  const importPath = stripImportKind(importValue);
-  if (!importPath.startsWith(".")) {
-    return unique([
-      ...tsAliasTargets(importPath, resolution.tsPathAliases),
-      ...baseUrlTargets(importPath, resolution.baseUrlDirectories),
-      ...commonJsAliasTargets(importPath),
-      ...psr4Targets(importPath, resolution.psr4Namespaces)
-    ]);
-  }
-
-  const base = path.posix.normalize(path.posix.join(dirnameOf(fromPath), importPath));
-  return withSourceExtensions(base);
-}
-
-function withSourceExtensions(base: string): string[] {
-  if (path.posix.extname(base) !== "") {
+  if (extension !== "") {
     return [base];
   }
 
   const extensions = [
     "",
-    ".ts",
-    ".tsx",
-    ".js",
-    ".jsx",
-    ".mjs",
-    ".cjs",
-    ".vue",
-    ".php",
-    "/index.ts",
-    "/index.js",
-    "/index.php"
+    ...SOURCE_EXTENSIONS,
+    ...[...SOURCE_EXTENSIONS].map((extension) => `/index${extension}`)
   ];
   return unique(extensions.map((extension) => `${base}${extension}`));
-}
-
-function tsAliasTargets(
-  importPath: string,
-  aliases: readonly TsPathAlias[]
-): readonly string[] {
-  const targets: string[] = [];
-
-  for (const alias of aliases) {
-    if (!importPath.startsWith(alias.prefix) || !importPath.endsWith(alias.suffix)) {
-      continue;
-    }
-
-    const matched = importPath.slice(
-      alias.prefix.length,
-      alias.suffix.length === 0 ? undefined : -alias.suffix.length
-    );
-    for (const target of alias.targets) {
-      const resolved = target.includes("*")
-        ? target.replace("*", matched)
-        : target;
-      targets.push(...withSourceExtensions(normalizePath(resolved)));
-    }
-  }
-
-  return targets;
-}
-
-function baseUrlTargets(
-  importPath: string,
-  baseUrlDirectories: readonly string[]
-): readonly string[] {
-  if (importPath.startsWith("@") || importPath.startsWith("#")) {
-    return [];
-  }
-
-  return baseUrlDirectories.flatMap((directory) =>
-    withSourceExtensions(`${directory}/${importPath}`.replace(/^\/+/u, ""))
-  );
-}
-
-function commonJsAliasTargets(importPath: string): readonly string[] {
-  const aliasPrefixes = ["@/", "~/", "@@/", "~~/"];
-  const alias = aliasPrefixes.find((prefix) => importPath.startsWith(prefix));
-  if (alias === undefined) {
-    return [];
-  }
-
-  const relative = importPath.slice(alias.length);
-  return unique([
-    ...withSourceExtensions(relative),
-    ...withSourceExtensions(`app/${relative}`),
-    ...withSourceExtensions(`src/${relative}`)
-  ]);
-}
-
-function psr4Targets(
-  importPath: string,
-  namespaces: readonly Psr4Namespace[]
-): readonly string[] {
-  const normalizedImport = importPath.replace(/^\\+/u, "");
-  const targets: string[] = [];
-
-  for (const namespace of namespaces) {
-    if (!normalizedImport.startsWith(namespace.namespace)) {
-      continue;
-    }
-
-    const relativeClass = normalizedImport
-      .slice(namespace.namespace.length)
-      .replace(/\\/gu, "/");
-    targets.push(`${namespace.directory}/${relativeClass}.php`.replace(/^\/+/u, ""));
-  }
-
-  return targets;
-}
-
-function stripImportKind(importValue: string): string {
-  const separator = importValue.indexOf(":");
-  if (separator === -1) {
-    return importValue;
-  }
-
-  return importValue.slice(separator + 1);
 }
 
 export function importEdgeType(importValue: string): "imports" | "includes" | "requires" {
@@ -545,15 +297,4 @@ export function importEdgeType(importValue: string): "imports" | "includes" | "r
     return "includes";
   }
   return "imports";
-}
-
-function objectRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
-function isMissingFileError(error: unknown): boolean {
-  const record = objectRecord(error);
-  return record !== undefined && ["ENOENT", "ENOTDIR"].includes(String(record.code));
 }

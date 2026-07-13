@@ -1,81 +1,61 @@
 import path from "node:path";
 import type { RepoContext } from "../git/diff/types.js";
 import {
-  basenameStem,
   type Candidate,
-  dirnameOf,
-  extractSymbols,
-  importEdgeType,
-  importTargets,
-  isSupportedFile,
-  isTestPath,
-  type ProjectImportResolution,
-  projectImportResolutionFrom,
-  readCandidate,
-  unique,
-  walkFiles,
-  wordsFrom
+  unique
 } from "./file-analysis.js";
-import { rightSideRangesFromPatch } from "../../core/repository/diff-hunks.js";
-import {
-  enrichCandidatesWithSymbolGraph,
-  linkProjectSymbolReferences,
-  reverseReferenceDefinitionSymbolsFromGraph,
-  type SymbolEngine
-} from "./symbol-analysis/index.js";
 import {
   primaryReasonForRelation,
   scoreCandidates,
   selectRelatedFiles,
   sourceFrom,
+  toRankedRelatedFile,
   toRelatedFile
 } from "./ranking.js";
 import type {
   RelatedContext,
-  RelatedContextEdge,
   RelatedContextConfig,
   RelatedContextFile,
-  RelatedContextNode
+  RelatedContextNode,
+  RepositoryContextQuery,
+  RelatedContextTask,
+  RelatedContextWorktreeDiff
 } from "./contracts.js";
+import {
+  acquireRepositoryQuerySlot,
+  repositoryIndex
+} from "./repository-index.js";
+import type { RepositoryRef } from "../git/diff/types.js";
+import {
+  REPOSITORY_CONTEXT_DEFAULTS,
+  REPOSITORY_CONTEXT_OUTPUT_LIMITS
+} from "./config-policy.js";
+import { seedFromInput } from "./context-seed.js";
+import { edgesFrom } from "./context-edges.js";
+import type { RepositoryContextIndexPolicy } from "./repository-index-policy.js";
 
-const DEFAULT_MAX_RELATED_FILES = 12;
-const DEFAULT_MAX_SCAN_FILES = 600;
-const DEFAULT_MAX_FILE_BYTES = 160_000;
-const DEFAULT_MAX_EXCERPT_BYTES = 4_000;
-const READ_CANDIDATE_CONCURRENCY = 32;
 const MAX_OMITTED_PATHS = 50;
 
 function resolveRelatedContextConfig(
   config: RelatedContextConfig | undefined
 ): Required<RelatedContextConfig> {
   const resolved = config ?? {};
+  const maxRelatedFiles = resolved.max_related_files ??
+    REPOSITORY_CONTEXT_DEFAULTS.max_related_files;
 
   return {
     enabled: resolved.enabled ?? true,
-    max_related_files: resolved.max_related_files ?? DEFAULT_MAX_RELATED_FILES,
-    max_scan_files: resolved.max_scan_files ?? DEFAULT_MAX_SCAN_FILES,
-    max_file_bytes: resolved.max_file_bytes ?? DEFAULT_MAX_FILE_BYTES,
-    max_excerpt_bytes: resolved.max_excerpt_bytes ?? DEFAULT_MAX_EXCERPT_BYTES,
+    max_related_files: maxRelatedFiles,
+    max_seed_files: Math.min(
+      resolved.max_seed_files ?? REPOSITORY_CONTEXT_DEFAULTS.max_seed_files,
+      maxRelatedFiles
+    ),
+    max_excerpt_bytes: resolved.max_excerpt_bytes ??
+      REPOSITORY_CONTEXT_DEFAULTS.max_excerpt_bytes,
     include_tests: resolved.include_tests ?? true,
     include_docs: resolved.include_docs ?? true,
     include_configs: resolved.include_configs ?? true
   };
-}
-
-function queryTermsFrom(repoContext: RepoContext): string[] {
-  const terms: string[] = [];
-
-  for (const file of repoContext.files) {
-    terms.push(...wordsFrom(file.path));
-    if (file.previous_path !== undefined) {
-      terms.push(...wordsFrom(file.previous_path));
-    }
-    if (file.excerpt?.content !== undefined) {
-      terms.push(...extractSymbols(file.excerpt.content, file.path));
-    }
-  }
-
-  return unique(terms).slice(0, 60);
 }
 
 function confidenceFrom(score: number): "high" | "medium" | "low" {
@@ -100,237 +80,6 @@ function nodesFrom(files: readonly RelatedContextFile[]): RelatedContextNode[] {
   }));
 }
 
-function edgesFrom(input: {
-  readonly files: readonly RelatedContextFile[];
-  readonly candidates: readonly Candidate[];
-  readonly repoContext: RepoContext;
-  readonly importResolution: ProjectImportResolution;
-}): RelatedContextEdge[] {
-  const edges: RelatedContextEdge[] = [];
-  const candidateByPath = new Map(input.candidates.map((candidate) => [candidate.path, candidate]));
-  const reverseReferenceDefinitionsByPath = new Map(input.candidates.map((candidate) => [
-    candidate.path,
-    reverseReferenceDefinitionSymbolsFromGraph(candidate.symbol_graph)
-  ]));
-  const changedPaths = new Set(input.repoContext.files.map((file) => file.path));
-  const changedStems = new Set(input.repoContext.files.map((file) => basenameStem(file.path)));
-  const relatedPaths = new Set(input.files.map((file) => file.path));
-
-  function addEdge(edge: RelatedContextEdge): void {
-    const key = `${edge.from}\0${edge.to}\0${edge.type}`;
-    if (!edges.some((existing) => `${existing.from}\0${existing.to}\0${existing.type}` === key)) {
-      edges.push(edge);
-    }
-  }
-
-  function seedMatchesContextFile(seed: RepoContext["files"][number], file: RelatedContextFile): boolean {
-    const seedTerms = unique([
-      ...wordsFrom(seed.path),
-      basenameStem(seed.path),
-      ...(seed.excerpt?.content === undefined ? [] : extractSymbols(seed.excerpt.content, seed.path))
-    ]);
-    return seedTerms.some((term) =>
-      file.matched_terms.includes(term) ||
-      file.matched_symbols.includes(term) ||
-      includesToken(file.excerpt?.content ?? "", term)
-    );
-  }
-
-  for (const seed of input.candidates.filter((candidate) => changedPaths.has(candidate.path))) {
-    for (const importValue of seed.imports) {
-      for (const target of importTargets(importValue, seed.path, input.importResolution)) {
-        if (relatedPaths.has(target)) {
-          addEdge({
-            from: seed.path,
-            to: target,
-            type: importEdgeType(importValue),
-            reason: `Changed file imports/includes ${importValue}.`
-          });
-        }
-      }
-    }
-  }
-
-  for (const file of input.files) {
-    if (changedPaths.has(file.path)) {
-      continue;
-    }
-
-    const candidate = candidateByPath.get(file.path);
-    if (candidate === undefined) {
-      continue;
-    }
-
-    for (const importValue of candidate.imports) {
-      const matchedChangedPath = importTargets(
-        importValue,
-        candidate.path,
-        input.importResolution
-      )
-        .find((target) => changedPaths.has(target) && relatedPaths.has(target));
-      if (matchedChangedPath !== undefined) {
-        addEdge({
-          from: candidate.path,
-          to: matchedChangedPath,
-          type: importEdgeType(importValue),
-          reason: `Related file imports/includes changed code through ${importValue}.`
-        });
-      }
-    }
-
-    if (file.relation === "same_directory") {
-      const sameDirSeed = input.repoContext.files
-        .find((seed) => dirnameOf(seed.path) === dirnameOf(file.path));
-      if (sameDirSeed !== undefined) {
-        addEdge({
-          from: sameDirSeed.path,
-          to: file.path,
-          type: "nearby",
-          reason: "Files share the same directory."
-        });
-      }
-    }
-
-    if (isTestPath(file.path)) {
-      const matchedStem = [...changedStems]
-        .find((stem) => file.path.toLowerCase().includes(stem.toLowerCase()));
-      const testedFile = input.repoContext.files
-        .find((seed) => basenameStem(seed.path) === matchedStem);
-      if (testedFile !== undefined) {
-        addEdge({
-          from: file.path,
-          to: testedFile.path,
-          type: "tests",
-          reason: "Test/spec path matches changed file name."
-        });
-      }
-    }
-
-    if (file.relation === "config") {
-      for (const seed of input.repoContext.files) {
-        if (!seedMatchesContextFile(seed, file)) {
-          continue;
-        }
-        addEdge({
-          from: file.path,
-          to: seed.path,
-          type: "configured_by",
-          reason: "Config file may affect changed code."
-        });
-      }
-    }
-
-    if (file.relation === "docs") {
-      for (const seed of input.repoContext.files) {
-        if (!seedMatchesContextFile(seed, file)) {
-          continue;
-        }
-        addEdge({
-          from: file.path,
-          to: seed.path,
-          type: "documents",
-          reason: "Documentation mentions changed concepts."
-        });
-      }
-    }
-
-    if (file.relation === "similar_abstraction") {
-      const similarSeed = input.repoContext.files
-        .find((seed) => basenameStem(seed.path) === basenameStem(file.path));
-      if (similarSeed !== undefined) {
-        addEdge({
-          from: file.path,
-          to: similarSeed.path,
-          type: "similar_to",
-          reason: "Files share the same abstraction name."
-        });
-      }
-    }
-
-    if (file.relation === "reverse_reference") {
-      const referencedSeed = input.repoContext.files
-        .find((seed) => {
-          if (!relatedPaths.has(seed.path)) {
-            return false;
-          }
-          const seedSymbols = reverseReferenceDefinitionsByPath.get(seed.path) ?? [];
-          return file.matched_symbols.some((symbol) => seedSymbols.includes(symbol));
-        });
-      if (referencedSeed !== undefined) {
-        addEdge({
-          from: file.path,
-          to: referencedSeed.path,
-          type: "references",
-          reason: "Related file references a changed symbol."
-        });
-      }
-    }
-  }
-
-  return edges.sort((left, right) =>
-    left.from.localeCompare(right.from) ||
-    left.to.localeCompare(right.to) ||
-    left.type.localeCompare(right.type)
-  );
-}
-
-function includesToken(content: string, token: string): boolean {
-  return new RegExp(`\\b${escapeRegExp(token)}\\b`, "i").test(content);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function emptyContext(repoContext: RepoContext, config: Required<RelatedContextConfig>): RelatedContext {
-  const budgets = {
-    max_related_files: config.max_related_files,
-    max_scan_files: config.max_scan_files,
-    max_file_bytes: config.max_file_bytes,
-    max_excerpt_bytes: config.max_excerpt_bytes
-  };
-
-  return {
-    kind: "luna.related_context.v1",
-    schema_version: "1",
-    repository: repoContext.repository,
-    base_sha: repoContext.base_sha,
-    head_sha: repoContext.head_sha,
-    ...(repoContext.merge_base === undefined ? {} : { merge_base: repoContext.merge_base }),
-    summary: "Related repository context collection is disabled.",
-    seed_files: repoContext.files.map((file) => file.path),
-    changed_files: repoContext.files.map((file) => file.path),
-    query_terms: [],
-    nodes: [],
-    edges: [],
-    files: [],
-    budgets,
-    truncation: {
-      omitted_paths: [],
-      omitted_count: 0,
-      truncated_paths: [],
-      unsupported_files: []
-    },
-    audit: {
-      enabled: false,
-      scanned_files: 0,
-      skipped_files: 0,
-      max_related_files: config.max_related_files,
-      max_scan_files: config.max_scan_files,
-      max_file_bytes: config.max_file_bytes,
-      max_excerpt_bytes: config.max_excerpt_bytes,
-      languages: [],
-      symbol_engines: [],
-      warnings: []
-    }
-  };
-}
-
-function symbolEnginesFrom(candidates: readonly Candidate[]): SymbolEngine[] {
-  return [...new Set(candidates.map((candidate) => candidate.symbol_graph.engine))]
-    .sort();
-}
-
 function symbolWarningsFrom(
   candidates: readonly Candidate[],
   selectedPaths: ReadonlySet<string>
@@ -340,206 +89,329 @@ function symbolWarningsFrom(
   )).slice(0, 40);
 }
 
-async function readCandidates(
-  root: string,
-  files: readonly string[],
-  maxFileBytes: number
-): Promise<Candidate[]> {
-  const uniqueFiles = unique(files);
-  const candidates: Candidate[] = [];
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (nextIndex < uniqueFiles.length) {
-      const file = uniqueFiles[nextIndex] as string;
-      nextIndex += 1;
-      const candidate = await readCandidate(root, file, maxFileBytes);
-      if (candidate !== undefined) {
-        candidates.push(candidate);
-      }
+async function collectRelatedContextInternal(input: {
+  readonly root: string;
+  readonly repository?: RepositoryRef;
+  readonly repoContext?: RepoContext;
+  readonly task?: RelatedContextTask;
+  readonly worktreeDiff?: RelatedContextWorktreeDiff;
+  readonly config?: RelatedContextConfig;
+  readonly indexPolicy?: RepositoryContextIndexPolicy;
+  readonly expectedSnapshotId?: string;
+  readonly signal?: AbortSignal;
+}): Promise<RelatedContext | RepositoryContextQuery> {
+  const config = resolveRelatedContextConfig(input.config);
+  if (
+    input.repoContext !== undefined &&
+    input.repository !== undefined &&
+    input.repoContext.repository.full_name.toLowerCase() !==
+      input.repository.full_name.toLowerCase()
+  ) {
+    throw new Error(
+      `Repository context belongs to ${input.repoContext.repository.full_name}, not ${input.repository.full_name}.`
+    );
+  }
+  const repositoryRoot = path.resolve(input.root);
+  const index = await repositoryIndex({
+    root: repositoryRoot,
+    policy: input.indexPolicy,
+    signal: input.signal
+  });
+  if (
+    input.expectedSnapshotId !== undefined &&
+    index.snapshot.id !== input.expectedSnapshotId
+  ) {
+    throw new Error(
+      `Repository context snapshot changed: expected ${input.expectedSnapshotId}, received ${index.snapshot.id}.`
+    );
+  }
+  const querySignal = input.signal ?? new AbortController().signal;
+  const releaseQuerySlot = await acquireRepositoryQuerySlot(querySignal);
+  try {
+  querySignal.throwIfAborted();
+  const shaPattern = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu;
+  if (input.repoContext !== undefined) {
+    const suppliedShas = [
+      input.repoContext.base_sha,
+      input.repoContext.head_sha,
+      input.repoContext.merge_base,
+      ...(input.repoContext.allowed_checkout_shas ?? [])
+    ].filter((value): value is string => value !== undefined);
+    if (!suppliedShas.every((value) => shaPattern.test(value))) {
+      throw new Error("Pull request context must use full 40- or 64-character Git object ids.");
+    }
+    if (!shaPattern.test(index.snapshot.head_sha)) {
+      throw new Error(
+        `Repository snapshot ${index.snapshot.head_sha} is not a verifiable Git object id.`
+      );
+    }
+    const allowedCheckoutShas = new Set([
+      input.repoContext.head_sha,
+      ...(input.repoContext.allowed_checkout_shas ?? [])
+    ]);
+    if (!allowedCheckoutShas.has(index.snapshot.head_sha)) {
+      throw new Error(
+        `Repository snapshot ${index.snapshot.head_sha} is not compatible with the supplied pull request context.`
+      );
     }
   }
-
-  const workers = Array.from({
-    length: Math.min(READ_CANDIDATE_CONCURRENCY, uniqueFiles.length)
-  }, () => worker());
-  await Promise.all(workers);
-  return candidates.sort((left, right) => left.path.localeCompare(right.path));
-}
-
-function directImportTargets(input: {
-  readonly candidates: readonly Candidate[];
-  readonly changedPaths: ReadonlySet<string>;
-  readonly importResolution: ProjectImportResolution;
-}): string[] {
-  const candidatePaths = new Set(input.candidates.map((candidate) => candidate.path));
-  const targets = input.candidates
-    .filter((candidate) => input.changedPaths.has(candidate.path))
-    .flatMap((candidate) =>
-      candidate.imports.flatMap((importValue) =>
-        importTargets(importValue, candidate.path, input.importResolution)
-      )
-    )
-    .filter((target) => !candidatePaths.has(target) && isSupportedFile(target));
-
-  return unique(targets);
-}
-
-export async function collectRelatedContext({
-  root,
-  repoContext,
-  config: rawConfig
-}: {
-  readonly root: string;
-  readonly repoContext: RepoContext;
-  readonly config?: RelatedContextConfig;
-}): Promise<RelatedContext> {
-  const config = resolveRelatedContextConfig(rawConfig);
-  const repositoryRoot = path.resolve(root);
-
-  if (!config.enabled) {
-    return emptyContext(repoContext, config);
-  }
-
-  const { files, skipped } = await walkFiles(repositoryRoot, {
-    maxScanFiles: config.max_scan_files
+  const seed = seedFromInput({
+    index,
+    repository: input.repository,
+    repoContext: input.repoContext,
+    task: input.task,
+    worktreeDiff: input.worktreeDiff,
+    maxSeeds: Math.min(config.max_seed_files, config.max_related_files)
   });
-  const changedPaths = repoContext.files.map((file) => file.path);
-  const initialCandidates = await readCandidates(
-    repositoryRoot,
-    unique([...files, ...changedPaths.filter(isSupportedFile)]),
-    config.max_file_bytes
-  );
-  const firstPass = await enrichCandidatesWithSymbolGraph(repositoryRoot, initialCandidates);
-  const firstImportResolution = projectImportResolutionFrom(firstPass.candidates);
-  const directImportPaths = directImportTargets({
-    candidates: firstPass.candidates,
-    changedPaths: new Set(changedPaths),
-    importResolution: firstImportResolution
-  });
-  const firstCandidatePaths = new Set(firstPass.candidates.map((candidate) => candidate.path));
-  const extraCandidates = await readCandidates(
-    repositoryRoot,
-    directImportPaths.filter((file) => !firstCandidatePaths.has(file)),
-    config.max_file_bytes
-  );
-  const extraPass = await enrichCandidatesWithSymbolGraph(repositoryRoot, extraCandidates);
-  const candidates = [
-    ...firstPass.candidates,
-    ...extraPass.candidates
-  ];
-  const symbolGraphWarnings = [...firstPass.warnings, ...extraPass.warnings];
-  const queryTerms = queryTermsFrom(repoContext);
-  const importResolution = projectImportResolutionFrom(candidates);
-  const linkedCandidates = linkProjectSymbolReferences(
-    candidates,
-    (importValue, fromPath) => importTargets(importValue, fromPath, importResolution)
-  );
-  const scores = scoreCandidates({
-    candidates: linkedCandidates,
-    repoContext,
-    queryTerms,
-    includeTests: config.include_tests,
-    includeDocs: config.include_docs,
-    includeConfigs: config.include_configs,
-    importResolution
-  });
-  const hunkRangesByPath = new Map(repoContext.files.map((file) => [
-    file.path,
-    rightSideRangesFromPatch(file.patch)
-  ]));
+  querySignal.throwIfAborted();
+  const seedPaths = seed.seedFiles.map((file) => file.path);
+  const scoring = config.enabled
+    ? scoreCandidates({
+      candidates: index.candidates,
+      seedPaths,
+      seedRelation: seed.source === "pull_request_diff" ? "changed_file" : "task_seed",
+      queryTerms: seed.queryTerms,
+      includeTests: config.include_tests,
+      includeDocs: config.include_docs,
+      includeConfigs: config.include_configs,
+      importResolutionSignature: index.import_resolution_signature,
+      lexicalCorpus: index.lexical_corpus,
+      graphTopology: index.graph_topology
+    })
+    : {
+      scores: new Map(),
+      lexicalDiagnostics: {
+        fuzzy_candidates_considered: 0,
+        fuzzy_candidates_omitted: 0,
+        posting_documents_considered: 0,
+        posting_documents_omitted: 0,
+        query_documents_omitted: 0
+      },
+      graphDiagnostics: {
+        edges_visited: 0,
+        edges_omitted: 0,
+        edges_omitted_lower_bound: false,
+        matches_omitted: 0,
+        frontier_omitted: 0,
+        score_states_omitted: 0
+      }
+    };
+  const scores = scoring.scores;
+  querySignal.throwIfAborted();
   const rankedFiles = [...scores.values()]
-    .map((score) => toRelatedFile(
+    .map(toRankedRelatedFile)
+    .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
+  const selectedFiles = selectRelatedFiles(rankedFiles, new Set(seedPaths), config.max_related_files);
+  const relatedFiles = selectedFiles.map((file) => {
+    const score = scores.get(file.path);
+    if (score === undefined) {
+      throw new Error(`Selected repository context score is unavailable: ${file.path}`);
+    }
+    return toRelatedFile(
       score,
       config.max_excerpt_bytes,
-      hunkRangesByPath.get(score.path) ?? []
-    ))
-    .sort((left, right) =>
-      right.score - left.score || left.path.localeCompare(right.path)
+      seed.hunkRangesByPath.get(score.path) ?? []
     );
-  const relatedFiles = selectRelatedFiles(
-    rankedFiles,
-    new Set(changedPaths),
-    config.max_related_files
-  );
-  const relatedPaths = new Set(relatedFiles.map((file) => file.path));
-  const allOmittedPaths = rankedFiles
-    .filter((file) => !relatedPaths.has(file.path))
-    .map((file) => file.path);
-  const omittedPaths = allOmittedPaths.slice(0, MAX_OMITTED_PATHS);
-  const nodes = nodesFrom(relatedFiles);
-  const edges = edgesFrom({
-    files: relatedFiles,
-    candidates: linkedCandidates,
-    repoContext,
-    importResolution
   });
-  const languages = unique(relatedFiles.flatMap((file) =>
-    file.language === undefined ? [] : [file.language]
-  ));
+  const relatedPaths = new Set(relatedFiles.map((file) => file.path));
+  const allOmittedPaths = rankedFiles.filter((file) => !relatedPaths.has(file.path)).map((file) => file.path);
   const truncatedPaths = unique([
-    ...relatedFiles.flatMap((file) =>
-      file.excerpt?.truncated === true ? [file.path] : []
-    ),
-    ...(repoContext.file_excerpts_truncated ?? [])
+    ...relatedFiles.flatMap((file) => file.excerpt?.truncated === true ? [file.path] : []),
+    ...seed.truncatedPaths
   ]);
-  const unsupportedFiles = unique(repoContext.files.flatMap((file) =>
-    file.binary === true ||
-    file.is_submodule === true ||
-    file.patch_omitted_reason !== undefined ||
-    !isSupportedFile(file.path)
-      ? [file.path]
-      : []
-  ));
-  const budgets = {
-    max_related_files: config.max_related_files,
-    max_scan_files: config.max_scan_files,
-    max_file_bytes: config.max_file_bytes,
-    max_excerpt_bytes: config.max_excerpt_bytes
-  };
-  const warnings = [
-    ...(repoContext.changed_files_truncated === true
-      ? ["Diff context was truncated before related context ranking."]
-      : []),
-    ...(skipped > 0
-      ? [`Repository scan skipped ${skipped} supported files after max_scan_files.`]
-      : []),
-    ...symbolGraphWarnings,
-    ...symbolWarningsFrom(linkedCandidates, new Set(relatedFiles.map((file) => file.path)))
-  ];
-
-  return {
-    kind: "luna.related_context.v1",
-    schema_version: "1",
-    repository: repoContext.repository,
-    base_sha: repoContext.base_sha,
-    head_sha: repoContext.head_sha,
-    ...(repoContext.merge_base === undefined ? {} : { merge_base: repoContext.merge_base }),
-    summary: `Related repository context selected ${relatedFiles.length} files from ${linkedCandidates.length} scanned files.`,
-    seed_files: changedPaths,
-    changed_files: changedPaths,
-    query_terms: queryTerms,
-    nodes,
-    edges,
+  const contextEdges = edgesFrom({
     files: relatedFiles,
-    budgets,
+    candidates: index.candidates,
+    seedFiles: seed.seedFiles,
+    graphTopology: index.graph_topology
+  });
+  querySignal.throwIfAborted();
+  const warnings = unique([
+    ...seed.warnings,
+    ...index.warnings,
+    ...symbolWarningsFrom(index.candidates, relatedPaths),
+    ...(contextEdges.omittedEdgesCount === 0
+      ? []
+      : [`Repository context omitted ${contextEdges.omittedEdgesCount} edges after deterministic ranking.`]),
+    ...(contextEdges.truncatedEdgeTextCount === 0
+      ? []
+      : [`Repository context truncated text on ${contextEdges.truncatedEdgeTextCount} edges.`])
+  ]);
+  const changedFiles = [...seed.changedFiles];
+  const unsupportedFiles = [...seed.unsupportedFiles];
+  const unseededChangedPaths = [...seed.unseededChangedPaths];
+
+  const queryView = input.repository === undefined && input.task !== undefined;
+  if (queryView) {
+    querySignal.throwIfAborted();
+    return {
+      kind: "luna.repository_context_query.v1",
+      schema_version: "1",
+      source: { kind: "query" },
+      snapshot: index.snapshot,
+      query: input.task,
+      coverage: {
+        ...index.coverage,
+        languages: [...index.coverage.languages],
+        symbol_engines: [...index.coverage.symbol_engines]
+      },
+      summary: config.enabled
+        ? `Repository query selected ${relatedFiles.length} files from a${index.coverage.complete ? " complete" : "n incomplete"} ${index.coverage.indexed_files}-file index.`
+        : "Repository query selection is disabled; snapshot identity and coverage were still collected.",
+      nodes: nodesFrom(relatedFiles),
+      edges: [...contextEdges.edges],
+      files: relatedFiles,
+      budgets: {
+        max_related_files: config.max_related_files,
+        max_seed_files: config.max_seed_files,
+        max_excerpt_bytes: config.max_excerpt_bytes
+      },
+      truncation: {
+        omitted_paths: allOmittedPaths.slice(0, MAX_OMITTED_PATHS),
+        omitted_count: allOmittedPaths.length,
+        omitted_edges_count: contextEdges.omittedEdgesCount,
+        truncated_edge_text_count: contextEdges.truncatedEdgeTextCount,
+        fuzzy_candidates_considered: scoring.lexicalDiagnostics.fuzzy_candidates_considered,
+        fuzzy_candidates_omitted: scoring.lexicalDiagnostics.fuzzy_candidates_omitted,
+        posting_documents_considered: scoring.lexicalDiagnostics.posting_documents_considered,
+        posting_documents_omitted: scoring.lexicalDiagnostics.posting_documents_omitted,
+        query_documents_omitted: scoring.lexicalDiagnostics.query_documents_omitted,
+        graph_edges_visited: scoring.graphDiagnostics.edges_visited,
+        graph_edges_omitted: scoring.graphDiagnostics.edges_omitted,
+        graph_edges_omitted_lower_bound:
+          scoring.graphDiagnostics.edges_omitted_lower_bound,
+        graph_matches_omitted: scoring.graphDiagnostics.matches_omitted,
+        graph_frontier_omitted: scoring.graphDiagnostics.frontier_omitted,
+        score_states_omitted: scoring.graphDiagnostics.score_states_omitted,
+        changed_files_omitted_count: 0,
+        truncated_paths: truncatedPaths.slice(0, REPOSITORY_CONTEXT_OUTPUT_LIMITS.path_diagnostics),
+        truncated_paths_omitted_count: 0,
+        unsupported_files: [],
+        unsupported_files_omitted_count: 0,
+        unseeded_changed_paths: [],
+        unseeded_changed_paths_omitted_count: 0
+      },
+      audit: {
+        enabled: config.enabled,
+        scanned_files: index.coverage.indexed_files,
+        skipped_files: index.coverage.eligible_files - index.coverage.indexed_files,
+        max_related_files: config.max_related_files,
+        max_seed_files: config.max_seed_files,
+        max_excerpt_bytes: config.max_excerpt_bytes,
+        languages: [...index.coverage.languages],
+        symbol_engines: [...index.coverage.symbol_engines],
+        warnings: warnings.slice(0, REPOSITORY_CONTEXT_OUTPUT_LIMITS.warnings),
+        warnings_omitted_count: Math.max(0, warnings.length - REPOSITORY_CONTEXT_OUTPUT_LIMITS.warnings)
+      }
+    } satisfies RepositoryContextQuery;
+  }
+  if (seed.repository === undefined) {
+    throw new Error("Repository identity is required for workflow repository context.");
+  }
+  querySignal.throwIfAborted();
+  return {
+    kind: "luna.repository_context.v2",
+    schema_version: "2",
+    source: { kind: seed.source },
+    snapshot: index.snapshot,
+    coverage: {
+      ...index.coverage,
+      languages: [...index.coverage.languages],
+      symbol_engines: [...index.coverage.symbol_engines]
+    },
+    repository: seed.repository,
+    base_sha: seed.baseSha,
+    head_sha: seed.headSha,
+    ...(seed.mergeBase === undefined ? {} : { merge_base: seed.mergeBase }),
+    summary: config.enabled
+      ? `Repository context selected ${relatedFiles.length} files from a${index.coverage.complete ? " complete" : "n incomplete"} ${index.coverage.indexed_files}-file index.`
+      : "Repository context selection is disabled; snapshot identity and coverage were still collected.",
+    seed_files: seedPaths,
+    changed_files: changedFiles.slice(0, REPOSITORY_CONTEXT_OUTPUT_LIMITS.changed_files),
+    query_terms: [...seed.queryTerms],
+    nodes: nodesFrom(relatedFiles),
+    edges: [...contextEdges.edges],
+    files: relatedFiles,
+    budgets: {
+      max_related_files: config.max_related_files,
+      max_seed_files: config.max_seed_files,
+      max_excerpt_bytes: config.max_excerpt_bytes
+    },
     truncation: {
-      omitted_paths: omittedPaths,
+      omitted_paths: allOmittedPaths.slice(0, MAX_OMITTED_PATHS),
       omitted_count: allOmittedPaths.length,
-      truncated_paths: truncatedPaths,
-      unsupported_files: unsupportedFiles
+      omitted_edges_count: contextEdges.omittedEdgesCount,
+      truncated_edge_text_count: contextEdges.truncatedEdgeTextCount,
+      fuzzy_candidates_considered: scoring.lexicalDiagnostics.fuzzy_candidates_considered,
+      fuzzy_candidates_omitted: scoring.lexicalDiagnostics.fuzzy_candidates_omitted,
+      posting_documents_considered: scoring.lexicalDiagnostics.posting_documents_considered,
+      posting_documents_omitted: scoring.lexicalDiagnostics.posting_documents_omitted,
+      query_documents_omitted: scoring.lexicalDiagnostics.query_documents_omitted,
+      graph_edges_visited: scoring.graphDiagnostics.edges_visited,
+      graph_edges_omitted: scoring.graphDiagnostics.edges_omitted,
+      graph_edges_omitted_lower_bound:
+        scoring.graphDiagnostics.edges_omitted_lower_bound,
+      graph_matches_omitted: scoring.graphDiagnostics.matches_omitted,
+      graph_frontier_omitted: scoring.graphDiagnostics.frontier_omitted,
+      score_states_omitted: scoring.graphDiagnostics.score_states_omitted,
+      changed_files_omitted_count: Math.max(
+        0, changedFiles.length - REPOSITORY_CONTEXT_OUTPUT_LIMITS.changed_files
+      ),
+      truncated_paths: truncatedPaths.slice(0, REPOSITORY_CONTEXT_OUTPUT_LIMITS.path_diagnostics),
+      truncated_paths_omitted_count: Math.max(
+        0, truncatedPaths.length - REPOSITORY_CONTEXT_OUTPUT_LIMITS.path_diagnostics
+      ),
+      unsupported_files: unsupportedFiles.slice(0, REPOSITORY_CONTEXT_OUTPUT_LIMITS.path_diagnostics),
+      unsupported_files_omitted_count: Math.max(
+        0, unsupportedFiles.length - REPOSITORY_CONTEXT_OUTPUT_LIMITS.path_diagnostics
+      ),
+      unseeded_changed_paths: unseededChangedPaths.slice(
+        0, REPOSITORY_CONTEXT_OUTPUT_LIMITS.path_diagnostics
+      ),
+      unseeded_changed_paths_omitted_count: Math.max(
+        0, unseededChangedPaths.length - REPOSITORY_CONTEXT_OUTPUT_LIMITS.path_diagnostics
+      )
     },
     audit: {
-      enabled: true,
-      scanned_files: linkedCandidates.length,
-      skipped_files: skipped,
+      enabled: config.enabled,
+      scanned_files: index.coverage.indexed_files,
+      skipped_files: index.coverage.eligible_files - index.coverage.indexed_files,
       max_related_files: config.max_related_files,
-      max_scan_files: config.max_scan_files,
-      max_file_bytes: config.max_file_bytes,
+      max_seed_files: config.max_seed_files,
       max_excerpt_bytes: config.max_excerpt_bytes,
-      languages,
-      symbol_engines: symbolEnginesFrom(linkedCandidates),
-      warnings
+      languages: [...index.coverage.languages],
+      symbol_engines: [...index.coverage.symbol_engines],
+      warnings: warnings.slice(0, REPOSITORY_CONTEXT_OUTPUT_LIMITS.warnings),
+      warnings_omitted_count: Math.max(
+        0, warnings.length - REPOSITORY_CONTEXT_OUTPUT_LIMITS.warnings
+      )
     }
   };
+  } finally {
+    releaseQuerySlot();
+  }
+}
+
+export async function collectRelatedContext(input: {
+  readonly root: string;
+  readonly repository: RepositoryRef;
+  readonly repoContext?: RepoContext;
+  readonly task?: RelatedContextTask;
+  readonly worktreeDiff?: RelatedContextWorktreeDiff;
+  readonly config?: RelatedContextConfig;
+  readonly indexPolicy?: RepositoryContextIndexPolicy;
+  readonly signal?: AbortSignal;
+}): Promise<RelatedContext> {
+  return await collectRelatedContextInternal(input) as RelatedContext;
+}
+
+export async function queryRepositoryContext(input: {
+  readonly root: string;
+  readonly task: RelatedContextTask;
+  readonly config?: RelatedContextConfig;
+  readonly indexPolicy?: RepositoryContextIndexPolicy;
+  readonly expectedSnapshotId?: string;
+  readonly signal?: AbortSignal;
+}): Promise<RepositoryContextQuery> {
+  return await collectRelatedContextInternal(input) as RepositoryContextQuery;
 }

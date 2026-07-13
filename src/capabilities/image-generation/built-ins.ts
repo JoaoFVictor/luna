@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { defineBuiltInStep } from "../../core/built-ins/registry.js";
+import { nodeOutputWithBinaryAssets } from "../../core/runtime/artifacts/binary-asset.js";
 import type {
   BuiltInStep,
   BuiltInStepDependencies,
@@ -111,7 +112,7 @@ export function createImageGenerateBuiltIn(
         overwrite_policy: "forbid"
       });
       const { image_base64: _discardedImageBytes, ...metadata } = generated.data;
-      return {
+      const output = {
         ...metadata,
         asset: {
           ...artifact,
@@ -120,6 +121,10 @@ export function createImageGenerateBuiltIn(
           size_bytes: bytes.byteLength
         }
       };
+      return nodeOutputWithBinaryAssets(output, {
+        produced: [output.asset],
+        forwarded: []
+      });
     }
   });
 }

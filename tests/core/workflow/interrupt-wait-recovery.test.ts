@@ -1,17 +1,38 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentRuntimePort } from "../../../src/core/agent-runtime/contracts.js";
+import type {
+  CheckpointStore,
+  RuntimeBackends
+} from "../../../src/core/runtime/backends/contracts.js";
+import type { InterruptStore } from "../../../src/core/runtime/interrupts/contracts.js";
 import { compileWorkflow } from "../../../src/core/workflow/compiler.js";
 import { runCompiledWorkflow } from "../../../src/runtime/langgraph/workflow-runner.js";
+import { recoverNativeWorkflowWaitingTarget } from "../../../src/platform/native/native-workflow-runner.js";
+import {
+  recoverPersistedWaitingBoundaryByIdentity,
+  waitingBoundaryNodeIdentity
+} from "../../../src/runtime/workflow/resume-origin.js";
+import { loadYamlFile } from "../../../src/core/config/loader.js";
+import { AppConfigSchema } from "../../../src/core/config/schemas.js";
+import { runtimeCompositionConfig } from "../../../src/platform/native/native-run-context.js";
+import { createRuntimeBackendComposition } from "../../../src/runtime/composition/runtime-composition.js";
+import {
+  cleanupNativeLaunchFixtures,
+  writeFixture
+} from "../../studio/runs/native-run-launch-test-support.js";
 import {
   createFaultedWaitBackends,
   interruptWaitRecoveryRegistry,
   interruptWaitRecoveryWorkflow,
-  WAIT_COMPLETION_CHANNEL,
   WAIT_INTENT_CHANNEL
 } from "./interrupt-wait-recovery-test-support.js";
 
 const registry = interruptWaitRecoveryRegistry;
 const workflow = interruptWaitRecoveryWorkflow;
+
+afterEach(async () => {
+  await cleanupNativeLaunchFixtures();
+});
 
 describe("interrupt waiting protocol recovery", () => {
   it.each([
@@ -72,10 +93,6 @@ describe("interrupt waiting protocol recovery", () => {
           channel: WAIT_INTENT_CHANNEL
         })
       ]));
-      expect(incompleteOutbox).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({ channel: WAIT_COMPLETION_CHANNEL })
-      ]));
-
       const recovered = await runCompiledWorkflow(input);
 
       expect(recovered).toMatchObject({
@@ -102,12 +119,7 @@ describe("interrupt waiting protocol recovery", () => {
         waitingCheckpointId
       );
       expect(reconciledOutbox).toEqual(expect.arrayContaining([
-        expect.objectContaining({ channel: WAIT_INTENT_CHANNEL }),
-        expect.objectContaining({
-          task_id: "__luna_wait_completion__:approve",
-          index: 0,
-          channel: WAIT_COMPLETION_CHANNEL
-        })
+        expect.objectContaining({ channel: WAIT_INTENT_CHANNEL })
       ]));
       await expect(stores.durableCheckpoints.load(runId, {
         checkpointId: `terminal-${runId}-failed`,
@@ -186,4 +198,204 @@ describe("interrupt waiting protocol recovery", () => {
     expect(executePre).toHaveBeenCalledTimes(1);
     expect(failedState).not.toHaveBeenCalled();
   });
+
+  it("reprojects an exact durable wait from storage without loading a capability catalog", async () => {
+    const fixture = await writeFixture();
+    const app = await loadYamlFile(fixture.configRoot + "/app.yaml", AppConfigSchema);
+    const composition = createRuntimeBackendComposition(
+      runtimeCompositionConfig(app, fixture.projectRoot)
+    );
+    const compiled = compileWorkflow({ workflow, registry });
+    const runId = "run-native-waiting-reconciler";
+    const run = {
+      run_id: runId,
+      workflow_id: workflow.id,
+      attempt: 1,
+      started_at: "2026-06-25T00:00:00.000Z"
+    };
+    const waiting = await runCompiledWorkflow({
+      compiled,
+      workflow,
+      invocation: {},
+      config: {},
+      run,
+      backends: composition.backends,
+      builtIns: { "runtime.pre": async () => ({ ready: true }) },
+      agentRuntime: {} as AgentRuntimePort
+    });
+    if (waiting.status !== "waiting_for_input") {
+      throw new Error("Expected a durable waiting boundary");
+    }
+    const recoveryInput = {
+      projectRoot: fixture.projectRoot,
+      configRoot: fixture.configRoot,
+      workflow: {
+        id: workflow.id,
+        revision: workflow.revision,
+        mode: workflow.mode,
+        state_schema_version: compiled.state_schema_version,
+        nodes: compiled.nodes.map(waitingBoundaryNodeIdentity)
+      },
+      thread_id: runId,
+      checkpoint_id: waiting.checkpoint_id,
+      interrupt_id: waiting.interrupt_id
+    } as const;
+    const onWaitingState = vi.fn();
+
+    await expect(recoverNativeWorkflowWaitingTarget({
+      ...recoveryInput,
+      onWaitingState
+    })).resolves.toMatchObject({
+      status: "waiting_for_input",
+      checkpoint_id: waiting.checkpoint_id,
+      interrupt_id: waiting.interrupt_id,
+      state: {
+        run_status: "waiting_for_input",
+        steps: { pre: { ready: true } },
+        node_statuses: {
+          approve: { status: "waiting_for_input" }
+        },
+        artifact_refs: [],
+        interrupt_refs: [
+          expect.objectContaining({ id: waiting.interrupt_id })
+        ]
+      }
+    });
+    expect(onWaitingState).toHaveBeenCalledTimes(1);
+
+    for (const corruption of [
+      "missing_intent",
+      "conflicting_intent",
+      "missing_interrupt_ref",
+      "missing_interrupt_payload"
+    ] as const) {
+      await expect(recoverPersistedWaitingBoundaryByIdentity({
+        workflow: recoveryInput.workflow,
+        backends: corruptWaitingBoundary(
+          composition.backends,
+          waiting.checkpoint_id,
+          corruption
+        ),
+        thread_id: runId,
+        checkpoint_id: waiting.checkpoint_id,
+        interrupt_id: waiting.interrupt_id
+      })).rejects.toMatchObject({
+        code: "runtime_checkpoint_schema_mismatch"
+      });
+    }
+
+    await expect(recoverNativeWorkflowWaitingTarget({
+      ...recoveryInput,
+      checkpoint_id: "checkpoint-does-not-exist"
+    })).rejects.toMatchObject({ code: "runtime_checkpoint_schema_mismatch" });
+
+    const originalInterrupt = await composition.backends.interrupts.get(
+      waiting.interrupt_id
+    );
+    if (originalInterrupt === undefined) throw new Error("Missing durable interrupt");
+    const secondInterruptId = `${waiting.interrupt_id}-later`;
+    await composition.backends.interrupts.create({
+      ...originalInterrupt,
+      id: secondInterruptId,
+      created_at: "2026-06-25T00:01:00.000Z",
+      updated_at: "2026-06-25T00:01:00.000Z",
+      payload: originalInterrupt.payload === undefined ? undefined : {
+        ...originalInterrupt.payload,
+        interrupt_id: secondInterruptId,
+        created_at: "2026-06-25T00:01:00.000Z"
+      }
+    });
+    await expect(recoverNativeWorkflowWaitingTarget(recoveryInput))
+      .rejects.toMatchObject({ code: "interrupt_stale" });
+
+    for (const interruptId of [secondInterruptId, waiting.interrupt_id]) {
+      const record = await composition.backends.interrupts.get(interruptId);
+      if (record?.checkpoint_id === undefined) throw new Error("Missing interrupt checkpoint");
+      const decision = { action: "reject" };
+      const resumeInput = {
+        interrupt_id: interruptId,
+        thread_id: runId,
+        checkpoint_id: record.checkpoint_id,
+        decision
+      };
+      const claim = await composition.backends.interrupts.beginResume(
+        interruptId,
+        `resolve-${interruptId}`,
+        resumeInput
+      );
+      if (claim.status !== "claimed") throw new Error("Expected interrupt claim");
+      await composition.backends.interrupts.completeResume(
+        interruptId,
+        claim,
+        "resolved",
+        {
+          interrupt_id: interruptId,
+          resume_id: claim.resume_attempt,
+          input: resumeInput,
+          decision,
+          created_at: "2026-06-25T00:02:00.000Z"
+        }
+      );
+    }
+    await expect(recoverNativeWorkflowWaitingTarget(recoveryInput))
+      .rejects.toMatchObject({ code: "interrupt_stale" });
+  });
 });
+
+function corruptWaitingBoundary(
+  backends: RuntimeBackends,
+  waitingCheckpointId: string,
+  corruption:
+    | "missing_intent"
+    | "conflicting_intent"
+    | "missing_interrupt_ref"
+    | "missing_interrupt_payload"
+): RuntimeBackends {
+  const checkpoints: CheckpointStore = {
+    ...backends.checkpoints,
+    async load(threadId, options) {
+      const checkpoint = await backends.checkpoints.load(threadId, options);
+      if (
+        checkpoint === undefined ||
+        checkpoint.checkpoint_id !== waitingCheckpointId ||
+        corruption !== "missing_interrupt_ref"
+      ) {
+        return checkpoint;
+      }
+      return {
+        ...checkpoint,
+        state: { ...checkpoint.state, interrupt_refs: [] }
+      };
+    },
+    async listWrites(threadId, checkpointNs, checkpointId) {
+      const writes = await backends.checkpoints.listWrites(
+        threadId,
+        checkpointNs,
+        checkpointId
+      );
+      if (checkpointId !== waitingCheckpointId) return writes;
+      if (corruption === "missing_intent") {
+        return writes.filter(({ channel }) => channel !== WAIT_INTENT_CHANNEL);
+      }
+      if (corruption === "conflicting_intent") {
+        const intent = writes.find(({ channel }) => channel === WAIT_INTENT_CHANNEL);
+        return intent === undefined
+          ? writes
+          : [...writes, { ...intent, index: intent.index + 1 }];
+      }
+      return writes;
+    }
+  };
+  const interrupts: InterruptStore = {
+    ...backends.interrupts,
+    async get(interruptId) {
+      const interrupt = await backends.interrupts.get(interruptId);
+      if (interrupt === undefined || corruption !== "missing_interrupt_payload") {
+        return interrupt;
+      }
+      const { payload: _payload, ...withoutPayload } = interrupt;
+      return withoutPayload;
+    }
+  };
+  return { ...backends, checkpoints, interrupts };
+}

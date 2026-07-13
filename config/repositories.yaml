@@ -22,3 +22,17 @@ repositories:
       files:
         - AGENTS.md
         - README.md
+    # Optional operator-bound exclusions for the canonical repository index.
+    # They apply equally to workflow context and repository-context.query.
+    repository_context:
+      exclude_globs:
+        - generated/**
+    # Operator-owned validation policy for this repository. The command is a
+    # repository contract; Luna does not infer a language, framework, or tool.
+    validation:
+      commands:
+        - cmd: ./scripts/validate
+          timeout_ms: 600000
+      # Only named variables are inherited. HOME is supplied as an isolated
+      # temporary directory by Luna and never needs to be allowlisted.
+      env_allowlist: []

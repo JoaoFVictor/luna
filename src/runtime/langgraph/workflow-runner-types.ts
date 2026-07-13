@@ -1,4 +1,3 @@
-import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import type {
   ResumeWorkflowInput,
   RunWorkflowInput,
@@ -19,10 +18,6 @@ export type {
   WorkflowRunResult
 };
 
-export type RunCompiledWorkflowInput = RunWorkflowInput & {
-  readonly langGraphCheckpointer?: BaseCheckpointSaver;
-};
+export type RunCompiledWorkflowInput = RunWorkflowInput;
 
-export type ResumeCompiledWorkflowInput = ResumeWorkflowInput & {
-  readonly langGraphCheckpointer?: BaseCheckpointSaver;
-};
+export type ResumeCompiledWorkflowInput = ResumeWorkflowInput;

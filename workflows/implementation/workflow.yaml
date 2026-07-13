@@ -15,6 +15,7 @@ capabilities:
   - task-context
   - validation
   - context
+  - repository-context
   - agents
   - artifacts
   - quality-gates
@@ -40,6 +41,14 @@ nodes:
           expression: "$.steps.preflight"
         format: json
 
+  # Uses the selected repository's validation policy when one is declared.
+  # Missing validation resolves to an empty command list and is skipped.
+  - id: validation_configuration
+    type: built_in
+    uses: validation.repository_configuration
+    after:
+      - preflight
+
   # Creates or prepares the trusted local write workspace from the target
   # repository. Later write, validation, git, and CR steps use this workspace.
   - id: workspace
@@ -59,7 +68,7 @@ nodes:
           expression: "$.steps.workspace"
         format: json
     after:
-      - preflight
+      - validation_configuration
 
   # Normalizes provider task data into text/body fields that planner,
   # implementer, final report, and change request creation can share.
@@ -73,7 +82,7 @@ nodes:
           expression: "$.steps.task_context"
         format: json
     after:
-      - preflight
+      - validation_configuration
 
   # Collects repository and agent context for every model role used in this
   # workflow. Context is audited and rendered as runtime instructions.
@@ -95,6 +104,27 @@ nodes:
     after:
       - workspace
 
+  # Builds the same deterministic repository impact graph used by code review,
+  # seeded from the normalized task instead of from a pull-request diff.
+  - id: repository_context
+    type: built_in
+    uses: repository-context.related_context
+    artifacts:
+      - path: repository-context.json
+        publisher: artifacts.manifest_publisher
+        source:
+          expression: "$.steps.repository_context"
+        format: json
+    input:
+      task:
+        text:
+          expression: "$.steps.task_context.implementation_title & '\n\n' & $.steps.task_context.change_request_body"
+      config:
+        expression: "$.config.implementation.repository_context"
+    after:
+      - workspace
+      - task_context
+
   # Planner agent converts task context plus repository guidance into a concrete
   # implementation plan before any writer gets control of the worktree.
   - id: implementation_plan
@@ -115,9 +145,12 @@ nodes:
         expression: "$.steps.context"
       task_context:
         expression: "$.steps.task_context"
+      repository_context:
+        expression: "$.steps.repository_context"
     after:
       - context
       - task_context
+      - repository_context
 
   # Trusted writer loop. The worker may edit the worktree; each attempt is
   # checked by deterministic validation, non-empty diff, review, and acceptance
@@ -144,13 +177,31 @@ nodes:
         expression: "$.workspace"
       task_context:
         expression: "$.steps.task_context"
+      repository_context:
+        expression: "$.steps.repository_context"
+    # Refreshes the canonical impact graph from the current attempt diff before
+    # either model review runs. Evidence is replay-safe and attempt-scoped.
+    evidence:
+      - id: repository_context
+        uses: repository-context.related_context
+        input:
+          worktree_diff:
+            diff:
+              expression: "$.gate.diff_summary"
+            task:
+              text:
+                expression: "$.steps.task_context.implementation_title & '\n\n' & $.steps.task_context.change_request_body"
+          config:
+            expression: "$.config.implementation.repository_context"
     gates:
-      # Runs configured validation commands from config/implementation.yaml.
+      # Runs repository-owned commands when configured; otherwise does nothing.
       - id: validation
         type: quality-gates.validation_commands
         input:
           commands:
-            expression: "$.config.implementation.validation.commands"
+            expression: "$.steps.validation_configuration.commands"
+          env_allowlist:
+            expression: "$.steps.validation_configuration.env_allowlist"
           max_output_bytes:
             expression: "$.config.implementation.validation.max_output_bytes"
       # Prevents a "successful" implementation that changed nothing.
@@ -165,11 +216,19 @@ nodes:
           context:
             expression: "$.steps.context"
           subject:
-            expression: "$.gate"
+            gate:
+              expression: "$.gate"
+            task_context:
+              expression: "$.steps.task_context"
+            implementation_plan:
+              expression: "$.steps.implementation_plan"
         block_when:
-          expression: "$.gate.decision = 'fail'"
+          # change-reviewer returns findings.review_output, not a synthetic
+          # pass/fail decision. Critical and high findings must be repaired;
+          # lower severities remain visible to the acceptance decision.
+          expression: "$count($.gate.findings[severity = 'critical' or severity = 'high']) > 0"
         feedback:
-          expression: "$.gate.feedback"
+          expression: "$.gate.findings[severity = 'critical' or severity = 'high']"
       # Acceptance gate maps the produced change back to the task requirements.
       - id: acceptance
         type: quality-gates.agent_review
@@ -178,7 +237,12 @@ nodes:
           context:
             expression: "$.steps.context"
           subject:
-            expression: "$.gate"
+            gate:
+              expression: "$.gate"
+            task_context:
+              expression: "$.steps.task_context"
+            implementation_plan:
+              expression: "$.steps.implementation_plan"
         block_when:
           expression: "$.gate.status != 'accepted'"
         feedback:
@@ -238,6 +302,8 @@ nodes:
         expression: "$.steps.implementation_validation.validation"
       acceptance:
         expression: "$.steps.implementation_validation.acceptance"
+      approved_snapshot:
+        expression: "$.steps.implementation_validation.approved_snapshot"
       diff:
         expression: "$.steps.worktree_diff"
       message:

@@ -39,6 +39,13 @@ standalone proof. For publishable findings, keep the primary evidence on changed
 PR diff lines from `repo_context` whenever possible; use related files to
 explain reachable impact.
 
+When a specific trust-boundary, caller, dependency, or configuration question
+remains unanswered, use `repository_context_query` narrowly. Treat its result
+as additive evidence from the same canonical index. The runtime pins the call
+to the supplied snapshot and rejects drift; verify the returned snapshot id and
+repeat only when another named gap remains. Do not perform broad discovery or
+treat related-file excerpts as changed-line proof.
+
 Each finding must include:
 
 - a short title;

@@ -1,4 +1,7 @@
-import type { InterruptRecord } from "../../../src/core/runtime/interrupts/contracts.js";
+import type {
+  InterruptLookupQuery,
+  InterruptRecord
+} from "../../../src/core/runtime/interrupts/contracts.js";
 import { resumeInputsEqual } from "../../../src/core/runtime/interrupts/resume.js";
 import {
   markNodeWaitingForInput,
@@ -53,6 +56,17 @@ export function interruptRecord(runId: string): InterruptRecord {
 export function interruptPort(interrupts: Map<string, InterruptRecord>) {
   return {
     get: async (id: string) => interrupts.get(id),
+    findFirst: async (
+      runId: string,
+      query: InterruptLookupQuery
+    ) => [...interrupts.values()].find((record) =>
+      record.run_id === runId &&
+      (query.exclude_id === undefined || record.id !== query.exclude_id) &&
+      (query.thread_id === undefined || record.thread_id === query.thread_id) &&
+      (query.created_after === undefined || record.created_at > query.created_after) &&
+      (query.statuses === undefined || query.statuses.includes(record.status))),
+    withResumeLease: async <T>(_runId: string, operation: () => Promise<T>) =>
+      await operation(),
     beginResume: async (
       id: string,
       resumeAttempt: string,
@@ -144,6 +158,11 @@ export async function waitingResult(
   });
   state = startNodeAttempt(state, "analyze", 1);
   state = markNodeWaitingForInput(state, "analyze");
+  await input.onWaitingState?.({
+    state,
+    interrupt_id: "interrupt-1",
+    checkpoint_id: "checkpoint-1"
+  });
   return {
     status: "waiting_for_input" as const,
     interrupt_id: "interrupt-1",

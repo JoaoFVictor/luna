@@ -4,11 +4,29 @@ import type {
 } from "../../core/workflow/execution-contracts.js";
 import { isCheckpointPlainObject } from "../../core/runtime/json.js";
 import type { CheckpointRecord } from "../../core/runtime/backends/contracts.js";
-import { LUNA_RUNTIME_STATE_SCHEMA_VERSION } from "../../core/runtime/state.js";
+import {
+  LUNA_RUNTIME_STATE_SCHEMA_VERSION,
+  createInitialRuntimeState,
+  validateCheckpointState,
+  type LunaRuntimeState
+} from "../../core/runtime/state.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import { resumeContextFromMetadata } from "./interrupts.js";
 import { checkpointId as waitingCheckpointId } from "./interrupt-wait-protocol.js";
-import { validateResumeWaitIntent } from "./resume-wait-intent-validation.js";
+import {
+  validatePersistedWaitIntent,
+  validateResumeWaitIntent
+} from "./resume-wait-intent-validation.js";
+import { listCheckpointWritesForRecovery } from "./checkpoint-io.js";
+import {
+  checkpointArtifactRefs,
+  checkpointInterruptRefs
+} from "./resume-recovery-codec.js";
+import {
+  markNodeWaitingForInput,
+  startNodeAttempt
+} from "../../core/runtime/lifecycle.js";
+import type { WorkflowDefinition } from "../../core/workflow/definition-types.js";
 
 export type ValidatedResumeCheckpoint = {
   readonly checkpoint: CheckpointRecord;
@@ -16,6 +34,16 @@ export type ValidatedResumeCheckpoint = {
   readonly resumeIndex: number;
   readonly resumeNodeId: string;
 };
+
+type ResumeCheckpointInput = Pick<
+  ResumeWorkflowInput,
+  | "compiled"
+  | "workflow"
+  | "backends"
+  | "thread_id"
+  | "checkpoint_id"
+  | "interrupt_id"
+>;
 
 /**
  * Validates the durable origin of a resume without changing checkpoints,
@@ -150,7 +178,7 @@ function validateReviewDecisionTargets(
 }
 
 export async function loadValidatedResumeCheckpoint<
-  TInput extends ResumeWorkflowInput
+  TInput extends ResumeCheckpointInput
 >(input: TInput): Promise<ValidatedResumeCheckpoint> {
   const checkpoint = await input.backends.checkpoints.load(input.thread_id, {
     checkpointId: input.checkpoint_id,
@@ -239,6 +267,258 @@ export async function loadValidatedResumeCheckpoint<
     resumeIndex,
     resumeNodeId
   };
+}
+
+export async function recoverPersistedWaitingBoundary(
+  input: ResumeCheckpointInput
+): Promise<WaitingBoundaryResult> {
+  return await recoverPersistedWaitingBoundaryByIdentity({
+    backends: input.backends,
+    thread_id: input.thread_id,
+    checkpoint_id: input.checkpoint_id,
+    interrupt_id: input.interrupt_id,
+    workflow: {
+      id: input.workflow.id,
+      revision: input.workflow.revision,
+      mode: input.workflow.mode,
+      state_schema_version: input.compiled.state_schema_version,
+      nodes: input.compiled.nodes.map(waitingBoundaryNodeIdentity)
+    }
+  });
+}
+
+export type WaitingBoundaryWorkflowIdentity = {
+  readonly id: string;
+  readonly revision: string;
+  readonly mode: WorkflowDefinition["mode"];
+  readonly state_schema_version: string;
+  readonly nodes: readonly {
+    readonly id: string;
+    readonly kind: string;
+    readonly wait_capability_id: string;
+  }[];
+};
+
+type WaitingBoundaryNodeSource = {
+  readonly id: string;
+  readonly kind: string;
+  readonly capability_id: string;
+  readonly loop_body?: readonly {
+    readonly kind: string;
+    readonly capability_id: string;
+  }[];
+};
+
+export function waitingBoundaryNodeIdentity(
+  node: WaitingBoundaryNodeSource
+): WaitingBoundaryWorkflowIdentity["nodes"][number] {
+  const waitCapabilityId = node.kind === "loop"
+    ? node.loop_body?.at(-1)?.kind === "interrupt"
+      ? node.loop_body.at(-1)?.capability_id
+      : undefined
+    : node.capability_id;
+  if (waitCapabilityId === undefined || waitCapabilityId === "") {
+    throw runtimeError(
+      "Pinned workflow node cannot identify its waiting capability",
+      "runtime_checkpoint_schema_mismatch",
+      { details: { node_id: node.id, node_kind: node.kind } }
+    );
+  }
+  return {
+    id: node.id,
+    kind: node.kind,
+    wait_capability_id: waitCapabilityId
+  };
+}
+
+export type WaitingBoundaryResult = {
+  readonly status: "waiting_for_input";
+  readonly interrupt_id: string;
+  readonly checkpoint_id: string;
+  readonly state: LunaRuntimeState;
+};
+
+/**
+ * Reconciles an exact durable wait from pinned graph identity alone. This path
+ * deliberately does not compile a workflow or resolve its capability catalog.
+ */
+export async function recoverPersistedWaitingBoundaryByIdentity(
+  input: Pick<
+    ResumeCheckpointInput,
+    "backends" | "thread_id" | "checkpoint_id" | "interrupt_id"
+  > & { readonly workflow: WaitingBoundaryWorkflowIdentity }
+): Promise<{
+  readonly status: "waiting_for_input";
+  readonly interrupt_id: string;
+  readonly checkpoint_id: string;
+  readonly state: LunaRuntimeState;
+}> {
+  const checkpoint = await input.backends.checkpoints.load(input.thread_id, {
+    checkpointId: input.checkpoint_id,
+    expectedStateSchemaVersion: LUNA_RUNTIME_STATE_SCHEMA_VERSION
+  });
+  if (
+    checkpoint === undefined ||
+    checkpoint.thread_id !== input.thread_id ||
+    checkpoint.checkpoint_id !== input.checkpoint_id ||
+    checkpoint.checkpoint_ns !== "" ||
+    checkpoint.state.run_status !== "waiting_for_input"
+  ) {
+    throw runtimeError(
+      "Waiting recovery requires the exact durable checkpoint",
+      "runtime_checkpoint_schema_mismatch",
+      {
+        details: {
+          checkpoint_id: input.checkpoint_id,
+          thread_id: input.thread_id
+        }
+      }
+    );
+  }
+  if (
+    checkpoint.metadata.workflow_revision !== input.workflow.revision ||
+    checkpoint.state_schema_version !== input.workflow.state_schema_version
+  ) {
+    throw runtimeError(
+      "Waiting recovery checkpoint identity is incompatible",
+      "runtime_checkpoint_schema_mismatch",
+      {
+        details: {
+          checkpoint_id: input.checkpoint_id,
+          workflow_id: input.workflow.id
+        }
+      }
+    );
+  }
+  const resumeNodeId = String(checkpoint.metadata.resume_node_id ?? "");
+  const resumeNode = input.workflow.nodes.find(({ id }) => id === resumeNodeId);
+  const resumeContext = resumeContextFromMetadata(checkpoint.metadata);
+  if (
+    resumeNode === undefined ||
+    (resumeNode.kind !== "interrupt" && resumeNode.kind !== "loop") ||
+    resumeContext.run.run_id !== input.thread_id ||
+    resumeContext.run.workflow_id !== input.workflow.id ||
+    (resumeNode.kind !== "loop" &&
+      input.checkpoint_id !== waitingCheckpointId(input.thread_id, resumeNodeId))
+  ) {
+    throw runtimeError(
+      "Waiting recovery checkpoint conflicts with pinned graph identity",
+      "runtime_checkpoint_schema_mismatch",
+      {
+        details: {
+          checkpoint_id: input.checkpoint_id,
+          workflow_id: input.workflow.id,
+          resume_node_id: resumeNodeId
+        }
+      }
+    );
+  }
+  const interrupt = await input.backends.interrupts.get(input.interrupt_id);
+  if (
+    interrupt === undefined ||
+    interrupt.status !== "pending" ||
+    interrupt.run_id !== input.thread_id ||
+    interrupt.thread_id !== input.thread_id ||
+    interrupt.checkpoint_id !== input.checkpoint_id ||
+    interrupt.node_id !== resumeNodeId
+  ) {
+    throw runtimeError(
+      "Durable waiting boundary does not match its pending interrupt",
+      "interrupt_stale",
+      { details: { interrupt_id: input.interrupt_id } }
+    );
+  }
+  const later = await input.backends.interrupts.findFirst(input.thread_id, {
+    exclude_id: interrupt.id,
+    statuses: ["pending"]
+  });
+  if (later !== undefined) {
+    throw runtimeError(
+      "Durable waiting boundary is stale relative to a later interrupt",
+      "interrupt_stale",
+      {
+        details: {
+          interrupt_id: interrupt.id,
+          later_interrupt_id: later.id
+        }
+      }
+    );
+  }
+  const occurrence = resumeNode.kind === "loop"
+    ? waitingLoopOccurrence(input, resumeContext, resumeNodeId)
+    : undefined;
+  await validatePersistedWaitIntent({
+    input,
+    workflowRevision: input.workflow.revision,
+    resumeNodeId,
+    expectedCapabilityId: resumeNode.wait_capability_id,
+    occurrence,
+    checkpoint,
+    resumeContext,
+    interrupt
+  });
+  const writes = await listCheckpointWritesForRecovery({
+    input,
+    threadId: input.thread_id,
+    checkpointNs: checkpoint.checkpoint_ns,
+    checkpointId: input.checkpoint_id,
+    operation: "rehydrate_waiting_boundary"
+  });
+  let state = createInitialRuntimeState({
+    invocation: resumeContext.invocation,
+    config: resumeContext.config,
+    run: resumeContext.run,
+    workflow: { id: input.workflow.id, mode: input.workflow.mode }
+  });
+  state = {
+    ...state,
+    steps: Object.fromEntries(
+      writes
+        .filter(({ channel }) => channel === "steps")
+        .map(({ task_id: taskId, value }) => [taskId, value])
+    ),
+    artifact_refs: checkpointArtifactRefs(checkpoint.state.artifact_refs),
+    interrupt_refs: checkpointInterruptRefs(checkpoint.state.interrupt_refs)
+  };
+  state = markNodeWaitingForInput(
+    startNodeAttempt(state, resumeNodeId, 1),
+    resumeNodeId
+  );
+  validateCheckpointState(state);
+  return {
+    status: "waiting_for_input",
+    interrupt_id: interrupt.id,
+    checkpoint_id: input.checkpoint_id,
+    state
+  };
+}
+
+function waitingLoopOccurrence(
+  input: Pick<ResumeWorkflowInput, "thread_id" | "checkpoint_id" | "interrupt_id">,
+  context: ReturnType<typeof resumeContextFromMetadata>,
+  resumeNodeId: string
+): string {
+  const continuation = context.loop_continuation;
+  if (
+    continuation === undefined ||
+    continuation.node_id !== resumeNodeId ||
+    !Number.isSafeInteger(continuation.iteration) ||
+    continuation.iteration < 1
+  ) {
+    throw runtimeError(
+      "Pinned loop wait is missing its exact continuation occurrence",
+      "runtime_checkpoint_schema_mismatch",
+      {
+        details: {
+          thread_id: input.thread_id,
+          checkpoint_id: input.checkpoint_id,
+          interrupt_id: input.interrupt_id,
+          resume_node_id: resumeNodeId
+        }
+      }
+    );
+  }
+  return `iteration-${continuation.iteration}`;
 }
 
 export function resumedInputFromContext<TInput extends ResumeWorkflowInput>(

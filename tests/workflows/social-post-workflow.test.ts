@@ -56,7 +56,6 @@ describe("bundled social-post workflow", () => {
     expect(editorial.body.nodes.find((node) => node.id === "draft")).toMatchObject({
       type: "built_in",
       uses: "social-post.apply_revision_scope",
-      after: ["proposal"],
       input: {
         proposed_draft: { expression: "$.steps.proposal" },
         previous_draft: { expression: expect.stringContaining("$.steps.draft") },
@@ -65,7 +64,6 @@ describe("bundled social-post workflow", () => {
     });
     expect(editorial.body.nodes.find((node) => node.id === "image")).toMatchObject({
       type: "built_in",
-      after: ["draft"],
       uses: "image-generation.generate",
       when: { expression: expect.stringContaining("'image' in $.steps.review.targets") },
       policies: [{
@@ -75,18 +73,17 @@ describe("bundled social-post workflow", () => {
     });
     expect(editorial.body.nodes.find((node) => node.id === "review")).toMatchObject({
       type: "human_gate",
-      after: ["prepare"],
       uses: "hitl.review"
     });
     expect(editorial.body.nodes.find((node) => node.id === "prepare")).toMatchObject({
       type: "built_in",
-      after: ["image"],
       uses: "social-post.prepare",
       input: {
         text: { expression: "$.steps.draft.text" },
         image_asset: { expression: "$.steps.image.asset" }
       }
     });
+    expect(editorial.body.nodes.every((node) => node.after === undefined)).toBe(true);
     expect(workflow.graph.nodes.find((node) => node.id === "publish")).toMatchObject({
       after: ["editorial"],
       policies: [{

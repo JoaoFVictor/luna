@@ -15,7 +15,6 @@ import {
 
 export const WAIT_INTENT_SCHEMA_VERSION = 2;
 export const WAIT_INTENT_CHANNEL = "interrupt_wait_intent";
-export const WAIT_COMPLETION_CHANNEL = "interrupt_wait_completion";
 
 export type InterruptWaitIntent = {
   readonly schema_version: typeof WAIT_INTENT_SCHEMA_VERSION;
@@ -109,10 +108,6 @@ export function waitIntentTaskId(nodeId: string): string {
   return `__luna_wait_intent__:${nodeId}`;
 }
 
-export function waitCompletionTaskId(nodeId: string): string {
-  return `__luna_wait_completion__:${nodeId}`;
-}
-
 export function parseInterruptWaitIntent(
   value: JsonValue,
   invalid: (details?: Record<string, unknown>) => Error
@@ -190,23 +185,5 @@ export function waitIntentWrite(
     index: 0,
     channel: WAIT_INTENT_CHANNEL,
     value: intent
-  };
-}
-
-export function waitCompletionWrite(
-  intent: InterruptWaitIntent
-): CheckpointWriteRecord {
-  return {
-    thread_id: intent.run_id,
-    checkpoint_ns: "",
-    checkpoint_id: intent.checkpoint_id,
-    task_id: waitCompletionTaskId(intent.node_id),
-    index: 0,
-    channel: WAIT_COMPLETION_CHANNEL,
-    value: {
-      schema_version: WAIT_INTENT_SCHEMA_VERSION,
-      created_at: intent.created_at,
-      interrupt_id: intent.interrupt_id
-    }
   };
 }

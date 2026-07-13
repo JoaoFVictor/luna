@@ -278,8 +278,7 @@ describe("workflow compiler", () => {
                 {
                   id: "approve",
                   type: "human_gate",
-                  uses: "quality.approval",
-                  after: ["write"]
+                  uses: "quality.approval"
                 }
               ]
             },
@@ -295,6 +294,39 @@ describe("workflow compiler", () => {
         path: "$.nodes[0].body.nodes[0]"
       })
     );
+  });
+
+  it("uses loop body array order as the only sequencing contract", () => {
+    const loop: WorkflowNode = {
+      id: "editorial",
+      type: "loop",
+      body: {
+        nodes: [
+          {
+            id: "draft",
+            type: "built_in",
+            uses: "runtime.preflight"
+          },
+          {
+            id: "approve",
+            type: "human_gate",
+            uses: "quality.approval",
+            after: ["draft"]
+          }
+        ]
+      },
+      repeat_when: { expression: "false" },
+      result: { expression: "{}" }
+    };
+    expect(() => validateNodesAgainstCapabilities(
+      [loop],
+      ["runtime", "agents", "quality"],
+      new Set([loop.id]),
+      registry
+    )).toThrowError(expect.objectContaining({
+      code: "workflow_schema_invalid",
+      path: "$.nodes[0].body.nodes[1].after"
+    }));
   });
 
   it("rejects fan-out branches that could create multiple pending HITL interrupts", () => {

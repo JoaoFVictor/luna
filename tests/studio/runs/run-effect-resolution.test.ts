@@ -211,6 +211,34 @@ describe("native Studio effect categories", () => {
     ]));
   });
 
+  it("attributes implementation pattern agents to their durable stages", async () => {
+    const implementation = await loadWorkflowDefinition("workflows", "implementation", {
+      agentsRoot: "agents",
+      capabilityRegistry: nativeLunaPlatformRegistrations.capabilityRegistry
+    });
+    const result = await resolveNativeStudioRunEffects({
+      workflow: implementation,
+      agentsRoot: "agents",
+      capabilityRegistry: nativeLunaPlatformRegistrations.capabilityRegistry
+    });
+
+    expect(result.potential_effects).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        registration_id: "code-implementer",
+        node_id: "pattern/implementation/worker",
+        retry_semantics: "retry_forbidden"
+      }),
+      expect.objectContaining({
+        registration_id: "change-reviewer",
+        node_id: "pattern/implementation/reviewer:review"
+      }),
+      expect.objectContaining({
+        registration_id: "change-acceptance-reviewer",
+        node_id: "pattern/implementation/reviewer:acceptance"
+      })
+    ]));
+  });
+
   it("attributes composed child effects to the parent runtime call boundary", async () => {
     const capabilityId = "child-write";
     const registrationId = `${capabilityId}.execute`;
