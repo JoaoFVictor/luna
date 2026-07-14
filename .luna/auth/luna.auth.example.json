@@ -15,6 +15,15 @@
         "api_key": "redacted-plane-api-key"
       }
     },
+    "x": {
+      "default": {
+        "auth_type": "oauth2_user_access_token",
+        "access_token": "redacted-x-user-access-token",
+        "refresh_token": "redacted-x-refresh-token",
+        "client_id": "redacted-x-oauth2-client-id",
+        "expires_at": "2099-01-01T00:00:00.000Z"
+      }
+    },
     "webhooks": {
       "github": {
         "secret": "redacted-github-webhook-secret"

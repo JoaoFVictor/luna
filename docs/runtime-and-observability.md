@@ -160,7 +160,7 @@ the mounted `dist/` matches the mounted configuration.
 The Compose file also mounts auth and repository state needed by real runs:
 
 - `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth` for all auth files.
-- `.luna/auth/luna.auth.json` for Jira, Plane, and webhook secrets.
+- `.luna/auth/luna.auth.json` for Jira, Plane, X OAuth, and webhook secrets.
 - `.luna/auth/pi-ai/auth.json` for Pi model auth.
 - `.luna/auth/gh` for GitHub CLI auth through `GH_CONFIG_DIR`.
 - `.luna/auth/ssh` for SSH repository remotes.

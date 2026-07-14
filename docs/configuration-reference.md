@@ -316,8 +316,10 @@ configured revision cap; every human-triggered iteration has its own checkpoint,
 interrupt identity, and artifact namespace.
 
 Image generation reuses the Pi `openai-codex` OAuth credential in
-`.luna/auth/pi-ai/auth.json`. Only the X OAuth user access token belongs in
-`.luna/auth/luna.auth.json`; neither credential belongs in workflow config:
+`.luna/auth/pi-ai/auth.json`. X OAuth credentials belong in
+`.luna/auth/luna.auth.json`; neither provider credential belongs in workflow
+config. Request `offline.access` together with `tweet.read`, `tweet.write`,
+`users.read`, and `media.write`, then configure the returned refresh token:
 
 ```json
 {
@@ -325,7 +327,10 @@ Image generation reuses the Pi `openai-codex` OAuth credential in
     "x": {
       "default": {
         "auth_type": "oauth2_user_access_token",
-        "access_token": "<user-access-token>"
+        "access_token": "<user-access-token>",
+        "refresh_token": "<refresh-token>",
+        "client_id": "<oauth2-client-id>",
+        "expires_at": "2026-07-13T22:00:00.000Z"
       }
     }
   }
@@ -333,7 +338,12 @@ Image generation reuses the Pi `openai-codex` OAuth credential in
 ```
 
 The token must represent the user that will publish the post and must have
-write permission.
+write permission. `expires_at` is optional: when present, Luna refreshes the
+token shortly before expiry; when absent, Luna refreshes after a confirmed
+`401`. A confidential OAuth client must also set `client_secret`; a public PKCE
+client must omit it. Successful refreshes atomically rotate `access_token`,
+`refresh_token`, and `expires_at` in this file under an inter-process lock.
+Access-token-only entries remain supported but cannot refresh automatically.
 
 ## `plane.yaml`
 

@@ -11,7 +11,7 @@ publishes the approved text with that media attached.
 
 The image step uses the existing Pi `openai-codex` OAuth credential at
 `.luna/auth/pi-ai/auth.json`; `pi-imagegen` does not use a public OpenAI API
-key. Store only the X credential outside version control at
+key. Store the X credential outside version control at
 `.luna/auth/luna.auth.json` (or under `LUNA_AUTH_ROOT`):
 
 ```json
@@ -20,15 +20,41 @@ key. Store only the X credential outside version control at
     "x": {
       "default": {
         "auth_type": "oauth2_user_access_token",
-        "access_token": "<user-access-token>"
+        "access_token": "<user-access-token>",
+        "refresh_token": "<refresh-token>",
+        "client_id": "<oauth2-client-id>"
       }
     }
   }
 }
 ```
 
-Use an OAuth user access token for the X account that will publish. An app-only
-bearer token cannot create posts.
+The X Developer Console does not generate these OAuth 2.0 user tokens directly.
+It provides the client credentials; the authorization flow returns the access
+and refresh tokens. For a local one-account setup:
+
+1. At [console.x.com](https://console.x.com), create an App and configure OAuth
+   2.0 as `Native App` (public client).
+2. Register `https://oauth.pstmn.io/v1/browser-callback` as an exact callback
+   URL and copy the App's `Client ID` from `Keys and Tokens`.
+3. In Postman, select OAuth 2.0 and `Authorization Code (With PKCE)`, enable
+   `Authorize using browser`, use `SHA-256`, and configure:
+   - Auth URL: `https://x.com/i/oauth2/authorize`
+   - Access Token URL: `https://api.x.com/2/oauth2/token`
+   - Scope: `tweet.read tweet.write users.read media.write offline.access`
+   - Client ID: the value copied from the X App
+4. Select `Get New Access Token`, authorize the publishing account, then open
+   `Manage Tokens`. Copy the access token and refresh token into the Luna auth
+   entry. The refresh token exists only when `offline.access` was requested.
+
+The current X Postman procedure is documented at
+[docs.x.com/tutorials/postman-getting-started](https://docs.x.com/tutorials/postman-getting-started),
+and current Postman versions expose token details under `Manage Tokens`. An
+app-only bearer token cannot create posts. Luna uses the current access token
+until X returns a confirmed `401`, then refreshes and atomically persists the
+rotated credentials. Set `expires_at` to an ISO-8601 timestamp when the token's
+expiry is known to refresh proactively. Confidential clients must also set
+`client_secret`; public PKCE clients omit it.
 
 ## Run
 

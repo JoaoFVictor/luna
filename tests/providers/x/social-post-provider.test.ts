@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SocialPostPublishInput } from "../../../src/capabilities/social-post/contracts.js";
+import type { XRefreshableAuth } from "../../../src/providers/x/auth.js";
 import { createXSocialPostProviderFactory } from "../../../src/providers/x/social-post/factory.js";
 import {
   X_MAX_WEIGHTED_LENGTH,
@@ -106,6 +107,112 @@ describe("X social post provider", () => {
       code: "social_post_auth_failed",
       message: "X rejected the media upload: Unauthorized"
     });
+  });
+
+  it("refreshes after a confirmed 401 and retries only the rejected operation", async () => {
+    let auth: XRefreshableAuth = {
+      auth_type: "oauth2_user_access_token",
+      access_token: "expired-access",
+      refresh_token: "refresh-token",
+      client_id: "public-client"
+    };
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        title: "Unauthorized"
+      }), { status: 401, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: "fresh-access",
+        refresh_token: "rotated-refresh",
+        expires_in: 7200
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { id: "media-123" }
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { id: "123456", text: "Olá, X!" }
+      }), { status: 201, headers: { "content-type": "application/json" } })) as typeof fetch;
+    const provider = createXSocialPostProviderFactory({
+      fetch: fetchImpl,
+      loadAuth: async () => ({ providers: { x: { default: auth } } }),
+      persistAuth: async (_root, _instance, next) => {
+        auth = next as XRefreshableAuth;
+      },
+      acquireRefreshLock: async () => async () => undefined,
+      now: () => Date.parse("2026-07-13T20:00:00.000Z")
+    }).createProvider();
+
+    await expect(provider.publishPost(input)).resolves.toMatchObject({
+      external_id: "123456",
+      media_id: "media-123"
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://api.x.com/2/media/upload",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer expired-access" })
+      })
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      3,
+      "https://api.x.com/2/media/upload",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer fresh-access" })
+      })
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      4,
+      "https://api.x.com/2/tweets",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer fresh-access" })
+      })
+    );
+    expect(auth).toMatchObject({
+      access_token: "fresh-access",
+      refresh_token: "rotated-refresh"
+    });
+  });
+
+  it("does not upload media again when only post creation rejects an expired token", async () => {
+    let auth: XRefreshableAuth = {
+      auth_type: "oauth2_user_access_token",
+      access_token: "expired-access",
+      refresh_token: "refresh-token",
+      client_id: "public-client"
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { id: "media-123" }
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        title: "Unauthorized"
+      }), { status: 401, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: "fresh-access",
+        expires_in: 7200
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { id: "123456", text: "Olá, X!" }
+      }), { status: 201, headers: { "content-type": "application/json" } }));
+    const provider = createXSocialPostProviderFactory({
+      fetch: fetchMock as typeof fetch,
+      loadAuth: async () => ({ providers: { x: { default: auth } } }),
+      persistAuth: async (_root, _instance, next) => {
+        auth = next as XRefreshableAuth;
+      },
+      acquireRefreshLock: async () => async () => undefined,
+      now: () => Date.parse("2026-07-13T20:00:00.000Z")
+    }).createProvider();
+
+    await expect(provider.publishPost(input)).resolves.toMatchObject({
+      external_id: "123456",
+      media_id: "media-123"
+    });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.x.com/2/media/upload",
+      "https://api.x.com/2/tweets",
+      "https://api.x.com/2/oauth2/token",
+      "https://api.x.com/2/tweets"
+    ]);
   });
 
   it("marks transport failures as an unknown outcome so the post is not retried", async () => {

@@ -388,8 +388,8 @@ skills.
 ## Provider And Auth Boundaries
 
 GitHub uses the `gh` CLI with `GH_CONFIG_DIR` under the Luna auth root. Git
-uses `.luna/auth/git/config` for commit identity. Jira, Plane, and webhook
-signing secrets read provider credentials from `.luna/auth/luna.auth.json`.
+uses `.luna/auth/git/config` for commit identity. Jira, Plane, X OAuth, and
+webhook signing secrets read provider credentials from `.luna/auth/luna.auth.json`.
 Pi model auth lives in `.luna/auth/pi-ai/auth.json`.
 
 Provider code belongs under `src/providers/<provider>/`. Generic core and
