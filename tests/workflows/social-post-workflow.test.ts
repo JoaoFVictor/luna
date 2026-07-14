@@ -279,7 +279,8 @@ describe("bundled social-post workflow", () => {
       image_generation: {
         provider: "pi-imagegen",
         size: "1024x1024",
-        quality: "medium"
+        quality: "medium",
+        timeout_ms: 360_000
       },
       social_post: { provider: "x", auth_instance: "default" }
     };

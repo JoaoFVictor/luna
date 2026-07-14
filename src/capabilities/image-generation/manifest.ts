@@ -9,10 +9,16 @@ const expressionSchema = {
 const stringOrExpressionSchema = {
   anyOf: [{ type: "string" }, expressionSchema]
 } as const;
+const timeoutOrExpressionSchema = {
+  anyOf: [
+    { type: "integer", minimum: 1, maximum: 900_000 },
+    expressionSchema
+  ]
+} as const;
 export const manifest = capabilityManifest({
   id: "image-generation",
   kind: "execution",
-  version: "2026.07.12",
+  version: "2026.07.14",
   ports: {
     "image-generation.provider": {
       id: "image-generation.provider",
@@ -47,7 +53,8 @@ export const manifest = capabilityManifest({
           },
           prompt: stringOrExpressionSchema,
           size: stringOrExpressionSchema,
-          quality: stringOrExpressionSchema
+          quality: stringOrExpressionSchema,
+          timeout_ms: timeoutOrExpressionSchema
         }
       },
       output_schema: {

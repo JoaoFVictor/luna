@@ -145,4 +145,40 @@ describe("image-generation capability", () => {
     })).rejects.toMatchObject({ code: "image_generation_invalid_output" });
   });
 
+  it("passes an explicit bounded timeout to the provider", async () => {
+    const provider = {
+      provider_id: "pi-imagegen" as const,
+      generateImage: vi.fn(async () => {
+        throw Object.assign(new Error("stop after capturing options"), {
+          code: "image_generation_failed"
+        });
+      })
+    };
+    const builtIn = createImageGenerateBuiltIn({
+      projectRoot: "/trusted/repo",
+      providers: { get: () => provider },
+      artifacts: {
+        publish: vi.fn(),
+        read: vi.fn(async () => new Uint8Array())
+      }
+    });
+
+    await expect(builtIn.run({
+      state,
+      node: { id: "image", capability_id: "image-generation.generate" },
+      input: {
+        provider_id: "pi-imagegen",
+        prompt: "A lunar landscape",
+        size: "1024x1024",
+        quality: "medium",
+        timeout_ms: 360_000
+      }
+    })).rejects.toMatchObject({ code: "image_generation_failed" });
+
+    expect(provider.generateImage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ timeoutMs: 360_000 })
+    );
+  });
+
 });

@@ -7,6 +7,7 @@ import {
 } from "./png-payload.js";
 
 export const DEFAULT_IMAGE_GENERATION_TIMEOUT_MS = 180_000;
+export const MAX_IMAGE_GENERATION_TIMEOUT_MS = 900_000;
 
 const NonEmptyStringSchema = z.string().min(1);
 

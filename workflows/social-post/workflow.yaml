@@ -78,6 +78,8 @@ nodes:
               expression: "$.config.image_generation.size"
             quality:
               expression: "$.config.image_generation.quality"
+            timeout_ms:
+              expression: "$.config.image_generation.timeout_ms"
           artifacts:
             - path: social-post-image-metadata.json
               publisher: artifacts.manifest_publisher

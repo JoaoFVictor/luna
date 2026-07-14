@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import { defineBuiltInStep } from "../../core/built-ins/registry.js";
 import { nodeOutputWithBinaryAssets } from "../../core/runtime/artifacts/binary-asset.js";
 import type {
@@ -10,6 +11,7 @@ import {
   DEFAULT_IMAGE_GENERATION_TIMEOUT_MS,
   GeneratedImagePayloadSchema,
   ImageGenerationInputSchema,
+  MAX_IMAGE_GENERATION_TIMEOUT_MS,
   MAX_GENERATED_IMAGE_BYTES,
   type ImageGenerationBuiltInPorts
 } from "./contracts.js";
@@ -48,12 +50,15 @@ export function createImageGenerateBuiltIn(
     name: "image-generation.generate",
     async run(options) {
       const resolvedPorts = typeof ports === "function" ? ports(options) : ports;
-      const parsed = ImageGenerationInputSchema.omit({ project_root: true }).safeParse({
+      const parsed = ImageGenerationInputSchema.omit({ project_root: true }).extend({
+        timeout_ms: z.number().int().min(1).max(MAX_IMAGE_GENERATION_TIMEOUT_MS).optional()
+      }).safeParse({
         operation_id: options.input?.operation_id ?? "image-generation.generate",
         provider_id: options.input?.provider_id,
         prompt: options.input?.prompt,
         size: options.input?.size,
-        quality: options.input?.quality
+        quality: options.input?.quality,
+        timeout_ms: options.input?.timeout_ms
       });
       if (!parsed.success) {
         throw imageGenerationError(
@@ -62,14 +67,15 @@ export function createImageGenerateBuiltIn(
         );
       }
 
+      const { timeout_ms: timeoutMs, ...providerInput } = parsed.data;
       const input = ImageGenerationInputSchema.parse({
-        ...parsed.data,
+        ...providerInput,
         project_root: resolvedPorts.projectRoot
       });
       const generatedResult = await resolvedPorts.providers
         .get(input.provider_id)
         .generateImage(input, {
-          timeoutMs: DEFAULT_IMAGE_GENERATION_TIMEOUT_MS,
+          timeoutMs: timeoutMs ?? DEFAULT_IMAGE_GENERATION_TIMEOUT_MS,
           maxImageBytes: MAX_GENERATED_IMAGE_BYTES,
           ...(options.signal === undefined ? {} : { signal: options.signal })
         });

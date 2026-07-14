@@ -7,7 +7,7 @@
     "image_generation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "size", "quality"],
+      "required": ["provider", "size", "quality", "timeout_ms"],
       "properties": {
         "provider": { "type": "string", "const": "pi-imagegen" },
         "size": {
@@ -17,6 +17,11 @@
         "quality": {
           "type": "string",
           "enum": ["low", "medium", "high", "auto"]
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 900000
         }
       }
     },
