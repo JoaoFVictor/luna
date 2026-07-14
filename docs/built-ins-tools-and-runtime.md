@@ -59,6 +59,7 @@ Common built-in families:
 - `review.coverage_check`
 - `review.quality_check`
 - `task-context.collect` and `task-context.final_report`
+- `validation.repository_configuration`
 - `validation.run_commands`
 - `findings.merge`
 - `findings.validate_evidence`
@@ -99,26 +100,37 @@ auditable reviewer declaration checked against captured diff evidence; it is
 not treated as proof that a model semantically understood every changed line.
 
 `repository-context.related_context` is the provider-neutral impact-context
-built-in used by code review. It takes captured `repo_context`, scans a bounded
-set of supported repository files, and emits `luna.related_context.v1` with
-ranked files plus graph `nodes` and `edges`. It skips dependency/build output
-and local agent/editor tool directories, and changed-file excerpts are centered
-on captured diff hunks instead of blindly taking the file prefix. It builds one
+built-in shared by code review and implementation. It accepts exactly one
+source: captured `repo_context`, normalized task text, or an attempt-scoped
+worktree diff. It emits `luna.repository_context.v2` with source, snapshot, and
+coverage identity plus ranked files and graph `nodes` and `edges`. Discovery
+comes from the deterministic repository index; agent-local file listing and
+text search are not alternate discovery paths. Inventory is the repository's
+tracked files plus non-ignored untracked files, as reported by Git, and
+changed-file excerpts are centered on captured diff hunks instead of blindly
+taking the file prefix. It builds one
 internal Luna symbol graph before ranking context. The graph is SCIP-inspired
 but is not a real `.scip` protobuf index: occurrences use Luna symbol strings,
 SCIP-compatible `symbol_roles` bitsets, typed UTF-16 ranges, and document-local
 symbol metadata. Engines use TypeScript for JS/TS, Luna-owned
 `@vue/compiler-sfc` for Vue SFC script/template extraction, and
-`nikic/php-parser` through the target repository's autoload when available for
-PHP. After import resolution, Luna links references back to resolved definition
-symbols before scoring reverse references. If a parser is unavailable or fails,
+Luna-owned `nikic/php-parser` from the runtime image for PHP; target-repository
+dependencies are never used to supply the parser. After import resolution,
+Luna links references back to resolved definition symbols before scoring reverse
+references. Ranking is deterministic and repository-neutral: Unicode-aware
+camel/snake/kebab tokenization feeds field-weighted BM25/IDF over paths, symbols,
+and content; conservative morphology and one-edit matching cover minor lexical
+variation. Files selected only by this retrieval are labeled `query_match` with
+source `lexical_retrieval`. Import/include and linked-symbol edges expand from
+diversified seeds for up to three decayed hops, and the public graph emits edges
+between all selected endpoints. If a parser is unavailable or fails,
 the built-in keeps producing deterministic context through heuristics and
 records that in `audit.warnings`. The output also records
 `audit.symbol_engines`, so agents and humans can see whether a run used
 `typescript_symbol_graph`, `vue_sfc_symbol_graph`, `php_symbol_graph`,
 `php_heuristic`, or generic `heuristic`. It resolves
 relative imports, TypeScript/JavaScript `paths` aliases and `baseUrl` from
-`tsconfig.json` or `jsconfig.json`, common root aliases such as `@/` and `~/`,
+`tsconfig.json` or `jsconfig.json` (with no undeclared root-alias fallback),
 PHP `require`/`include`, Composer PSR-4 namespaces, reverse references,
 tests/specs, config files, docs, same-directory files, and same-name
 abstractions. Docs/config edges are emitted only when they match the specific
@@ -153,13 +165,25 @@ include:
 - `repository.write-file`
 - `repository.delete-file`
 
-`status`, `diff-summary`, and `read-file` are available to read-only and
-trusted write agents. `write-file` and `delete-file` are trusted-local-write
-tools. Tool resolution checks capability registration, protocol, contract,
-requested ids, and agent mode.
+The `repository-context` capability separately registers
+`repository-context.query`. It accepts bounded text, path, and symbol hints and
+returns `luna.repository_context_query.v1` from the same canonical,
+snapshot-aware index and ranking pipeline used by the workflow built-in. Agents
+use it only to narrow a concrete gap in the initial graph. Agent calls are
+automatically pinned to that graph's snapshot and reject drift; direct callers
+can provide `expected_snapshot_id`. It does not expose a raw file-list or
+text-search path.
+
+`status`, `diff-summary`, and `read-file` are available to read-only and trusted
+write agents. Repository discovery is workflow-owned and comes from the
+`repository-context` capability rather than ad-hoc agent tools. `write-file`
+and `delete-file` are trusted-local-write tools. Tool resolution checks
+capability registration, protocol, contract, requested ids, and agent mode.
 
 Tool implementations are bound to a cwd and must keep filesystem access inside
-that cwd.
+that cwd. After a workflow promotes an isolated workspace, both ordinary agent
+nodes and pattern agents bind their local tools to that workspace rather than
+the repository default.
 
 ## MCP Status
 
@@ -177,11 +201,20 @@ through a process runner using `spawn(cmd, args)` with no shell. Read-only
 workflows cannot use write operations. Large outputs can be written as
 artifacts.
 
-`validation.run_commands` uses the command runner and passes only when every
-command exits 0 and does not time out.
+`validation.repository_configuration` returns the selected repository's
+validation contract when present and an empty command list when absent.
+`validation.run_commands` uses an explicit command list and passes only when
+every configured command exits 0 and does not time out. An empty list runs no
+validation process and passes. Validation commands do not inherit
+the Luna process environment: the runner preserves `PATH`, creates an isolated
+temporary `HOME`, then adds only variables named by the repository's explicit
+environment allowlist. Missing allowlisted variables are omitted. Declared
+executables must exist in the execution environment; Luna does not install or
+infer repository toolchains.
 
 These features run on the host and must be treated as trusted host-local
-execution.
+execution. Environment sanitization limits accidental credential propagation;
+it is not an operating-system filesystem or network sandbox.
 
 ## Runtime Composition
 

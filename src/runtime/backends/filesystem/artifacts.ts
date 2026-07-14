@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "../../../core/artifacts/atomic-write.js";
+import { artifactContentReadLimitError } from "../../../core/runtime/artifacts/content-read-error.js";
 import type {
   ArtifactManifest,
   ArtifactManifestListLimits,
@@ -103,11 +104,13 @@ export function createFilesystemArtifactManifestStore({
   root
 }: FilesystemArtifactManifestStoreOptions): ArtifactManifestStore {
   async function scopedManifestPath(manifest: ArtifactManifest): Promise<string> {
-    return await safeJoin(root, [
+    const manifestRoot = await safeJoin(root, [
       manifest.run_id,
-      ".manifests",
-      `${manifestKeyHash(manifest)}.json`
+      ".manifests"
     ]);
+    // Keep the final entry logical so O_NOFOLLOW in the bounded reader can
+    // reject a replaced manifest symlink instead of safeJoin resolving it.
+    return path.join(manifestRoot, `${manifestKeyHash(manifest)}.json`);
   }
 
   return {
@@ -134,9 +137,8 @@ export function createFilesystemArtifactManifestStore({
         created_at: "lookup"
       });
       try {
-        return ArtifactManifestSchema.parse(
-          JSON.parse(await readFile(filePath, "utf8"))
-        ) as ArtifactManifest;
+        const limits = resolveArtifactManifestListLimits();
+        return (await readBoundedManifestFile(filePath, limits, 0)).manifest;
       } catch (cause) {
         if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
           return undefined;
@@ -280,7 +282,11 @@ export function createFilesystemArtifactContentStore({
         throw invalidPendingContent(input.artifact_id);
       }
 
-      if (existingHash !== undefined && input.overwrite_policy === "forbid") {
+      if (
+        existingHash !== undefined &&
+        existingHash !== input.content_hash &&
+        input.overwrite_policy === "forbid"
+      ) {
         const error = new Error(
           `Artifact ${input.artifact_id} already exists with different content.`
         ) as Error & {
@@ -295,6 +301,49 @@ export function createFilesystemArtifactContentStore({
         uri: `artifact://${input.run_id}/${input.artifact_path}`,
         content_hash: input.content_hash
       };
+    },
+    async read(input) {
+      if (
+        input.max_bytes !== undefined &&
+        (!Number.isSafeInteger(input.max_bytes) || input.max_bytes < 1)
+      ) {
+        throw artifactContentReadLimitError();
+      }
+      const handle = await open(
+        await committedPath(input),
+        constants.O_RDONLY | constants.O_NOFOLLOW
+      );
+      try {
+        const before = await handle.stat({ bigint: true });
+        if (
+          !before.isFile() ||
+          before.size < 0n ||
+          before.size > BigInt(Number.MAX_SAFE_INTEGER) ||
+          (input.max_bytes !== undefined && before.size > BigInt(input.max_bytes))
+        ) {
+          throw artifactContentReadLimitError();
+        }
+        const bytes = Number(before.size);
+        const content = Buffer.alloc(bytes);
+        let offset = 0;
+        while (offset < bytes) {
+          const read = await handle.read(content, offset, bytes - offset, offset);
+          if (read.bytesRead === 0) throw artifactContentReadLimitError();
+          offset += read.bytesRead;
+        }
+        const after = await handle.stat({ bigint: true });
+        if (
+          after.dev !== before.dev ||
+          after.ino !== before.ino ||
+          after.size !== before.size ||
+          after.mtimeNs !== before.mtimeNs
+        ) {
+          throw artifactContentReadLimitError();
+        }
+        return new Uint8Array(content);
+      } finally {
+        await handle.close().catch(() => undefined);
+      }
     }
   };
 }

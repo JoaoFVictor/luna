@@ -62,6 +62,7 @@ function workflow(
       pattern: 0,
       human_gate: 0,
       workflow: 0,
+      loop: 0,
     },
     requires_repository: false,
     max_concurrency: 1,
@@ -120,12 +121,12 @@ describe("WorkflowNodeAdd", () => {
         agents={[]}
         workflows={[
           workflow("nested-safe", {
-            node_counts: { built_in: 0, agent: 0, pattern: 0, human_gate: 0, workflow: 1 },
+            node_counts: { built_in: 0, agent: 0, pattern: 0, human_gate: 0, workflow: 1, loop: 0 },
           }),
           workflow("approval", {
             synchronous_composition: "blocked",
             synchronous_composition_blocked_reason: "human_input",
-            node_counts: { built_in: 0, agent: 0, pattern: 0, human_gate: 1, workflow: 0 },
+            node_counts: { built_in: 0, agent: 0, pattern: 0, human_gate: 1, workflow: 0, loop: 0 },
           }),
           workflow("writer", { mode: "trusted_local_write" }),
         ]}

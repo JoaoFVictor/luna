@@ -5,6 +5,7 @@ import { assertExpressionObject } from "./expression.js";
 import { WorkflowDefinitionError } from "./definition-errors.js";
 import type {
   ParsedArtifactWritePlan,
+  ParsedPatternEvidence,
   ParsedWorkflowPolicy,
   ParsedWorkflowGate,
   ParsedWorkflowGraph,
@@ -28,11 +29,12 @@ const TOP_LEVEL_FIELDS = new Set([
 ]);
 
 const NODE_FIELDS: Record<string, ReadonlySet<string>> = {
-  built_in: new Set(["id", "type", "uses", "input", "artifacts", "after", "policies"]),
-  agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "runtime_requirements", "policies"]),
-  pattern: new Set(["id", "type", "uses", "worker", "input", "gates", "repair", "artifacts", "after", "capabilities", "policies"]),
-  human_gate: new Set(["id", "type", "uses", "decision", "after", "input", "artifacts"]),
-  workflow: new Set(["id", "type", "workflow", "input", "artifacts", "after"])
+  built_in: new Set(["id", "type", "uses", "input", "artifacts", "after", "policies", "when"]),
+  agent: new Set(["id", "type", "agent", "output_schema", "input", "artifacts", "after", "retry", "runtime_requirements", "policies", "when"]),
+  pattern: new Set(["id", "type", "uses", "worker", "input", "evidence", "gates", "repair", "artifacts", "after", "policies"]),
+  human_gate: new Set(["id", "type", "uses", "after", "input", "artifacts"]),
+  workflow: new Set(["id", "type", "workflow", "input", "artifacts", "after"]),
+  loop: new Set(["id", "type", "body", "repeat_when", "result", "halt_when", "after"])
 };
 
 const GATE_FIELDS = new Set([
@@ -43,6 +45,8 @@ const GATE_FIELDS = new Set([
   "block_when",
   "feedback"
 ]);
+
+const EVIDENCE_FIELDS = new Set(["id", "uses", "input"]);
 
 const ARTIFACT_FIELDS = new Set([
   "path",
@@ -246,7 +250,10 @@ function readNode(
       : { artifacts: readArtifacts(raw.artifacts, `${yamlPath}.artifacts`) }),
     ...(raw.policies === undefined
       ? {}
-      : { policies: readPolicies(raw.policies, `${yamlPath}.policies`) })
+      : { policies: readPolicies(raw.policies, `${yamlPath}.policies`) }),
+    ...(raw.when === undefined
+      ? {}
+      : { when: assertExpressionObject(raw.when, `${yamlPath}.when`) })
   };
 
   if (type === "built_in") {
@@ -287,8 +294,7 @@ function readNode(
     return {
       ...base,
       type: "human_gate",
-      uses: requireString(raw.uses, `${yamlPath}.uses`),
-      ...(raw.decision === undefined ? {} : { decision: raw.decision })
+      uses: requireString(raw.uses, `${yamlPath}.uses`)
     };
   }
   if (type === "workflow") {
@@ -296,6 +302,28 @@ function readNode(
       ...base,
       type: "workflow",
       workflow: requireString(raw.workflow, `${yamlPath}.workflow`)
+    };
+  }
+  if (type === "loop") {
+    const body = assertObject(raw.body, `${yamlPath}.body`);
+    assertKnownFields(body, new Set(["nodes"]), `${yamlPath}.body`);
+    return {
+      ...base,
+      type: "loop",
+      body: { nodes: readNodesAt(body.nodes, `${yamlPath}.body.nodes`) },
+      repeat_when: assertExpressionObject(
+        raw.repeat_when,
+        `${yamlPath}.repeat_when`
+      ),
+      result: assertExpressionObject(raw.result, `${yamlPath}.result`),
+      ...(raw.halt_when === undefined
+        ? {}
+        : {
+            halt_when: assertExpressionObject(
+              raw.halt_when,
+              `${yamlPath}.halt_when`
+            )
+          })
     };
   }
 
@@ -306,6 +334,9 @@ function readNode(
     ...(raw.worker === undefined
       ? {}
       : { worker: requireString(raw.worker, `${yamlPath}.worker`) }),
+    ...(raw.evidence === undefined
+      ? {}
+      : { evidence: readEvidence(raw.evidence, `${yamlPath}.evidence`) }),
     ...(raw.gates === undefined
       ? {}
       : { gates: readGates(raw.gates, `${yamlPath}.gates`) }),
@@ -313,6 +344,48 @@ function readNode(
       ? {}
       : { repair: assertObject(raw.repair, `${yamlPath}.repair`) })
   };
+}
+
+function readEvidence(value: unknown, yamlPath: string): ParsedPatternEvidence[] {
+  if (!Array.isArray(value)) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Pattern evidence must be an array.",
+      { path: yamlPath }
+    );
+  }
+
+  return value.map((entry, index) => {
+    const entryPath = `${yamlPath}[${index}]`;
+    const raw = assertObject(entry, entryPath);
+    assertKnownFields(raw, EVIDENCE_FIELDS, entryPath);
+    const id = requireString(raw.id, `${entryPath}.id`);
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+      throw new WorkflowDefinitionError(
+        "workflow_schema_invalid",
+        "Pattern evidence id must contain only letters, numbers, underscores, or hyphens.",
+        { path: `${entryPath}.id` }
+      );
+    }
+    return {
+      id,
+      uses: requireString(raw.uses, `${entryPath}.uses`),
+      ...(raw.input === undefined
+        ? {}
+        : { input: assertObject(raw.input, `${entryPath}.input`) })
+    };
+  });
+}
+
+function readNodesAt(value: unknown, yamlPath: string): ParsedWorkflowNode[] {
+  if (!Array.isArray(value)) {
+    throw new WorkflowDefinitionError(
+      "workflow_schema_invalid",
+      "Workflow loop body nodes must be an array.",
+      { path: yamlPath }
+    );
+  }
+  return value.map((node, index) => readNode(node, `${yamlPath}[${index}]`));
 }
 
 function readRuntimeRequirements(value: unknown, yamlPath: string): string[] {
@@ -389,13 +462,13 @@ function readArtifacts(
     const format =
       raw.format === undefined
         ? "json"
-        : raw.format === "json" || raw.format === "markdown"
+        : raw.format === "json" || raw.format === "markdown" || raw.format === "png"
           ? raw.format
           : undefined;
     if (format === undefined) {
       throw new WorkflowDefinitionError(
         "workflow_schema_invalid",
-        "Artifact format must be json or markdown.",
+        "Artifact format must be json, markdown, or png.",
         { path: `${artifactPath}.format` }
       );
     }

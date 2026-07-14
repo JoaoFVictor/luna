@@ -2,6 +2,7 @@ import type {
   ArtifactManifest,
   ArtifactManifestStore
 } from "../../../core/runtime/artifacts/contracts.js";
+import { artifactContentReadLimitError } from "../../../core/runtime/artifacts/content-read-error.js";
 import {
   ArtifactManifestSchema,
   artifactManifestListLimitError,
@@ -132,6 +133,28 @@ export function createMemoryArtifactContentStore(): ArtifactContentStore {
         uri: `artifact://${input.run_id}/${input.artifact_path}`,
         content_hash: input.content_hash
       };
+    },
+    async read(input) {
+      const stored = committed.get(`${input.run_id}/${input.artifact_path}`);
+      if (stored === undefined) {
+        throw new Error(`Artifact content is unavailable: ${input.artifact_path}`);
+      }
+      if (
+        input.max_bytes !== undefined &&
+        (!Number.isSafeInteger(input.max_bytes) || input.max_bytes < 1)
+      ) {
+        throw artifactContentReadLimitError();
+      }
+      const contentLength = typeof stored.content === "string"
+        ? Buffer.byteLength(stored.content, "utf8")
+        : stored.content.byteLength;
+      if (input.max_bytes !== undefined && contentLength > input.max_bytes) {
+        throw artifactContentReadLimitError();
+      }
+      const bytes = typeof stored.content === "string"
+        ? Buffer.from(stored.content, "utf8")
+        : stored.content;
+      return new Uint8Array(bytes);
     }
   };
 }

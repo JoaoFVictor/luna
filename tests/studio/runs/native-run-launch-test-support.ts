@@ -25,6 +25,7 @@ import type {
 } from "../../../src/studio/application/runs/launch-ports.js";
 import { StudioRunLaunchService } from "../../../src/studio/application/runs/launch-service.js";
 import type { RunLedgerPort } from "../../../src/studio/application/runs/ports.js";
+import type { RunRuntimeStatus } from "../../../src/studio/contracts/runs.js";
 import type {
   StudioRunLaunchContext,
   StudioRunPlanRequest
@@ -496,7 +497,7 @@ export function replaySafeBuiltInWorkflowSource(): string {
 export async function waitForRun(
   ledger: RunLedgerPort,
   runId: string,
-  status: "succeeded" | "failed"
+  status: RunRuntimeStatus
 ): Promise<void> {
   await vi.waitFor(async () => {
     const record = await ledger.get(runId);

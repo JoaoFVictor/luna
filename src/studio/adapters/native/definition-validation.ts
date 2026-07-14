@@ -152,7 +152,16 @@ function projectCompiledWorkflow(
       kind: node.kind,
       yaml_path: node.yaml_path,
       capability_id: node.capability_id,
-      can_create_pending_interrupt: node.can_create_pending_interrupt
+      can_create_pending_interrupt: node.can_create_pending_interrupt,
+      ...(node.kind === "loop" ? {
+        loop_body: (node.loop_body ?? []).map((bodyNode) => ({
+          id: bodyNode.id,
+          kind: bodyNode.kind,
+          yaml_path: bodyNode.yaml_path,
+          capability_id: bodyNode.capability_id,
+          can_create_pending_interrupt: bodyNode.can_create_pending_interrupt
+        }))
+      } : {})
     })),
     edges: compiled.edges.map((edge) => ({ ...edge }))
   });

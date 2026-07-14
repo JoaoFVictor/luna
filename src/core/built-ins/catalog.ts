@@ -27,16 +27,20 @@ export function createBuiltInStepCatalog<
       uses,
       state,
       input,
+      signal,
       dependencies = {},
-      observability
+      observability,
+      node
     }: RunBuiltInStepOptions): Promise<unknown> {
       const builtIn = registry.require(uses);
 
       return await builtIn.run({
         state,
         input,
+        ...(signal === undefined ? {} : { signal }),
         dependencies,
-        observability
+        observability,
+        node
       });
     }
   });

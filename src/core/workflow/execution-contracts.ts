@@ -11,7 +11,7 @@ import type { ArtifactOverwritePolicy } from "../runtime/artifacts/transaction.j
 import type { RuntimeBackends } from "../runtime/backends/contracts.js";
 import type { JsonValue } from "../runtime/json.js";
 import type { RunHandle } from "../runtime/run-handle.js";
-import type { LunaRuntimeState } from "../runtime/state.js";
+import type { LunaRuntimeState, RuntimeArtifactRef } from "../runtime/state.js";
 import type { ResolvedToolCatalog } from "../tools/resolved-catalog.js";
 import type { CompiledWorkflow, CompiledWorkflowNode } from "./compiler.js";
 import type { WorkflowDefinition } from "./definition-types.js";
@@ -34,11 +34,14 @@ export type WorkflowArtifactPublisherPort = {
   publish(input: {
     readonly node_id: string;
     readonly path: string;
-    readonly format: "json" | "markdown";
+    readonly format: "json" | "markdown" | "png";
     readonly value: unknown;
     readonly semantic_type?: ArtifactSemanticType;
     readonly overwrite_policy: ArtifactOverwritePolicy;
   }): Promise<WorkflowArtifactRef>;
+  verify?(ref: WorkflowArtifactRef & {
+    readonly content_hash?: string;
+  }): Promise<boolean>;
 };
 
 export type WorkflowBuiltInExecutor = (input: {
@@ -47,6 +50,7 @@ export type WorkflowBuiltInExecutor = (input: {
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
+  readonly signal?: AbortSignal;
   readonly observability?: WorkflowObservability;
 }) => Promise<unknown> | unknown;
 
@@ -61,8 +65,16 @@ export type WorkflowPatternExecutor = (input: {
   readonly state: LunaRuntimeState;
   readonly runtimeContext: WorkflowRuntimeContext;
   readonly workflow: WorkflowDefinition;
+  readonly runOccurrence: WorkflowPatternOccurrenceExecutor;
   readonly observability?: WorkflowObservability;
 }) => Promise<unknown> | unknown;
+
+export type WorkflowPatternOccurrenceExecutor = (input: {
+  readonly attempt: number;
+  readonly stage_id: string;
+  readonly output_schema: unknown;
+  readonly execute: () => Promise<JsonValue>;
+}) => Promise<JsonValue>;
 
 export type WorkflowCompositionExecutor = (input: {
   readonly workflowInput: RunWorkflowInput;
@@ -104,6 +116,21 @@ export type RunWorkflowInput = {
   readonly executionScope?: WorkflowExecutionScope;
   /** Development-only cut points. Their executors and exclusively-required ancestors do not run. */
   readonly precompleted_steps?: WorkflowPrecompletedSteps;
+  /** Internal continuation supplied only by the durable loop resume protocol. */
+  readonly loop_resume?: {
+    readonly node_id: string;
+    readonly iteration: number;
+    readonly steps: Record<string, JsonValue>;
+    readonly artifacts_by_node: Record<string, RuntimeArtifactRef[]>;
+    readonly decision: JsonValue;
+  };
+  /** Internal continuation persisted when a loop reaches its human gate. */
+  readonly loop_continuation?: {
+    readonly node_id: string;
+    readonly iteration: number;
+    readonly steps: Record<string, JsonValue>;
+    readonly artifacts_by_node: Record<string, RuntimeArtifactRef[]>;
+  };
   readonly signal?: AbortSignal;
   readonly runtimeContext?: WorkflowRuntimeContext;
   readonly backends: RuntimeBackends;
@@ -124,11 +151,29 @@ export type RunWorkflowInput = {
    */
   readonly onSucceededState?: (state: LunaRuntimeState) => Promise<void>;
   /**
+   * Control-plane durability barrier for an already durable runtime wait.
+   * Rejection requires recovery and must never manufacture a failed run.
+   */
+  readonly onWaitingState?: (waiting: {
+    readonly state: LunaRuntimeState;
+    readonly interrupt_id: string;
+    readonly checkpoint_id: string;
+  }) => Promise<void>;
+  /**
    * Internal, best-effort observation of an exact failed runtime state.
    * The observer is deliberately synchronous and cannot change runtime failure
    * semantics.
    */
   readonly onFailedState?: (state: LunaRuntimeState) => void;
+  /**
+   * Internal authoritative barrier invoked immediately before a node executor
+   * is entered. Unlike lifecycle projection, rejection aborts the node attempt
+   * and must never be swallowed as observability degradation.
+   */
+  readonly onBeforeNodeExecution?: (input: {
+    readonly node_id: string;
+    readonly attempt: number;
+  }) => Promise<void>;
   /**
    * Internal, ordered projection of node lifecycle events at their production
    * boundary. Projection failures are observational and must never change node
@@ -154,7 +199,9 @@ export type ResumeWorkflowInput = {
   readonly artifactPublisher?: WorkflowArtifactPublisherPort;
   readonly observability?: WorkflowObservability;
   readonly onSucceededState?: RunWorkflowInput["onSucceededState"];
+  readonly onWaitingState?: RunWorkflowInput["onWaitingState"];
   readonly onFailedState?: RunWorkflowInput["onFailedState"];
+  readonly onBeforeNodeExecution?: RunWorkflowInput["onBeforeNodeExecution"];
   readonly onLifecycleEvent?: RunWorkflowInput["onLifecycleEvent"];
   readonly onLifecycleProjectionError?: RunWorkflowInput["onLifecycleProjectionError"];
   readonly thread_id: string;

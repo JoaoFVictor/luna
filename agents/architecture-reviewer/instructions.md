@@ -45,6 +45,13 @@ keep the primary evidence on changed PR diff lines from `repo_context` whenever
 possible; use related files to explain the better existing abstraction or
 downstream impact.
 
+When a concrete coupling, reuse, caller, dependency, or test question remains
+unanswered, use `repository_context_query` with narrow text, paths, or symbols.
+Merge its result with the supplied graph. The runtime pins calls to the supplied
+snapshot and rejects drift; compare snapshot ids and repeat only to close
+another named evidence gap. It is the same canonical index, not an
+independent repository crawl, and it does not replace changed-line proof.
+
 Each finding must include:
 
 - a short title;

@@ -172,6 +172,8 @@ export class NativeStudioRunExecutor {
     let lifecycleProjectionComplete = true;
     let successBarrierAttempted = false;
     let successFinalized = false;
+    let waitingBarrierAttempted = false;
+    let waitingFinalized = false;
     let result: WorkflowRunResult;
     try {
       signal.throwIfAborted();
@@ -216,6 +218,17 @@ export class NativeStudioRunExecutor {
             true
           );
           successFinalized = true;
+        },
+        onWaitingState: async (waiting) => {
+          if (waitingBarrierAttempted) {
+            throw studioRunLaunchError(
+              "studio_run_dispatch_failed",
+              "Native workflow runner invoked the waiting durability barrier more than once"
+            );
+          }
+          waitingBarrierAttempted = true;
+          await lease.waitForInput(waiting.state);
+          waitingFinalized = true;
         },
         onFailedState: (state) => {
           failedState ??= state;
@@ -275,6 +288,8 @@ export class NativeStudioRunExecutor {
         // after that barrier may rewrite success as failure.
         return;
       }
+      if (waitingFinalized) return;
+      if (waitingBarrierAttempted) throw cause;
       if (successBarrierAttempted) {
         // Leave the leased record for journal/orphan recovery. A failed
         // durability barrier must never trigger destructive cleanup or a
@@ -348,7 +363,12 @@ export class NativeStudioRunExecutor {
           "Native workflow returned waiting after committing success"
         );
       }
-      await lease.waitForInput(result.state);
+      if (!waitingFinalized) {
+        throw studioRunLaunchError(
+          "studio_run_dispatch_failed",
+          "Native workflow runner skipped the waiting durability barrier"
+        );
+      }
       return;
     }
     if (!successFinalized) {
@@ -361,7 +381,10 @@ export class NativeStudioRunExecutor {
 
   private async persistRecoveryIntent(
     job: NativeStudioQueuedRun,
-    reason: NativeStudioRunRecoveryReason
+    reason: Exclude<
+      NativeStudioRunRecoveryReason,
+      "waiting_boundary_recovery_required"
+    >
   ): Promise<void> {
     await this.#recoveryJournal.write(createNativeStudioRunRecoveryIntent({
       runId: job.run_id,

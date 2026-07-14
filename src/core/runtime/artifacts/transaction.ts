@@ -30,6 +30,7 @@ export type ArtifactTransactionRecord = {
   readonly backend_root: string;
   readonly overwrite_policy: ArtifactOverwritePolicy;
   readonly content_hash: string;
+  readonly content_size_bytes?: number;
   readonly attempt: number;
   readonly media_type?: string;
   readonly semantic_type?: ArtifactSemanticType;
@@ -78,6 +79,11 @@ export type ArtifactContentStore = {
     readonly uri: string;
     readonly content_hash?: string;
   }>;
+  read?(input: {
+    readonly run_id: string;
+    readonly artifact_path: string;
+    readonly max_bytes?: number;
+  }): Promise<Uint8Array>;
 };
 
 export type ArtifactStepsPublisher = {
@@ -152,6 +158,7 @@ export async function publishArtifactTransaction(
   const overwritePolicy = explicitOverwritePolicy(input);
   rejectUnsupportedOverwritePolicy(overwritePolicy);
   const contentHash = hashArtifactContent(input.content);
+  const contentSizeBytes = artifactContentSize(input.content);
   const transactionId = transactionIdFor(input);
   const now = input.now ?? (() => new Date().toISOString());
   const manifestKey = manifestKeyFor(input);
@@ -192,6 +199,7 @@ export async function publishArtifactTransaction(
         input,
         manifest: existing,
         contentHash,
+        contentSizeBytes,
         overwritePolicy,
         transactionId,
         now: now()
@@ -234,6 +242,7 @@ export async function publishArtifactTransaction(
       input,
       manifest: existing,
       contentHash,
+      contentSizeBytes,
       overwritePolicy,
       transactionId,
       now: now()
@@ -242,6 +251,7 @@ export async function publishArtifactTransaction(
       input,
       transactionId,
       contentHash,
+      contentSizeBytes,
       overwritePolicy,
       now
     }));
@@ -260,6 +270,12 @@ export function hashArtifactContent(content: string | Uint8Array): string {
   const hash = createHash("sha256");
   hash.update(content);
   return `sha256:${hash.digest("hex")}`;
+}
+
+function artifactContentSize(content: string | Uint8Array): number {
+  return typeof content === "string"
+    ? new TextEncoder().encode(content).byteLength
+    : content.byteLength;
 }
 
 export function assertSafeArtifactPath(artifactPath: string): void {
@@ -329,12 +345,14 @@ async function createPendingManifest({
   input,
   transactionId,
   contentHash,
+  contentSizeBytes,
   overwritePolicy,
   now
 }: {
   input: ArtifactTransactionInput;
   transactionId: string;
   contentHash: string;
+  contentSizeBytes: number;
   overwritePolicy: ArtifactOverwritePolicy;
   now: () => string;
 }): Promise<ArtifactTransactionRecord> {
@@ -349,6 +367,7 @@ async function createPendingManifest({
     backend_root: input.backend.root,
     overwrite_policy: overwritePolicy,
     content_hash: contentHash,
+    content_size_bytes: contentSizeBytes,
     attempt: input.attempt ?? 1,
     ...(input.media_type === undefined ? {} : { media_type: input.media_type }),
     ...(input.semantic_type === undefined
@@ -493,6 +512,9 @@ function manifestFromRecord(record: ArtifactTransactionRecord): ArtifactManifest
       ? {}
       : { semantic_type: record.semantic_type }),
     content_hash: record.content_hash,
+    ...(record.content_size_bytes === undefined
+      ? {}
+      : { content_size_bytes: record.content_size_bytes }),
     artifact_path: record.artifact_path,
     status: "committed",
     attempt: record.attempt,
@@ -517,6 +539,9 @@ function pendingManifestFromRecord(
       ? {}
       : { semantic_type: record.semantic_type }),
     content_hash: record.content_hash,
+    ...(record.content_size_bytes === undefined
+      ? {}
+      : { content_size_bytes: record.content_size_bytes }),
     artifact_path: `.pending-artifact-transactions/${pendingKey}.json`,
     status: "pending",
     attempt: record.attempt,
@@ -532,6 +557,7 @@ function checkpointedRecordFromManifest({
   input,
   manifest,
   contentHash,
+  contentSizeBytes,
   overwritePolicy,
   transactionId,
   now
@@ -539,6 +565,7 @@ function checkpointedRecordFromManifest({
   input: ArtifactTransactionInput;
   manifest: ArtifactManifest;
   contentHash: string;
+  contentSizeBytes: number;
   overwritePolicy: ArtifactOverwritePolicy;
   transactionId: string;
   now: string;
@@ -553,6 +580,7 @@ function checkpointedRecordFromManifest({
     backend_root: input.backend.root,
     overwrite_policy: overwritePolicy,
     content_hash: contentHash,
+    content_size_bytes: contentSizeBytes,
     attempt: input.attempt ?? 1,
     ...(input.media_type === undefined ? {} : { media_type: input.media_type }),
     ...(input.semantic_type === undefined
@@ -569,6 +597,7 @@ function adoptCommittedManifest({
   input,
   manifest,
   contentHash,
+  contentSizeBytes,
   overwritePolicy,
   transactionId,
   now
@@ -576,6 +605,7 @@ function adoptCommittedManifest({
   input: ArtifactTransactionInput;
   manifest: ArtifactManifest | undefined;
   contentHash: string;
+  contentSizeBytes: number;
   overwritePolicy: ArtifactOverwritePolicy;
   transactionId: string;
   now: string;
@@ -599,6 +629,7 @@ function adoptCommittedManifest({
     backend_root: input.backend.root,
     overwrite_policy: overwritePolicy,
     content_hash: contentHash,
+    content_size_bytes: contentSizeBytes,
     attempt: input.attempt ?? 1,
     ...(input.media_type === undefined ? {} : { media_type: input.media_type }),
     ...(input.semantic_type === undefined

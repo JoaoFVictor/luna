@@ -32,6 +32,71 @@ function recoveryClaim(
 }
 
 describe("native Studio run lease transition identity", () => {
+  it("deduplicates one resume execution but separates a later resume with the same attempt number", async () => {
+    await withRunStore(async ({ store }) => {
+      await store.ledger.preallocate(preallocation(RUN_ID));
+      await store.ledger.appendTransition({
+        run_id: RUN_ID,
+        transition_id: "prepare-lifecycle-execution",
+        event_id: "event-prepare-lifecycle-execution",
+        expected_revision: 1,
+        occurred_at: new Date(BASE_TIME + 1).toISOString(),
+        transition: {
+          kind: "dispatch_preparing",
+          owner_id: "lifecycle-owner"
+        }
+      });
+      await store.ledger.appendTransition({
+        run_id: RUN_ID,
+        transition_id: "start-lifecycle-execution",
+        event_id: "event-start-lifecycle-execution",
+        expected_revision: 2,
+        occurred_at: new Date(BASE_TIME + 2).toISOString(),
+        transition: {
+          kind: "dispatch_started",
+          owner_id: "lifecycle-owner",
+          active_node_ids: []
+        }
+      });
+      const lease = (lifecycleExecutionId: string) =>
+        new NativeStudioRunLease({
+          ledger: store.ledger,
+          runId: RUN_ID,
+          ownerId: "lifecycle-owner",
+          now: () => BASE_TIME + 10_000,
+          heartbeatIntervalMs: 1_000,
+          lifecycleExecutionId
+        });
+      const firstEvent = {
+        type: "node.started" as const,
+        node_id: "editorial",
+        attempt: 1,
+        occurred_at: new Date(BASE_TIME + 3).toISOString(),
+        artifact_count: 0,
+        interrupt_count: 0
+      };
+
+      await lease("resume-command-1").observeNode(firstEvent);
+      await lease("resume-command-1").observeNode(firstEvent);
+      await lease("resume-command-2").observeNode({
+        ...firstEvent,
+        occurred_at: new Date(BASE_TIME + 4).toISOString()
+      });
+
+      const events = await store.events.list({
+        run_id: RUN_ID,
+        direction: "asc",
+        event_types: ["run.node.started"],
+        limit: 10
+      });
+      expect(events.items).toHaveLength(2);
+      await expect(store.ledger.get(RUN_ID)).resolves.toMatchObject({
+        lifecycle_projection: "exact",
+        active_node_ids: ["editorial"]
+      });
+    });
+  });
+
   it("does not reuse mutable ids across consecutive recoveries by the same owner", async () => {
     vi.useFakeTimers();
     try {

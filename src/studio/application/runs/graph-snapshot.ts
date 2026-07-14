@@ -265,7 +265,15 @@ export function projectStoredRunGraphSnapshot(input: {
       id: node.id,
       kind: node.kind,
       capability_id: node.capability_id,
-      can_create_pending_interrupt: node.can_create_pending_interrupt
+      can_create_pending_interrupt: node.can_create_pending_interrupt,
+      ...(node.kind === "loop" ? {
+        loop_body: (node.loop_body ?? []).map((bodyNode) => ({
+          id: bodyNode.id,
+          kind: bodyNode.kind,
+          capability_id: bodyNode.capability_id,
+          can_create_pending_interrupt: bodyNode.can_create_pending_interrupt
+        }))
+      } : {})
     })),
     edges: projectGraphEdges(input.compiled)
   });

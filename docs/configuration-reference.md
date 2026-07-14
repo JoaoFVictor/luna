@@ -57,11 +57,29 @@ Important fields:
 - `expected_remote_urls`: required for trusted write workflows.
 - `context.files`: repository context files collected by
   `context.collect_context`.
+- `repository_context.exclude_globs`: optional repository-relative globs that
+  are excluded from the canonical retrieval index and its agent query tool.
+  These operator-bound excludes are case-insensitive, participate in snapshot
+  identity, and cannot be overridden by model tool arguments.
 - `skills`: optional repository skill paths relative to the prepared repository
   root.
+- `validation.commands`: non-empty structured command/argument contracts used
+  by trusted implementation workflows. Commands run from the prepared
+  repository worktree without a shell.
+- `validation.env_allowlist`: additional environment variable names made
+  available to those commands. `PATH` is preserved for executable resolution;
+  `HOME` is always an isolated temporary directory.
 
 Repository hints from invocations are matched against this config. Provider
 payloads are not authoritative config.
+
+Validation is optional and repository-owned because repositories may use
+different languages, frameworks, build systems, or a repository-provided
+wrapper such as `./scripts/validate`. Luna does not detect a stack or select
+commands at runtime. When the selected repository has no `validation` block,
+the implementation workflow runs no validation command and continues through
+its remaining gates. When present, the repository configuration and its
+validation contract are included in the Studio repository fingerprint.
 
 When running with Docker Compose, set repository `path` values to container
 paths under `/repositories`, for example `/repositories/repo`. The host parent
@@ -137,22 +155,26 @@ Fields:
 - `related_context.enabled`: whether to build the deterministic related
   repository impact graph before planning and reviewer agents run.
 - `related_context.max_related_files`: maximum ranked files included in
-  `related-context.json` and passed to agents.
-- `related_context.max_scan_files`: maximum supported repository files scanned
-  for relationships.
-- `related_context.max_file_bytes`: maximum bytes read from any scanned file.
-  The default is `160000`, which keeps symbol analysis useful for larger
-  components/controllers while excerpts remain capped separately by
-  `max_excerpt_bytes`.
+  `related-context.json` and passed to agents. Defaults to `12` and is capped at
+  `100`.
+- `related_context.max_seed_files`: maximum changed/task-matched files promoted
+  as graph seeds before related-file ranking. The index itself remains complete;
+  this is a real output-selection budget, not a repository scan limit. Defaults
+  to `5`, is capped at `100`, and cannot exceed `max_related_files`.
 - `related_context.max_excerpt_bytes`: maximum excerpt bytes included per
-  related file.
+  related file. Defaults to `4000` and is capped at `16384`; excerpts are
+  materialized only after file selection, so rejected candidates do not inflate
+  output memory. The complete output also caps query terms at `256` and
+  deterministically ranked edges at `1000`; `omitted_edges_count` and
+  `truncated_edge_text_count` expose any additional pressure.
 - `related_context.include_tests`, `include_docs`, and `include_configs`:
   whether test/spec, documentation, and config relationships are included.
   Symbol parsing does not require configuration. Luna builds internal symbol
   graphs inspired by SCIP, with Luna symbol strings, SCIP-compatible
   `symbol_roles`, typed UTF-16 ranges, imports, and document symbols:
-  TypeScript for JS/TS, Luna-owned Vue SFC parsing for `.vue`, and
-  `nikic/php-parser` through the target repository autoload when available.
+  TypeScript for JS/TS, Luna-owned Vue SFC parsing for `.vue`, and Luna-owned
+  `nikic/php-parser` from the runtime image. Repository dependencies do not
+  supply Luna's parser.
   The run records actual engines in `related-context.json` under
   `audit.symbol_engines` and parser fallback warnings under `audit.warnings`.
 - `pull_request_review.enabled`: whether to publish the validated review back
@@ -184,8 +206,7 @@ code_review:
   related_context:
     enabled: true
     max_related_files: 12
-    max_scan_files: 600
-    max_file_bytes: 160000
+    max_seed_files: 8
     max_excerpt_bytes: 4000
     include_tests: true
     include_docs: true
@@ -234,10 +255,11 @@ Fields:
 - `change_request.draft`: whether to open as draft.
 - `change_request.base_ref`: target branch/ref.
 - `sandbox.type`: current supported value is `trusted_host_local`.
-- `sandbox.env_allowlist`: env vars passed to validation commands.
-- `validation.repair_attempts`: gated-loop repair count.
+- `validation.repair_attempts`: shared gated-loop repair budget for validation,
+  technical-review, and acceptance failures. The shipped implementation config
+  allows five repairs so a transient setup failure does not consume the only
+  opportunity to apply reviewer feedback.
 - `validation.max_output_bytes`: captured command output budget.
-- `validation.commands`: deterministic validation commands.
 
 The implementation workflow requires automated validation, review, and
 acceptance gates before diff/commit/push/change-request. HITL is demonstrated
@@ -272,6 +294,56 @@ Fields:
 
 Jira credentials are stored in `.luna/auth/luna.auth.json` under the Luna auth
 root.
+
+## `social-post.yaml`
+
+Selects the social publishing provider and the named auth instance used by the
+`social-post` workflow:
+
+```yaml
+image_generation:
+  provider: pi-imagegen
+  size: 1024x1024
+  quality: medium
+social_post:
+  provider: x
+  auth_instance: default
+```
+
+Each requested change durably preserves the previous version, regenerates only
+the selected targets, and creates a new human review round. The workflow has no
+configured revision cap; every human-triggered iteration has its own checkpoint,
+interrupt identity, and artifact namespace.
+
+Image generation reuses the Pi `openai-codex` OAuth credential in
+`.luna/auth/pi-ai/auth.json`. X OAuth credentials belong in
+`.luna/auth/luna.auth.json`; neither provider credential belongs in workflow
+config. Request `offline.access` together with `tweet.read`, `tweet.write`,
+`users.read`, and `media.write`, then configure the returned refresh token:
+
+```json
+{
+  "providers": {
+    "x": {
+      "default": {
+        "auth_type": "oauth2_user_access_token",
+        "access_token": "<user-access-token>",
+        "refresh_token": "<refresh-token>",
+        "client_id": "<oauth2-client-id>",
+        "expires_at": "2026-07-13T22:00:00.000Z"
+      }
+    }
+  }
+}
+```
+
+The token must represent the user that will publish the post and must have
+write permission. `expires_at` is optional: when present, Luna refreshes the
+token shortly before expiry; when absent, Luna refreshes after a confirmed
+`401`. A confidential OAuth client must also set `client_secret`; a public PKCE
+client must omit it. Successful refreshes atomically rotate `access_token`,
+`refresh_token`, and `expires_at` in this file under an inter-process lock.
+Access-token-only entries remain supported but cannot refresh automatically.
 
 ## `plane.yaml`
 

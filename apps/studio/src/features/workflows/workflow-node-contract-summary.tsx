@@ -27,6 +27,14 @@ export function WorkflowNodeContractSummary({
   agents: readonly AgentCatalogItem[]
   workflows?: readonly WorkflowSummary[]
 }) {
+  if (node.type === "loop") {
+    return (
+      <div className="flex flex-wrap gap-1">
+        <Badge variant="secondary">Loop durável</Badge>
+        <Badge variant="outline">body com checkpoint próprio</Badge>
+      </div>
+    )
+  }
   if (node.type === "agent") {
     const agent = agents.find((candidate) => candidate.id === node.registrationId)
     if (agent === undefined) return <p className="text-xs text-destructive">Agent ausente no catálogo canônico.</p>

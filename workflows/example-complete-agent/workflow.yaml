@@ -124,6 +124,7 @@ nodes:
               args:
                 - status
                 - --short
+          env_allowlist: []
           max_output_bytes: 200000
       # Optional review gate for the showcase. It proves agent-review gates are
       # configured on the workflow, not hidden inside the reusable agent.
@@ -136,9 +137,9 @@ nodes:
           subject:
             expression: "$.gate"
         block_when:
-          expression: "$.gate.decision = 'fail'"
+          expression: "$count($.gate.findings[severity = 'critical' or severity = 'high']) > 0"
         feedback:
-          expression: "$.gate.feedback"
+          expression: "$.gate.findings[severity = 'critical' or severity = 'high']"
       # Acceptance gate gives publishing preparation a structured decision.
       - id: acceptance
         type: quality-gates.agent_review

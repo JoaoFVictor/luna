@@ -1,8 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { createMemoryArtifactManifestStore } from "../../../src/runtime/backends/memory/artifacts.js";
+import {
+  createMemoryArtifactContentStore,
+  createMemoryArtifactManifestStore
+} from "../../../src/runtime/backends/memory/artifacts.js";
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 
 describe("memory runtime backends", () => {
+  it("rejects oversized UTF-8 content before materializing the read result", async () => {
+    const store = createMemoryArtifactContentStore();
+    const content = "🙂".repeat(1_024);
+    const pending = await store.write({
+      transaction_id: "bounded-read",
+      run_id: "run-bounded",
+      node_id: "image",
+      artifact_id: "image",
+      artifact_path: "image.txt",
+      content,
+      content_hash: "sha256:bounded"
+    });
+    await store.commit({
+      transaction_id: "bounded-read",
+      run_id: "run-bounded",
+      node_id: "image",
+      artifact_id: "image",
+      artifact_path: "image.txt",
+      pending_uri: pending.pending_uri,
+      content_hash: "sha256:bounded",
+      overwrite_policy: "forbid"
+    });
+
+    await expect(store.read?.({
+      run_id: "run-bounded",
+      artifact_path: "image.txt",
+      max_bytes: 4_095
+    })).rejects.toMatchObject({ code: "artifact_content_read_limit_exceeded" });
+    await expect(store.read?.({
+      run_id: "run-bounded",
+      artifact_path: "image.txt",
+      max_bytes: 4_096
+    })).resolves.toHaveLength(4_096);
+  });
+
   it("round-trips bounded semantic metadata and accepts legacy manifests", async () => {
     const store = createMemoryArtifactManifestStore();
     const base = {
@@ -132,6 +170,37 @@ describe("memory runtime backends", () => {
       status: "resolved",
       resume_attempt: "resume-1"
     });
+  });
+
+  it("finds a later interrupt through bounded semantic filters", async () => {
+    const store = createMemoryInterruptStore();
+    const record = (
+      id: string,
+      nodeId: string,
+      createdAt: string,
+      status: "pending" | "resolved"
+    ) => ({
+      id,
+      run_id: "run-query",
+      thread_id: "run-query",
+      checkpoint_id: "checkpoint-query",
+      node_id: nodeId,
+      status,
+      created_at: createdAt,
+      updated_at: createdAt
+    });
+    await store.create(record("old", "review", "2026-07-12T12:00:00.000Z", "resolved"));
+    await store.create(record("later-resolved", "review", "2026-07-12T12:01:00.000Z", "resolved"));
+    await store.create(record("later-pending", "publish", "2026-07-12T12:02:00.000Z", "pending"));
+
+    await expect(store.findFirst("run-query", {
+      exclude_id: "old",
+      thread_id: "run-query",
+      checkpoint_id: "checkpoint-query",
+      node_ids: ["review", "publish"],
+      created_after: "2026-07-12T12:00:00.000Z",
+      statuses: ["pending"]
+    })).resolves.toMatchObject({ id: "later-pending" });
   });
 
 });

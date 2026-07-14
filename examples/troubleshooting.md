@@ -37,6 +37,21 @@ For repository-change workflows, also configure `path`, `remote`, and
 `expected_remote_urls`. Luna verifies the local remote before creating a
 writable worktree.
 
+The selected repository can optionally declare its own validation contract:
+
+```yaml
+repositories:
+  - id: repo
+    validation:
+      commands:
+        - cmd: ./scripts/validate
+      env_allowlist: []
+```
+
+When this block is absent, Luna runs no validation command and continues. Luna
+does not infer a repository stack or validation tool. When declared, the
+executable must be available in the workflow execution environment.
+
 ## Provider Auth Fails
 
 GitHub adapters and publishing use `gh` authentication from the Luna auth root
@@ -81,10 +96,15 @@ The `implementation` workflow runs validation inside
 `quality-gates.gated_agent_loop`. Check `implementation-result.json` and
 `validation.json`.
 
-If `config/implementation.yaml` has `repair_attempts` greater than zero, Luna
+If `config/implementation.yaml` has
+`implementation.validation.repair_attempts` greater than zero, Luna
 feeds gate feedback back to the writer and retries the writer loop. When
 attempts are exhausted, the run fails and preserves the worktree for manual
 inspection.
+
+Configured command failures are recorded by the validation gate. Missing
+executables are execution environment problems, not signals for Luna to guess
+another toolchain.
 
 ## Human Approval Paused The Run
 
@@ -101,7 +121,7 @@ LUNA_CONFIG_ROOT=config npm run dev -- resume \
   --thread <run-id> \
   --checkpoint <checkpoint-id> \
   --interrupt <interrupt-id> \
-  --decision '{"approved":true}'
+  --decision '{"action":"approve"}'
 ```
 
 Repeating the same decision is idempotent. Changing a recorded decision is

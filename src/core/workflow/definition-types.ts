@@ -58,7 +58,7 @@ export type WorkflowMetadata = {
 export type ArtifactWritePlan = {
   path: string;
   source: WorkflowExpression;
-  format: "json" | "markdown";
+  format: "json" | "markdown" | "png";
   required: boolean;
   publisher: string;
   semantic_type?: ArtifactSemanticType;
@@ -79,6 +79,7 @@ export type WorkflowBuiltInNode = {
   input?: Record<string, unknown>;
   artifacts?: ArtifactWritePlan[];
   after?: string[];
+  when?: WorkflowExpression;
 };
 
 export type WorkflowAgentNode = {
@@ -89,6 +90,7 @@ export type WorkflowAgentNode = {
   input?: Record<string, unknown>;
   artifacts?: ArtifactWritePlan[];
   after?: string[];
+  when?: WorkflowExpression;
   retry?: Record<string, unknown>;
   runtime_requirements?: string[];
   agent_session?: {
@@ -107,6 +109,12 @@ export type ParsedCapabilityGate = {
 
 export type ParsedWorkflowGate = ParsedCapabilityGate;
 
+export type ParsedPatternEvidence = {
+  id: string;
+  uses: string;
+  input?: Record<string, unknown>;
+};
+
 export type ParsedBuiltInNode = Omit<WorkflowBuiltInNode, "artifacts"> & {
   artifacts?: ParsedArtifactWritePlan[];
   policies?: ParsedWorkflowPolicy[];
@@ -123,6 +131,7 @@ export type ParsedPatternNode = {
   uses: string;
   worker?: string;
   input?: Record<string, unknown>;
+  evidence?: ParsedPatternEvidence[];
   gates?: ParsedWorkflowGate[];
   repair?: Record<string, unknown>;
   artifacts?: ParsedArtifactWritePlan[];
@@ -134,10 +143,9 @@ export type ParsedHumanGateNode = {
   id: string;
   type: "human_gate";
   uses: string;
-  decision?: unknown;
+  input?: Record<string, unknown>;
   after?: string[];
   artifacts?: ParsedArtifactWritePlan[];
-  policies?: ParsedWorkflowPolicy[];
 };
 
 /** A synchronous call to another installed workflow definition. */
@@ -150,12 +158,23 @@ export type ParsedWorkflowCallNode = {
   after?: string[];
 };
 
+export type ParsedLoopNode = {
+  id: string;
+  type: "loop";
+  body: ParsedWorkflowGraph;
+  repeat_when: WorkflowExpression;
+  result: WorkflowExpression;
+  halt_when?: WorkflowExpression;
+  after?: string[];
+};
+
 export type ParsedWorkflowNode =
   | ParsedBuiltInNode
   | ParsedAgentNode
   | ParsedPatternNode
   | ParsedHumanGateNode
-  | ParsedWorkflowCallNode;
+  | ParsedWorkflowCallNode
+  | ParsedLoopNode;
 
 export type ParsedWorkflowGraph = {
   nodes: ParsedWorkflowNode[];

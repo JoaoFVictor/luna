@@ -142,10 +142,16 @@ export function workflowNodePresentations(
   agents: readonly AgentCatalogItem[],
   workflows: readonly WorkflowSummary[] = [],
 ): ReadonlyMap<string, WorkflowNodePresentation> {
-  return new Map(workflowNodePaletteItems(registrations, agents, workflows).map((item) => [
-    `${item.kind}:${item.id}`,
-    { title: item.title, summary: item.summary },
-  ]))
+  return new Map([
+    ...workflowNodePaletteItems(registrations, agents, workflows).map((item) => [
+      `${item.kind}:${item.id}`,
+      { title: item.title, summary: item.summary },
+    ] as const),
+    ["loop:workflow.loop", {
+      title: "Loop durável",
+      summary: "Repete um body com checkpoint e decisão humana.",
+    }] as const,
+  ])
 }
 
 export function workflowNodeCapabilityIds(

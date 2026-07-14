@@ -19,6 +19,15 @@ const app: AppConfig = {
   artifacts: { root: ".runs" }
 };
 
+const artifactPublisher = {
+  publish: vi.fn(async (input: { node_id: string; path: string }) => ({
+    id: input.path,
+    uri: `artifact://run-1/${input.path}`,
+    node_id: input.node_id
+  })),
+  read: vi.fn(async () => new Uint8Array())
+};
+
 describe("native workflow executors", () => {
   it("rejects native executor catalogs that do not cover declared executable capabilities", () => {
     const registry = createCapabilityRegistry([
@@ -89,6 +98,7 @@ describe("native workflow executors", () => {
         attempt: 1,
         started_at: "2026-06-27T00:00:00.000Z"
       },
+      artifactPublisher,
       changeRequestProviderFactories: [{
         provider_id: "example",
         createProvider: () => provider
@@ -190,6 +200,7 @@ describe("native workflow executors", () => {
         attempt: 1,
         started_at: "2026-06-27T00:00:00.000Z"
       },
+      artifactPublisher,
       pullRequestReviewProviderFactories: [{
         provider_id: "example",
         createProvider: () => provider
@@ -228,9 +239,21 @@ describe("native workflow executors", () => {
               name: "hello-world",
               full_name: "octo-org/hello-world"
             },
-            base_sha: "base",
-            head_sha: "head",
-            files: []
+            base_sha: "a".repeat(40),
+            head_sha: "b".repeat(40),
+            merge_base: "c".repeat(40),
+            files: [],
+            changed_files_truncated: false,
+            total_changed_files: 0,
+            changed_file_limit: 1,
+            changed_files_omitted_count: 0,
+            file_excerpts_truncated: [],
+            git: {
+              merge_base: "c".repeat(40),
+              status_short: [],
+              status_short_omitted_count: 0,
+              status_short_truncated_count: 0
+            }
           }
         },
         state: {

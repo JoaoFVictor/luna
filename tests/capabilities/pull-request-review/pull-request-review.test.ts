@@ -118,8 +118,9 @@ function repoContextWithRightSideLine(): RepoContext {
       name: "hello-world",
       full_name: "octo-org/hello-world"
     },
-    base_sha: "base",
-    head_sha: "head",
+    base_sha: "a".repeat(40),
+    head_sha: "b".repeat(40),
+    merge_base: "c".repeat(40),
     files: [
       {
         path: "src/app.ts",
@@ -134,7 +135,18 @@ function repoContextWithRightSideLine(): RepoContext {
           content: "context\ncontext\ndangerousCall(value)\ncontext\n"
         }
       }
-    ]
+    ],
+    changed_files_truncated: false,
+    total_changed_files: 1,
+    changed_file_limit: 1,
+    changed_files_omitted_count: 0,
+    file_excerpts_truncated: [],
+    git: {
+      merge_base: "c".repeat(40),
+      status_short: [],
+      status_short_omitted_count: 0,
+      status_short_truncated_count: 0
+    }
   };
 }
 

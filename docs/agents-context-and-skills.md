@@ -106,12 +106,16 @@ be injected into a specific run.
 
 Agent tools are capability-registered local tool contracts resolved through
 `src/core/tools/**` and implemented by capability modules. Repository tools live
-under `src/capabilities/repository/**`.
+under `src/capabilities/repository/**`; canonical impact-index queries belong to
+`src/capabilities/repository-context/**`.
 
 Mode matters:
 
 - `repository.status`, `repository.diff-summary`, and `repository.read-file`
   can run in read-only and trusted write modes.
+- `repository-context.query` can run in either mode and returns a bounded,
+  audited query view from the same snapshot-aware index used by
+  `repository-context.related_context`.
 - `repository.write-file` and `repository.delete-file` require
   `trusted_local_write`.
 
@@ -139,7 +143,10 @@ agents in workflow YAML and merges their standard findings outputs with the
 deterministic `findings.merge` built-in. The workflow also passes
 `repository-context.related_context`, a bounded impact graph, so reviewers can
 inspect dependencies, reverse references, tests, configs, docs, and existing
-abstractions without choosing their own repository crawl. Keep reviewer prompts
+abstractions without choosing their own repository crawl. When a concrete gap
+remains, agents may issue a narrower `repository-context.query`; those results
+are additive views over the same canonical source, not a second discovery
+implementation. Keep reviewer prompts
 focused on a role; keep deduplication, validation, acceptance, context
 collection, and publishing outside agent instructions.
 

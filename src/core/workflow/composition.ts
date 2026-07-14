@@ -7,6 +7,8 @@ export type ComposedWorkflowNode = {
   readonly workflow: WorkflowDefinition;
   readonly node: WorkflowNode;
   readonly qualifiedNodeId: string;
+  /** Parent-runtime node whose start is the recovery boundary for this node. */
+  readonly executionBoundaryNodeId: string;
 };
 
 /**
@@ -18,18 +20,41 @@ export function composedWorkflowNodes(
 ): readonly ComposedWorkflowNode[] {
   const result: ComposedWorkflowNode[] = [];
 
-  function visit(workflow: WorkflowDefinition, prefix: string): void {
-    for (const node of workflow.graph.nodes) {
+  function visitNodes(
+    workflow: WorkflowDefinition,
+    nodes: readonly WorkflowNode[],
+    prefix: string,
+    inheritedExecutionBoundary?: string
+  ): void {
+    for (const node of nodes) {
       const segment = encodeURIComponent(node.id);
       const qualifiedNodeId = prefix === "" ? segment : `${prefix}/${segment}`;
-      result.push({ workflow, node, qualifiedNodeId });
+      const executionBoundaryNodeId = inheritedExecutionBoundary ?? (
+        prefix === "" ? node.id : qualifiedNodeId
+      );
+      result.push({ workflow, node, qualifiedNodeId, executionBoundaryNodeId });
+      if (node.type === "loop") {
+        visitNodes(
+          workflow,
+          node.body.nodes,
+          qualifiedNodeId,
+          inheritedExecutionBoundary
+        );
+      }
       if (node.type === "workflow") {
         const child = workflow.compositions?.[node.workflow];
-        if (child !== undefined) visit(child, qualifiedNodeId);
+        if (child !== undefined) {
+          visitNodes(
+            child,
+            child.graph.nodes,
+            qualifiedNodeId,
+            executionBoundaryNodeId
+          );
+        }
       }
     }
   }
 
-  visit(root, "");
+  visitNodes(root, root.graph.nodes, "");
   return result;
 }

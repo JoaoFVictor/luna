@@ -127,6 +127,59 @@ describe("run graph snapshot projection", () => {
     ).toBe(false);
   });
 
+  it("projects a loop body without exposing executable source fields", () => {
+    const source = compiled();
+    const snapshot = projectStoredRunGraphSnapshot({
+      identity: identity(),
+      compiled: {
+        ...source,
+        nodes: [{
+          id: "editorial",
+          kind: "loop",
+          yaml_path: "$.nodes[0]",
+          capability_id: "workflow.loop",
+          output_schema: {},
+          can_create_pending_interrupt: true,
+          loop_body: [
+            {
+              id: "draft",
+              kind: "agent",
+              yaml_path: "$.nodes[0].body.nodes[0]",
+              capability_id: "writer",
+              output_schema: { private: true },
+              can_create_pending_interrupt: false,
+              source: { prompt: "private prompt" }
+            },
+            {
+              id: "review",
+              kind: "interrupt",
+              yaml_path: "$.nodes[0].body.nodes[1]",
+              capability_id: "hitl.approval",
+              output_schema: {},
+              can_create_pending_interrupt: true,
+              source: { prompt: "private review" }
+            }
+          ],
+          source: { body: "private body" }
+        }],
+        edges: []
+      } as unknown as CompiledWorkflow
+    });
+
+    expect(snapshot.graph.nodes).toEqual([{
+      id: "editorial",
+      kind: "loop",
+      capability_id: "workflow.loop",
+      can_create_pending_interrupt: true,
+      loop_body: [
+        { id: "draft", kind: "agent", capability_id: "writer", can_create_pending_interrupt: false },
+        { id: "review", kind: "interrupt", capability_id: "hitl.approval", can_create_pending_interrupt: true }
+      ]
+    }]);
+    expect(JSON.stringify(snapshot)).not.toContain("private");
+    expect(JSON.stringify(snapshot)).not.toContain("yaml_path");
+  });
+
   it("rejects a compiled workflow from a different pinned revision", () => {
     expect(() =>
       projectStoredRunGraphSnapshot({

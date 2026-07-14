@@ -10,6 +10,7 @@ import { manifest as git } from "../../../src/capabilities/git/manifest.js";
 import { manifest as qualityGates } from "../../../src/capabilities/quality-gates/manifest.js";
 import { manifest as reports } from "../../../src/capabilities/reports/manifest.js";
 import { manifest as repositoryChange } from "../../../src/capabilities/repository-change/manifest.js";
+import { manifest as repositoryContext } from "../../../src/capabilities/repository-context/manifest.js";
 import { manifest as repositoryWorkspace } from "../../../src/capabilities/repository-workspace/manifest.js";
 import { manifest as runtime } from "../../../src/capabilities/runtime/manifest.js";
 import { manifest as taskContext } from "../../../src/capabilities/task-context/manifest.js";
@@ -51,6 +52,26 @@ function workflowDefinition(
     subagent_policy: { allow_write: false },
     ...overrides
   };
+}
+
+async function loadBundledImplementationWorkflow() {
+  return await loadWorkflowDefinition("workflows", "implementation", {
+    capabilityRegistry: createCapabilityRegistry([
+      agents,
+      artifacts,
+      changeRequest,
+      context,
+      git,
+      qualityGates,
+      reports,
+      repositoryChange,
+      repositoryContext,
+      repositoryWorkspace,
+      runtime,
+      taskContext,
+      validation
+    ])
+  });
 }
 
 describe("native workflow runtime config", () => {
@@ -179,25 +200,10 @@ describe("native workflow runtime config", () => {
       const source = await readFile("config/implementation.yaml", "utf8");
       await writeFile(
         path.join(configRoot, "implementation.yaml"),
-        source.replace("repair_attempts: 1", "repair_attempts: 9"),
+        source.replace(/repair_attempts: \d+/, "repair_attempts: 9"),
         "utf8"
       );
-      const workflow = await loadWorkflowDefinition("workflows", "implementation", {
-        capabilityRegistry: createCapabilityRegistry([
-          agents,
-          artifacts,
-          changeRequest,
-          context,
-          git,
-          qualityGates,
-          reports,
-          repositoryChange,
-          repositoryWorkspace,
-          runtime,
-          taskContext,
-          validation
-        ])
-      });
+      const workflow = await loadBundledImplementationWorkflow();
 
       await expect(
         loadWorkflowRuntimeConfig({ workflow, configRoot })
@@ -211,5 +217,30 @@ describe("native workflow runtime config", () => {
     } finally {
       await rm(configRoot, { recursive: true, force: true });
     }
+  });
+
+  it("keeps repository toolchain commands out of bundled implementation policy", async () => {
+    const workflow = await loadBundledImplementationWorkflow();
+    const config = await loadWorkflowRuntimeConfig({
+      workflow,
+      configRoot: "config"
+    });
+
+    expect(config).toMatchObject({
+      implementation: {
+        validation: {
+          repair_attempts: 5,
+          max_output_bytes: 200000
+        }
+      }
+    });
+    const implementation = (config as {
+      implementation: {
+        sandbox: Record<string, unknown>;
+        validation: Record<string, unknown>;
+      };
+    }).implementation;
+    expect(implementation.validation).not.toHaveProperty("commands");
+    expect(implementation.sandbox).not.toHaveProperty("env_allowlist");
   });
 });

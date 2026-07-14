@@ -10,6 +10,9 @@
         "src/**/*.ts",
         "tests/**/*.ts",
         "*.ts"
+      ],
+      "ignoreDependencies": [
+        "pi-imagegen"
       ]
     },
     "apps/studio": {

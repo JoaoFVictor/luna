@@ -10,7 +10,12 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { assertSafeSegment } from "../../../core/security/path.js";
+import YAML from "yaml";
+import { AgentMetadataSchema } from "../../../capabilities/agents/agent-definition.js";
+import {
+  assertSafeSegment,
+  isInsideRoot
+} from "../../../core/security/path.js";
 import { readWorkflowDefinitionReferences } from "../../../core/workflow/definition-references.js";
 import type { StudioDraftItem } from "../../contracts/draft-authoring.js";
 import { studioRunValueDigest } from "../../application/runs/launch-digests.js";
@@ -305,6 +310,68 @@ function snapshotFromFiles(
   };
 }
 
+function capturedAgentSkillPaths(
+  files: ReadonlyMap<string, NativeStudioRunSnapshotFile>,
+  agentId: string
+): readonly string[] {
+  const definitionFile = files.get(`project/agents/${agentId}/agent.yaml`);
+  if (definitionFile === undefined) {
+    throw snapshotFailure("Native run snapshot is missing agent.yaml");
+  }
+
+  let source: string;
+  try {
+    source = new TextDecoder("utf-8", { fatal: true }).decode(
+      definitionFile.content
+    );
+  } catch (cause) {
+    throw snapshotFailure("Agent definition must be valid UTF-8", cause);
+  }
+
+  try {
+    return AgentMetadataSchema.parse(YAML.parse(source)).skills ?? [];
+  } catch (cause) {
+    throw snapshotFailure("Agent definition is invalid", cause);
+  }
+}
+
+async function captureAgentSkills(options: {
+  readonly projectRoot: string;
+  readonly agentId: string;
+  readonly skillPaths: readonly string[];
+  readonly budget: CaptureBudget;
+  readonly files: Map<string, NativeStudioRunSnapshotFile>;
+}): Promise<void> {
+  const projectRoot = path.resolve(options.projectRoot);
+  const agentDirectory = path.join(projectRoot, "agents", options.agentId);
+  for (const skillPath of [...new Set(options.skillPaths)].sort((left, right) =>
+    left.localeCompare(right)
+  )) {
+    if (path.isAbsolute(skillPath)) {
+      throw snapshotFailure("Agent skill path must be relative");
+    }
+    const resolvedSkillPath = path.resolve(agentDirectory, skillPath);
+    if (!isInsideRoot(projectRoot, resolvedSkillPath)) {
+      throw snapshotFailure("Agent skill path escapes the project root");
+    }
+    const segments = path
+      .relative(projectRoot, resolvedSkillPath)
+      .split(path.sep);
+    for (const segment of segments) {
+      assertSafeSegment(segment);
+    }
+    const key = `project/${segments.join("/")}`;
+    if (options.files.has(key)) continue;
+    const file = await captureFile(
+      projectRoot,
+      "project",
+      segments,
+      options.budget
+    );
+    options.files.set(key, file);
+  }
+}
+
 async function captureAgentOnce(
   projectRoot: string,
   agentId: string,
@@ -322,6 +389,13 @@ async function captureAgentOnce(
     budget,
     files
   );
+  await captureAgentSkills({
+    projectRoot,
+    agentId,
+    skillPaths: capturedAgentSkillPaths(files, agentId),
+    budget,
+    files
+  });
 }
 
 async function captureInstalledWorkflowClosure(

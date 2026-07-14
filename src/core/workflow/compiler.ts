@@ -6,6 +6,13 @@ import type { PatternExecutionPolicy } from "../capabilities/pattern-registratio
 import type { CapabilityRegistry } from "../capabilities/registry.js";
 import { analyzeWorkflowGraph } from "./graph-analysis.js";
 import type {
+  ParsedAgentNode,
+  ParsedBuiltInNode,
+  ParsedHumanGateNode,
+  ParsedLoopNode,
+  ParsedPatternEvidence,
+  ParsedPatternNode,
+  ParsedWorkflowCallNode,
   ParsedWorkflowGate,
   ParsedWorkflowPolicy,
   WorkflowDefinition,
@@ -23,7 +30,10 @@ export type WorkflowCompilerErrorCode =
   | "workflow_node_type_unsupported"
   | "workflow_parallel_merge_without_reducer"
   | "workflow_parallel_hitl_unsupported"
-  | "workflow_protected_operation_before_approval";
+  | "workflow_protected_operation_before_approval"
+  | "workflow_pattern_evidence_side_effect_forbidden"
+  | "workflow_pattern_evidence_duplicate"
+  | "workflow_pattern_evidence_id_invalid";
 
 export class WorkflowCompilerError extends Error {
   readonly code: WorkflowCompilerErrorCode;
@@ -76,22 +86,54 @@ export type CompiledWorkflowNodeKind =
   | "agent"
   | "pattern"
   | "interrupt"
-  | "workflow";
+  | "workflow"
+  | "loop";
 
-export type CompiledWorkflowNode = {
+type CompiledWorkflowNodeBase<
+  Kind extends CompiledWorkflowNodeKind,
+  Source extends WorkflowNode
+> = {
   readonly id: string;
-  readonly kind: CompiledWorkflowNodeKind;
+  readonly kind: Kind;
   readonly yaml_path: string;
   readonly capability_id: string;
   readonly output_schema: unknown;
   readonly can_create_pending_interrupt: boolean;
   readonly execution_policy?: PatternExecutionPolicy;
-  readonly composition?: {
-    readonly workflow: WorkflowDefinition;
-    readonly compiled: CompiledWorkflow;
-  };
-  readonly source: WorkflowNode;
+  readonly composition?: never;
+  readonly loop_body?: never;
+  readonly source: Source;
 };
+
+export type CompiledBuiltInWorkflowNode = CompiledWorkflowNodeBase<
+  "built_in",
+  ParsedBuiltInNode
+>;
+
+export type CompiledPatternEvidence = {
+  readonly id: string;
+  readonly node: CompiledBuiltInWorkflowNode;
+};
+
+export type CompiledWorkflowNode =
+  | CompiledBuiltInWorkflowNode
+  | CompiledWorkflowNodeBase<"agent", ParsedAgentNode>
+  | (CompiledWorkflowNodeBase<"pattern", ParsedPatternNode> & {
+      readonly evidence: readonly CompiledPatternEvidence[];
+    })
+  | CompiledWorkflowNodeBase<"interrupt", ParsedHumanGateNode>
+  | (Omit<
+      CompiledWorkflowNodeBase<"workflow", ParsedWorkflowCallNode>,
+      "composition"
+    > & {
+      readonly composition: {
+        readonly workflow: WorkflowDefinition;
+        readonly compiled: CompiledWorkflow;
+      };
+    })
+  | (Omit<CompiledWorkflowNodeBase<"loop", ParsedLoopNode>, "loop_body"> & {
+      readonly loop_body: readonly CompiledWorkflowNode[];
+    });
 
 export type CompiledWorkflowEdge = {
   readonly from: string;
@@ -163,7 +205,8 @@ function assertSupportedNodes(nodes: readonly WorkflowNode[]): void {
       node.type !== "agent" &&
       node.type !== "pattern" &&
       node.type !== "human_gate" &&
-      node.type !== "workflow"
+      node.type !== "workflow" &&
+      node.type !== "loop"
     ) {
       throw new WorkflowCompilerError(
         "workflow_node_type_unsupported",
@@ -258,6 +301,7 @@ function compileNode(
         node.output_schema,
         `$.nodes[${nodeIndex}].output_schema`
       );
+      validatePolicies(node.policies ?? [], nodeIndex, indexes);
 
       return {
         id: node.id,
@@ -277,6 +321,12 @@ function compileNode(
       );
       validatePolicies(node.policies ?? [], nodeIndex, indexes);
       validateGates(node.gates ?? [], nodeIndex, indexes);
+      const evidence = compilePatternEvidence(
+        node.evidence ?? [],
+        node,
+        nodeIndex,
+        indexes
+      );
 
       return {
         id: node.id,
@@ -286,6 +336,7 @@ function compileNode(
         output_schema: registration.output_schema,
         can_create_pending_interrupt: nodeHasInterruptGate(node.gates ?? [], indexes),
         execution_policy: registration.execution_policy,
+        evidence,
         source: node
       };
     }
@@ -295,8 +346,6 @@ function compileNode(
         node.uses,
         `$.nodes[${nodeIndex}].uses`
       );
-      validatePolicies(node.policies ?? [], nodeIndex, indexes);
-
       return {
         id: node.id,
         kind: "interrupt",
@@ -330,7 +379,95 @@ function compileNode(
         source: node
       };
     }
+    case "loop": {
+      const body = node.body.nodes.map((bodyNode, bodyIndex) => {
+        const compiled = compileNode(
+          bodyNode,
+          bodyIndex,
+          indexes,
+          registry,
+          workflow,
+          reducers
+        );
+        return {
+          ...compiled,
+          yaml_path: `$.nodes[${nodeIndex}].body.nodes[${bodyIndex}]`
+        };
+      });
+      return {
+        id: node.id,
+        kind: "loop",
+        yaml_path: `$.nodes[${nodeIndex}]`,
+        capability_id: "workflow.loop",
+        output_schema: {},
+        can_create_pending_interrupt: true,
+        loop_body: body,
+        source: node
+      };
+    }
   }
+}
+
+function compilePatternEvidence(
+  entries: readonly ParsedPatternEvidence[],
+  pattern: ParsedPatternNode,
+  nodeIndex: number,
+  indexes: CapabilityRegistrationIndex
+): readonly CompiledPatternEvidence[] {
+  const seenIds = new Set<string>();
+  return entries.map((evidence, evidenceIndex) => {
+    const evidencePath = `$.nodes[${nodeIndex}].evidence[${evidenceIndex}]`;
+    if (!/^[A-Za-z0-9_-]+$/.test(evidence.id)) {
+      throw new WorkflowCompilerError(
+        "workflow_pattern_evidence_id_invalid",
+        `Invalid pattern evidence id: ${evidence.id}`,
+        { path: `${evidencePath}.id`, nodeId: pattern.id }
+      );
+    }
+    if (seenIds.has(evidence.id)) {
+      throw new WorkflowCompilerError(
+        "workflow_pattern_evidence_duplicate",
+        `Duplicate pattern evidence id: ${evidence.id}`,
+        { path: `${evidencePath}.id`, nodeId: pattern.id }
+      );
+    }
+    seenIds.add(evidence.id);
+
+    const registration = requireRegistration(
+      indexes.built_ins,
+      evidence.uses,
+      `${evidencePath}.uses`
+    );
+    if (registration.side_effect_policy !== undefined) {
+      throw new WorkflowCompilerError(
+        "workflow_pattern_evidence_side_effect_forbidden",
+        `Pattern evidence built-in ${registration.id} must be read-only and replay-safe.`,
+        {
+          path: `${evidencePath}.uses`,
+          capability: registration.id,
+          nodeId: pattern.id
+        }
+      );
+    }
+
+    return {
+      id: evidence.id,
+      node: {
+        id: `${pattern.id}:evidence:${evidence.id}`,
+        kind: "built_in",
+        yaml_path: evidencePath,
+        capability_id: registration.id,
+        output_schema: registration.output_schema,
+        can_create_pending_interrupt: false,
+        source: {
+          id: evidence.id,
+          type: "built_in",
+          uses: evidence.uses,
+          ...(evidence.input === undefined ? {} : { input: evidence.input })
+        }
+      }
+    };
+  });
 }
 
 function validatePolicies(
@@ -457,7 +594,7 @@ function assertProtectedOperationsAfterApproval(
 ): void {
   const approvalNodeIds = new Set(
     compiledNodes
-      .filter((node) => node.kind === "interrupt")
+      .filter((node) => node.kind === "interrupt" || node.kind === "loop")
       .map((node) => node.id)
   );
   if (approvalNodeIds.size === 0) {
@@ -466,6 +603,19 @@ function assertProtectedOperationsAfterApproval(
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
   for (const node of nodes) {
+    if (node.type === "loop") {
+      const protectedBodyIndex = node.body.nodes.findIndex((bodyNode) =>
+        isProtectedWriteNode(bodyNode, indexes)
+      );
+      if (protectedBodyIndex !== -1) {
+        const nodeIndex = nodes.findIndex((candidate) => candidate.id === node.id);
+        throw new WorkflowCompilerError(
+          "workflow_protected_operation_before_approval",
+          `Protected loop operation ${node.body.nodes[protectedBodyIndex]!.id} is scheduled before its approval interrupt.`,
+          { path: `$.nodes[${nodeIndex}].body.nodes[${protectedBodyIndex}]` }
+        );
+      }
+    }
     if (!isProtectedWriteNode(node, indexes)) {
       continue;
     }

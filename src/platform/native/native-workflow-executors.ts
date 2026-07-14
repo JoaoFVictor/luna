@@ -3,6 +3,9 @@ import { officialCapabilityRegistry } from "../../capabilities/registry.js";
 import type { CapabilityRegistry } from "../../core/capabilities/registry.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import type { PullRequestReviewProviderFactory } from "../../capabilities/pull-request-review/contracts.js";
+import type { SocialPostProviderFactory } from "../../capabilities/social-post/contracts.js";
+import type { ImageGenerationProviderFactory } from "../../capabilities/image-generation/contracts.js";
+import type { ArtifactPublisherPort } from "../../capabilities/artifacts/publisher.js";
 import { createProviderRegistry } from "../../core/providers/registry.js";
 import type { TaskProviderBuiltIns } from "../../providers/built-ins.js";
 import type { AppConfig } from "../../core/config/schemas.js";
@@ -33,6 +36,11 @@ export function buildNativeWorkflowExecutors({
     nativeLunaPlatformRegistrations.changeRequestProviderFactories,
   pullRequestReviewProviderFactories =
     nativeLunaPlatformRegistrations.pullRequestReviewProviderFactories,
+  socialPostProviderFactories =
+    nativeLunaPlatformRegistrations.socialPostProviderFactories,
+  imageGenerationProviderFactories =
+    nativeLunaPlatformRegistrations.imageGenerationProviderFactories,
+  artifactPublisher,
   patternExecutors = nativeLunaPlatformRegistrations.patternExecutors ?? {},
   workflowBuiltIns,
   taskProviderBuiltIns,
@@ -43,6 +51,9 @@ export function buildNativeWorkflowExecutors({
   readonly run: RunHandle;
   readonly changeRequestProviderFactories?: readonly ChangeRequestProviderFactory[];
   readonly pullRequestReviewProviderFactories?: readonly PullRequestReviewProviderFactory[];
+  readonly socialPostProviderFactories?: readonly SocialPostProviderFactory[];
+  readonly imageGenerationProviderFactories?: readonly ImageGenerationProviderFactory[];
+  readonly artifactPublisher: ArtifactPublisherPort;
   readonly patternExecutors?: Readonly<Record<string, WorkflowPatternExecutor>>;
   readonly workflowBuiltIns?: NativeWorkflowBuiltIns;
   readonly taskProviderBuiltIns?: Readonly<Record<string, TaskProviderBuiltIns>>;
@@ -72,6 +83,22 @@ export function buildNativeWorkflowExecutors({
         label: "pull request review",
         unsupportedCode: "pull_request_review_provider_unsupported"
       })
+    },
+    socialPost: {
+      providers: createProviderRegistry(socialPostProviderFactories, {
+        label: "social post",
+        unsupportedCode: "social_post_provider_unsupported"
+      }),
+      projectRoot,
+      artifacts: artifactPublisher
+    },
+    imageGeneration: {
+      providers: createProviderRegistry(imageGenerationProviderFactories, {
+        label: "image generation",
+        unsupportedCode: "image_generation_provider_unsupported"
+      }),
+      projectRoot,
+      artifacts: artifactPublisher
     }
   });
   assertNativeWorkflowExecutorCoverage({

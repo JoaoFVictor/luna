@@ -63,20 +63,45 @@ function reviewerResult(findings: readonly Finding[] = []) {
 }
 
 function repoContext(files: RepoContext["files"]): RepoContext {
+  const changedFileLimit = Math.max(1, files.length);
   return {
     repository: {
       owner: "octo-org",
       name: "hello-world",
       full_name: "octo-org/hello-world"
     },
-    base_sha: "base",
-    head_sha: "head",
-    merge_base: "merge-base",
-    files
+    base_sha: "a".repeat(40),
+    head_sha: "b".repeat(40),
+    merge_base: "c".repeat(40),
+    files,
+    changed_files_truncated: false,
+    total_changed_files: files.length,
+    changed_file_limit: changedFileLimit,
+    changed_files_omitted_count: 0,
+    file_excerpts_truncated: files
+      .filter((file) => file.excerpt?.truncated === true)
+      .map((file) => file.path),
+    git: {
+      merge_base: "c".repeat(40),
+      status_short: [],
+      status_short_omitted_count: 0,
+      status_short_truncated_count: 0
+    }
   };
 }
 
 describe("findings capability", () => {
+  it("rejects non-canonical repository context before evidence validation", async () => {
+    const context = repoContext([]);
+    await expect(validateFindingEvidenceBuiltIn.run({
+      state,
+      input: {
+        repo_context: { ...context, unexpected: true },
+        findings: { findings: [] }
+      }
+    })).rejects.toMatchObject({ code: "built_in_input_invalid" });
+  });
+
   it("merges findings from multiple reviewer outputs", () => {
     const result = mergeFindingsBuiltIn.run({
       state,

@@ -133,6 +133,11 @@ export type RuntimeComposition = {
   };
 };
 
+export type RuntimeBackendComposition = Pick<
+  RuntimeComposition,
+  "backends" | "backendManifests" | "checkpointDurability"
+>;
+
 export type RuntimeCompositionDependencies = {
   readonly capabilityRegistry?: CapabilityRegistry;
   readonly workflowDefinition?: Pick<WorkflowDefinition, "id" | "mode" | "graph">;
@@ -539,53 +544,15 @@ export function createRuntimeComposition(
     hasExternalSideEffects: dependencies.hasExternalSideEffects
   });
 
-  const artifacts = selectedBackend(
-    "artifacts",
-    "artifact_manifest",
-    config.backends.artifacts,
-    backendFactories.artifacts
+  const backendComposition = createSelectedRuntimeBackends(
+    config,
+    backendFactories
   );
-  const events = selectedBackend(
-    "events",
-    "event",
-    config.backends.events,
-    backendFactories.events
-  );
-  const interrupts = selectedBackend(
-    "interrupts",
-    "interrupt",
-    config.backends.interrupts,
-    backendFactories.interrupts
-  );
-  const checkpoints = selectedBackend(
-    "checkpoints",
-    "checkpoint",
-    config.backends.checkpoints,
-    backendFactories.checkpoints
-  );
-  const runtimeLogs = selectedBackend(
-    "runtime_logs",
-    "runtime_log",
-    config.backends.runtime_logs,
-    backendFactories.runtime_logs
-  );
-  const runtimeBackends = {
-    artifacts: artifacts.output,
-    events: events.output,
-    interrupts: interrupts.output,
-    checkpoints: checkpoints.output,
-    runtimeLogs: runtimeLogs.output
-  };
-  const backendManifests = [
-    artifacts.manifest,
-    events.manifest,
-    interrupts.manifest,
-    checkpoints.manifest,
-    runtimeLogs.manifest
-  ];
+  const { artifacts, checkpoints } = backendComposition.selected;
+  const runtimeBackends = backendComposition.backends;
 
   return {
-    backends: runtimeBackends,
+    ...backendComposition.public,
     artifactPublisherForRun: (run) =>
       createArtifactPublisher({
         selection: config.backends.artifacts,
@@ -629,11 +596,85 @@ export function createRuntimeComposition(
     capabilityPorts: resolveCapabilityPorts(
       config.capability_ports,
       dependencies.capabilityRegistry
-    ),
-    backendManifests,
-    checkpointDurability: {
-      backend_id: config.backends.checkpoints.id,
-      durable: checkpointFactory.durable === true
+    )
+  };
+}
+
+/** Opens only canonical storage backends; it never loads workflow capabilities. */
+export function createRuntimeBackendComposition(
+  rawConfig: RuntimeCompositionConfigInput,
+  dependencies: Pick<RuntimeCompositionDependencies, "backendFactories"> = {}
+): RuntimeBackendComposition {
+  const config = parseRuntimeCompositionConfig(rawConfig);
+  const factories = dependencies.backendFactories ??
+    defaultRuntimeBackendFactoryCatalog();
+  return createSelectedRuntimeBackends(config, factories).public;
+}
+
+function createSelectedRuntimeBackends(
+  config: RuntimeCompositionConfig,
+  backendFactories: RuntimeBackendFactoryCatalog
+) {
+  const artifacts = selectedBackend(
+    "artifacts",
+    "artifact_manifest",
+    config.backends.artifacts,
+    backendFactories.artifacts
+  );
+  const events = selectedBackend(
+    "events",
+    "event",
+    config.backends.events,
+    backendFactories.events
+  );
+  const interrupts = selectedBackend(
+    "interrupts",
+    "interrupt",
+    config.backends.interrupts,
+    backendFactories.interrupts
+  );
+  const checkpoints = selectedBackend(
+    "checkpoints",
+    "checkpoint",
+    config.backends.checkpoints,
+    backendFactories.checkpoints
+  );
+  const runtimeLogs = selectedBackend(
+    "runtime_logs",
+    "runtime_log",
+    config.backends.runtime_logs,
+    backendFactories.runtime_logs
+  );
+  const backends = {
+    artifacts: artifacts.output,
+    events: events.output,
+    interrupts: interrupts.output,
+    checkpoints: checkpoints.output,
+    runtimeLogs: runtimeLogs.output
+  };
+  const backendManifests = [
+    artifacts.manifest,
+    events.manifest,
+    interrupts.manifest,
+    checkpoints.manifest,
+    runtimeLogs.manifest
+  ];
+
+  const checkpointFactory = requireBackendFactory(
+    "checkpoints",
+    config.backends.checkpoints,
+    backendFactories
+  );
+  return {
+    selected: { artifacts, events, interrupts, checkpoints, runtimeLogs },
+    backends,
+    public: {
+      backends,
+      backendManifests,
+      checkpointDurability: {
+        backend_id: config.backends.checkpoints.id,
+        durable: checkpointFactory.durable === true
+      }
     }
   };
 }

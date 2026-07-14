@@ -34,6 +34,10 @@ export function collectWorkflowAgentReferences(
 ): readonly WorkflowAgentReference[] {
   const references: WorkflowAgentReference[] = [];
   for (const node of nodes) {
+    if (node.type === "loop") {
+      references.push(...collectWorkflowAgentReferences(node.body.nodes));
+      continue;
+    }
     if (node.type === "agent") {
       references.push({
         agentId: node.agent,
@@ -60,11 +64,33 @@ export function collectWorkflowAgentReferences(
   return references;
 }
 
+export function collectWorkflowCallReferences(
+  nodes: readonly ParsedWorkflowNode[]
+): readonly string[] {
+  const references = new Set<string>();
+  for (const node of nodes) {
+    if (node.type === "workflow") {
+      references.add(node.workflow);
+    } else if (node.type === "loop") {
+      for (const workflowId of collectWorkflowCallReferences(node.body.nodes)) {
+        references.add(workflowId);
+      }
+    }
+  }
+  return [...references].sort((left, right) => left.localeCompare(right));
+}
+
 export function collectWorkflowRegistrationReferences(
   nodes: readonly ParsedWorkflowNode[]
 ): readonly string[] {
   const references = new Set<string>();
   for (const node of nodes) {
+    if (node.type === "loop") {
+      for (const reference of collectWorkflowRegistrationReferences(node.body.nodes)) {
+        references.add(reference);
+      }
+      continue;
+    }
     if (node.type === "workflow") {
       continue;
     }
@@ -76,13 +102,18 @@ export function collectWorkflowRegistrationReferences(
     ) {
       references.add(node.output_schema);
     }
-    for (const policy of node.policies ?? []) {
-      references.add(policy.uses);
+    if ("policies" in node) {
+      for (const policy of node.policies ?? []) {
+        references.add(policy.uses);
+      }
     }
     for (const artifact of node.artifacts ?? []) {
       references.add(artifact.publisher);
     }
     if (node.type === "pattern") {
+      for (const evidence of node.evidence ?? []) {
+        references.add(evidence.uses);
+      }
       for (const gate of node.gates ?? []) {
         references.add(gate.type);
       }
@@ -126,8 +157,6 @@ export function readWorkflowDefinitionReferences(
     outputSchema: requireString(raw.output_schema, "$.output_schema"),
     ...(config === undefined ? {} : { config }),
     agents: collectWorkflowAgentReferences(graph.nodes),
-    workflows: [...new Set(
-      graph.nodes.flatMap((node) => node.type === "workflow" ? [node.workflow] : [])
-    )].sort((left, right) => left.localeCompare(right))
+    workflows: collectWorkflowCallReferences(graph.nodes)
   };
 }

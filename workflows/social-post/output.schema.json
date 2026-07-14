@@ -1,0 +1,194 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "provider",
+        "provider_id",
+        "external_id",
+        "url",
+        "text",
+        "media_id"
+      ],
+      "properties": {
+        "operation_id": { "type": "string", "const": "social-post.publish" },
+        "provider": { "type": "string", "minLength": 1 },
+        "provider_id": { "type": "string", "minLength": 1 },
+        "external_id": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 10000 },
+        "media_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "decision", "draft", "image", "prepared"],
+      "properties": {
+        "action": { "type": "string", "const": "reject" },
+        "decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action"],
+          "properties": {
+            "action": { "type": "string", "const": "reject" },
+            "comment": { "type": "string", "minLength": 1, "maxLength": 8192 }
+          }
+        },
+        "draft": { "$ref": "#/definitions/draft" },
+        "image": { "$ref": "#/definitions/image" },
+        "prepared": { "$ref": "#/definitions/prepared" }
+      }
+    }
+  ],
+  "definitions": {
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "image_prompt",
+        "strategy",
+        "character_count",
+        "claims_to_verify"
+      ],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 10000 },
+        "image_prompt": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "strategy": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "character_count": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "claims_to_verify": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "provider",
+        "provider_id",
+        "model",
+        "prompt",
+        "size",
+        "quality",
+        "media_type",
+        "asset",
+        "metadata"
+      ],
+      "properties": {
+        "operation_id": { "type": "string", "const": "image-generation.generate" },
+        "provider": { "type": "string", "minLength": 1 },
+        "provider_id": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string", "minLength": 1 },
+        "revised_prompt": { "type": "string" },
+        "size": { "type": "string", "minLength": 1 },
+        "quality": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string", "const": "image/png" },
+        "asset": { "$ref": "#/definitions/binary_asset" },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "prepared": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_id",
+        "text_hash",
+        "image_content_hash",
+        "validation"
+      ],
+      "properties": {
+        "provider_id": { "type": "string", "minLength": 1 },
+        "text_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "image_content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "valid",
+            "code",
+            "message",
+            "text_weighted_length",
+            "text_max_weighted_length",
+            "text_policy_id",
+            "text_policy_revision",
+            "image_size_bytes",
+            "image_max_bytes",
+            "image_media_type",
+            "image_width",
+            "image_height"
+          ],
+          "properties": {
+            "valid": { "type": "boolean" },
+            "code": {
+              "type": "string",
+              "enum": ["ready", "text_invalid", "image_too_large", "image_invalid"]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "text_weighted_length": { "type": "integer", "minimum": 0 },
+            "text_max_weighted_length": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "text_policy_id": { "type": "string", "minLength": 1 },
+            "text_policy_revision": { "type": "string", "minLength": 1 },
+            "image_size_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "image_max_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 26214400
+            },
+            "image_media_type": { "type": "string", "const": "image/png" },
+            "image_width": { "type": "integer", "minimum": 0 },
+            "image_height": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "binary_asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "uri",
+        "node_id",
+        "media_type",
+        "content_hash",
+        "size_bytes"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string", "minLength": 1 },
+        "node_id": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string", "const": "image/png" },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "size_bytes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

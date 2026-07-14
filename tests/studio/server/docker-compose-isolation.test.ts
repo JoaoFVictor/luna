@@ -68,4 +68,12 @@ describe("Docker Compose checkout isolation", () => {
     expect(required.get("/app/.runs")?.bind?.create_host_path).toBe(false);
     expect(required.get("/app/.luna/studio")?.bind?.create_host_path).toBe(false);
   });
+
+  it("does not shadow image-built application artifacts with host dist mounts", async () => {
+    const source = await composeSource();
+    const override = await readFile(path.resolve("docker-compose.override.yml"), "utf8");
+
+    expect(source).not.toContain("/app/dist");
+    expect(override).not.toContain("/app/apps/studio/dist");
+  });
 });

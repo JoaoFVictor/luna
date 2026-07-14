@@ -12,7 +12,8 @@
         "push",
         "change_request",
         "sandbox",
-        "validation"
+        "validation",
+        "repository_context"
       ],
       "properties": {
         "branch_pattern": {
@@ -75,22 +76,18 @@
         "sandbox": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "env_allowlist"],
+          "required": ["type"],
           "properties": {
             "type": {
               "const": "trusted_host_local",
               "x-luna-studio": { "exposure": "read_only" }
-            },
-            "env_allowlist": {
-              "type": "array",
-              "items": { "type": "string", "minLength": 1 }
             }
           }
         },
         "validation": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["repair_attempts", "max_output_bytes", "commands"],
+          "required": ["repair_attempts", "max_output_bytes"],
           "properties": {
             "repair_attempts": {
               "type": "integer",
@@ -101,23 +98,48 @@
             "max_output_bytes": {
               "type": "integer",
               "minimum": 1,
+              "maximum": 4194304,
+              "x-luna-studio": { "exposure": "editable" }
+            }
+          }
+        },
+        "repository_context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
               "x-luna-studio": { "exposure": "editable" }
             },
-            "commands": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["cmd"],
-                "properties": {
-                  "cmd": { "type": "string", "minLength": 1 },
-                  "args": {
-                    "type": "array",
-                    "items": { "type": "string" }
-                  },
-                  "timeout_ms": { "type": "integer", "minimum": 1 }
-                }
-              }
+            "max_related_files": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "max_seed_files": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "max_excerpt_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16384,
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "include_tests": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "include_docs": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
+            },
+            "include_configs": {
+              "type": "boolean",
+              "x-luna-studio": { "exposure": "editable" }
             }
           }
         }

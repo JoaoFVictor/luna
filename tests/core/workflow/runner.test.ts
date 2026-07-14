@@ -35,6 +35,38 @@ async function withTimeout<T>(
 }
 
 describe("workflow runner execution", () => {
+  it("passes the run cancellation signal to built-in executors", async () => {
+    const controller = new AbortController();
+    const definition = workflow([
+      { id: "ok", type: "built_in", uses: "runtime.ok" }
+    ]);
+    let receivedSignal: AbortSignal | undefined;
+
+    await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-built-in-signal",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      signal: controller.signal,
+      backends: backends(),
+      builtIns: {
+        "runtime.ok": async ({ signal }) => {
+          receivedSignal = signal;
+          return { ok: true };
+        }
+      },
+      agentRuntime: agentRuntime({})
+    });
+
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
   it("projects agent runtime input per node", async () => {
     const runtime = agentRuntime({ reviewed: true });
     const definition = workflow([
@@ -601,5 +633,65 @@ describe("workflow runner execution", () => {
         }
       }
     ]);
+  });
+
+  it("binds ordinary agent tools to the promoted workspace instead of the repository default", async () => {
+    const runtime = agentRuntime({ reviewed: true });
+    const definition = workflow([
+      {
+        id: "capture",
+        type: "built_in",
+        uses: "runtime.workspace"
+      },
+      {
+        id: "review",
+        type: "agent",
+        agent: "change-reviewer",
+        output_schema: "agents.output",
+        after: ["capture"]
+      }
+    ]);
+
+    await runCompiledWorkflow({
+      compiled: compileWorkflow({ workflow: definition, registry }),
+      workflow: definition,
+      invocation: {},
+      config: {},
+      run: {
+        run_id: "run-agent-workspace",
+        workflow_id: "runner-test",
+        attempt: 1,
+        started_at: "2026-06-25T00:00:00.000Z"
+      },
+      backends: backends(),
+      builtIns: {
+        "runtime.workspace": async () => ({
+          run_id: "run-agent-workspace",
+          path: "/tmp/worktrees/task-1",
+          preserved: false,
+          reason: "active"
+        })
+      },
+      builtInMetadata: (node) =>
+        node.capability_id === "runtime.workspace"
+          ? { capturesWorkspace: true }
+          : {},
+      agentRuntime: runtime,
+      agentInputs: {
+        review: {
+          ...agentDefaults,
+          cwd: "/tmp/repositories/source",
+          agent: {
+            id: "change-reviewer",
+            mode: "read_only",
+            instructions: "Review the implementation."
+          }
+        }
+      }
+    });
+
+    expect(runtime.runAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "/tmp/worktrees/task-1" })
+    );
   });
 });

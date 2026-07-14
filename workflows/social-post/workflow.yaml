@@ -1,0 +1,149 @@
+id: social-post
+type: workflow
+mode: read_only
+input_schema: input.schema.json
+output_schema: output.schema.json
+config:
+  file: social-post.yaml
+  schema: config.schema.json
+capabilities:
+  - agents
+  - hitl
+  - image-generation
+  - social-post
+  - artifacts
+requires:
+  repository: false
+execution:
+  max_concurrency: 1
+  lock_timeout_ms: 120000
+nodes:
+  - id: editorial
+    type: loop
+    body:
+      nodes:
+        - id: proposal
+          type: agent
+          agent: social-post-writer
+          output_schema: output.schema.json
+          input:
+            briefing:
+              expression: "$.invocation.payload"
+            previous_draft:
+              expression: "$exists($.steps.draft) ? $.steps.draft : {}"
+            review_feedback:
+              expression: "$exists($.steps.review.action) ? [{'comment': $.steps.review.comment, 'targets': $.steps.review.targets}] : []"
+            constraints:
+              character_limit: 280
+              platform: X/Twitter
+
+        - id: draft
+          type: built_in
+          uses: social-post.apply_revision_scope
+          input:
+            proposed_draft:
+              expression: "$.steps.proposal"
+            previous_draft:
+              expression: "$exists($.steps.draft) ? $.steps.draft : null"
+            targets:
+              expression: "$exists($.steps.review.action) ? $.steps.review.targets : ['text', 'image']"
+          artifacts:
+            - path: social-post-draft.json
+              publisher: artifacts.manifest_publisher
+              semantic_type: luna.social-post.draft.v1
+              source:
+                expression: "$.steps.draft"
+              format: json
+            - path: social-post-draft.md
+              publisher: artifacts.manifest_publisher
+              source:
+                expression: "$.steps.draft.text"
+              format: markdown
+
+        - id: image
+          type: built_in
+          uses: image-generation.generate
+          when:
+            expression: "$exists($.steps.review.action) ? ('image' in $.steps.review.targets) : true"
+          policies:
+            - uses: image-generation.generate_side_effect
+              config:
+                operation_id: image-generation.generate
+          input:
+            provider_id:
+              expression: "$.config.image_generation.provider"
+            prompt:
+              expression: "$.steps.draft.image_prompt"
+            size:
+              expression: "$.config.image_generation.size"
+            quality:
+              expression: "$.config.image_generation.quality"
+          artifacts:
+            - path: social-post-image-metadata.json
+              publisher: artifacts.manifest_publisher
+              semantic_type: luna.social-post.image-metadata.v1
+              source:
+                expression: "$.steps.image.metadata"
+              format: json
+
+        - id: prepare
+          type: built_in
+          uses: social-post.prepare
+          input:
+            provider_id:
+              expression: "$.config.social_post.provider"
+            text:
+              expression: "$.steps.draft.text"
+            image_asset:
+              expression: "$.steps.image.asset"
+
+        - id: review
+          type: human_gate
+          uses: hitl.review
+          input:
+            prompt:
+              expression: "$.steps.prepare.validation.valid ? 'Revise esta versão. Aprove, rejeite ou solicite quantas alterações forem necessárias antes da publicação no X.' : $.steps.prepare.validation.message"
+            review:
+              approval:
+                allowed:
+                  expression: "$.steps.prepare.validation.valid"
+                reason:
+                  expression: "$.steps.prepare.validation.message"
+              targets:
+                - id: text
+                  label: Texto
+                - id: image
+                  label: Imagem
+    repeat_when:
+      expression: "$.steps.review.action = 'request_changes'"
+    result:
+      expression: "{'action': $.steps.review.action, 'decision': $.steps.review, 'draft': $.steps.draft, 'image': $.steps.image, 'prepared': $.steps.prepare}"
+    halt_when:
+      expression: "$.result.action = 'reject'"
+
+  - id: publish
+    type: built_in
+    uses: social-post.publish
+    policies:
+      - uses: social-post.publish_side_effect
+        config:
+          operation_id: social-post.publish
+    input:
+      provider_id:
+        expression: "$.config.social_post.provider"
+      auth_instance:
+        expression: "$.config.social_post.auth_instance"
+      text:
+        expression: "$.steps.editorial.draft.text"
+      image_asset:
+        expression: "$.steps.editorial.image.asset"
+      preparation:
+        expression: "$.steps.editorial.prepared"
+    artifacts:
+      - path: social-post-published.json
+        publisher: artifacts.manifest_publisher
+        semantic_type: luna.social-post.published.v1
+        source:
+          expression: "$.steps.publish"
+        format: json
+    after: [editorial]

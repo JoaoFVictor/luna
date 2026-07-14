@@ -22,6 +22,7 @@ import { createMemoryEventStore } from "../../../src/runtime/backends/memory/eve
 import { createMemoryInterruptStore } from "../../../src/runtime/backends/memory/interrupts.js";
 import { createMemoryRuntimeLogStore } from "../../../src/runtime/backends/memory/runtime-log.js";
 import { runCompiledWorkflow } from "../../../src/runtime/langgraph/workflow-runner.js";
+import { NODE_OUTPUT_JOURNAL_CHANNEL } from "../../../src/runtime/workflow/node-durability.js";
 import { NativeStudioRunDispatchQueue } from "../../../src/studio/adapters/filesystem/run-dispatch-queue.js";
 import { NativeStudioRunRecoveryJournal } from "../../../src/studio/adapters/filesystem/run-recovery-journal.js";
 import { NativeStudioRunTerminalJournal } from "../../../src/studio/adapters/filesystem/run-terminal-journal.js";
@@ -50,7 +51,7 @@ function checkpointStoreWithUnknownNodeOutput(label: string): CheckpointStore {
         (write) =>
           write.task_id === "analyze" &&
           write.index === 0 &&
-          write.channel === "steps"
+          write.channel === NODE_OUTPUT_JOURNAL_CHANNEL
       );
       if (nodeOutput !== undefined && injectUncertainty) {
         injectUncertainty = false;

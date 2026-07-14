@@ -10,6 +10,10 @@ import type {
   RuntimeArtifactRef,
   RuntimeInterruptRef
 } from "../../core/runtime/state.js";
+import {
+  NodeBinaryAssetChannelSchema,
+  type NodeBinaryAssetChannel
+} from "../../core/runtime/artifacts/binary-asset.js";
 import { runtimeError } from "../../core/runtime/errors.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
@@ -22,12 +26,26 @@ import {
 
 const NODE_COMPLETION_SCHEMA_VERSION = 2;
 const NODE_COMPLETION_CHANNEL = "node_completion";
+export const NODE_OUTPUT_JOURNAL_CHANNEL = "node_output_v2";
+// The channel, not any workflow-owned JSON field, selects this codec. Current
+// writes always use it and always wrap the public output, with or without
+// binary assets. The old `steps` channel remains opaque domain JSON.
+const NODE_OUTPUT_ENVELOPE_KIND = "luna.runtime.node-output-envelope";
+const NODE_OUTPUT_ENVELOPE_SCHEMA_VERSION = 2;
+
+export type NodeDurabilityLocation = {
+  readonly thread_id: string;
+  readonly checkpoint_ns: string;
+  readonly checkpoint_id: string;
+  readonly task_id: string;
+};
 
 export type PersistedNodeDurability =
   | { readonly kind: "none" }
   | {
       readonly kind: "output_pending";
       readonly output: JsonValue;
+      readonly binaryAssets?: NodeBinaryAssetChannel;
     }
   | {
       readonly kind: "completed";
@@ -39,26 +57,40 @@ export type PersistedNodeDurability =
 export async function saveNodeOutputWrite({
   input,
   node,
-  output
+  output,
+  binaryAssets
 }: {
   readonly input: RunWorkflowInput;
   readonly node: CompiledWorkflowNode;
   readonly output: JsonValue;
+  readonly binaryAssets?: NodeBinaryAssetChannel;
+}): Promise<void> {
+  await saveNodeOutputAt({
+    input,
+    location: nodeDurabilityLocation(input, node),
+    output,
+    binaryAssets
+  });
+}
+
+export async function saveNodeOutputAt({
+  input,
+  location,
+  output,
+  binaryAssets
+}: {
+  readonly input: Pick<RunWorkflowInput, "backends">;
+  readonly location: NodeDurabilityLocation;
+  readonly output: JsonValue;
+  readonly binaryAssets?: NodeBinaryAssetChannel;
 }): Promise<void> {
   assertCheckpointJsonValue(output);
+  const value = nodeOutputEnvelope(output, binaryAssets);
   await saveCheckpointWriteExactly(input, {
-    thread_id: input.run.run_id,
-    checkpoint_ns: "",
-    checkpoint_id: nodeOutputCheckpointId(
-      input.run.run_id,
-      input.compiled.workflow_id,
-      input.compiled.workflow_revision,
-      node.id
-    ),
-    task_id: node.id,
+    ...location,
     index: 0,
-    channel: "steps",
-    value: output
+    channel: NODE_OUTPUT_JOURNAL_CHANNEL,
+    value
   });
 }
 
@@ -88,7 +120,41 @@ export async function saveNodeCompletionWrite({
   readonly artifactRefs: LunaRuntimeState["artifact_refs"];
   readonly interruptRefs: LunaRuntimeState["interrupt_refs"];
 }): Promise<void> {
+  await saveNodeCompletionAt({
+    input,
+    location: nodeDurabilityLocation(input, node),
+    output,
+    artifactRefs,
+    interruptRefs
+  });
+}
+
+export async function saveNodeCompletionAt({
+  input,
+  location,
+  output,
+  artifactRefs,
+  interruptRefs
+}: {
+  readonly input: RunWorkflowInput;
+  readonly location: NodeDurabilityLocation;
+  readonly output: JsonValue;
+  readonly artifactRefs: LunaRuntimeState["artifact_refs"];
+  readonly interruptRefs: LunaRuntimeState["interrupt_refs"];
+}): Promise<void> {
   await saveCheckpointWriteExactly(input, {
+    ...location,
+    index: 1,
+    channel: NODE_COMPLETION_CHANNEL,
+    value: nodeCompletionMarker(output, artifactRefs, interruptRefs)
+  });
+}
+
+function nodeDurabilityLocation(
+  input: RunWorkflowInput,
+  node: CompiledWorkflowNode
+): NodeDurabilityLocation {
+  return {
     thread_id: input.run.run_id,
     checkpoint_ns: "",
     checkpoint_id: nodeOutputCheckpointId(
@@ -97,11 +163,8 @@ export async function saveNodeCompletionWrite({
       input.compiled.workflow_revision,
       node.id
     ),
-    task_id: node.id,
-    index: 1,
-    channel: NODE_COMPLETION_CHANNEL,
-    value: nodeCompletionMarker(output, artifactRefs, interruptRefs)
-  });
+    task_id: node.id
+  };
 }
 
 export function persistedNodeDurability({
@@ -115,7 +178,9 @@ export function persistedNodeDurability({
     (write) =>
       write.task_id !== nodeId ||
       !(
-        (write.channel === "steps" && write.index === 0) ||
+        ((write.channel === "steps" ||
+          write.channel === NODE_OUTPUT_JOURNAL_CHANNEL) &&
+          write.index === 0) ||
         (write.channel === NODE_COMPLETION_CHANNEL && write.index === 1)
       )
   );
@@ -131,7 +196,10 @@ export function persistedNodeDurability({
     );
   }
   const outputWrites = writes.filter(
-    (write) => write.task_id === nodeId && write.channel === "steps"
+    (write) =>
+      write.task_id === nodeId &&
+      (write.channel === "steps" ||
+        write.channel === NODE_OUTPUT_JOURNAL_CHANNEL)
   );
   const completionWrites = writes.filter(
     (write) =>
@@ -153,9 +221,19 @@ export function persistedNodeDurability({
     );
   }
 
-  const output = outputWrites[0].value;
+  const outputWrite = outputWrites[0];
+  const decodedOutput = outputWrite.channel === NODE_OUTPUT_JOURNAL_CHANNEL
+    ? decodeCurrentNodeOutputEnvelope(outputWrite.value, nodeId)
+    : { output: outputWrite.value };
+  const output = decodedOutput.output;
   if (completionWrites.length === 0) {
-    return { kind: "output_pending", output };
+    return {
+      kind: "output_pending",
+      output,
+      ...(decodedOutput.binaryAssets === undefined
+        ? {}
+        : { binaryAssets: decodedOutput.binaryAssets })
+    };
   }
   if (completionWrites.length !== 1 || completionWrites[0]?.index !== 1) {
     throw invalidNodeDurability(
@@ -218,6 +296,55 @@ export function persistedNodeDurability({
         )
       )
     )
+  };
+}
+
+function nodeOutputEnvelope(
+  output: JsonValue,
+  binaryAssets: NodeBinaryAssetChannel | undefined
+): JsonValue {
+  const parsed = binaryAssets === undefined
+    ? undefined
+    : NodeBinaryAssetChannelSchema.safeParse(binaryAssets);
+  if (parsed !== undefined && !parsed.success) {
+    throw runtimeError(
+      "Node binary asset channel cannot be persisted",
+      "runtime_state_invalid"
+    );
+  }
+  return {
+    kind: NODE_OUTPUT_ENVELOPE_KIND,
+    schema_version: NODE_OUTPUT_ENVELOPE_SCHEMA_VERSION,
+    output,
+    ...(parsed === undefined ? {} : { binary_assets: parsed.data })
+  };
+}
+
+function decodeCurrentNodeOutputEnvelope(
+  value: JsonValue,
+  nodeId: string
+): { readonly output: JsonValue; readonly binaryAssets?: NodeBinaryAssetChannel } {
+  const assets = isCheckpointPlainObject(value) && "binary_assets" in value
+    ? NodeBinaryAssetChannelSchema.safeParse(value.binary_assets)
+    : undefined;
+  if (
+    !isCheckpointPlainObject(value) ||
+    value.kind !== NODE_OUTPUT_ENVELOPE_KIND ||
+    value.schema_version !== NODE_OUTPUT_ENVELOPE_SCHEMA_VERSION ||
+    !("output" in value) ||
+    (assets !== undefined && !assets.success) ||
+    Object.keys(value).some(
+      (key) => !["kind", "schema_version", "output", "binary_assets"].includes(key)
+    )
+  ) {
+    throw invalidNodeDurability(
+      "Node output checkpoint contains an invalid node output envelope",
+      nodeId
+    );
+  }
+  return {
+    output: value.output,
+    ...(assets === undefined ? {} : { binaryAssets: assets.data })
   };
 }
 

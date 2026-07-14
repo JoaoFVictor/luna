@@ -7,12 +7,14 @@ import type {
   HistoryResource,
   RunCatalogItem,
   RunGraphResponse,
+  RunInterruptList,
   RunLogLevel,
   RunStatus,
 } from "@/api/types"
 import type { StudioPath } from "@/api/types"
 
 const ACTIVE_RUN_REFETCH_INTERVAL_MS = 5_000
+const ACTIVE_INTERRUPT_REFETCH_INTERVAL_MS = 2_000
 const PERSISTENCE_CATCH_UP_INTERVAL_MS = 750
 const TERMINAL_RUN_CATCH_UP_INTERVAL_MS = 2_000
 const TERMINAL_RUN_CATCH_UP_WINDOW_MS = 15_000
@@ -122,6 +124,7 @@ export const studioKeys = {
   runOutputComparisonCandidates: (workflowId: string) =>
     ["studio", "runs", "workflow", workflowId, "output-comparison"] as const,
   run: (runId: string) => ["studio", "run", runId] as const,
+  runInterrupts: (runId: string) => ["studio", "run", runId, "interrupts"] as const,
   runGraph: (runId: string) => ["studio", "run", runId, "graph"] as const,
   runNodeOutput: (runId: string, nodeId: string) =>
     ["studio", "run", runId, "node", nodeId, "output"] as const,
@@ -210,6 +213,41 @@ export function runOutputComparisonCandidatesQuery(workflowId: string) {
     enabled: workflowId.length > 0,
     staleTime: 30_000,
   })
+}
+
+export function runInterruptsQuery(
+  runId: string,
+  active: boolean,
+  terminalAt?: string,
+) {
+  return infiniteQueryOptions({
+    queryKey: studioKeys.runInterrupts(runId),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) => studioApi.runInterrupts(runId, pageParam, signal),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: runId.length > 0,
+    refetchInterval: (query) =>
+      runInterruptsRefetchInterval(query.state.data, active, terminalAt),
+  })
+}
+
+export function runInterruptsRefetchInterval(
+  response: { readonly pages: readonly RunInterruptList[] } | undefined,
+  active: boolean,
+  terminalAt?: string,
+  now = Date.now(),
+): number | false {
+  if (active) return ACTIVE_INTERRUPT_REFETCH_INTERVAL_MS
+  if (
+    terminalAt === undefined ||
+    Math.max(0, now - Date.parse(terminalAt)) >= TERMINAL_RUN_CATCH_UP_WINDOW_MS
+  ) return false
+  const projectionPending = response === undefined || response.pages.some((page) =>
+    page.items.some((interrupt) =>
+      interrupt.status === "pending" || interrupt.status === "resuming"
+    )
+  )
+  return projectionPending ? PERSISTENCE_CATCH_UP_INTERVAL_MS : false
 }
 
 export function runsInfiniteQuery(filters: {

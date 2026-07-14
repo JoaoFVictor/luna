@@ -8,13 +8,13 @@ import type {
   RuntimeArtifactRef,
   RuntimeInterruptRef
 } from "../../core/runtime/state.js";
+import { sha256Digest } from "../../core/workflow/definition-digests.js";
 import {
   parseRuntimeReference
 } from "./runtime-reference-codec.js";
 
 export const WAIT_INTENT_SCHEMA_VERSION = 2;
 export const WAIT_INTENT_CHANNEL = "interrupt_wait_intent";
-export const WAIT_COMPLETION_CHANNEL = "interrupt_wait_completion";
 
 export type InterruptWaitIntent = {
   readonly schema_version: typeof WAIT_INTENT_SCHEMA_VERSION;
@@ -30,20 +30,82 @@ export type InterruptWaitIntent = {
   readonly resume_context: JsonObject;
 };
 
-export function interruptId(runId: string, nodeId: string): string {
-  return `interrupt-${runId}-${nodeId}`;
+type WaitIdentityKind = "interrupt" | "checkpoint";
+
+function legacyWaitIdentity(
+  kind: WaitIdentityKind,
+  runId: string,
+  nodeId: string,
+  occurrence?: string
+): string {
+  return `${kind}-${runId}-${nodeId}${occurrence === undefined ? "" : `-${occurrence}`}`;
 }
 
-export function checkpointId(runId: string, nodeId: string): string {
-  return `checkpoint-${runId}-${nodeId}`;
+function waitIdentity(
+  kind: WaitIdentityKind,
+  runId: string,
+  nodeId: string,
+  occurrence?: string
+): string {
+  if (occurrence === undefined) {
+    return legacyWaitIdentity(kind, runId, nodeId);
+  }
+  const digest = sha256Digest({
+    schema_version: 2,
+    kind,
+    run_id: runId,
+    node_id: nodeId,
+    occurrence
+  }).slice("sha256:".length);
+  return `${kind}-v2-${digest}`;
+}
+
+export function interruptId(runId: string, nodeId: string, occurrence?: string): string {
+  return waitIdentity("interrupt", runId, nodeId, occurrence);
+}
+
+export function checkpointId(runId: string, nodeId: string, occurrence?: string): string {
+  return waitIdentity("checkpoint", runId, nodeId, occurrence);
+}
+
+export function legacyInterruptId(
+  runId: string,
+  nodeId: string,
+  occurrence?: string
+): string {
+  return legacyWaitIdentity("interrupt", runId, nodeId, occurrence);
+}
+
+export function legacyCheckpointId(
+  runId: string,
+  nodeId: string,
+  occurrence?: string
+): string {
+  return legacyWaitIdentity("checkpoint", runId, nodeId, occurrence);
+}
+
+export function interruptIdMatches(
+  value: string,
+  runId: string,
+  nodeId: string,
+  occurrence?: string
+): boolean {
+  return value === interruptId(runId, nodeId, occurrence) ||
+    (occurrence !== undefined && value === legacyInterruptId(runId, nodeId, occurrence));
+}
+
+export function checkpointIdCandidates(
+  runId: string,
+  nodeId: string,
+  occurrence?: string
+): readonly string[] {
+  const current = checkpointId(runId, nodeId, occurrence);
+  if (occurrence === undefined) return [current];
+  return [current, legacyCheckpointId(runId, nodeId, occurrence)];
 }
 
 export function waitIntentTaskId(nodeId: string): string {
   return `__luna_wait_intent__:${nodeId}`;
-}
-
-export function waitCompletionTaskId(nodeId: string): string {
-  return `__luna_wait_completion__:${nodeId}`;
 }
 
 export function parseInterruptWaitIntent(
@@ -123,23 +185,5 @@ export function waitIntentWrite(
     index: 0,
     channel: WAIT_INTENT_CHANNEL,
     value: intent
-  };
-}
-
-export function waitCompletionWrite(
-  intent: InterruptWaitIntent
-): CheckpointWriteRecord {
-  return {
-    thread_id: intent.run_id,
-    checkpoint_ns: "",
-    checkpoint_id: intent.checkpoint_id,
-    task_id: waitCompletionTaskId(intent.node_id),
-    index: 0,
-    channel: WAIT_COMPLETION_CHANNEL,
-    value: {
-      schema_version: WAIT_INTENT_SCHEMA_VERSION,
-      created_at: intent.created_at,
-      interrupt_id: intent.interrupt_id
-    }
   };
 }

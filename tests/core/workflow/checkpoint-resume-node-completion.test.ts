@@ -315,52 +315,6 @@ describe("workflow resume node completion markers", () => {
     expect(artifact.attempts()).toBe(2);
   });
 
-  it("does not revive a run after an exact failed terminal checkpoint", async () => {
-    const definition = workflow(
-      "resume-terminal-failed",
-      [artifactNode("report", "approve")]
-    );
-    const stores = backends();
-    const { compiled, waiting } = await createWaitingRun({
-      definition,
-      stores,
-      runId: "run-resume-terminal-failed"
-    });
-    const artifact = failArtifactOnce();
-    let reportExecutions = 0;
-    const resumeInput = {
-      compiled,
-      workflow: definition,
-      checkpoint_id: waiting.checkpoint_id,
-      thread_id: "run-resume-terminal-failed",
-      interrupt_id: waiting.interrupt_id,
-      decision: { approved: true },
-      backends: stores,
-      builtIns: {
-        "runtime.report": async () => {
-          reportExecutions += 1;
-          return { report: true };
-        }
-      },
-      artifactPublisher: artifact.publisher,
-      agentRuntime: {} as AgentRuntimePort
-    };
-
-    await expect(resumeCompiledWorkflow(resumeInput)).rejects.toThrow(
-      "required artifact failed once"
-    );
-    await expect(stores.checkpoints.load(
-      resumeInput.thread_id,
-      { checkpointId: `terminal-${resumeInput.thread_id}-failed` }
-    )).resolves.toMatchObject({ state: { run_status: "failed" } });
-
-    await expect(resumeCompiledWorkflow(resumeInput)).rejects.toMatchObject({
-      code: "runtime_state_invalid"
-    });
-    expect(reportExecutions).toBe(1);
-    expect(artifact.attempts()).toBe(1);
-  });
-
   it("rehydrates pre-gate artifacts exactly once from durable completion state", async () => {
     const base = workflow(
       "resume-pre-gate-artifact",

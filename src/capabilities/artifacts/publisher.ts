@@ -19,7 +19,7 @@ import {
 } from "../../core/runtime/artifacts/transaction.js";
 import type { ArtifactManifestStore } from "../../core/runtime/artifacts/contracts.js";
 
-export type ArtifactFormat = "json" | "markdown";
+export type ArtifactFormat = "json" | "markdown" | "png";
 
 export type ArtifactRef = {
   id: string;
@@ -43,6 +43,14 @@ export type ArtifactPublishInput = {
 
 export type ArtifactPublisherPort = {
   publish(input: ArtifactPublishInput): Promise<ArtifactRef>;
+  read(
+    ref: Pick<ArtifactRef, "id" | "uri">,
+    options?: { readonly max_bytes?: number }
+  ): Promise<Uint8Array>;
+  verify?(ref: ArtifactRef & {
+    readonly content_hash?: string;
+    readonly size_bytes?: number;
+  }): Promise<boolean>;
 };
 
 /**
@@ -213,7 +221,10 @@ export function resolveArtifactSource(
 }
 
 function artifactMediaType(format: ArtifactFormat): string {
-  return format === "json" ? "application/json" : "text/markdown";
+  if (format === "json") {
+    return "application/json";
+  }
+  return format === "markdown" ? "text/markdown" : "image/png";
 }
 
 function assertArtifactPublisherOutput(output: ArtifactPublisherOutput): void {
@@ -225,7 +236,7 @@ function assertArtifactPublisherOutput(output: ArtifactPublisherOutput): void {
   }
 }
 
-function artifactContent(input: ArtifactPublishInput): string {
+function artifactContent(input: ArtifactPublishInput): string | Uint8Array {
   if (input.format === "markdown") {
     if (typeof input.value !== "string") {
       throw artifactPlanError(
@@ -235,6 +246,33 @@ function artifactContent(input: ArtifactPublishInput): string {
     }
 
     return input.value;
+  }
+
+  if (input.format === "png") {
+    if (typeof input.value !== "string") {
+      throw artifactPlanError(
+        `Artifact source must resolve to base64 text for ${input.format}: ${input.path}`,
+        "workflow_artifact_string_required"
+      );
+    }
+    const normalized = input.value.replace(/\s/gu, "");
+    if (normalized === "" || !/^[A-Za-z0-9+/]+={0,2}$/u.test(normalized)) {
+      throw artifactPlanError(
+        `Artifact source must contain valid base64 for ${input.format}: ${input.path}`,
+        "workflow_artifact_base64_invalid"
+      );
+    }
+    const bytes = Buffer.from(normalized, "base64");
+    if (
+      bytes.length < 8 ||
+      !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    ) {
+      throw artifactPlanError(
+        `Artifact source is not a PNG image: ${input.path}`,
+        "workflow_artifact_media_invalid"
+      );
+    }
+    return bytes;
   }
 
   assertJsonValue(input.value);
@@ -278,7 +316,10 @@ function assertArtifactPublishInput(input: ArtifactPublishInput): void {
     );
   }
 
-  if (input.format === "markdown" && typeof input.value !== "string") {
+  if (
+    (input.format === "markdown" || input.format === "png") &&
+    typeof input.value !== "string"
+  ) {
     throw artifactPlanError(
       `Artifact source must resolve to a string for ${input.format}: ${input.path}`,
       "workflow_artifact_string_required"
@@ -287,6 +328,10 @@ function assertArtifactPublishInput(input: ArtifactPublishInput): void {
 
   if (input.format === "json") {
     assertJsonValue(input.value);
+  }
+
+  if (input.format === "png") {
+    artifactContent(input);
   }
 }
 
@@ -326,6 +371,53 @@ export function transactionalArtifactPublisher(
           ? {}
           : { media_type: result.manifest.media_type })
       };
+    },
+    async read(ref, readOptions) {
+      const expectedUri = `artifact://${options.run_id}/${ref.id}`;
+      if (ref.uri !== expectedUri) {
+        throw artifactPlanError(
+          "Artifact reference does not belong to this run",
+          "workflow_artifact_reference_invalid"
+        );
+      }
+      assertSafeArtifactPath(ref.id);
+      if (options.contentStore.read === undefined) {
+        throw artifactPlanError(
+          "Artifact content is not readable from this backend",
+          "workflow_artifact_content_unavailable"
+        );
+      }
+      return await options.contentStore.read({
+        run_id: options.run_id,
+        artifact_path: ref.id,
+        ...(readOptions?.max_bytes === undefined
+          ? {}
+          : { max_bytes: readOptions.max_bytes })
+      });
+    },
+    async verify(ref) {
+      try {
+        assertSafeArtifactPath(ref.id);
+      } catch {
+        return false;
+      }
+      const manifest = await options.manifestStore.get({
+        id: ref.id,
+        run_id: options.run_id,
+        source_node_id: ref.node_id,
+        artifact_path: ref.id,
+        attempt: options.attempt ?? 1,
+        backend_id: options.backend.id,
+        backend_root: options.backend.root
+      });
+      return manifest !== undefined &&
+        manifest.status === "committed" &&
+        manifest.id === ref.id &&
+        manifest.uri === ref.uri &&
+        manifest.source_node_id === ref.node_id &&
+        (ref.media_type === undefined || manifest.media_type === ref.media_type) &&
+        (ref.content_hash === undefined || manifest.content_hash === ref.content_hash) &&
+        (ref.size_bytes === undefined || manifest.content_size_bytes === ref.size_bytes);
     }
   };
 }
@@ -336,7 +428,7 @@ export async function publishDeclaredArtifacts({
   output,
   state
 }: {
-  publisher: ArtifactPublisherPort;
+  publisher: Pick<ArtifactPublisherPort, "publish">;
   node: WorkflowNodeWithArtifacts;
   output: unknown;
   state: WorkflowState;

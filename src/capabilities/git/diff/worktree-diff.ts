@@ -1,67 +1,39 @@
-import { lstat, open } from "node:fs/promises";
-import { join } from "node:path";
-import { runGit as defaultRunGit } from "../client.js";
-import { redactString } from "../../../core/security/redactor.js";
+import { runGit as defaultRunGit, runGitBounded } from "../client.js";
+import {
+  WORKTREE_DIFF_LIMITS,
+  type WorktreeDiff,
+  type WorktreeDiffFile,
+  type WorktreeFileStatus
+} from "./worktree-diff-contracts.js";
+export {
+  WORKTREE_DIFF_LIMITS,
+  WorktreeDiffFileSchema,
+  WorktreeDiffSchema,
+  UntrackedFileSummarySchema
+} from "./worktree-diff-contracts.js";
+export type {
+  UntrackedFileSummary,
+  WorktreeDiff,
+  WorktreeDiffFile
+} from "./worktree-diff-contracts.js";
 import {
   nulFields,
   parseNumstat,
   parseRawDiff,
   type NumstatEntry
 } from "./parsers.js";
+import {
+  summarizeUntrackedFiles,
+  truncateUtf8ToBytes
+} from "./worktree-untracked.js";
+import {
+  captureApprovedWorktreeSnapshot,
+  worktreeSnapshotsEqual,
+  type ApprovedWorktreeSnapshot
+} from "../worktree-snapshot.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
-type WorktreeFileStatus =
-  | "modified"
-  | "added"
-  | "deleted"
-  | "renamed"
-  | "copied"
-  | "untracked"
-  | "changed"
-  | "unmerged"
-  | "unknown";
-
-type FileExcerpt = {
-  start_line: number;
-  end_line: number;
-  content: string;
-  truncated?: boolean;
-};
-
-export type UntrackedFileSummary = {
-  path: string;
-  excerpt: FileExcerpt;
-  truncated: boolean;
-  bytes: number;
-  max_bytes: number;
-  symlink?: boolean;
-  omitted?: boolean;
-  omitted_reason?: "symlink" | "sensitive_path";
-};
-
-export type WorktreeDiffFile = {
-  path: string;
-  status: WorktreeFileStatus;
-  index_status: string;
-  worktree_status: string;
-  previous_path?: string;
-  binary?: boolean;
-  is_submodule?: boolean;
-  is_large?: boolean;
-  untracked_summary?: UntrackedFileSummary;
-};
-
-export type WorktreeDiff = {
-  files: WorktreeDiffFile[];
-  untracked_files: string[];
-  untracked_summaries: UntrackedFileSummary[];
-  staged_diff: string;
-  unstaged_diff: string;
-  staged_diff_truncated: boolean;
-  unstaged_diff_truncated: boolean;
-  max_diff_bytes: number;
-};
 
 function truncateBytes(
   value: string,
@@ -72,7 +44,7 @@ function truncateBytes(
   }
 
   return {
-    value: Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8"),
+    value: truncateUtf8ToBytes(value, maxBytes),
     truncated: true
   };
 }
@@ -158,143 +130,6 @@ function parseRawSubmodules(raw: string): Set<string> {
   return submodules;
 }
 
-function truncateUtf8ToBytes(content: string, maxBytes: number): string {
-  if (maxBytes <= 0) {
-    return "";
-  }
-
-  let bytesUsed = 0;
-  let truncated = "";
-
-  for (const character of content) {
-    const characterBytes = Buffer.byteLength(character, "utf8");
-
-    if (bytesUsed + characterBytes > maxBytes) {
-      break;
-    }
-
-    truncated += character;
-    bytesUsed += characterBytes;
-  }
-
-  return truncated;
-}
-
-function lineCount(content: string): number {
-  if (content.length === 0) {
-    return 1;
-  }
-
-  const lines = content.split("\n").length;
-  return content.endsWith("\n") ? Math.max(1, lines - 1) : lines;
-}
-
-function excerptForContent(content: string, maxBytes: number): FileExcerpt {
-  const truncated = Buffer.byteLength(content, "utf8") > maxBytes;
-  const excerptContent = redactString(
-    truncated ? truncateUtf8ToBytes(content, maxBytes) : content
-  );
-
-  return {
-    start_line: 1,
-    end_line: lineCount(excerptContent),
-    content: excerptContent,
-    ...(truncated ? { truncated: true } : {})
-  };
-}
-
-function isSensitiveUntrackedPath(path: string): boolean {
-  const segments = path.split(/[\\/]/);
-  const basename = segments.at(-1)?.toLowerCase() ?? "";
-
-  return (
-    basename === ".npmrc" ||
-    basename === ".yarnrc" ||
-    basename === ".pypirc" ||
-    basename === ".netrc" ||
-    basename === "credentials" ||
-    basename === "credentials.json" ||
-    basename === "luna.auth.json" ||
-    basename.startsWith(".env")
-  );
-}
-
-async function readFilePrefix(
-  path: string,
-  maxBytes: number
-): Promise<string> {
-  if (maxBytes <= 0) {
-    return "";
-  }
-
-  const handle = await open(path, "r");
-
-  try {
-    const buffer = Buffer.alloc(maxBytes + 1);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-
-    return buffer.subarray(0, bytesRead).toString("utf8");
-  } finally {
-    await handle.close();
-  }
-}
-
-async function summarizeUntrackedFile(
-  cwd: string,
-  path: string,
-  maxBytes: number
-): Promise<UntrackedFileSummary> {
-  let content = "";
-  let bytes = 0;
-  const emptyExcerpt = excerptForContent("", maxBytes);
-  const fullPath = join(cwd, path);
-
-  try {
-    const stats = await lstat(fullPath);
-
-    if (stats.isSymbolicLink()) {
-      return {
-        path,
-        excerpt: emptyExcerpt,
-        truncated: false,
-        bytes: 0,
-        max_bytes: maxBytes,
-        symlink: true,
-        omitted: true,
-        omitted_reason: "symlink"
-      };
-    }
-
-    bytes = stats.size;
-
-    if (isSensitiveUntrackedPath(path)) {
-      return {
-        path,
-        excerpt: emptyExcerpt,
-        truncated: false,
-        bytes,
-        max_bytes: maxBytes,
-        omitted: true,
-        omitted_reason: "sensitive_path"
-      };
-    }
-
-    content = await readFilePrefix(fullPath, maxBytes);
-  } catch {
-    content = "";
-  }
-
-  const excerpt = excerptForContent(content, maxBytes);
-
-  return {
-    path,
-    excerpt,
-    truncated: excerpt.truncated === true,
-    bytes,
-    max_bytes: maxBytes
-  };
-}
-
 function applyMetadata(
   file: WorktreeDiffFile,
   numstats: readonly Map<string, NumstatEntry>[],
@@ -323,38 +158,104 @@ function applyMetadata(
 export async function collectWorktreeDiff({
   cwd,
   maxDiffBytes,
-  runGit = defaultRunGit
+  runGit = defaultRunGit,
+  captureSnapshot = runGit === defaultRunGit
+    ? async (root: string) => await captureApprovedWorktreeSnapshot({ cwd: root })
+    : undefined
 }: {
   cwd: string;
   maxDiffBytes: number;
   runGit?: RunGit;
+  captureSnapshot?: (cwd: string) => Promise<ApprovedWorktreeSnapshot>;
 }): Promise<WorktreeDiff> {
-  const status = parseStatus(
-    await runGit(cwd, ["status", "--porcelain=v1", "-z"])
+  if (!Number.isInteger(maxDiffBytes) || maxDiffBytes <= 0 ||
+    maxDiffBytes > WORKTREE_DIFF_LIMITS.max_diff_bytes) {
+    throw new Error(
+      `maxDiffBytes must be an integer between 1 and ${WORKTREE_DIFF_LIMITS.max_diff_bytes}`
+    );
+  }
+
+  async function gitOutput(
+    args: readonly string[],
+    maxBytes: number,
+    allowTruncation: boolean
+  ): Promise<{ readonly value: string; readonly truncated: boolean }> {
+    const normalized = runGit === defaultRunGit
+      ? await runGitBounded(cwd, args, maxBytes).then((output) => ({
+        value: output.stdout,
+        truncated: output.truncated
+      }))
+      : truncateBytes(await runGit(cwd, args), maxBytes);
+    if (normalized.truncated && !allowTruncation) {
+      throw new Error(`Git metadata exceeded ${maxBytes} bytes: git ${args.join(" ")}`);
+    }
+    return normalized;
+  }
+  const snapshotBefore = await captureSnapshot?.(cwd);
+  const parsedStatus = parseStatus(
+    (await gitOutput(
+      ["status", "--porcelain=v1", "-z"],
+      WORKTREE_DIFF_LIMITS.max_git_metadata_bytes,
+      false
+    )).value
   );
-  const staged = truncateBytes(
-    await runGit(cwd, ["diff", "--cached", "--binary"]),
-    maxDiffBytes
-  );
-  const unstaged = truncateBytes(
-    await runGit(cwd, ["diff", "--binary"]),
-    maxDiffBytes
-  );
+  const status: WorktreeDiffFile[] = [];
+  let statusPathBytes = 0;
+  for (const file of parsedStatus) {
+    const pathBytes = Buffer.byteLength(file.path, "utf8") +
+      Buffer.byteLength(file.previous_path ?? "", "utf8");
+    if (
+      status.length >= WORKTREE_DIFF_LIMITS.max_status_files ||
+      statusPathBytes + pathBytes > WORKTREE_DIFF_LIMITS.max_status_path_bytes
+    ) {
+      continue;
+    }
+    status.push(file);
+    statusPathBytes += pathBytes;
+  }
+  const staged = await gitOutput(["diff", "--cached", "--binary"], maxDiffBytes, true);
+  const unstaged = await gitOutput(["diff", "--binary"], maxDiffBytes, true);
   const stagedNumstat = parseNumstat(
-    await runGit(cwd, ["diff", "--cached", "--numstat", "-z"])
+    (await gitOutput(
+      ["diff", "--cached", "--numstat", "-z"],
+      WORKTREE_DIFF_LIMITS.max_git_metadata_bytes,
+      false
+    )).value
   );
   const unstagedNumstat = parseNumstat(
-    await runGit(cwd, ["diff", "--numstat", "-z"])
+    (await gitOutput(
+      ["diff", "--numstat", "-z"],
+      WORKTREE_DIFF_LIMITS.max_git_metadata_bytes,
+      false
+    )).value
   );
   const stagedSubmodules = parseRawSubmodules(
-    await runGit(cwd, ["diff", "--cached", "--raw", "-z"])
+    (await gitOutput(
+      ["diff", "--cached", "--raw", "-z"],
+      WORKTREE_DIFF_LIMITS.max_git_metadata_bytes,
+      false
+    )).value
   );
   const unstagedSubmodules = parseRawSubmodules(
-    await runGit(cwd, ["diff", "--raw", "-z"])
+    (await gitOutput(
+      ["diff", "--raw", "-z"],
+      WORKTREE_DIFF_LIMITS.max_git_metadata_bytes,
+      false
+    )).value
   );
-  const untrackedFiles = status.filter((file) => file.status === "untracked");
-  const untrackedSummaries = await Promise.all(
-    untrackedFiles.map((file) => summarizeUntrackedFile(cwd, file.path, maxDiffBytes))
+  const allUntrackedFiles = status.filter((file) => file.status === "untracked");
+  const untrackedFiles = allUntrackedFiles.slice(0, WORKTREE_DIFF_LIMITS.max_untracked_files);
+  const perFileSummaryBytes = Math.min(
+    maxDiffBytes,
+    Math.max(1, Math.floor(
+      WORKTREE_DIFF_LIMITS.max_untracked_summary_bytes / Math.max(1, untrackedFiles.length)
+    ))
+  );
+  const untrackedSummaries = await summarizeUntrackedFiles(
+    cwd,
+    untrackedFiles.map((file) => file.path),
+    perFileSummaryBytes,
+    WORKTREE_DIFF_LIMITS.untracked_read_concurrency,
   );
   const untrackedByPath = new Map(
     untrackedSummaries.map((summary) => [summary.path, summary])
@@ -381,6 +282,15 @@ export async function collectWorktreeDiff({
     }
   }
 
+  const snapshotAfter = await captureSnapshot?.(cwd);
+  if (
+    snapshotBefore !== undefined &&
+    snapshotAfter !== undefined &&
+    !worktreeSnapshotsEqual(snapshotBefore, snapshotAfter)
+  ) {
+    throw new Error("Worktree changed while its review diff was being captured.");
+  }
+
   return {
     files: status,
     untracked_files: untrackedFiles.map((file) => file.path),
@@ -389,6 +299,13 @@ export async function collectWorktreeDiff({
     unstaged_diff: unstaged.value,
     staged_diff_truncated: staged.truncated,
     unstaged_diff_truncated: unstaged.truncated,
-    max_diff_bytes: maxDiffBytes
+    max_diff_bytes: maxDiffBytes,
+    status_files_omitted_count: parsedStatus.length - status.length,
+    untracked_files_omitted_count: allUntrackedFiles.length - untrackedFiles.length,
+    untracked_summary_bytes: untrackedSummaries.reduce((total, summary) =>
+      total + Buffer.byteLength(summary.excerpt.content, "utf8"), 0
+    ),
+    max_untracked_summary_bytes: WORKTREE_DIFF_LIMITS.max_untracked_summary_bytes,
+    ...(snapshotAfter === undefined ? {} : { approved_snapshot: snapshotAfter })
   };
 }

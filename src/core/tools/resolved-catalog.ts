@@ -34,6 +34,29 @@ export type ResolvedToolCatalog = {
   readonly mcp_policy?: ResolvedMcpPolicy;
 };
 
+export function bindLocalToolConfigurations(
+  catalog: ResolvedToolCatalog,
+  configurations: Readonly<Record<string, unknown>>
+): ResolvedToolCatalog {
+  return {
+    ...catalog,
+    tools: catalog.tools.map((tool) => {
+      const configuration = configurations[tool.id];
+      if (tool.local === undefined || configuration === undefined) return tool;
+      const local = tool.local;
+      return {
+        ...tool,
+        local: {
+          ...local,
+          createHandler(dependencies) {
+            return local.createHandler({ ...dependencies, configuration });
+          }
+        }
+      };
+    })
+  };
+}
+
 type ToolCatalogErrorCode =
   | "tool_catalog_tool_not_registered"
   | "tool_catalog_protocol_mismatch"

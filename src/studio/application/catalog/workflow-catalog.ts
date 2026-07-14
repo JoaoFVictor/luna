@@ -84,7 +84,8 @@ function summarizeWorkflow(
     agent: 0,
     pattern: 0,
     human_gate: 0,
-    workflow: 0
+    workflow: 0,
+    loop: 0
   };
   for (const node of definition.graph.nodes) {
     nodeCounts[node.type] += 1;

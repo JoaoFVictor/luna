@@ -5,28 +5,21 @@ if (!is_array($input)) {
     exit(2);
 }
 
-$root = $input['root'] ?? null;
 $files = $input['files'] ?? [];
-if (!is_string($root) || !is_array($files)) {
-    fwrite(STDERR, "Invalid root/files input\n");
+if (!is_array($files)) {
+    fwrite(STDERR, "Invalid files input\n");
     exit(2);
 }
 
-$rootReal = realpath($root);
-if ($rootReal === false) {
-    fwrite(STDERR, "Repository root not found\n");
-    exit(2);
-}
-
-$autoload = $rootReal . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php';
+$autoload = '/usr/share/php/PhpParser/autoload.php';
 if (!is_file($autoload)) {
-    fwrite(STDERR, "vendor/autoload.php not found\n");
+    fwrite(STDERR, "Luna PHP parser autoload not found\n");
     exit(3);
 }
 
 require_once $autoload;
 if (!class_exists(\PhpParser\ParserFactory::class)) {
-    fwrite(STDERR, "nikic/php-parser not found\n");
+    fwrite(STDERR, "Luna PHP parser unavailable\n");
     exit(3);
 }
 
@@ -38,20 +31,19 @@ if (method_exists($factory, 'createForNewestSupportedVersion')) {
 }
 
 $result = ['files' => [], 'warnings' => []];
-foreach ($files as $relativePath) {
-    if (!is_string($relativePath) || $relativePath === '') {
+foreach ($files as $file) {
+    if (!is_array($file)) {
         continue;
     }
-
-    $absolutePath = realpath($rootReal . DIRECTORY_SEPARATOR . $relativePath);
-    $rootPrefix = $rootReal . DIRECTORY_SEPARATOR;
-    if ($absolutePath === false || substr($absolutePath, 0, strlen($rootPrefix)) !== $rootPrefix) {
-        $result['warnings'][] = 'Skipped unsafe PHP path: ' . $relativePath;
+    $relativePath = $file['path'] ?? null;
+    $content = $file['content'] ?? null;
+    if (!is_string($relativePath) || $relativePath === '' || !is_string($content)) {
+        $result['warnings'][] = 'Skipped invalid PHP source entry';
         continue;
     }
 
     try {
-        $ast = $parser->parse(file_get_contents($absolutePath));
+        $ast = $parser->parse($content);
         $graph = [
             'path' => str_replace(DIRECTORY_SEPARATOR, '/', $relativePath),
             'occurrences' => [],

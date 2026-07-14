@@ -12,10 +12,6 @@ import {
 import path from "node:path";
 import { canonicalJson } from "../../../core/workflow/definition-digests.js";
 import { studioRunDigestsEqual, studioRunValueDigest } from "../../application/runs/launch-digests.js";
-import {
-  StudioRunLaunchError,
-  studioRunLaunchError
-} from "../../application/runs/launch-errors.js";
 import { RunOpaqueIdSchema } from "../../contracts/runs.js";
 import {
   isNativeStudioRunSnapshotIntegrityFailure,
@@ -30,10 +26,21 @@ import {
   type NativeStudioQueuedRun,
   type NativeStudioQueuedRunMaterial
 } from "./run-dispatch-contracts.js";
+import {
+  MAX_JOB_FILE_BYTES,
+  PRIVATE_DIRECTORY_MODE,
+  ensurePrivateDirectory,
+  isErrno,
+  isNativeStudioRunDispatchQueueCorruption,
+  queueCorruptionError,
+  queueError,
+  syncDirectory,
+  syncDirectoryTree,
+  writeDurableFile
+} from "./run-queue-filesystem.js";
 
-const PRIVATE_DIRECTORY_MODE = 0o700;
-const PRIVATE_FILE_MODE = 0o600;
-const MAX_JOB_FILE_BYTES = 4 * 1024 * 1024;
+export { isNativeStudioRunDispatchQueueCorruption } from "./run-queue-filesystem.js";
+
 const MAX_QUEUE_SCAN_ENTRIES = 10_000;
 const MAX_LIST_SCAN_PAGES = 1_024;
 
@@ -47,96 +54,6 @@ export type NativeStudioRunDispatchQueueInspection =
   | "present"
   | "missing"
   | "corrupt";
-
-function queueError(message: string, cause?: unknown): Error {
-  return studioRunLaunchError(
-    "studio_run_dispatch_failed",
-    message,
-    {},
-    cause === undefined ? undefined : { cause }
-  );
-}
-
-function queueCorruptionError(message: string, cause?: unknown): Error {
-  return studioRunLaunchError(
-    "studio_run_dispatch_failed",
-    message,
-    { queue_corruption: true },
-    cause === undefined ? undefined : { cause }
-  );
-}
-
-export function isNativeStudioRunDispatchQueueCorruption(
-  cause: unknown
-): boolean {
-  return cause instanceof StudioRunLaunchError &&
-    cause.details.queue_corruption === true;
-}
-
-function isErrno(cause: unknown, ...codes: readonly string[]): boolean {
-  return codes.includes((cause as NodeJS.ErrnoException).code ?? "");
-}
-
-async function ensurePrivateDirectory(directory: string): Promise<void> {
-  await mkdir(directory, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
-  const metadata = await lstat(directory);
-  if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-    throw queueError("Native run dispatch storage must use physical directories");
-  }
-  const handle = await open(
-    directory,
-    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW
-  );
-  try {
-    await handle.chmod(PRIVATE_DIRECTORY_MODE);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
-
-async function syncDirectory(directory: string): Promise<void> {
-  const handle = await open(
-    directory,
-    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW
-  );
-  try {
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
-
-async function syncDirectoryTree(directory: string): Promise<void> {
-  const entries = await opendir(directory);
-  try {
-    for await (const entry of entries) {
-      if (entry.isSymbolicLink()) {
-        throw queueError("Native run dispatch storage contains a symbolic link");
-      }
-      if (entry.isDirectory()) {
-        await syncDirectoryTree(path.join(directory, entry.name));
-      }
-    }
-  } finally {
-    await entries.close().catch(() => undefined);
-  }
-  await syncDirectory(directory);
-}
-
-async function writeDurableFile(filePath: string, content: string): Promise<void> {
-  const handle = await open(
-    filePath,
-    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
-    PRIVATE_FILE_MODE
-  );
-  try {
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
 
 function queuedRunWithHash(
   material: NativeStudioQueuedRunMaterial
@@ -553,4 +470,5 @@ export class NativeStudioRunDispatchQueue {
     }
     await syncDirectory(this.#jobsRoot);
   }
+
 }

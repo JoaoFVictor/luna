@@ -30,14 +30,22 @@ describe("workflow artifact semantic_type", () => {
     const graph = readGraph(
       assertWorkflowDocument(parseWorkflowYaml(workflowYaml("luna.review.findings.v1")))
     );
-    expect(graph.nodes[0]?.artifacts?.[0]).toMatchObject({
+    const report = graph.nodes[0];
+    expect(report?.type).toBe("built_in");
+    if (report?.type !== "built_in") throw new Error("Expected built-in report node");
+    expect(report.artifacts?.[0]).toMatchObject({
       semantic_type: "luna.review.findings.v1"
     });
 
     const legacy = readGraph(
       assertWorkflowDocument(parseWorkflowYaml(workflowYaml()))
     );
-    expect(legacy.nodes[0]?.artifacts?.[0]).not.toHaveProperty("semantic_type");
+    const legacyReport = legacy.nodes[0];
+    expect(legacyReport?.type).toBe("built_in");
+    if (legacyReport?.type !== "built_in") {
+      throw new Error("Expected built-in report node");
+    }
+    expect(legacyReport.artifacts?.[0]).not.toHaveProperty("semantic_type");
   });
 
   it.each([

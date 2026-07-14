@@ -12,6 +12,7 @@ const SECRET_MODEL = "secret-provider/private-model";
 const SECRET_REMOTE = "https://example.invalid/private-token-path";
 const SECRET_REMOTE_NAME =
   "https://git-user:remote-credential-canary@example.invalid/repository.git";
+const SECRET_VALIDATION_ARGUMENT = "validation-credential-canary";
 
 async function temporaryDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), prefix));
@@ -60,6 +61,13 @@ describe("Studio configuration posture", () => {
           `      - ${SECRET_REMOTE}`,
           "    skills:",
           "      - internal/reviewer/SKILL.md",
+          "    validation:",
+          "      commands:",
+          "        - cmd: ./scripts/validate",
+          "          args:",
+          `            - ${SECRET_VALIDATION_ARGUMENT}`,
+          "      env_allowlist:",
+          "        - INTERNAL_VALIDATION_TOKEN",
           ""
         ].join("\n"),
         "utf8"
@@ -151,7 +159,8 @@ describe("Studio configuration posture", () => {
               agent: 1,
               pattern: 0,
               human_gate: 0,
-              workflow: 0
+              workflow: 0,
+              loop: 0
             },
             requires_repository: true,
             max_concurrency: 1
@@ -227,6 +236,9 @@ describe("Studio configuration posture", () => {
     expect(serialized).not.toContain(SECRET_REMOTE);
     expect(serialized).not.toContain(projectRoot);
     expect(serialized).not.toContain("private-plugin-module");
+    expect(serialized).not.toContain(SECRET_VALIDATION_ARGUMENT);
+    expect(serialized).not.toContain("INTERNAL_VALIDATION_TOKEN");
+    expect(serialized).not.toContain("./scripts/validate");
   });
 
   it("rejects a credential-bearing remote before posture projection", async () => {

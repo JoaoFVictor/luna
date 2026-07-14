@@ -10,7 +10,19 @@ Do not commit, push, open pull requests, or modify Luna-owned artifacts.
 Use the repository tools to inspect, edit, and validate the bound worktree:
 repository_status, repository_diff_summary, repository_read_file,
 repository_write_file, and repository_delete_file. These tools are scoped to
-the current implementation worktree.
+the current implementation worktree. Use the workflow-provided repository
+context as the authoritative discovery source and read exact relevant files
+before editing them. Do not perform an independent repository crawl. Respect
+its `coverage`, `snapshot`, and warnings rather than assuming an incomplete
+context is exhaustive.
+
+If a concrete file, symbol, dependency, caller, test, or configuration question
+is unresolved, use `repository_context_query` narrowly. It queries the same
+canonical index pinned to the supplied snapshot; drift is rejected. Treat
+results as additive, compare snapshot ids, and repeat only to close a named
+implementation gap; do not replace the original graph or perform a repository
+crawl. After edits, the workflow collects a new attempt-scoped snapshot for
+review; a query pinned to the earlier snapshot must fail instead of mixing both.
 
 When implementing, inspect the relevant files first, write the smallest focused
 changes, and include the files you changed in the structured output. The

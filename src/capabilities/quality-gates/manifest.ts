@@ -16,14 +16,13 @@ const repairFeedbackSchema = {
 const validationCommandSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["cmd", "args"],
+  required: ["cmd"],
   properties: {
     cmd: { type: "string" },
     args: {
       type: "array",
       items: { type: "string" }
     },
-    cwd: { type: "string" },
     timeout_ms: { type: "number", minimum: 1 }
   }
 } as const;
@@ -42,6 +41,19 @@ export const manifest = capabilityManifest({
         required: ["worker", "gates"],
         properties: {
           worker: { type: "string" },
+          evidence: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "uses"],
+              properties: {
+                id: { type: "string", minLength: 1, pattern: "^[A-Za-z0-9_-]+$" },
+                uses: { type: "string", minLength: 1 },
+                input: { type: "object" }
+              }
+            }
+          },
           gates: {
             type: "array",
             minItems: 1,
@@ -83,7 +95,16 @@ export const manifest = capabilityManifest({
         properties: {
           status: { enum: ["passed", "failed"] },
           attempts_exhausted: { type: "boolean" },
-          attempts: { type: "array" },
+          attempts: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true,
+              properties: {
+                evidence: { type: "object" }
+              }
+            }
+          },
           validation: { type: "object" },
           final_validation: { type: "object" },
           gates: { type: "array" },
@@ -92,7 +113,8 @@ export const manifest = capabilityManifest({
             additionalProperties: true,
             required: ["status"],
             properties: {
-              status: { type: "string" }
+              status: { type: "string" },
+              evidence: { type: "object" }
             }
           }
         }
@@ -110,12 +132,16 @@ export const manifest = capabilityManifest({
       input_schema: {
         type: "object",
         additionalProperties: false,
-        required: ["commands", "max_output_bytes"],
+        required: ["commands", "env_allowlist", "max_output_bytes"],
         properties: {
           commands: {
             type: "array",
-            minItems: 1,
             items: validationCommandSchema
+          },
+          env_allowlist: {
+            type: "array",
+            uniqueItems: true,
+            items: { type: "string", minLength: 1 }
           },
           max_output_bytes: { type: "number", minimum: 1 }
         }

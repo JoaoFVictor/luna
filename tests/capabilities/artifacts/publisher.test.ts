@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   publishDeclaredArtifacts,
+  transactionalArtifactPublisher,
   type ArtifactPublisherPort
 } from "../../../src/capabilities/artifacts/publisher.js";
+import {
+  createMemoryArtifactContentStore,
+  createMemoryArtifactManifestStore,
+  createMemoryArtifactTransactionJournal
+} from "../../../src/runtime/backends/memory/artifacts.js";
 import type { WorkflowRuntimeState } from "../../../src/core/workflow/state.js";
 
 function workflowState(steps: Record<string, unknown> = {}): WorkflowRuntimeState {
@@ -58,14 +65,14 @@ function builtInArtifactNode(
 function artifactPlan(
   path: string,
   source: string,
-  format: "json" | "markdown" = "json",
+  format: "json" | "markdown" | "png" = "json",
   required?: boolean,
   config?: Record<string, unknown>
 ): {
   path: string;
   publisher: string;
   source: { expression: string };
-  format: "json" | "markdown";
+  format: "json" | "markdown" | "png";
   required?: boolean;
   config?: Record<string, unknown>;
 } {
@@ -87,10 +94,65 @@ function publisherMock(
     media_type: input.format === "json" ? "application/json" : "text/markdown"
   }))
 ): ArtifactPublisherPort & { publish: typeof publish } {
-  return { publish };
+  return {
+    publish,
+    read: vi.fn(async () => new Uint8Array())
+  };
 }
 
 describe("artifacts capability publisher", () => {
+  it("decodes a declared PNG from base64 into binary image content", async () => {
+    const contentStore = createMemoryArtifactContentStore();
+    const write = vi.spyOn(contentStore, "write");
+    const publisher = transactionalArtifactPublisher({
+      run_id: "run-1",
+      backend: { id: "memory.artifacts", root: "memory://artifacts" },
+      manifestStore: createMemoryArtifactManifestStore(),
+      transactionJournal: createMemoryArtifactTransactionJournal(),
+      contentStore,
+      stepsPublisher: { publishArtifactRef: vi.fn(async () => undefined) },
+      checkpointMarker: { markArtifactCheckpointed: vi.fn(async () => undefined) }
+    });
+    const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+    const ref = await publisher.publish({
+      node_id: "generate_image",
+      path: "social-post-image.png",
+      format: "png",
+      value: pngBase64,
+      overwrite_policy: "forbid"
+    });
+
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({
+      media_type: "image/png",
+      content: Buffer.from(pngBase64, "base64")
+    }));
+    await expect(publisher.read(ref)).resolves.toEqual(
+      new Uint8Array(Buffer.from(pngBase64, "base64"))
+    );
+    await expect(publisher.verify?.(ref)).resolves.toBe(true);
+    await expect(publisher.verify?.({
+      ...ref,
+      content_hash: `sha256:${createHash("sha256").update(Buffer.from(pngBase64, "base64")).digest("hex")}`,
+      size_bytes: Buffer.from(pngBase64, "base64").byteLength
+    })).resolves.toBe(true);
+    await expect(publisher.verify?.({
+      ...ref,
+      size_bytes: 1
+    })).resolves.toBe(false);
+    await expect(publisher.read(ref, {
+      max_bytes: Buffer.from(pngBase64, "base64").byteLength - 1
+    })).rejects.toMatchObject({ code: "artifact_content_read_limit_exceeded" });
+    await expect(publisher.verify?.({
+      ...ref,
+      node_id: "forged-owner"
+    })).resolves.toBe(false);
+    await expect(publisher.read({
+      id: ref.id,
+      uri: ref.uri.replace("artifact://run-1/", "artifact://other-run/")
+    })).rejects.toMatchObject({ code: "workflow_artifact_reference_invalid" });
+  });
+
   it("rejects artifact sources outside the declaring node", async () => {
     await expect(
       publishDeclaredArtifacts({

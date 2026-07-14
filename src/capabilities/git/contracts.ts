@@ -1,4 +1,5 @@
 import type { RepositoryWorkspaceRecord } from "../repository-workspace/contracts.js";
+import type { ApprovedWorktreeSnapshot } from "./worktree-snapshot.js";
 
 export type GitStatusOperationId = "git.status";
 export type GitCommitOperationId = "git.commit";
@@ -23,6 +24,7 @@ export type GitCommitInput = {
   readonly expected_head_sha?: string;
   readonly expected_base_sha?: string;
   readonly expected_dirty_paths?: readonly string[];
+  readonly expected_snapshot?: ApprovedWorktreeSnapshot;
   readonly remote?: string;
   readonly expected_remote_urls?: readonly string[];
 };
@@ -69,6 +71,7 @@ export type GitCommitState = {
   readonly commit_sha?: string;
   readonly message?: string;
   readonly paths?: readonly string[];
+  readonly tree_oid?: string;
 };
 
 export type GitCommitResult = GitCommitState & {

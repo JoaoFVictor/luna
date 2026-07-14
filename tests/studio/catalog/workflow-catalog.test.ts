@@ -63,6 +63,13 @@ describe("Studio workflow catalog", () => {
     expect(catalog.workflows.length).toBeGreaterThan(0);
     expect(catalog.workflows.some((workflow) => workflow.id === "code-review"))
       .toBe(true);
+    expect(catalog.workflows.find((workflow) => workflow.id === "social-post")?.node_counts.loop)
+      .toBe(1);
+    expect(catalog.workflows.find((workflow) => workflow.id === "social-post"))
+      .toMatchObject({
+        synchronous_composition: "blocked",
+        synchronous_composition_blocked_reason: "human_input"
+      });
     expect(
       catalog.workflows.find((workflow) => workflow.id === "code-review")?.agents
     ).toEqual([

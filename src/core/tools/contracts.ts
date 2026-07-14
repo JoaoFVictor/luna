@@ -10,6 +10,11 @@ export type LunaToolSafety = {
 
 export type LunaToolDependencies = {
   cwd: string;
+  signal?: AbortSignal;
+  /** Immutable task envelope visible to this agent invocation. */
+  agentInput?: unknown;
+  /** Platform-bound configuration; never supplied or overridden by the model. */
+  configuration?: unknown;
 };
 
 export type LocalToolContract = {

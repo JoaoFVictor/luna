@@ -88,10 +88,18 @@ repositories:
       files:
         - AGENTS.md
         - README.md
+    validation:
+      commands:
+        - cmd: ./scripts/validate
+          timeout_ms: 600000
+      env_allowlist: []
 ```
 
-`expected_remote_urls` is required for repository-change workflows. Luna checks the
-configured remote before creating the implementation worktree.
+`expected_remote_urls` is required for trusted implementation workflows.
+`validation` is optional: when present Luna runs the repository-owned command
+contract; when absent it runs no validation command. Luna checks the configured
+remote before creating the worktree and does not infer a language, framework,
+or build tool.
 
 ## 5. Configure Implementation Gates
 
@@ -112,17 +120,9 @@ implementation:
     base_ref: main
   sandbox:
     type: trusted_host_local
-    env_allowlist: []
   validation:
     repair_attempts: 1
     max_output_bytes: 200000
-    commands:
-      - cmd: npm
-        args: ["test"]
-        timeout_ms: 120000
-      - cmd: npm
-        args: ["run", "typecheck"]
-        timeout_ms: 120000
 ```
 
 `trusted_host_local` is trusted-operator mode and can edit the local worktree.

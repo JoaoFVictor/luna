@@ -12,8 +12,7 @@ code_review:
     # cite PR diff evidence for publishable inline comments.
     enabled: true
     max_related_files: 12
-    max_scan_files: 600
-    max_file_bytes: 24000
+    max_seed_files: 8
     max_excerpt_bytes: 4000
     include_tests: true
     include_docs: true

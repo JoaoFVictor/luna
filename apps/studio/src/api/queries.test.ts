@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { artifactsRefetchInterval, runRefetchInterval } from "@/api/queries"
-import type { ArtifactList, RunCatalogItem } from "@/api/types"
+import { artifactsRefetchInterval, runInterruptsRefetchInterval, runRefetchInterval } from "@/api/queries"
+import type { ArtifactList, RunCatalogItem, RunInterruptList } from "@/api/types"
 
 const TERMINAL_AT = "2026-07-12T12:00:00.000Z"
 const TERMINAL_TIME = Date.parse(TERMINAL_AT)
@@ -152,6 +152,63 @@ describe("artifact query polling policy", () => {
     expect(artifactsRefetchInterval(
       undefined,
       1,
+      TERMINAL_AT,
+      TERMINAL_TIME,
+    )).toBe(false)
+  })
+})
+
+describe("interrupt query polling policy", () => {
+  const page = (status: "pending" | "resuming" | "resolved"): RunInterruptList => ({
+    run_id: "run-interrupt-polling",
+    items: [{
+      interrupt_id: "interrupt-review",
+      checkpoint_id: "checkpoint-review",
+      node_id: "review",
+      kind: "human_gate",
+      status,
+      prompt: "Review",
+      decisions: [],
+      materials_status: "ready",
+      artifacts: [],
+      created_at: TERMINAL_AT,
+      updated_at: TERMINAL_AT,
+    }],
+    next_cursor: null,
+  })
+
+  it("keeps active reviews updated", () => {
+    expect(runInterruptsRefetchInterval({ pages: [page("pending")] }, true)).toBe(2_000)
+  })
+
+  it("reconciles a resume projection after the run becomes terminal", () => {
+    expect(runInterruptsRefetchInterval(
+      undefined,
+      false,
+      TERMINAL_AT,
+      TERMINAL_TIME,
+    )).toBe(750)
+    expect(runInterruptsRefetchInterval(
+      { pages: [page("pending")] },
+      false,
+      TERMINAL_AT,
+      TERMINAL_TIME,
+    )).toBe(750)
+    expect(runInterruptsRefetchInterval(
+      { pages: [page("resuming")] },
+      false,
+      TERMINAL_AT,
+      TERMINAL_TIME + 14_999,
+    )).toBe(750)
+    expect(runInterruptsRefetchInterval(
+      { pages: [page("resuming")] },
+      false,
+      TERMINAL_AT,
+      TERMINAL_TIME + 15_000,
+    )).toBe(false)
+    expect(runInterruptsRefetchInterval(
+      { pages: [page("resolved")] },
+      false,
       TERMINAL_AT,
       TERMINAL_TIME,
     )).toBe(false)

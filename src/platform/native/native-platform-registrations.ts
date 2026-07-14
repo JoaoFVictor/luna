@@ -12,6 +12,8 @@ import type { CapabilityManifest } from "../../core/capabilities/manifest.js";
 import type { TaskProviderBuiltIns } from "../../providers/built-ins.js";
 import type { ChangeRequestProviderFactory } from "../../capabilities/change-request/contracts.js";
 import type { PullRequestReviewProviderFactory } from "../../capabilities/pull-request-review/contracts.js";
+import type { SocialPostProviderFactory } from "../../capabilities/social-post/contracts.js";
+import type { ImageGenerationProviderFactory } from "../../capabilities/image-generation/contracts.js";
 import type { WebhookProviderAdapterFactory } from "../../webhooks/contracts.js";
 import {
   defineWebhookProviderAdapterFactories,
@@ -54,6 +56,8 @@ export type NativeLunaPlatformRegistrations = {
   readonly patternExecutors?: Readonly<Record<string, WorkflowPatternExecutor>>;
   readonly changeRequestProviderFactories: readonly ChangeRequestProviderFactory[];
   readonly pullRequestReviewProviderFactories: readonly PullRequestReviewProviderFactory[];
+  readonly socialPostProviderFactories: readonly SocialPostProviderFactory[];
+  readonly imageGenerationProviderFactories: readonly ImageGenerationProviderFactory[];
   readonly webhookProviderRegistry: WebhookProviderRegistry<WebhookProviderAdapterFactory>;
   readonly providerHealthProbeRegistry: ProviderHealthProbeRegistry;
   readonly capabilityRegistry: CapabilityRegistry;
@@ -113,6 +117,12 @@ export function createNativeLunaPlatformRegistrations({
     ),
     pullRequestReviewProviderFactories: Object.freeze(
       plugins.flatMap((plugin) => plugin.pullRequestReviewProviderFactories ?? [])
+    ),
+    socialPostProviderFactories: Object.freeze(
+      plugins.flatMap((plugin) => plugin.socialPostProviderFactories ?? [])
+    ),
+    imageGenerationProviderFactories: Object.freeze(
+      plugins.flatMap((plugin) => plugin.imageGenerationProviderFactories ?? [])
     ),
     webhookProviderRegistry: defineWebhookProviderAdapterFactories(
       plugins.flatMap((plugin) => plugin.webhookAdapterFactories ?? [])

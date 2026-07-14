@@ -1,6 +1,7 @@
 import {
   assertCheckpointJsonObject,
   assertCheckpointJsonValue,
+  isCheckpointPlainObject,
   stableJson,
   type JsonObject,
   type JsonValue
@@ -8,7 +9,8 @@ import {
 import type { RunHandle } from "../../core/runtime/run-handle.js";
 import {
   LUNA_RUNTIME_STATE_SCHEMA_VERSION,
-  type LunaRuntimeState
+  type LunaRuntimeState,
+  type RuntimeArtifactRef
 } from "../../core/runtime/state.js";
 import { markNodeWaitingForInput } from "../../core/runtime/lifecycle.js";
 import { createInterrupt } from "../../core/runtime/interrupts/resume.js";
@@ -20,6 +22,7 @@ import {
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import type { RunWorkflowInput } from "../../core/workflow/execution-contracts.js";
 import type { SaveCheckpointInput } from "../../core/runtime/backends/contracts.js";
+import type { InterruptReview } from "../../core/runtime/interrupts/contracts.js";
 import {
   listCheckpointWritesForRecovery,
   saveCheckpointExactly,
@@ -27,9 +30,10 @@ import {
 } from "./checkpoint-io.js";
 import {
   checkpointId,
+  checkpointIdCandidates,
   interruptId,
+  interruptIdMatches,
   parseInterruptWaitIntent,
-  waitCompletionWrite,
   waitIntentTaskId,
   waitIntentWrite,
   WAIT_INTENT_CHANNEL,
@@ -46,16 +50,25 @@ export { checkpointId, interruptId };
 export async function waitForHumanInput(
   input: RunWorkflowInput,
   state: LunaRuntimeState,
-  node: CompiledWorkflowNode
+  node: CompiledWorkflowNode,
+  reviewInput?: JsonValue,
+  options: { readonly occurrence?: string } = {}
 ): Promise<LunaRuntimeState> {
-  const id = interruptId(input.run.run_id, node.id);
-  const checkpoint_id = checkpointId(input.run.run_id, node.id);
   const waiting = markNodeWaitingForInput(state, node.id);
-  const intent = await loadOrCreateWaitIntent(input, state, node);
+  const intent = await loadOrCreateWaitIntent(input, state, node, options.occurrence);
+  const id = intent.interrupt_id;
+  const checkpoint_id = intent.checkpoint_id;
   const waitingInterruptRefs = mergeRuntimeReferences(
     intent.interrupt_refs,
-    [{ id, uri: `interrupt://${input.run.run_id}/${node.id}`, node_id: node.id }]
+    [{
+      id,
+      uri: `interrupt://${input.run.run_id}/${node.id}${
+        options.occurrence === undefined ? "" : `/${options.occurrence}`
+      }`,
+      node_id: node.id
+    }]
   );
+  const review = interruptReview(reviewInput);
   try {
     await persistWaitStepWrites(input, state, intent);
     await saveCheckpointExactly(
@@ -69,8 +82,9 @@ export async function waitForHumanInput(
         checkpoint_id: intent.checkpoint_id,
         node_id: intent.node_id,
         kind: intent.capability_id,
-        prompt: "",
+        prompt: interruptPrompt(reviewInput),
         decisions: [],
+        ...(review === undefined ? {} : { review }),
         created_at: intent.created_at
       },
       {
@@ -79,7 +93,6 @@ export async function waitForHumanInput(
         eventStore: input.backends.events
       }
     );
-    await saveCheckpointWriteExactly(input, waitCompletionWrite(intent));
   } catch (cause) {
     if (isRuntimeDurabilityRecoveryRequired(cause)) {
       throw cause;
@@ -115,38 +128,145 @@ export async function waitForHumanInput(
   };
 }
 
+function interruptPrompt(reviewInput: JsonValue | undefined): string {
+  if (
+    reviewInput !== undefined &&
+    isCheckpointPlainObject(reviewInput) &&
+    typeof reviewInput.prompt === "string"
+  ) {
+    return reviewInput.prompt.slice(0, 32_768);
+  }
+  return "Human review required";
+}
+
+function interruptReview(reviewInput: JsonValue | undefined): InterruptReview | undefined {
+  if (!isCheckpointPlainObject(reviewInput) || reviewInput.review === undefined) {
+    return undefined;
+  }
+  const review = reviewInput.review;
+  if (
+    !isCheckpointPlainObject(review) ||
+    !Array.isArray(review.targets) ||
+    review.targets.length === 0 ||
+    review.targets.length > 32 ||
+    !Array.isArray(review.artifact_refs) ||
+    review.artifact_refs.length > 128
+  ) {
+    throw runtimeError("Human review presentation is invalid", "runtime_state_invalid");
+  }
+  const approval = review.approval;
+  if (
+    approval !== undefined &&
+    (
+      !isCheckpointPlainObject(approval) ||
+      typeof approval.allowed !== "boolean" ||
+      typeof approval.reason !== "string" ||
+      approval.reason.length === 0 ||
+      approval.reason.length > 2048 ||
+      Object.keys(approval).some((key) => !["allowed", "reason"].includes(key))
+    )
+  ) {
+    throw runtimeError("Human review approval policy is invalid", "runtime_state_invalid");
+  }
+  const targets = review.targets.map((value) => {
+    if (
+      !isCheckpointPlainObject(value) ||
+      typeof value.id !== "string" ||
+      value.id.length === 0 ||
+      value.id.length > 128 ||
+      typeof value.label !== "string" ||
+      value.label.length === 0 ||
+      value.label.length > 256
+    ) {
+      throw runtimeError("Human review target is invalid", "runtime_state_invalid");
+    }
+    return { id: value.id, label: value.label };
+  });
+  const artifactRefs = review.artifact_refs.map((value) => {
+    if (
+      !isCheckpointPlainObject(value) ||
+      typeof value.id !== "string" ||
+      value.id.length === 0 ||
+      value.id.length > 512 ||
+      typeof value.uri !== "string" ||
+      value.uri.length === 0 ||
+      value.uri.length > 4096 ||
+      (value.node_id !== undefined &&
+        (typeof value.node_id !== "string" ||
+          value.node_id.length === 0 ||
+          value.node_id.length > 256)) ||
+      Object.keys(value).some((key) => !["id", "uri", "node_id"].includes(key))
+    ) {
+      throw runtimeError("Human review artifact reference is invalid", "runtime_state_invalid");
+    }
+    return {
+      id: value.id,
+      uri: value.uri,
+      ...(value.node_id === undefined ? {} : { node_id: value.node_id })
+    };
+  });
+  if (
+    new Set(targets.map((target) => target.id)).size !== targets.length ||
+    new Set(artifactRefs.map((reference) => reference.id)).size !== artifactRefs.length
+  ) {
+    throw runtimeError("Human review presentation contains duplicate ids", "runtime_state_invalid");
+  }
+  return {
+    targets,
+    artifact_refs: artifactRefs,
+    ...(approval === undefined
+      ? {}
+      : { approval: { allowed: approval.allowed as boolean, reason: approval.reason as string } })
+  };
+}
+
 async function loadOrCreateWaitIntent(
   input: RunWorkflowInput,
   state: LunaRuntimeState,
-  node: CompiledWorkflowNode
+  node: CompiledWorkflowNode,
+  occurrence?: string
 ): Promise<InterruptWaitIntent> {
-  const checkpoint_id = checkpointId(input.run.run_id, node.id);
-  const writes = await listCheckpointWritesForRecovery({
-    input,
-    threadId: input.run.run_id,
-    checkpointNs: "",
-    checkpointId: checkpoint_id,
-    operation: "load_interrupt_wait_intent"
-  });
-  const candidates = writes.filter(
-    (write) =>
-      write.task_id === waitIntentTaskId(node.id) &&
-      write.index === 0 &&
-      write.channel === WAIT_INTENT_CHANNEL
+  const checkpointIds = checkpointIdCandidates(
+    input.run.run_id,
+    node.id,
+    occurrence
   );
+  const candidates = (await Promise.all(checkpointIds.map(async (candidateId) => {
+    const writes = await listCheckpointWritesForRecovery({
+      input,
+      threadId: input.run.run_id,
+      checkpointNs: "",
+      checkpointId: candidateId,
+      operation: "load_interrupt_wait_intent"
+    });
+    return writes.filter(
+      (write) =>
+        write.task_id === waitIntentTaskId(node.id) &&
+        write.index === 0 &&
+        write.channel === WAIT_INTENT_CHANNEL
+    );
+  }))).flat();
   if (candidates.length > 1) {
     throw runtimeError(
       "Interrupt wait checkpoint contains ambiguous intents",
       "runtime_state_invalid",
-      { details: { checkpoint_id, node_id: node.id } }
+      { details: { checkpoint_ids: checkpointIds, node_id: node.id } }
     );
   }
   const resumeContext = checkpointResumeContext(input);
   const existing = candidates[0];
   if (existing !== undefined) {
-    return parseWaitIntent(existing.value, input, node, state, resumeContext);
+    return parseWaitIntent(
+      existing.value,
+      input,
+      node,
+      state,
+      resumeContext,
+      occurrence
+    );
   }
 
+  const checkpoint_id = checkpointIds[0]!;
   const intent: InterruptWaitIntent = {
     schema_version: WAIT_INTENT_SCHEMA_VERSION,
     run_id: input.run.run_id,
@@ -154,7 +274,7 @@ async function loadOrCreateWaitIntent(
     node_id: node.id,
     capability_id: node.capability_id,
     checkpoint_id,
-    interrupt_id: interruptId(input.run.run_id, node.id),
+    interrupt_id: interruptId(input.run.run_id, node.id, occurrence),
     created_at: new Date().toISOString(),
     artifact_refs: state.artifact_refs,
     interrupt_refs: state.interrupt_refs,
@@ -170,7 +290,8 @@ function parseWaitIntent(
   input: RunWorkflowInput,
   node: CompiledWorkflowNode,
   state: LunaRuntimeState,
-  resumeContext: JsonObject
+  resumeContext: JsonObject,
+  occurrence?: string
 ): InterruptWaitIntent {
   const intent = parseInterruptWaitIntent(value, (details) => runtimeError(
       "Interrupt wait checkpoint contains an invalid intent",
@@ -182,8 +303,6 @@ function parseWaitIntent(
     workflow_revision: input.workflow.revision,
     node_id: node.id,
     capability_id: node.capability_id,
-    checkpoint_id: checkpointId(input.run.run_id, node.id),
-    interrupt_id: interruptId(input.run.run_id, node.id),
     artifact_refs: state.artifact_refs,
     interrupt_refs: state.interrupt_refs,
     resume_context: resumeContext
@@ -193,8 +312,14 @@ function parseWaitIntent(
     intent.workflow_revision !== expected.workflow_revision ||
     intent.node_id !== expected.node_id ||
     intent.capability_id !== expected.capability_id ||
-    intent.checkpoint_id !== expected.checkpoint_id ||
-    intent.interrupt_id !== expected.interrupt_id ||
+    !checkpointIdCandidates(input.run.run_id, node.id, occurrence)
+      .includes(intent.checkpoint_id) ||
+    !interruptIdMatches(
+      intent.interrupt_id,
+      input.run.run_id,
+      node.id,
+      occurrence
+    ) ||
     !runtimeReferenceCollectionsEqual(
       intent.artifact_refs,
       expected.artifact_refs
@@ -273,7 +398,10 @@ export function checkpointResumeContext(input: RunWorkflowInput): JsonObject {
     ...(input.precompleted_steps === undefined ||
     Object.keys(input.precompleted_steps).length === 0
       ? {}
-      : { precompleted_steps: input.precompleted_steps })
+      : { precompleted_steps: input.precompleted_steps }),
+    ...(input.loop_continuation === undefined
+      ? {}
+      : { loop_continuation: input.loop_continuation })
   };
   assertCheckpointJsonValue(context);
 
@@ -285,6 +413,7 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
   readonly config: JsonValue;
   readonly run: RunHandle;
   readonly precompleted_steps?: RunWorkflowInput["precompleted_steps"];
+  readonly loop_continuation?: RunWorkflowInput["loop_continuation"];
 } {
   const context = metadata.resume_context;
   if (typeof context !== "object" || context === null || Array.isArray(context)) {
@@ -295,6 +424,7 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
   const config = context.config;
   const run = context.run;
   const precompletedSteps = context.precompleted_steps;
+  const loopContinuation = parseLoopContinuation(context.loop_continuation);
   if (precompletedSteps !== undefined) {
     assertCheckpointJsonObject(
       precompletedSteps,
@@ -323,6 +453,64 @@ export function resumeContextFromMetadata(metadata: JsonObject): {
     },
     ...(precompletedSteps === undefined
       ? {}
-      : { precompleted_steps: precompletedSteps })
+      : { precompleted_steps: precompletedSteps }),
+    ...(loopContinuation === undefined
+      ? {}
+      : { loop_continuation: loopContinuation })
+  };
+}
+
+function parseLoopContinuation(
+  value: JsonValue | undefined
+): RunWorkflowInput["loop_continuation"] | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !isCheckpointPlainObject(value) ||
+    typeof value.node_id !== "string" ||
+    value.node_id === "" ||
+    !Number.isSafeInteger(value.iteration) ||
+    (value.iteration as number) < 1 ||
+    !isCheckpointPlainObject(value.steps) ||
+    !isCheckpointPlainObject(value.artifacts_by_node)
+  ) {
+    throw runtimeError(
+      "Checkpoint loop continuation is invalid",
+      "runtime_checkpoint_schema_mismatch"
+    );
+  }
+  const artifactsByNode: Record<string, RuntimeArtifactRef[]> = {};
+  for (const [nodeId, refs] of Object.entries(value.artifacts_by_node)) {
+    if (!Array.isArray(refs)) {
+      throw runtimeError(
+        "Checkpoint loop continuation contains invalid artifact references",
+        "runtime_checkpoint_schema_mismatch"
+      );
+    }
+    const parsedRefs: RuntimeArtifactRef[] = [];
+    for (const ref of refs) {
+      if (
+        !isCheckpointPlainObject(ref) ||
+        typeof ref.id !== "string" ||
+        typeof ref.uri !== "string" ||
+        (ref.node_id !== undefined && typeof ref.node_id !== "string")
+      ) {
+        throw runtimeError(
+          "Checkpoint loop continuation contains invalid artifact references",
+          "runtime_checkpoint_schema_mismatch"
+        );
+      }
+      parsedRefs.push({
+        id: ref.id,
+        uri: ref.uri,
+        ...(ref.node_id === undefined ? {} : { node_id: ref.node_id })
+      });
+    }
+    artifactsByNode[nodeId] = parsedRefs;
+  }
+  return {
+    node_id: value.node_id,
+    iteration: value.iteration as number,
+    steps: value.steps,
+    artifacts_by_node: artifactsByNode
   };
 }

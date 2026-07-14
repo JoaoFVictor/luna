@@ -96,66 +96,75 @@ export function workflowSideEffectPreview(
   if (!agentCatalogComplete) {
     addUncertainty("workflow", "O catálogo de agents está parcial ou sua completude não foi confirmada; side effects não podem ser descartados.")
   }
-  const outlineEntries = workflowSourceOutlineEntries(source)
-  if (!isRecord(source) || !Array.isArray(source.nodes)) {
-    addUncertainty("workflow", "A sequência de nodes não está projetável; side effects não podem ser descartados.")
-  }
-  for (const entry of outlineEntries) {
-    if (entry.node === undefined) {
-      addUncertainty(entry.label, "Node inválido não pôde ser resolvido contra os catálogos carregados.")
+  const visitSource = (candidate: JsonValue, prefix: string): void => {
+    const outlineEntries = workflowSourceOutlineEntries(candidate)
+    if (!isRecord(candidate) || !Array.isArray(candidate.nodes)) {
+      addUncertainty(prefix.length === 0 ? "workflow" : prefix.slice(0, -1), "A sequência de nodes não está projetável; side effects não podem ser descartados.")
+      return
     }
-  }
-
-  for (const node of workflowSourceNodes(source)) {
-    const uncertainty = (description: string) => addUncertainty(node.id, description)
-    const agentReferences = node.type === "agent"
-      ? new Set([node.registrationId])
-      : node.type === "pattern"
-        ? patternAgentReferences(node, uncertainty)
-        : new Set<string>()
-    for (const agentId of agentReferences) {
-      const agent = agents.find((candidate) => candidate.id === agentId)
-      if (agent === undefined) {
-        uncertainty(`Agent ${agentId} não está disponível no catálogo carregado.`)
-        continue
+    for (const entry of outlineEntries) {
+      if (entry.node === undefined) {
+        addUncertainty(`${prefix}${entry.label}`, "Node inválido não pôde ser resolvido contra os catálogos carregados.")
       }
-      if (
-        agent.mode === "trusted_local_write" ||
-        agent.tools.length > 0 ||
-        agent.mcp_servers.length > 0 ||
-        agent.subagents.length > 0
-      ) {
+    }
+
+    for (const node of workflowSourceNodes(candidate)) {
+      const nodeId = `${prefix}${node.id}`
+      const uncertainty = (description: string) => addUncertainty(nodeId, description)
+      const agentReferences = node.type === "agent"
+        ? new Set([node.registrationId])
+        : node.type === "pattern"
+          ? patternAgentReferences(node, uncertainty)
+          : new Set<string>()
+      for (const agentId of agentReferences) {
+        const agent = agents.find((agentCandidate) => agentCandidate.id === agentId)
+        if (agent === undefined) {
+          uncertainty(`Agent ${agentId} não está disponível no catálogo carregado.`)
+          continue
+        }
+        if (
+          agent.mode === "trusted_local_write" ||
+          agent.tools.length > 0 ||
+          agent.mcp_servers.length > 0 ||
+          agent.subagents.length > 0
+        ) {
+          effects.push({
+            nodeId,
+            source: "agent_tools",
+            semantics: "unknown",
+            description: `Agent ${agent.id} declara modo de escrita, tools, MCP ou subagents; o efeito depende do runtime e da invocation.`,
+            operationIds: [],
+          })
+        }
+      }
+
+      for (const policyId of policyIds(node, library, uncertainty)) {
+        const policy = library.registrations.find(
+          (registration) => registration.registration_kind === "policy" && registration.id === policyId,
+        )
+        if (policy?.registration_kind !== "policy") {
+          uncertainty(`Policy ${policyId} não está disponível no catálogo carregado.`)
+          continue
+        }
+        if (policy.side_effect_semantics === "none") continue
+        if (policy.side_effect_semantics === undefined) {
+          uncertainty(`Policy ${policy.id} não declara side-effect semantics.`)
+          continue
+        }
         effects.push({
-          nodeId: node.id,
-          source: "agent_tools",
-          semantics: "unknown",
-          description: `Agent ${agent.id} declara modo de escrita, tools, MCP ou subagents; o efeito depende do runtime e da invocation.`,
-          operationIds: [],
+          nodeId,
+          source: "policy",
+          semantics: policy.side_effect_semantics,
+          description: `Policy ${policy.id}`,
+          operationIds: policy.side_effect_operation_ids,
         })
       }
-    }
 
-    for (const policyId of policyIds(node, library, uncertainty)) {
-      const policy = library.registrations.find(
-        (registration) => registration.registration_kind === "policy" && registration.id === policyId,
-      )
-      if (policy?.registration_kind !== "policy") {
-        uncertainty(`Policy ${policyId} não está disponível no catálogo carregado.`)
-        continue
+      if (node.type === "loop") {
+        visitSource(workflowNodeField(node, "body") ?? null, `${nodeId}.`)
       }
-      if (policy.side_effect_semantics === "none") continue
-      if (policy.side_effect_semantics === undefined) {
-        uncertainty(`Policy ${policy.id} não declara side-effect semantics.`)
-        continue
-      }
-      effects.push({
-        nodeId: node.id,
-        source: "policy",
-        semantics: policy.side_effect_semantics,
-        description: `Policy ${policy.id}`,
-        operationIds: policy.side_effect_operation_ids,
-      })
     }
   }
+  visitSource(source, "")
   return effects
 }

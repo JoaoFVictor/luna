@@ -245,4 +245,39 @@ describe("WorkflowNodeCard connection handles", () => {
     expect(screen.getByText("Review child")).toBeDefined()
     expect(screen.getByText("Subworkflow · review")).toBeDefined()
   })
+
+  it("identifies a durable loop and exposes its body size", () => {
+    render(
+      <WorkflowNodeCard
+        id="editorial"
+        type="workflow-node"
+        data={{
+          compiled: {
+            id: "editorial",
+            kind: "loop",
+            capability_id: "workflow.loop",
+            can_create_pending_interrupt: true,
+            loop_body: [
+              { id: "draft", kind: "agent", capability_id: "writer", can_create_pending_interrupt: false },
+              { id: "review", kind: "interrupt", capability_id: "hitl.approval", can_create_pending_interrupt: true },
+            ],
+          },
+          direction: "vertical",
+        }}
+        dragging={false}
+        zIndex={1}
+        selectable
+        deletable={false}
+        selected={false}
+        draggable
+        isConnectable
+        positionAbsoluteX={0}
+        positionAbsoluteY={0}
+      />,
+    )
+
+    expect(screen.getByText("Loop durável · editorial")).toBeDefined()
+    expect(screen.getByText("2 etapas internas")).toBeDefined()
+    expect(screen.getByText("pode interromper")).toBeDefined()
+  })
 })

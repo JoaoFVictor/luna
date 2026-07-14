@@ -57,6 +57,7 @@ const gitCommitSchema = {
       type: "array",
       items: { type: "string" }
     },
+    tree_oid: { type: "string" },
     adopted: { type: "boolean" }
   }
 } as const;
@@ -129,6 +130,21 @@ const commitInputSchema = {
         },
         expected_branch: { type: "string" },
         expected_base_sha: { type: "string" },
+        expected_snapshot: {
+          type: "object",
+          additionalProperties: false,
+          required: ["kind", "head_sha", "tree_oid", "changed_paths"],
+          properties: {
+            kind: { const: "git_worktree_tree.v1" },
+            head_sha: { type: "string", pattern: "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+            tree_oid: { type: "string", pattern: "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+            changed_paths: {
+              type: "array",
+              maxItems: 10000,
+              items: { type: "string", minLength: 1, maxLength: 4096 }
+            }
+          }
+        },
         remote: { type: "string" },
         expected_remote_urls: {
           type: "array",
@@ -211,7 +227,7 @@ const pushBranchPolicySchema = {
 export const manifest = capabilityManifest({
   id: "git",
   kind: "execution",
-  version: "2026.06.25",
+  version: "2026.07.13",
   depends_on: ["repository-workspace"],
   ports: {
     "git.repository": {

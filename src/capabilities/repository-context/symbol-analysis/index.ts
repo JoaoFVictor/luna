@@ -57,11 +57,11 @@ export function analyzeFileSymbolGraph(
 }
 
 export async function enrichCandidatesWithSymbolGraph(
-  root: string,
-  candidates: readonly Candidate[]
+  candidates: readonly Candidate[],
+  signal?: AbortSignal
 ): Promise<{
   readonly candidates: readonly Candidate[];
   readonly warnings: readonly string[];
 }> {
-  return await enrichPhpCandidatesWithNikic(root, candidates);
+  return await enrichPhpCandidatesWithNikic(candidates, signal);
 }

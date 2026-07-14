@@ -1,5 +1,6 @@
 import type { RunLedgerPort } from "../../application/runs/ports.js";
 import type { RunRecord } from "../../contracts/runs.js";
+import type { InterruptRecord } from "../../../core/runtime/interrupts/contracts.js";
 import {
   isNativeStudioRunDispatchQueueCorruption,
   type NativeStudioRunDispatchQueue
@@ -29,6 +30,7 @@ export class NativeStudioRunRecoverySupervisor {
   readonly #cleanup: NativeStudioRunTerminalJobCleanup;
   readonly #recoveryIntervalMs: number;
   readonly #activeRunIds: () => ReadonlySet<string>;
+  readonly #recoverQueuedResumes: (() => Promise<ReadonlySet<string>>) | undefined;
   readonly #reportDiagnostic: NativeStudioRunBackgroundDiagnostic;
   #tail: Promise<void> = Promise.resolve();
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -43,12 +45,16 @@ export class NativeStudioRunRecoverySupervisor {
     readonly orphanThresholdMs: number;
     readonly recoveryIntervalMs: number;
     readonly activeRunIds: () => ReadonlySet<string>;
+    readonly recoverQueuedResumes?: () => Promise<ReadonlySet<string>>;
     readonly scheduleQueuedRun: (runId: string) => void;
     readonly scheduleRecoveryRun: (
       claim: NativeStudioRunRecoveryClaim
     ) => void;
     readonly cleanup: NativeStudioRunTerminalJobCleanup;
     readonly reportDiagnostic: NativeStudioRunBackgroundDiagnostic;
+    readonly findDurableWaitingBoundary?: (
+      runId: string
+    ) => Promise<InterruptRecord | undefined>;
   }) {
     this.#queue = options.queue;
     this.#ledger = options.ledger;
@@ -56,6 +62,7 @@ export class NativeStudioRunRecoverySupervisor {
     this.#cleanup = options.cleanup;
     this.#recoveryIntervalMs = options.recoveryIntervalMs;
     this.#activeRunIds = options.activeRunIds;
+    this.#recoverQueuedResumes = options.recoverQueuedResumes;
     this.#reportDiagnostic = options.reportDiagnostic;
     this.#recovery = new NativeStudioRunRecovery({
       ledger: options.ledger,
@@ -65,6 +72,9 @@ export class NativeStudioRunRecoverySupervisor {
       recoveryJournal: options.recoveryJournal,
       scheduleQueuedRun: options.scheduleQueuedRun,
       scheduleRecoveryRun: options.scheduleRecoveryRun,
+      ...(options.findDurableWaitingBoundary === undefined
+        ? {}
+        : { findDurableWaitingBoundary: options.findDurableWaitingBoundary }),
       onBackgroundError: (cause) => {
         options.reportDiagnostic("dispatch_recovery_failed", undefined, cause);
       }
@@ -102,6 +112,7 @@ export class NativeStudioRunRecoverySupervisor {
   }
 
   private async recoverAvailableJobs(): Promise<void> {
+    const protectedResumeRunIds = await this.#recoverQueuedResumes?.() ?? new Set<string>();
     await this.#queue.removeAbandonedTerminalJobs().catch((cause) => {
       this.#reportDiagnostic(
         "dispatch_terminal_cleanup_failed",
@@ -192,7 +203,10 @@ export class NativeStudioRunRecoverySupervisor {
       jobIds: new Set(runIds),
       corruptJobIds: corruptRunIds,
       terminalCorruptRunIds,
-      activeRunIds: this.#activeRunIds(),
+      activeRunIds: new Set([
+        ...this.#activeRunIds(),
+        ...protectedResumeRunIds
+      ]),
       // A rotating page being complete only means that page reached the end
       // of the directory. It does not prove that an older-page job vanished.
       inspectJob: (runId: string) => this.inspectQueuedRun(runId)

@@ -1,5 +1,10 @@
 import { studioApi } from "@/api/client"
+import { installBrowserErrorPolicy } from "@/app/browser-error-policy"
 import "@/index.css"
+
+// Install before the application and third-party graph renderer mount so this
+// boundary remains the canonical classifier for browser-generated notices.
+installBrowserErrorPolicy()
 
 // Bootstrap restores an existing cookie and transparently creates a
 // loopback-only local session when this browser has none.

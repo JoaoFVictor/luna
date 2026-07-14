@@ -10,6 +10,7 @@ import type {
 } from "../../capabilities/git/contracts.js";
 import { runGit as defaultRunGit } from "../../capabilities/git/client.js";
 import { remoteUrlMatches } from "../../capabilities/git/remote-url.js";
+import { commitApprovedWorktreeSnapshot } from "../../capabilities/git/worktree-snapshot.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
 
@@ -53,6 +54,14 @@ async function currentStatus(
 
 function commitPathsArgs(paths: readonly string[] | undefined): readonly string[] {
   return paths === undefined || paths.length === 0 ? ["."] : paths;
+}
+
+function dirtyPaths(status: GitStatusResult): string[] {
+  return [...new Set([
+    ...status.staged_paths,
+    ...status.unstaged_paths,
+    ...status.untracked_paths
+  ])].sort();
 }
 
 function gitConflict(message: string): Error & { code: string } {
@@ -139,11 +148,12 @@ export function createGitRepositoryPorts({
       },
       async readCommitState(input): Promise<GitCommitState | undefined> {
         const cwd = input.workspace.path;
-        const [status, commitLine, message, paths] = await Promise.all([
+        const [status, commitLine, message, paths, treeOid] = await Promise.all([
           currentStatus({ operation_id: "git.status", workspace: input.workspace }, runGit),
           runGit(cwd, ["rev-list", "--parents", "-n", "1", "HEAD"]),
           runGit(cwd, ["log", "-1", "--pretty=%B"]),
-          runGit(cwd, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])
+          runGit(cwd, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]),
+          runGit(cwd, ["rev-parse", "HEAD^{tree}"])
         ]);
         await assertExpectedBaseAncestry(cwd, input, runGit);
         await assertExpectedRemote(
@@ -161,7 +171,8 @@ export function createGitRepositoryPorts({
           head_sha: parentSha ?? "",
           commit_sha: commitSha,
           message: message.trim(),
-          paths: lines(paths)
+          paths: lines(paths),
+          tree_oid: treeOid.trim()
         };
       },
       async commit(input): Promise<GitCommitResult> {
@@ -178,22 +189,58 @@ export function createGitRepositoryPorts({
           input.expected_remote_urls,
           runGit
         );
-        await runGit(cwd, [
-          "--literal-pathspecs",
-          "add",
-          "-A",
-          "--",
-          ...commitPathsArgs(input.paths)
-        ]);
-        await runGit(cwd, ["commit", "-m", input.message]);
-        const commitSha = (await runGit(cwd, ["rev-parse", "HEAD"])).trim();
+        let approvedCommit:
+          | { readonly commit_sha: string; readonly tree_oid: string }
+          | undefined;
+        if (input.expected_snapshot === undefined) {
+          await runGit(cwd, [
+            "--literal-pathspecs",
+            "add",
+            "-A",
+            "--",
+            ...commitPathsArgs(input.paths)
+          ]);
+          await runGit(cwd, ["-c", "core.hooksPath=/dev/null", "commit", "-m", input.message]);
+        } else {
+          if (
+            input.expected_snapshot.head_sha !== status.head_sha ||
+            JSON.stringify([...input.expected_snapshot.changed_paths].sort()) !==
+              JSON.stringify(dirtyPaths(status))
+          ) {
+            throw gitConflict("Git commit dirty paths or HEAD do not match the approved snapshot.");
+          }
+          try {
+            approvedCommit = await commitApprovedWorktreeSnapshot({
+              cwd,
+              expected: input.expected_snapshot,
+              message: input.message
+            });
+          } catch (cause) {
+            throw gitConflict(
+              cause instanceof Error ? cause.message : "Approved worktree snapshot changed."
+            );
+          }
+        }
+        const [commitSha, treeOid] = approvedCommit === undefined
+          ? await Promise.all([
+              runGit(cwd, ["rev-parse", "HEAD"]),
+              runGit(cwd, ["rev-parse", "HEAD^{tree}"])
+            ])
+          : [approvedCommit.commit_sha, approvedCommit.tree_oid];
+        if (
+          input.expected_snapshot !== undefined &&
+          treeOid.trim() !== input.expected_snapshot.tree_oid
+        ) {
+          throw gitConflict("Committed Git tree does not match the approved snapshot.");
+        }
 
         return {
           operation_id: "git.commit",
           workspace_id: input.workspace.workspace_id,
           branch: status.branch,
           head_sha: status.head_sha,
-          commit_sha: commitSha,
+          commit_sha: commitSha.trim(),
+          tree_oid: treeOid.trim(),
           message: input.message,
           ...(input.paths === undefined ? {} : { paths: input.paths }),
           adopted: false

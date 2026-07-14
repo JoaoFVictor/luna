@@ -1,10 +1,11 @@
 import { loadAgentDefinition } from "../../../capabilities/agents/agent-loader.js";
-import { lunaToolCatalog } from "../../../capabilities/repository/tool-catalog.js";
+import { nativeLocalToolCatalog } from "../../../platform/native/native-local-tool-catalog.js";
 import type { CapabilityRegistry } from "../../../core/capabilities/registry.js";
 import type { AnyLunaToolDefinition } from "../../../core/tools/contracts.js";
 import { collectWorkflowAgentReferences } from "../../../core/workflow/definition-references.js";
 import type { WorkflowDefinition } from "../../../core/workflow/definition-types.js";
 import { composedWorkflowNodes } from "../../../core/workflow/composition.js";
+import { workflowPatternStageEffectNodeId } from "../../../core/workflow/loop-identity.js";
 import { studioRunValueDigest } from "../../application/runs/launch-digests.js";
 import type {
   StudioRunEffectCategory,
@@ -22,7 +23,7 @@ export type NativeStudioRunEffects = {
 };
 
 const nativeLocalTools: Readonly<Record<string, AnyLunaToolDefinition>> =
-  lunaToolCatalog;
+  nativeLocalToolCatalog;
 
 function effectId(
   kind: "effect" | "uncertainty" | "resolved",
@@ -33,6 +34,7 @@ function effectId(
 
 function effectForPolicy(options: {
   readonly nodeId: string;
+  readonly sourceNodeId: string;
   readonly registrationId: string;
   readonly policyId: string;
   readonly operationId: string;
@@ -63,15 +65,15 @@ function effectForPolicy(options: {
     : "provider_read");
   return {
     effect_id: effectId("effect", {
-      node_id: options.nodeId,
+      source_node_id: options.sourceNodeId,
       registration_id: options.registrationId,
       policy_id: options.policyId,
       operation_id: options.operationId
     }),
     category,
     description: confirmationRequired
-      ? `Node ${options.nodeId} may perform write operation ${options.operationId}.`
-      : `Node ${options.nodeId} may perform read operation ${options.operationId}.`,
+      ? `Node ${options.sourceNodeId} may perform write operation ${options.operationId}.`
+      : `Node ${options.sourceNodeId} may perform read operation ${options.operationId}.`,
     confirmation_required: confirmationRequired,
     ...(options.retrySemantics === undefined
       ? {}
@@ -93,8 +95,12 @@ function declaredEffects(
   const indexes = registry.registrations();
   const effects = new Map<string, StudioRunPotentialEffect>();
   for (const entry of composedWorkflowNodes(workflow)) {
-    const { node, qualifiedNodeId: nodeId } = entry;
-    if (node.type === "human_gate" || node.type === "workflow") {
+    const {
+      node,
+      qualifiedNodeId: sourceNodeId,
+      executionBoundaryNodeId: nodeId
+    } = entry;
+    if (node.type === "human_gate" || node.type === "workflow" || node.type === "loop") {
       continue;
     }
     const registrationId = node.type === "agent" ? node.agent : node.uses;
@@ -112,6 +118,7 @@ function declaredEffects(
       for (const operationId of policy?.side_effect_operation_ids ?? []) {
         const effect = effectForPolicy({
           nodeId,
+          sourceNodeId,
           registrationId,
           policyId,
           operationId,
@@ -171,47 +178,68 @@ async function agentEffects(
   );
   const effects: StudioRunPotentialEffect[] = [];
   const uncertainties: StudioRunEffectUncertainty[] = [];
-  for (const { node, qualifiedNodeId: nodeId } of entries) {
-    const agentIds = node.type === "agent"
-      ? [node.agent]
+  for (const {
+    node,
+    qualifiedNodeId: sourceNodeId,
+    executionBoundaryNodeId: nodeId
+  } of entries) {
+    const agentStages = node.type === "agent"
+      ? [{ agentId: node.agent }]
       : node.type === "pattern"
         ? [
-            ...(node.worker === undefined ? [] : [node.worker]),
+            ...(node.worker === undefined
+              ? []
+              : [{ agentId: node.worker, stageId: "worker" }]),
             ...(node.gates ?? []).flatMap((gate) => {
               const reviewAgent = gate.input?.review_agent;
-              return typeof reviewAgent === "string" ? [reviewAgent] : [];
+              return typeof reviewAgent === "string"
+                ? [{ agentId: reviewAgent, stageId: `reviewer:${gate.id}` }]
+                : [];
             })
           ]
         : [];
-    for (const agentId of [...new Set(agentIds)]) {
+    const uniqueStages = new Map(
+      agentStages.map((entry) => [
+        `${entry.agentId}:${"stageId" in entry ? entry.stageId : "node"}`,
+        entry
+      ])
+    );
+    for (const { agentId, ...stage } of uniqueStages.values()) {
       const agent = agents.get(agentId);
       if (agent === undefined) {
         continue;
       }
+      const effectNodeId = "stageId" in stage &&
+        typeof stage.stageId === "string" &&
+        sourceNodeId === nodeId
+        ? workflowPatternStageEffectNodeId(nodeId, stage.stageId)
+        : nodeId;
       effects.push({
         effect_id: effectId("effect", {
-          node_id: nodeId,
+          source_node_id: sourceNodeId,
           agent_id: agentId,
+          ...(effectNodeId === nodeId ? {} : { effect_node_id: effectNodeId }),
           kind: "model"
         }),
         category: "model_call",
-        description: `Node ${nodeId} may invoke model agent ${agentId}.`,
+        description: `Node ${sourceNodeId} may invoke model agent ${agentId}.`,
         confirmation_required: false,
         retry_semantics: "retry_forbidden",
         idempotency_scope: "attempt",
         registration_id: agentId,
-        node_id: nodeId
+        node_id: effectNodeId
       });
       uncertainties.push({
         uncertainty_id: effectId("uncertainty", {
-          node_id: nodeId,
+          source_node_id: sourceNodeId,
           agent_id: agentId,
+          ...(effectNodeId === nodeId ? {} : { effect_node_id: effectNodeId }),
           kind: "dynamic_agent_tools"
         }),
         kind: "dynamic_agent_tools",
-        description: `Agent ${agentId} can choose among its declared local and MCP runtime tools dynamically.`,
+        description: `Agent ${agentId} at node ${sourceNodeId} can choose among its declared local and MCP runtime tools dynamically.`,
         may_include_unlisted_write: agentMayIncludeUnlistedWrite(agent),
-        node_id: nodeId
+        node_id: effectNodeId
       });
     }
   }

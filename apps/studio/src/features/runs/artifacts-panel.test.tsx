@@ -351,6 +351,98 @@ describe("ArtifactsPanel", () => {
     expect(writeText.mock.calls[0]?.[0]).not.toContain("/home/alice")
   })
 
+  it("renders only a MIME-verified raster image through a revocable blob URL", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const base = artifactList("committed").items[0]!
+    const image = {
+      ...base,
+      name: "social-post.png",
+      media_type: "image/png",
+    }
+    vi.spyOn(studioApi, "artifacts").mockResolvedValue({
+      run_id: RUN_ID,
+      items: [image],
+      redaction: "best_effort_on_preview",
+    })
+    vi.spyOn(studioApi, "artifactPreview").mockResolvedValue({
+      kind: "binary",
+      metadata: {
+        ...image,
+        content_length: 4,
+        downloadable: true,
+        raw_download_redaction: "not_applied",
+      },
+      inspected_bytes: 4,
+      truncated: false,
+      integrity: "verified",
+      reason: "binary_content",
+      render_policy: "download_only",
+    })
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([137, 80, 78, 71]), {
+        headers: { "Content-Type": "image/png" },
+      }),
+    ))
+    const createObjectURL = vi.fn().mockReturnValue("blob:safe-image")
+    const revokeObjectURL = vi.fn()
+    Object.defineProperties(URL, {
+      createObjectURL: { configurable: true, value: createObjectURL },
+      revokeObjectURL: { configurable: true, value: revokeObjectURL },
+    })
+
+    const view = render(<ArtifactsPanel runId={RUN_ID} />, {
+      wrapper: wrapper(queryClient),
+    })
+
+    const rendered = await screen.findByRole("img", {
+      name: "Imagem gerada: social-post.png",
+    })
+    expect(rendered.getAttribute("src")).toBe("blob:safe-image")
+    expect(createObjectURL).toHaveBeenCalledOnce()
+
+    view.unmount()
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:safe-image")
+  })
+
+  it("blocks a raster response whose MIME disagrees with the manifest", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const base = artifactList("committed").items[0]!
+    const image = { ...base, name: "social-post.png", media_type: "image/png" }
+    vi.spyOn(studioApi, "artifacts").mockResolvedValue({
+      run_id: RUN_ID,
+      items: [image],
+      redaction: "best_effort_on_preview",
+    })
+    vi.spyOn(studioApi, "artifactPreview").mockResolvedValue({
+      kind: "binary",
+      metadata: {
+        ...image,
+        content_length: 12,
+        downloadable: true,
+        raw_download_redaction: "not_applied",
+      },
+      inspected_bytes: 12,
+      truncated: false,
+      integrity: "verified",
+      reason: "binary_content",
+      render_policy: "download_only",
+    })
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(new Blob(["<svg></svg>"], { type: "image/svg+xml" })),
+    ))
+
+    render(<ArtifactsPanel runId={RUN_ID} />, { wrapper: wrapper(queryClient) })
+
+    expect(await screen.findByText(
+      "O arquivo retornado não corresponde ao tipo de imagem declarado.",
+    )).toBeDefined()
+    expect(screen.queryByRole("img")).toBeNull()
+  })
+
   it("keeps hash-named technical manifests out of the result list by default", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

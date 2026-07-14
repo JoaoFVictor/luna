@@ -1,4 +1,5 @@
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
+import { RepoContextJsonSchema } from "../git/diff/repo-context-json-schema.js";
 
 const reviewedRangeSchema = {
   type: "object",
@@ -172,7 +173,7 @@ export const manifest = capabilityManifest({
         additionalProperties: false,
         required: ["findings"],
         properties: {
-          repo_context: {},
+          repo_context: RepoContextJsonSchema,
           findings: {}
         }
       },

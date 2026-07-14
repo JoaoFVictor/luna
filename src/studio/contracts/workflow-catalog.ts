@@ -33,7 +33,8 @@ export const StudioWorkflowSummarySchema = z
         agent: z.number().int().nonnegative(),
         pattern: z.number().int().nonnegative(),
         human_gate: z.number().int().nonnegative(),
-        workflow: z.number().int().nonnegative()
+        workflow: z.number().int().nonnegative(),
+        loop: z.number().int().nonnegative()
       })
       .strict(),
     requires_repository: z.boolean(),

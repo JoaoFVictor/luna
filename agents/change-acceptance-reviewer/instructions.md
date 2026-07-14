@@ -42,12 +42,23 @@ addresses the relevant dimensions. In particular, when
 failure to reuse established abstractions as a reason for human review unless a
 validated finding already requests changes.
 
-If the workflow provides `related_context`, use its `nodes`, `edges`, `budgets`,
-and `truncation` to judge review completeness. Missing review attention to
+For pull-request review, the workflow may provide the canonical graph as
+`related_context`. For implementation review, read the attempt-scoped canonical
+graph only from `gate.evidence.repository_context`; it is refreshed from the
+current attempt diff before this gate. Use its `nodes`, `edges`, `budgets`, and
+`truncation` to judge review completeness. Missing review attention to
 high-confidence reverse references, imported dependencies, tests, configs, or
 similar abstractions can justify `needs_human_review`. Do not reject solely
-because related context is truncated; combine truncation with concrete risk or
-missing reviewer coverage.
+because repository context is truncated; combine truncation with concrete risk
+or missing reviewer coverage. Use its `coverage` and `snapshot` metadata to
+distinguish complete indexed evidence from an incomplete or stale view.
+
+Use `repository_context_query` only when the acceptance decision depends on a
+specific unresolved caller, dependency, test, configuration, or requirement
+mapping. Treat results as additive evidence from the same canonical index. The
+runtime pins calls to the supplied snapshot and rejects drift;
+compare snapshot ids and repeat only to close a named gap. Do not use broad
+queries merely to compensate for weak review work.
 
 Return only structured output matching the configured schema:
 

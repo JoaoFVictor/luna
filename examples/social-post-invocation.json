@@ -1,0 +1,28 @@
+{
+  "version": "2026-06",
+  "source": "manual",
+  "event": "social_post_brief",
+  "target": {
+    "type": "workflow",
+    "id": "social-post"
+  },
+  "subject": {
+    "type": "social_post",
+    "id": "luna-launch",
+    "title": "Anúncio do Luna"
+  },
+  "payload": {
+    "topic": "Apresentar o Luna como orquestrador determinístico de workflows com agentes",
+    "objective": "Gerar interesse e levar pessoas ao repositório",
+    "audience": "Desenvolvedores e equipes de plataforma",
+    "tone": "Direto, técnico e confiante",
+    "language": "pt-BR",
+    "key_points": [
+      "Workflows são definidos em YAML",
+      "A execução mantém gates e side effects explícitos"
+    ],
+    "call_to_action": "Conheça o projeto",
+    "link": "https://example.com/luna",
+    "hashtags": ["Luna", "AIEngineering"]
+  }
+}

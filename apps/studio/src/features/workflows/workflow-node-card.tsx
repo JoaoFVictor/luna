@@ -1,6 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react"
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react"
-import { BotIcon, BoxIcon, CheckCircle2Icon, CircleXIcon, DatabaseIcon, GitBranchIcon, GitPullRequestArrowIcon, NetworkIcon, PauseIcon, TriangleAlertIcon } from "lucide-react"
+import { BotIcon, BoxIcon, CheckCircle2Icon, CircleXIcon, DatabaseIcon, GitBranchIcon, GitPullRequestArrowIcon, NetworkIcon, PauseIcon, Repeat2Icon, TriangleAlertIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -31,7 +31,7 @@ export type WorkflowNodeData = {
 }
 export type WorkflowFlowNode = Node<WorkflowNodeData, "workflow-node">
 
-const nodeIcons = { built_in: BoxIcon, agent: BotIcon, pattern: GitPullRequestArrowIcon, interrupt: PauseIcon, workflow: NetworkIcon } as const
+const nodeIcons = { built_in: BoxIcon, agent: BotIcon, pattern: GitPullRequestArrowIcon, interrupt: PauseIcon, workflow: NetworkIcon, loop: Repeat2Icon } as const
 
 function activateConnectionByKeyboard(
   event: ReactKeyboardEvent,
@@ -65,9 +65,10 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>
       }}
       onKeyDown={(event) => activateConnectionByKeyboard(event, data.onConnectionTargetClick)}
     />
-    <div className="flex items-start gap-2"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted"><Icon className="size-4" aria-hidden="true" /></div><div className="min-w-0"><p className="truncate text-sm font-medium">{data.presentation?.title ?? data.compiled.id}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{data.compiled.kind === "agent" ? "Agent" : data.compiled.kind === "interrupt" ? "Aprovação" : data.compiled.kind === "workflow" ? "Subworkflow" : "Passo"} · {data.compiled.id}</p></div></div>
+    <div className="flex items-start gap-2"><div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted"><Icon className="size-4" aria-hidden="true" /></div><div className="min-w-0"><p className="truncate text-sm font-medium">{data.presentation?.title ?? data.compiled.id}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{data.compiled.kind === "agent" ? "Agent" : data.compiled.kind === "interrupt" ? "Aprovação" : data.compiled.kind === "workflow" ? "Subworkflow" : data.compiled.kind === "loop" ? "Loop durável" : "Passo"} · {data.compiled.id}</p></div></div>
     <div className="mt-2 flex flex-wrap gap-1">
       {data.compiled.can_create_pending_interrupt && <Badge variant="secondary">pode interromper</Badge>}
+      {data.compiled.kind === "loop" && <Badge variant="outline"><Repeat2Icon aria-hidden="true" /> {data.compiled.loop_body?.length ?? 0} etapas internas</Badge>}
       {data.testDataState === "active" && <Badge><DatabaseIcon aria-hidden="true" /> Substituição ativa</Badge>}
       {data.testDataState === "saved" && <Badge variant="outline"><DatabaseIcon aria-hidden="true" /> Dados salvos</Badge>}
       {(data.outgoingCount ?? 0) > 1 && <Badge variant="outline"><GitBranchIcon aria-hidden="true" /> {data.outgoingCount} ramos</Badge>}

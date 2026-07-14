@@ -143,17 +143,21 @@ function workflowExecutorFor(
   dependencies: BuiltInStepDependencies
 ): WorkflowBuiltInExecutor {
   return async ({
+    node,
     state,
     input,
     runtimeContext,
+    signal,
     observability
   }) =>
     await catalog.runBuiltInStep({
       uses: name,
       state: workflowStateView(state, runtimeContext),
       input: workflowBuiltInInput(input),
+      ...(signal === undefined ? {} : { signal }),
       dependencies,
-      observability
+      observability,
+      node: { id: node.id, capability_id: node.capability_id }
     });
 }
 

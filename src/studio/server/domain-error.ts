@@ -20,6 +20,7 @@ import { studioRunLaunchHttpError } from "./run-launch-errors.js";
 import { studioConfigurationHttpError } from "./configuration-errors.js";
 import { studioResourceHistoryHttpError } from "./resource-history-errors.js";
 import { studioAgentTestHttpError } from "./agent-test-errors.js";
+import { StudioRunResumeError } from "../application/runs/resume-errors.js";
 
 export type StudioDomainHttpError = {
   readonly statusCode: number;
@@ -271,6 +272,13 @@ export function studioDomainHttpError(
   }
   if (error instanceof StudioRoutingDefinitionLoadError) {
     return routingError(error);
+  }
+  if (error instanceof StudioRunResumeError) {
+    return {
+      statusCode: 409,
+      code: error.code,
+      message: "The run cannot be resumed because the runtime capability catalog changed"
+    };
   }
   if (error instanceof RunStoreError) {
     return RUN_ERRORS[error.code];

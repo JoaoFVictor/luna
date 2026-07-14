@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["text", "image_prompt", "strategy", "character_count", "claims_to_verify"],
+  "properties": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000
+    },
+    "image_prompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "strategy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "character_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "claims_to_verify": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    }
+  }
+}

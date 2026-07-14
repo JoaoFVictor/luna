@@ -57,9 +57,8 @@ export function unique(values: readonly string[]): string[] {
 }
 
 export function wordsFrom(value: string): string[] {
-  return value
-    .split(/[^A-Za-z0-9_]+/)
-    .filter((word) => word.length >= 3 && !/^\d+$/.test(word));
+  return (value.normalize("NFKC").match(/[\p{L}\p{N}_]+/gu) ?? [])
+    .filter((word) => word.length >= 3 && !/^\p{N}+$/u.test(word));
 }
 
 export function meaningfulSymbolTerms(name: string): string[] {

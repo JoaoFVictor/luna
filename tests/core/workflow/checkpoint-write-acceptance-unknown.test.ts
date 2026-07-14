@@ -17,6 +17,7 @@ import {
   CheckpointWriteAcceptanceUnknownError,
   nodeOutputCheckpointId
 } from "../../../src/runtime/workflow/checkpoints.js";
+import { NODE_OUTPUT_JOURNAL_CHANNEL } from "../../../src/runtime/workflow/node-durability.js";
 
 const registry = createCapabilityRegistry([
   capabilityManifest({
@@ -242,8 +243,12 @@ describe("checkpoint write acceptance-unknown recovery", () => {
         expect.objectContaining({
           task_id: "effect",
           index: 0,
-          channel: "steps",
-          value: { applied: true }
+          channel: NODE_OUTPUT_JOURNAL_CHANNEL,
+          value: {
+            kind: "luna.runtime.node-output-envelope",
+            schema_version: 2,
+            output: { applied: true }
+          }
         }),
         expect.objectContaining({
           task_id: "effect",

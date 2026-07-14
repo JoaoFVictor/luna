@@ -1,5 +1,4 @@
 import { StateGraph } from "@langchain/langgraph";
-import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import type { LunaRuntimeState } from "../../core/runtime/state.js";
 import type { CompiledWorkflowNode } from "../../core/workflow/compiler.js";
 import {
@@ -21,7 +20,6 @@ type DynamicStateGraph = {
   addEdge(from: string | string[], to: string): void;
   compile(options: {
     readonly name: string;
-    readonly checkpointer?: BaseCheckpointSaver;
   }): {
     streamEvents(
       state: LunaRuntimeState,
@@ -29,7 +27,6 @@ type DynamicStateGraph = {
         readonly configurable: { readonly thread_id: string };
         readonly version: "v3";
         readonly streamMode: readonly ["updates", "values", "checkpoints", "tasks"];
-        readonly durability?: "sync";
       }
     ): Promise<AsyncIterable<unknown> & {
       readonly output: Promise<unknown>;
@@ -67,10 +64,5 @@ export function compileLangGraphWorkflow({
     graph.addEdge(edge.from, edge.to);
   }
 
-  return graph.compile({
-    name: input.workflow.id,
-    ...(input.langGraphCheckpointer === undefined
-      ? {}
-      : { checkpointer: input.langGraphCheckpointer })
-  });
+  return graph.compile({ name: input.workflow.id });
 }

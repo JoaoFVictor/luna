@@ -120,8 +120,8 @@ docker compose up --build
 This starts Redis, `webhook-server`, `webhook-worker`, and `studio`. The
 containers use
 `REDIS_URL=redis://redis:6379`, keep Redis on the internal Compose network,
-expose the HTTP server on host port `4012`, mount `./dist` and `./config`
-read-only, mount
+expose the HTTP server on host port `4012`, use the compiled application
+artifacts built into the image, mount `./config` read-only, mount
 `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth`, and write run
 artifacts to `./.runs`. The auth root is writable because the Pi runtime can
 refresh OAuth credentials. Luna services run as the required host
@@ -160,7 +160,7 @@ the mounted `dist/` matches the mounted configuration.
 The Compose file also mounts auth and repository state needed by real runs:
 
 - `${LUNA_AUTH_ROOT:-./.luna/auth}` at `/app/.luna/auth` for all auth files.
-- `.luna/auth/luna.auth.json` for Jira, Plane, and webhook secrets.
+- `.luna/auth/luna.auth.json` for Jira, Plane, X OAuth, and webhook secrets.
 - `.luna/auth/pi-ai/auth.json` for Pi model auth.
 - `.luna/auth/gh` for GitHub CLI auth through `GH_CONFIG_DIR`.
 - `.luna/auth/ssh` for SSH repository remotes.
@@ -236,37 +236,23 @@ apply a human decision.
 
 The current workflow runtime id is `langgraph`.
 
-LangGraph is used as Luna's workflow runtime adapter for stateful graph
-execution, streaming events, checkpoint integration, and native interrupt
-support. Luna still owns workflow YAML, capability validation, compiled nodes,
-runtime state, and node execution semantics.
+LangGraph is used as Luna's in-process graph scheduler and event stream. Luna
+owns workflow YAML, capability validation, compiled nodes, runtime state, node
+execution, checkpoints, interrupts, and resume semantics.
 
 In code:
 
 - `src/runtime/langgraph/workflow-graph.ts` compiles Luna nodes into a
   LangGraph graph.
 - `src/runtime/langgraph/workflow-runner.ts` streams LangGraph events and maps
-  native interrupts back to Luna `waiting_for_input`.
-- `src/runtime/backends/sqlite/langgraph-checkpointer.ts` adapts Luna SQLite
-  checkpoints for LangGraph.
+  Luna scheduler outcomes to `waiting_for_input` or completion.
 - `src/runtime/workflow/runner-engine.ts` owns the generic scheduler contract
   used by LangGraph.
 
-When SQLite checkpoints are active, Luna installs a LangGraph checkpointer and
-uses synchronous durability for the stream. Without that backend, Luna still
-runs the scheduler but cannot provide the same native LangGraph checkpoint
-integration. Each scheduler invocation uses a disposable internal LangGraph
-thread id, separate from the canonical Luna run id, so LangGraph reducers never
-restore and append Luna's waiting state a second time. Internal journals are
-cleaned up best-effort; Luna checkpoints remain the replay and resume authority.
-
-The LangGraph journal is auxiliary, not Luna's run authority. Each scheduler
-invocation receives a fresh internal thread id, isolated from canonical Luna
-checkpoints and from later run/resume invocations; cleanup is best-effort after
-the stream. This prevents append reducers from restoring canonical artifact
-references a second time. Journal I/O failures are surfaced as
-`runtime_durability_recovery_required`, never converted into a contradictory
-failed terminal after a Luna node completion or human wait is already durable.
+LangGraph has no second checkpointer in this composition. A node output,
+completion marker, waiting checkpoint, or interrupt is durable only through
+Luna's backend contracts. This single authority avoids disposable scheduler
+journals that cannot participate in cross-process recovery.
 
 A compiled node that can create a pending interrupt must be dependency-ordered
 with every other workflow node. Independent HITL siblings are rejected at
@@ -431,7 +417,7 @@ npm run dev -- resume \
   --thread <run-id> \
   --checkpoint <checkpoint-id> \
   --interrupt <interrupt-id> \
-  --decision '{"approved":true}'
+  --decision '{"action":"approve"}'
 ```
 
 The native runner reloads app/repository config, reloads and recompiles the
@@ -445,9 +431,7 @@ protocol for that run and gate:
    workflow revision, resume context, timestamp, pre-gate artifact refs, and
    prior interrupt refs;
 2. persist the prior step writes and the exact waiting checkpoint;
-3. create the interrupt with create-if-absent exact semantics;
-4. persist `interrupt_wait_completion` only after the other three stages are
-   durable.
+3. create the pending interrupt with create-if-absent exact semantics.
 
 Every stage is reconciled against the same run/node identity. An exact record
 already present is adopted; conflicting durable state is rejected. If a store
@@ -457,12 +441,10 @@ returns `runtime_checkpoint_write_acceptance_unknown` or
 inconclusive and must be replayed with the same run identity. They do not write a
 failed terminal checkpoint or a false `run.failed`/`node.failed` event. On that
 replay, durable completed nodes before the gate are rehydrated rather than
-executed again, and the wait protocol advances to its exact completion marker.
-After that completion marker exists, a late LangGraph stream or auxiliary
-checkpointer failure returns the authoritative `waiting_for_input` result; it
-cannot create a failed terminal. Auxiliary journal failures after an ordinary
-node completion instead return `runtime_durability_recovery_required`, allowing
-an exact replay to adopt the node completion without rerunning its executor.
+executed again. The exact waiting checkpoint plus its matching pending
+interrupt are the single authoritative boundary; there is no auxiliary wait
+completion marker. Once both exist, the scheduler returns `waiting_for_input`
+and cannot create a failed terminal for that wait.
 Checkpoint-write access failures while loading a wait intent, resume writes, or
 persisted node recovery receive the same non-terminal classification; semantic
 validation of successfully read records remains a deterministic state error.
@@ -487,16 +469,26 @@ have changed meanwhile; this lets the already-authorized transition finish.
 A different decision, actor, or payload remains `interrupt_conflict`, and an
 incomplete claim fails closed for operator recovery.
 
-Normal nodes use the same rule: a `steps` write proves only that executor output
-is durable. A separate `node_completion` marker, bound to that output digest, is
-written after every declared artifact succeeds. Resume rehydrates artifact refs
-from exact markers, skips completed nodes without re-entering their executors,
-and can finish an output-only node by retrying its artifact batch. Pre-gate
-artifact refs are also retained in the waiting checkpoint.
+Normal nodes use the same rule: a versioned `node_output_v2` journal write
+proves only that executor output is durable. Its reserved channel carries an
+internal envelope around the public output, so domain JSON cannot be mistaken
+for journal metadata. Recovery treats older `steps` writes as opaque public
+output and never infers runtime metadata from their JSON shape. A separate
+`node_completion` marker, bound to the public output digest,
+is written after every declared artifact succeeds. Resume rehydrates artifact
+refs from exact markers, skips completed nodes without re-entering their
+executors, and can finish an output-only node by retrying its artifact batch.
+Pre-gate artifact refs are also retained in the waiting checkpoint.
 
 Fresh execution and resume application share one run-scoped lease through
 terminalization, so two callers for the same run cannot advance nodes
 concurrently.
+Studio additionally stores accepted resume commands in the same SQLite run
+database as its ledger. The command hash, pre-execution/effect stage, and
+terminal tombstone are updated transactionally. Active commands are recovered
+from that journal, while tombstones permanently reject a late conflicting
+decision. Resume execution also holds the interrupt store's cross-process
+run lease; a durable claim alone is not treated as an execution mutex.
 Before a fresh run or resume performs recovery or executes a node, Luna loads
 and validates both possible terminal checkpoint identities. Any exact succeeded
 or failed terminal rejects the replay because its ref-only snapshot cannot
@@ -551,10 +543,18 @@ the prior node completion marker.
 
 Studio adds a stricter control-plane rule for uncertain external effects: once a
 write-capable dispatch has started, missing terminal proof becomes
-`outcome_unknown` and is never replayed automatically. Only a preflight-proven
-read-only job with an exact durable recovery intent may be requeued. This does not
-change the generic checkpoint acceptance rule above; it narrows Studio dispatch
-recovery where an external side effect could already have happened.
+`outcome_unknown` and is never replayed automatically. A preflight-proven
+replay-safe job requires an exact durable recovery intent. The narrow exception
+is a newer pending interrupt that is already durable: Studio may replay the
+pinned waiting state only to project that boundary. This reconciliation opens
+only the configured checkpoint and interrupt backends, validates the exact
+interrupt/checkpoint pair against the immutable Studio graph snapshot, and
+rehydrates its ref-only state from durable step writes. It does not compile the
+workflow, resolve the current capability catalog, or enter a node executor.
+Missing or contradictory durable identity becomes `outcome_unknown`; transient
+backend unavailability remains retryable. This closes the process-crash window
+between runtime interrupt persistence and the Studio waiting transition without
+repeating a model call or external write.
 
 If an ordinary runtime failure cannot be committed and read back as the exact
 failed terminal checkpoint, Luna returns

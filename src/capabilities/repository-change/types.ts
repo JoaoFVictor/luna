@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { ChangeRequestConfig } from "../change-request/contracts.js";
-import type { ValidationCommand } from "../validation/command-runner.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -48,12 +47,10 @@ export type ImplementationConfig = {
     readonly change_request: ChangeRequestConfig;
     readonly sandbox: {
       readonly type: "trusted_host_local";
-      readonly env_allowlist: readonly string[];
     };
     readonly validation: {
       readonly repair_attempts: number;
       readonly max_output_bytes: number;
-      readonly commands: readonly ValidationCommand[];
     };
   };
 };

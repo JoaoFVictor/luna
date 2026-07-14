@@ -1,4 +1,5 @@
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
+import { RepoContextJsonSchema } from "../git/diff/repo-context-json-schema.js";
 
 const collectContextInputSchema = {
   type: "object",
@@ -17,10 +18,7 @@ export const manifest = capabilityManifest({
     "repository-diff.collect_context": {
       id: "repository-diff.collect_context",
       input_schema: collectContextInputSchema,
-      output_schema: {
-        type: "object",
-        additionalProperties: true
-      },
+      output_schema: RepoContextJsonSchema,
       required_ports: []
     }
   },

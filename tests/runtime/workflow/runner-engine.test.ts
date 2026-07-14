@@ -112,6 +112,36 @@ function runInput({
 }
 
 describe("runtime-neutral workflow runner engine", () => {
+  it("treats the control-plane waiting hook as a durability boundary", async () => {
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState
+    }) => ({
+      kind: "waiting_for_input",
+      interrupt_id: "interrupt-waiting-boundary",
+      checkpoint_id: "checkpoint-waiting-boundary",
+      state: { ...initialState, run_status: "waiting_for_input" }
+    });
+    const failedState = vi.fn();
+    const boundary = vi.fn(async () => {
+      throw new Error("control plane unavailable");
+    });
+
+    await expect(runCompiledWorkflowWithScheduler({
+      ...runInput({ runId: "engine-waiting-boundary" }),
+      onWaitingState: boundary,
+      onFailedState: failedState
+    }, scheduler)).rejects.toMatchObject({
+      code: "runtime_durability_recovery_required",
+      details: {
+        interrupt_id: "interrupt-waiting-boundary",
+        checkpoint_id: "checkpoint-waiting-boundary"
+      }
+    });
+
+    expect(boundary).toHaveBeenCalledOnce();
+    expect(failedState).not.toHaveBeenCalled();
+  });
+
   it("substitutes precompleted nodes using the canonical effective DAG", async () => {
     const cutpointWorkflow = definition([
       { id: "shared", type: "built_in", uses: "runtime.noop" },
@@ -550,6 +580,35 @@ describe("runtime-neutral workflow runner engine", () => {
         }
       });
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates the authoritative pre-node barrier before entering an executor", async () => {
+    const execute = vi.fn(async () => ({}));
+    const barrierFailure = new Error("resume stage fsync failed");
+    const barrier = vi.fn(async () => {
+      throw barrierFailure;
+    });
+    const input = {
+      ...runInput({ runId: "engine-pre-node-barrier" }),
+      onBeforeNodeExecution: barrier,
+      builtIns: { "runtime.noop": execute }
+    } satisfies RunWorkflowInput;
+    const scheduler: WorkflowNodeScheduler<RunWorkflowInput> = async ({
+      initialState,
+      nodes,
+      runNode
+    }) => {
+      const result = await runNode(nodes[0], initialState);
+      if (result.kind !== "completed") throw new Error("unexpected wait");
+      return {
+        kind: "completed",
+        state: applyWorkflowGraphUpdate(initialState, result.update)
+      };
+    };
+
+    await expect(runCompiledWorkflowWithScheduler(input, scheduler)).rejects.toThrow();
+    expect(barrier).toHaveBeenCalledWith({ node_id: "noop", attempt: 1 });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("publishes one final observability summary after the workflow span closes", async () => {

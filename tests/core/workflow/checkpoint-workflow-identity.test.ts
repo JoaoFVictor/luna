@@ -309,6 +309,9 @@ describe("workflow checkpoint execution identity", () => {
         updated_at: "2026-07-10T00:00:03.000Z"
       })
     ]);
+    stores.interrupts.list = async () => {
+      throw new Error("Resume preflight must use the bounded interrupt query");
+    };
     let executions = 0;
 
     await expect(resumeCompiledWorkflow({

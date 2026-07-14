@@ -4,6 +4,7 @@ import type {
   RunLogLevel,
   RunPlanInput,
   RunStatus,
+  RunInterruptResumeRequest,
 } from "@/api/types"
 import { studioResponseContracts } from "@/api/response-contracts"
 import {
@@ -13,6 +14,7 @@ import {
 import { StudioRunPlanInputSchema } from "../../../../src/studio/contracts/run-plan-input.js"
 import { StudioRunExecuteRequestSchema } from "../../../../src/studio/contracts/run-launch.js"
 import { StudioDraftTestRunPlanInputSchema } from "../../../../src/studio/contracts/draft-test-run.js"
+import { StudioRunInterruptResumeRequestSchema } from "../../../../src/studio/contracts/run-interrupts.js"
 
 export type StudioRunCatalogQuery = {
   cursor?: string
@@ -225,6 +227,38 @@ export class StudioRunsClient {
       `/runs/${encodeURIComponent(runId)}/logs?${params.toString()}`,
       { signal },
       studioResponseContracts.runLogs,
+    )
+  }
+
+  readonly runInterrupts = (
+    runId: string,
+    cursor?: string,
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams({ limit: "50" })
+    if (cursor !== undefined) params.set("cursor", cursor)
+    return this.#request(
+      `/runs/${encodeURIComponent(runId)}/interrupts?${params.toString()}`,
+      { signal },
+      studioResponseContracts.runInterrupts,
+    )
+  }
+
+  readonly resumeRunInterrupt = (
+    runId: string,
+    interruptId: string,
+    input: RunInterruptResumeRequest,
+    signal?: AbortSignal,
+  ) => {
+    const body = StudioRunInterruptResumeRequestSchema.parse(input)
+    return this.#request(
+      `/runs/${encodeURIComponent(runId)}/interrupts/${encodeURIComponent(interruptId)}/resume`,
+      {
+        method: "POST",
+        body,
+        ...(signal === undefined ? {} : { signal }),
+      },
+      studioResponseContracts.runInterruptResumeReceipt,
     )
   }
 }

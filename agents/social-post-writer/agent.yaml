@@ -1,0 +1,6 @@
+id: social-post-writer
+description: Creates concise, audience-aware social posts from an explicit briefing.
+model_profile: balanced
+mode: read_only
+instructions_file: instructions.md
+output_schema: output.schema.json

@@ -12,6 +12,7 @@ point. Use `../docs/` when you need the deeper architecture behind the recipe.
 | Review a GitHub PR | [review-pr.md](review-pr.md) | End-to-end user recipe for the bundled code review workflow. |
 | Implement a Jira task | [implementation-jira-task.md](implementation-jira-task.md) | End-to-end repository-change recipe with validation and optional publishing gates. |
 | Implement a Plane task | [implementation-plane-task.md](implementation-plane-task.md) | Same implementation workflow, sourced from Plane issue data and repository labels. |
+| Generate and publish an X post | [social-post.md](social-post.md) | Agent-authored text and image, human approval, media upload, and explicit publication. |
 | Diagnose a failed or paused run | [troubleshooting.md](troubleshooting.md) | Operational runbook for routing, config, auth, validation, HITL, publishing, and artifacts. |
 | Add a new reusable role | [new-agent.md](new-agent.md) | Agent file layout, output schema, context, skills, tools, MCP, and subagents. |
 | Add a new orchestration shape | [new-workflow.md](new-workflow.md) | Workflow YAML, node types, state references, artifacts, and gates. |
@@ -27,6 +28,7 @@ point. Use `../docs/` when you need the deeper architecture behind the recipe.
 | `example-complete-agent` | Agent-authoring and HITL/publishing showcase. | Yes | trusted-write agent config, context, skills, local tools, subagents, gated loop, validation/review/acceptance gates, HITL approval, commit, push, change request, retry, runtime-log projection, artifacts. |
 | `code-review` | Production-style PR review. | No | preflight, workspace capture, repository diff context, related repository impact graph, planning agent, general/security/architecture reviewer agents, deterministic findings merge, evidence validation, acceptance agent, optional PR review publication, final report. |
 | `implementation` | Full trusted write implementation workflow. | No | preflight, worktree preparation, task context, planner, gated writer loop, validation, non-empty diff, review/acceptance gates, diff, commit, push, change request, final report. |
+| `social-post` | Generate and publish an X post. | Yes | structured briefing, writer agent, `pi-imagegen` extension, previewable PNG, human approval, X media upload and publication. |
 
 The platform-wide "everything" reference is the combination of
 `workflows/example-complete-agent/workflow.yaml`,
@@ -66,12 +68,20 @@ Bundled implementation workflow from Plane:
 LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:implementation --from plane-task-url https://app.plane.so/company/browse/PROJ-42/
 ```
 
+Bundled social post workflow:
+
+```bash
+LUNA_CONFIG_ROOT=config npm run dev -- run --target workflow:social-post --input examples/social-post-invocation.json
+```
+
 ## Files
 
 - `github-pr-opened.invocation.json`: normalized GitHub PR invocation example.
 - `jira-issue-selected.invocation.json`: normalized Jira issue invocation example.
 - `plane-issue-selected.invocation.json`: normalized Plane issue invocation example.
 - `luna-generic.invocation.json`: generic routed invocation example.
+- `social-post-invocation.json`: structured briefing for the social post workflow.
+- `social-post.md`: X generation, approval, authentication, and publishing recipe.
 - `review-pr.md`: GitHub PR review recipe.
 - `implementation-jira-task.md`: Jira task implementation recipe.
 - `implementation-plane-task.md`: Plane task implementation recipe.

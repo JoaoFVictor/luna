@@ -86,6 +86,8 @@ export class StudioApiClient implements StudioApiSurface {
   declare readonly artifactPreview: StudioRunsClient["artifactPreview"]
   declare readonly artifactDownloadUrl: StudioRunsClient["artifactDownloadUrl"]
   declare readonly runLogs: StudioRunsClient["runLogs"]
+  declare readonly runInterrupts: StudioRunsClient["runInterrupts"]
+  declare readonly resumeRunInterrupt: StudioRunsClient["resumeRunInterrupt"]
 
   declare readonly inputAdapters: StudioInputRoutingClient["inputAdapters"]
   declare readonly previewInputAdapter: StudioInputRoutingClient["previewInputAdapter"]

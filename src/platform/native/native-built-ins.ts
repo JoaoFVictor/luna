@@ -10,6 +10,16 @@ import {
   pullRequestReviewPortsFromBuiltInOptions
 } from "../../capabilities/pull-request-review/built-ins.js";
 import {
+  createSocialPostPrepareBuiltIn,
+  createSocialPostPublishBuiltIn,
+  socialPostApplyRevisionScopeBuiltIn,
+  socialPostPortsFromBuiltInOptions
+} from "../../capabilities/social-post/built-ins.js";
+import {
+  createImageGenerateBuiltIn,
+  imageGenerationPortsFromBuiltInOptions
+} from "../../capabilities/image-generation/built-ins.js";
+import {
   gitPortsFromBuiltInOptions
 } from "../../capabilities/git/shared.js";
 import { createGitCommitBuiltIn } from "../../capabilities/git/commit.js";
@@ -36,7 +46,10 @@ import {
   recordPushLifecycleBuiltIn
 } from "../../capabilities/repository-change/push-built-ins.js";
 import { recordImplementationValidationBuiltIn } from "../../capabilities/repository-change/validation-built-in.js";
-import { runValidationCommandsBuiltIn } from "../../capabilities/validation/built-ins.js";
+import {
+  repositoryValidationConfigurationBuiltIn,
+  runValidationCommandsBuiltIn
+} from "../../capabilities/validation/built-ins.js";
 import { collectContextBuiltIn } from "../../capabilities/context/built-ins.js";
 import {
   mergeFindingsBuiltIn,
@@ -123,6 +136,15 @@ export const pullRequestReviewPublishBuiltIn =
   createPullRequestReviewPublishBuiltIn(
     pullRequestReviewPortsFromBuiltInOptions
   );
+export const socialPostPublishBuiltIn = createSocialPostPublishBuiltIn(
+  socialPostPortsFromBuiltInOptions
+);
+export const socialPostPrepareBuiltIn = createSocialPostPrepareBuiltIn(
+  socialPostPortsFromBuiltInOptions
+);
+export const imageGenerateBuiltIn = createImageGenerateBuiltIn(
+  imageGenerationPortsFromBuiltInOptions
+);
 
 export function createNativeProviderBuiltIns({
   workflowBuiltIns = defaultWorkflowBuiltIns,
@@ -167,8 +189,13 @@ export function createNativeProviderBuiltIns({
       gitPushBranchBuiltIn,
       changeRequestCreateBuiltIn,
       pullRequestReviewPublishBuiltIn,
+      socialPostApplyRevisionScopeBuiltIn,
+      socialPostPrepareBuiltIn,
+      socialPostPublishBuiltIn,
+      imageGenerateBuiltIn,
       prepareImplementationWorktreeBuiltIn,
       collectTaskContext,
+      repositoryValidationConfigurationBuiltIn,
       runValidationCommandsBuiltIn,
       recordImplementationValidationBuiltIn,
       collectWorktreeDiffBuiltIn,

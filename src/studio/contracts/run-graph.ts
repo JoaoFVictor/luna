@@ -30,11 +30,26 @@ export type RunGraphNodeStatus = z.infer<typeof RunGraphNodeStatusSchema>;
 export const RunGraphNodeSchema = z
   .object({
     id: BoundedIdSchema,
-    kind: z.enum(["built_in", "agent", "pattern", "interrupt", "workflow"]),
+    kind: z.enum(["built_in", "agent", "pattern", "interrupt", "workflow", "loop"]),
     capability_id: BoundedIdSchema,
-    can_create_pending_interrupt: z.boolean()
+    can_create_pending_interrupt: z.boolean(),
+    loop_body: z.array(z.object({
+      id: BoundedIdSchema,
+      kind: z.enum(["built_in", "agent", "pattern", "interrupt", "workflow"]),
+      capability_id: BoundedIdSchema,
+      can_create_pending_interrupt: z.boolean()
+    }).strict()).min(1).max(MAX_RUN_GRAPH_NODES).optional()
   })
-  .strict();
+  .strict()
+  .superRefine((node, context) => {
+    if ((node.kind === "loop") !== (node.loop_body !== undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["loop_body"],
+        message: "Only loop nodes must expose their body"
+      });
+    }
+  });
 export type RunGraphNode = z.infer<typeof RunGraphNodeSchema>;
 
 export const RunGraphEdgeSchema = z

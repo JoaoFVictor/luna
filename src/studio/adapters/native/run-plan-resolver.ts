@@ -70,24 +70,6 @@ function validateWorkflowConfig(
   }
 }
 
-function assertStudioRunCanFinishWithoutResume(
-  context: NativeRunContext
-): void {
-  const interruptibleNodeCount = context.nativeWorkflow.compiled.nodes
-    .filter((node) => node.can_create_pending_interrupt).length;
-  if (interruptibleNodeCount === 0) {
-    return;
-  }
-  throw studioRunLaunchError(
-    "studio_run_interrupt_resume_unsupported",
-    "Studio cannot launch a workflow that may wait for input until local resume is available",
-    {
-      workflow_id: context.workflow.id,
-      mode: context.workflow.mode,
-      interruptible_node_count: interruptibleNodeCount
-    }
-  );
-}
 
 function assertManualTestNodeIsSubstitutable(
   context: NativeRunContext,
@@ -127,8 +109,7 @@ function assertManualTestNodeIsSubstitutable(
       ...(builtInPolicy === undefined ? [] : [builtInPolicy]),
       ...(source.type === "built_in" ||
       source.type === "agent" ||
-      source.type === "pattern" ||
-      source.type === "human_gate"
+      source.type === "pattern"
         ? (source.policies ?? []).map((candidate) => candidate.uses)
         : [])
     ];
@@ -280,7 +261,6 @@ export class NativeStudioRunPlanResolver
             { cause }
           );
         }
-        assertStudioRunCanFinishWithoutResume(context);
         validateWorkflowConfig(context.workflow, request.config);
         const repository = context.repository;
         if (

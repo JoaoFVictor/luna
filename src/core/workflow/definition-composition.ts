@@ -4,6 +4,7 @@ import type {
   WorkflowDefinition,
   WorkflowRequirements
 } from "./definition-types.js";
+import { collectWorkflowCallReferences } from "./definition-references.js";
 
 export async function resolveWorkflowCompositions(options: {
   readonly graph: ParsedWorkflowGraph;
@@ -11,11 +12,7 @@ export async function resolveWorkflowCompositions(options: {
   readonly parentMode: "read_only" | "trusted_local_write";
   readonly resolver?: (workflowId: string) => Promise<WorkflowDefinition>;
 }): Promise<Record<string, WorkflowDefinition>> {
-  const ids = [...new Set(
-    options.graph.nodes.flatMap((node) =>
-      node.type === "workflow" ? [node.workflow] : []
-    )
-  )].sort();
+  const ids = collectWorkflowCallReferences(options.graph.nodes);
   if (ids.length > 0 && options.resolver === undefined) {
     throw new WorkflowDefinitionError(
       "workflow_external_definition_missing",
@@ -68,6 +65,8 @@ export function workflowSupportsSynchronousComposition(
 }
 
 function workflowTreeContainsInterrupt(workflow: WorkflowDefinition): boolean {
-  return workflow.graph.nodes.some((node) => node.type === "human_gate") ||
+  return workflow.graph.nodes.some((node) =>
+    node.type === "human_gate" || node.type === "loop"
+  ) ||
     Object.values(workflow.compositions ?? {}).some(workflowTreeContainsInterrupt);
 }

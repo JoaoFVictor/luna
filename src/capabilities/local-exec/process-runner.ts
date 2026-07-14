@@ -4,6 +4,7 @@ export type ProcessRunRequest = {
   cmd: string;
   args: readonly string[];
   cwd: string;
+  env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   maxOutputBytes?: number;
 };
@@ -24,6 +25,7 @@ export const defaultProcessRunner: ProcessRunner = async ({
   cmd,
   args,
   cwd,
+  env,
   timeoutMs,
   maxOutputBytes
 }) => {
@@ -67,7 +69,11 @@ export const defaultProcessRunner: ProcessRunner = async ({
     let stdoutEnded = false;
     let stderrEnded = false;
     let closeCode: number | null | undefined;
-    const child = spawn(cmd, [...args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, [...args], {
+      cwd,
+      ...(env === undefined ? {} : { env }),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
     const timeout =
       timeoutMs === undefined
         ? undefined

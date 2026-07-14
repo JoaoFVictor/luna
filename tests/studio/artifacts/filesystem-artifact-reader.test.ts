@@ -101,6 +101,41 @@ async function withArtifacts(
 }
 
 describe("filesystem Studio artifact reader", () => {
+  it("resolves only exact runtime artifact references and preserves reference order", async () => {
+    await withArtifacts(async ({ put, reader }) => {
+      const first = await put({ artifactPath: "reviews/first.json" });
+      const second = await put({ artifactPath: "reviews/second.json" });
+      const forged = { ...second, uri: `${second.uri}-forged` };
+
+      const resolution = await reader.resolveReferences(RUN_ID, [
+        { id: second.id, uri: second.uri, node_id: second.source_node_id },
+        { id: first.id, uri: first.uri, node_id: first.source_node_id },
+        { id: forged.id, uri: forged.uri, node_id: forged.source_node_id }
+      ]);
+
+      expect(resolution.matches.flatMap((match) =>
+        match.status === "resolved" ? [match.artifact.name] : []
+      )).toEqual([
+        "second.json",
+        "first.json"
+      ]);
+      expect(resolution.matches[2]).toEqual({ status: "unresolved" });
+    });
+  });
+
+  it("rejects ambiguous runtime references instead of guessing a manifest by time", async () => {
+    await withArtifacts(async ({ put, reader, manifests }) => {
+      const manifest = await put({ artifactPath: "reviews/reused.json" });
+      await manifests.put({ ...manifest, attempt: 3 });
+
+      await expect(reader.resolveReferences(RUN_ID, [{
+        id: manifest.id,
+        uri: manifest.uri,
+        node_id: manifest.source_node_id
+      }])).rejects.toMatchObject({ code: "artifact_catalog_corrupt" });
+    });
+  });
+
   it("lists opaque metadata, redacts structured previews, and streams raw downloads", async () => {
     await withArtifacts(async ({ put, reader }) => {
       const content = JSON.stringify({

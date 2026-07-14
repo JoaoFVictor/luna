@@ -54,6 +54,9 @@ const artifactReader: ArtifactReaderPort = {
       redaction: "best_effort_on_preview"
     };
   },
+  async resolveReferences() {
+    return { matches: [] };
+  },
   async metadata() {
     return metadata;
   },
@@ -212,7 +215,7 @@ describe("Studio artifact and run log routes", () => {
     });
     expect(download.statusCode).toBe(200);
     expect(download.body).toBe("raw!!");
-    expect(download.headers["content-type"]).toContain("application/octet-stream");
+    expect(download.headers["content-type"]).toContain("text/plain");
     expect(download.headers["content-disposition"]).toContain("attachment;");
     expect(download.headers["content-disposition"]).toContain("%0D%0A");
     expect(download.headers["x-injected"]).toBeUndefined();

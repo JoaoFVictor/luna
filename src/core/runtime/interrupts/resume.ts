@@ -55,6 +55,15 @@ function clonePayload(payload: InterruptPayload): InterruptPayload {
     kind: payload.kind,
     prompt: payload.prompt,
     decisions: [...payload.decisions],
+    ...(payload.review === undefined ? {} : {
+      review: {
+        targets: payload.review.targets.map((target) => ({ ...target })),
+        artifact_refs: payload.review.artifact_refs.map((reference) => ({ ...reference })),
+        ...(payload.review.approval === undefined
+          ? {}
+          : { approval: { ...payload.review.approval } })
+      }
+    }),
     created_at: payload.created_at,
     ...(payload.expires_at === undefined ? {} : { expires_at: payload.expires_at })
   };
@@ -192,17 +201,11 @@ async function assertNotExpired(
 }
 
 async function assertNoConcurrentMerge(input: ResumeInput, interrupt: InterruptRecord, store: InterruptStore): Promise<void> {
-  const interrupts = await store.list(interrupt.run_id);
-  const concurrent = interrupts.find((candidate) => {
-    if (candidate.id === interrupt.id) {
-      return false;
-    }
-
-    return (
-      candidate.thread_id === input.thread_id &&
-      candidate.checkpoint_id === input.checkpoint_id &&
-      (candidate.status === "pending" || candidate.status === "resuming")
-    );
+  const concurrent = await store.findFirst(interrupt.run_id, {
+    exclude_id: interrupt.id,
+    thread_id: input.thread_id,
+    checkpoint_id: input.checkpoint_id,
+    statuses: ["pending", "resuming"]
   });
 
   if (concurrent !== undefined) {

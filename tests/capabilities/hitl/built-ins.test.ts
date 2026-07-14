@@ -6,12 +6,12 @@ describe("hitl capability built-ins", () => {
     await expect(
       runRequireApproval({
         decision: {
-          approved: true,
+          action: "approve",
           comment: "ship it"
         }
       })
     ).resolves.toEqual({
-      approved: true,
+      action: "approve",
       status: "approved",
       comment: "ship it"
     });
@@ -21,7 +21,7 @@ describe("hitl capability built-ins", () => {
     await expect(
       runRequireApproval({
         decision: {
-          approved: false,
+          action: "reject",
           comment: "not yet"
         }
       })
@@ -29,6 +29,24 @@ describe("hitl capability built-ins", () => {
       code: "built_in_rejected",
       message: "Human approval rejected the implementation workflow before side effects."
     });
+  });
+
+  it("does not accept loop-only change requests in the legacy approval built-in", async () => {
+    await expect(
+      runRequireApproval({
+        decision: {
+          action: "request_changes",
+          comment: "make the image brighter",
+          targets: ["image"]
+        }
+      })
+    ).rejects.toMatchObject({ code: "built_in_input_invalid" });
+  });
+
+  it("rejects the removed approved compatibility field", async () => {
+    await expect(
+      runRequireApproval({ decision: { action: "approve", approved: false } })
+    ).rejects.toMatchObject({ code: "built_in_input_invalid" });
   });
 });
 

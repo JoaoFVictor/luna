@@ -1,5 +1,3 @@
-import { mkdir, open, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { runGit } from "../git/client.js";
 import type {
   AnyLunaToolDefinition,
@@ -13,10 +11,16 @@ import {
   repositoryStatusToolContract,
   repositoryWriteFileToolContract
 } from "./repository-contracts.js";
+import {
+  deleteSecureRepositoryFile,
+  readSecureRepositoryFile,
+  writeSecureRepositoryFile
+} from "./repository-file-operations.js";
 
 type EmptyInput = Record<string, never>;
 type RepositoryToolDefinition = LunaToolDefinition<EmptyInput, string>;
 const DEFAULT_MAX_FILE_BYTES = 64 * 1024;
+const MAX_FILE_BYTES = 1024 * 1024;
 
 type RepositoryReadFileInput = {
   readonly path: string;
@@ -51,54 +55,6 @@ type RepositoryDeleteFileOutput = {
   deleted: boolean;
 };
 
-function repositoryToolError(message: string, code: string): Error & { code: string } {
-  const error = new Error(message) as Error & { code: string };
-  error.code = code;
-  return error;
-}
-
-function safePath(cwd: string, requestedPath: string): string {
-  if (path.isAbsolute(requestedPath)) {
-    throw repositoryToolError(
-      "Repository tool paths must be relative to the bound worktree.",
-      "repository_tool_path_escape"
-    );
-  }
-
-  const root = path.resolve(cwd);
-  const resolved = path.resolve(root, requestedPath);
-  const relative = path.relative(root, resolved);
-
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
-    return resolved;
-  }
-
-  throw repositoryToolError(
-    "Repository tool path escaped the bound worktree.",
-    "repository_tool_path_escape"
-  );
-}
-
-async function readBoundedFile(
-  absolutePath: string,
-  maxBytes: number
-): Promise<{ content: string; bytes: number; truncated: boolean }> {
-  const file = await open(absolutePath, "r");
-  try {
-    const stats = await file.stat();
-    const buffer = Buffer.alloc(Math.min(stats.size, maxBytes));
-    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-
-    return {
-      content: buffer.subarray(0, bytesRead).toString("utf8"),
-      bytes: stats.size,
-      truncated: stats.size > maxBytes
-    };
-  } finally {
-    await file.close();
-  }
-}
-
 function repositoryHandler(
   dependencies: LunaToolDependencies,
   args: readonly string[]
@@ -124,14 +80,18 @@ export const repositoryReadFileTool: LunaToolDefinition<
 > = {
   ...repositoryReadFileToolContract,
   createHandler: (dependencies) => async (input) => {
-    const maxBytes = input.max_bytes ?? DEFAULT_MAX_FILE_BYTES;
-    const file = await readBoundedFile(safePath(dependencies.cwd, input.path), maxBytes);
+    const maxBytes = Math.min(input.max_bytes ?? DEFAULT_MAX_FILE_BYTES, MAX_FILE_BYTES);
+    const file = await readSecureRepositoryFile({
+      cwd: dependencies.cwd,
+      requestedPath: input.path,
+      maxBytes
+    });
 
     return {
       path: input.path,
-      content: file.content,
-      bytes: file.bytes,
-      truncated: file.truncated
+      content: file.content.toString("utf8"),
+      bytes: file.size,
+      truncated: file.size > file.content.byteLength
     };
   }
 };
@@ -142,11 +102,12 @@ export const repositoryWriteFileTool: LunaToolDefinition<
 > = {
   ...repositoryWriteFileToolContract,
   createHandler: (dependencies) => async (input) => {
-    const absolutePath = safePath(dependencies.cwd, input.path);
-    if (input.create_dirs === true) {
-      await mkdir(path.dirname(absolutePath), { recursive: true });
-    }
-    await writeFile(absolutePath, input.content, "utf8");
+    await writeSecureRepositoryFile({
+      cwd: dependencies.cwd,
+      requestedPath: input.path,
+      content: input.content,
+      createDirectories: input.create_dirs === true
+    });
 
     return {
       path: input.path,
@@ -161,9 +122,11 @@ export const repositoryDeleteFileTool: LunaToolDefinition<
 > = {
   ...repositoryDeleteFileToolContract,
   createHandler: (dependencies) => async (input) => {
-    const absolutePath = safePath(dependencies.cwd, input.path);
     try {
-      await unlink(absolutePath);
+      await deleteSecureRepositoryFile({
+        cwd: dependencies.cwd,
+        requestedPath: input.path
+      });
     } catch (cause) {
       if ((cause as NodeJS.ErrnoException).code === "ENOENT" && input.missing_ok === true) {
         return {

@@ -3,6 +3,6 @@ import {
   repositoryLocalTools
 } from "./repository.js";
 
-export const lunaToolCatalog = {
+export const repositoryToolCatalog = {
   ...repositoryLocalTools
 } satisfies Record<string, AnyLunaToolDefinition>;

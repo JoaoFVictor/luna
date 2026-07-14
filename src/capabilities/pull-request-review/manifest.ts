@@ -1,4 +1,5 @@
 import { capabilityManifest } from "../../core/capabilities/manifest.js";
+import { RepoContextJsonSchema } from "../git/diff/repo-context-json-schema.js";
 
 const expressionSchema = {
   type: "object",
@@ -52,7 +53,9 @@ export const publishAuthoringInputSchema = {
       anyOf: [commentPolicySchema, expressionSchema]
     },
     findings: objectOrExpressionSchema,
-    repo_context: objectOrExpressionSchema
+    repo_context: {
+      anyOf: [RepoContextJsonSchema, expressionSchema]
+    }
   }
 } as const;
 

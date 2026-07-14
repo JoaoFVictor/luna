@@ -28,6 +28,7 @@ function child(
       pattern: 0,
       human_gate: 0,
       workflow: 0,
+      loop: 0,
     },
     requires_repository: false,
     max_concurrency: 1,
@@ -49,6 +50,7 @@ describe("workflow composition compatibility", () => {
       pattern: 0,
       human_gate: 0,
       workflow: 0,
+      loop: 0,
     }
     expect(workflowCompositionIssue(
       { mode: "trusted_local_write" },

@@ -10,6 +10,8 @@ import type {
   FileExcerpt,
   RepoContext
 } from "./types.js";
+import { GitObjectIdSchema, RepoContextSchema } from "./types.js";
+import { REPO_CONTEXT_LIMITS } from "./repo-context-policy.js";
 import type { RepositoryConfig } from "../../../core/config/schemas.js";
 
 type RunGit = (cwd: string, args: readonly string[]) => Promise<string>;
@@ -36,7 +38,7 @@ type NameStatusEntry = {
   status: FileStatus;
 };
 
-const DEFAULT_MAX_CHANGED_FILES = 100;
+const DEFAULT_MAX_CHANGED_FILES = REPO_CONTEXT_LIMITS.max_changed_files;
 const DEFAULT_MAX_DIFF_BYTES = 200_000;
 const DEFAULT_MAX_EXCERPT_BYTES = 8_000;
 const LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1";
@@ -93,6 +95,17 @@ function truncateUtf8ToBytes(content: string, maxBytes: number): string {
   return truncated;
 }
 
+function boundedPositiveInteger(
+  value: number,
+  maximum: number,
+  name: string
+): number {
+  if (!Number.isInteger(value) || value <= 0 || value > maximum) {
+    throw new Error(`${name} must be an integer between 1 and ${maximum}`);
+  }
+  return value;
+}
+
 function excerptForContent(content: string, maxBytes: number): FileExcerpt {
   const truncated = Buffer.byteLength(content, "utf8") > maxBytes;
   const excerptContent = truncated ? truncateUtf8ToBytes(content, maxBytes) : content;
@@ -126,12 +139,40 @@ export async function collectRepoContext({
   maxDiffBytes = DEFAULT_MAX_DIFF_BYTES,
   maxExcerptBytes = DEFAULT_MAX_EXCERPT_BYTES
 }: CollectRepoContextOptions): Promise<RepoContext> {
+  GitObjectIdSchema.parse(baseSha);
+  GitObjectIdSchema.parse(headSha);
+  boundedPositiveInteger(
+    maxChangedFiles,
+    REPO_CONTEXT_LIMITS.max_changed_files,
+    "maxChangedFiles"
+  );
+  boundedPositiveInteger(
+    maxDiffBytes,
+    REPO_CONTEXT_LIMITS.max_total_diff_bytes,
+    "maxDiffBytes"
+  );
+  boundedPositiveInteger(
+    maxExcerptBytes,
+    REPO_CONTEXT_LIMITS.max_excerpt_bytes,
+    "maxExcerptBytes"
+  );
   const cwd = repository.path;
 
   const mergeBase = (await runGit(cwd, ["merge-base", baseSha, headSha])).trim();
-  const statusShort = (await runGit(cwd, ["status", "--short"]))
+  const allStatusShort = (await runGit(cwd, ["status", "--short"]))
     .split("\n")
     .filter((line) => line.length > 0);
+  const capturedStatusShort = allStatusShort.slice(
+    0,
+    REPO_CONTEXT_LIMITS.max_git_status_entries
+  );
+  const statusShort = capturedStatusShort.map((line) => truncateUtf8ToBytes(
+    line,
+    REPO_CONTEXT_LIMITS.max_git_status_bytes
+  ));
+  const statusShortTruncatedCount = capturedStatusShort.filter(
+    (line, index) => line !== statusShort[index]
+  ).length;
   const rawEntries = parseRawDiff(await runGit(cwd, ["diff", "--raw", "-z", baseSha, headSha]));
   const numstatEntries = parseNumstat(
     await runGit(cwd, ["diff", "--numstat", "-z", baseSha, headSha])
@@ -213,7 +254,7 @@ export async function collectRepoContext({
     files.push(file);
   }
 
-  return {
+  return RepoContextSchema.parse({
     repository: {
       owner: repository.owner,
       name: repository.name,
@@ -226,10 +267,16 @@ export async function collectRepoContext({
     changed_files_truncated: totalChangedFiles > selectedEntries.length,
     total_changed_files: totalChangedFiles,
     changed_file_limit: maxChangedFiles,
+    changed_files_omitted_count: Math.max(0, totalChangedFiles - selectedEntries.length),
     file_excerpts_truncated: fileExcerptsTruncated,
     git: {
       merge_base: mergeBase,
-      status_short: statusShort
+      status_short: statusShort,
+      status_short_omitted_count: Math.max(
+        0,
+        allStatusShort.length - capturedStatusShort.length
+      ),
+      status_short_truncated_count: statusShortTruncatedCount
     }
-  };
+  });
 }

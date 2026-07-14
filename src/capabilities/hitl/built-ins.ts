@@ -9,9 +9,9 @@ export const approvalRequiredInputSchema = {
     decision: {
       type: "object",
       additionalProperties: false,
-      required: ["approved"],
+      required: ["action"],
       properties: {
-        approved: { type: "boolean" },
+        action: { enum: ["approve", "reject"] },
         comment: { type: "string" }
       }
     }
@@ -21,9 +21,9 @@ export const approvalRequiredInputSchema = {
 export const approvalRequiredOutputSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["approved", "status"],
+  required: ["action", "status"],
   properties: {
-    approved: { type: "boolean" },
+    action: { enum: ["approve"] },
     status: { enum: ["approved"] },
     comment: { type: "string" }
   }
@@ -33,7 +33,7 @@ export const requireApprovalBuiltIn = defineBuiltInStep({
   name: "hitl.require_approval",
   async run({ input }) {
     const decision = decisionFromInput(input);
-    if (!decision.approved) {
+    if (decision.action !== "approve") {
       throw builtInError(
         "Human approval rejected the implementation workflow before side effects.",
         "built_in_rejected"
@@ -41,14 +41,17 @@ export const requireApprovalBuiltIn = defineBuiltInStep({
     }
 
     return {
-      approved: true,
+      action: "approve",
       status: "approved",
       ...(decision.comment === undefined ? {} : { comment: decision.comment })
     };
   }
 });
 
-function decisionFromInput(input: unknown): { approved: boolean; comment?: string } {
+function decisionFromInput(input: unknown): {
+  action: "approve" | "reject";
+  comment?: string;
+} {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw builtInError("HITL approval input must be an object.", "built_in_input_invalid");
   }
@@ -58,10 +61,13 @@ function decisionFromInput(input: unknown): { approved: boolean; comment?: strin
     throw builtInError("HITL approval input.decision must be an object.", "built_in_input_invalid");
   }
 
-  const candidate = decision as { approved?: unknown; comment?: unknown };
-  if (typeof candidate.approved !== "boolean") {
+  const candidate = decision as { action?: unknown; comment?: unknown };
+  const unsupportedField = Object.keys(decision).find(
+    (key) => key !== "action" && key !== "comment"
+  );
+  if (unsupportedField !== undefined) {
     throw builtInError(
-      "HITL approval input.decision.approved must be a boolean.",
+      `HITL approval input.decision.${unsupportedField} is not supported.`,
       "built_in_input_invalid"
     );
   }
@@ -71,9 +77,15 @@ function decisionFromInput(input: unknown): { approved: boolean; comment?: strin
       "built_in_input_invalid"
     );
   }
-
+  const action = candidate.action;
+  if (action !== "approve" && action !== "reject") {
+    throw builtInError(
+      "HITL approval input.decision.action is invalid.",
+      "built_in_input_invalid"
+    );
+  }
   return {
-    approved: candidate.approved,
+    action,
     ...(candidate.comment === undefined ? {} : { comment: candidate.comment })
   };
 }

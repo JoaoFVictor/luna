@@ -68,12 +68,28 @@ export type StudioValidationDiagnostic = z.infer<
 export const StudioCompiledWorkflowNodeSchema = z
   .object({
     id: z.string().min(1).max(256),
-    kind: z.enum(["built_in", "agent", "pattern", "interrupt", "workflow"]),
+    kind: z.enum(["built_in", "agent", "pattern", "interrupt", "workflow", "loop"]),
     yaml_path: z.string().min(1).max(1_024),
     capability_id: z.string().min(1).max(256),
-    can_create_pending_interrupt: z.boolean()
+    can_create_pending_interrupt: z.boolean(),
+    loop_body: z.array(z.object({
+      id: z.string().min(1).max(256),
+      kind: z.enum(["built_in", "agent", "pattern", "interrupt", "workflow"]),
+      yaml_path: z.string().min(1).max(1_024),
+      capability_id: z.string().min(1).max(256),
+      can_create_pending_interrupt: z.boolean()
+    }).strict()).min(1).max(10_000).optional()
   })
-  .strict();
+  .strict()
+  .superRefine((node, context) => {
+    if ((node.kind === "loop") !== (node.loop_body !== undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["loop_body"],
+        message: "Only loop nodes must expose their compiled body"
+      });
+    }
+  });
 export type StudioCompiledWorkflowNode = z.infer<
   typeof StudioCompiledWorkflowNodeSchema
 >;

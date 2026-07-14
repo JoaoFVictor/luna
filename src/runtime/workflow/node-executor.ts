@@ -12,6 +12,7 @@ import type {
   RunWorkflowInput,
   WorkflowPatternExecutor
 } from "../../core/workflow/execution-contracts.js";
+import { createPatternOccurrenceExecutor } from "./pattern-occurrence.js";
 
 export async function executeWorkflowNode(
   input: RunWorkflowInput,
@@ -23,11 +24,6 @@ export async function executeWorkflowNode(
     const nodeInput = await resolveNodeInput(node, state, runtimeContext, input);
     assertCheckpointJsonValue(nodeInput);
     const child = node.composition;
-    if (child === undefined) {
-      throw runtimeError("Compiled workflow node is missing its child definition", "runtime_state_invalid", {
-        details: { node_id: node.id }
-      });
-    }
     if (!matchesJsonSchema(
       child.workflow.input_schema_content as JsonSchemaLike,
       nodeInput
@@ -76,6 +72,7 @@ export async function executeWorkflowNode(
         state,
         runtimeContext,
         workflow: input.workflow,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
         observability: input.observability
       });
 
@@ -136,6 +133,12 @@ async function executePatternNode({
     state,
     runtimeContext,
     workflow,
+    runOccurrence: createPatternOccurrenceExecutor({
+      input: workflowInput,
+      state,
+      runtimeContext,
+      patternNode: node
+    }),
     observability: workflowInput.observability
   });
 

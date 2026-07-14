@@ -12,7 +12,10 @@ import type {
   WorkflowLifecycleProjectionErrorObserver,
   WorkflowNodeLifecycleObserver
 } from "../../core/workflow/events.js";
-import type { WorkflowPrecompletedSteps } from "../../core/workflow/execution-contracts.js";
+import type {
+  RunWorkflowInput,
+  WorkflowPrecompletedSteps
+} from "../../core/workflow/execution-contracts.js";
 
 export type TargetExecutorInput = {
   invocation: Invocation;
@@ -58,11 +61,17 @@ export type NativeWorkflowRunInput = Omit<TargetExecutorInput, "invocation"> & {
    * the runtime succeeded checkpoint.
    */
   readonly onSucceededState?: (state: LunaRuntimeState) => Promise<void>;
+  /** Control-plane durability barrier for a runtime wait boundary. */
+  readonly onWaitingState?: RunWorkflowInput["onWaitingState"];
   /**
    * Internal, best-effort observation of an exact failed runtime state. This
    * never replaces or suppresses the runtime error.
    */
   readonly onFailedState?: (state: LunaRuntimeState) => void;
+  /** Authoritative durability barrier immediately before node execution. */
+  readonly onBeforeNodeExecution?: (
+    input: { readonly node_id: string; readonly attempt: number }
+  ) => Promise<void>;
   /** Ordered control-plane projection of runtime node lifecycle events. */
   readonly onLifecycleEvent?: WorkflowNodeLifecycleObserver;
   /** Best-effort notification that lifecycle projection degraded. */

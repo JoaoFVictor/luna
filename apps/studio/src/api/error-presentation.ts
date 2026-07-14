@@ -9,6 +9,10 @@ export type StudioErrorPresentation = {
 }
 
 const ACTIONABLE_ERRORS: Readonly<Record<string, Pick<StudioErrorPresentation, "title" | "message">>> = {
+  studio_run_resume_catalog_changed: {
+    title: "A execução usa outra versão do runtime",
+    message: "O catálogo de capabilities mudou desde o início desta execução. Para preservar a segurança e a consistência dos resultados, inicie uma nova execução com a versão atual do Studio.",
+  },
   studio_history_unavailable: {
     title: "Histórico Git indisponível",
     message: "Este checkout não possui um branch Git anexado. O recurso continua disponível, mas não há revisões para comparar ou restaurar nesta sessão.",
